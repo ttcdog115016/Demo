@@ -1,0 +1,308 @@
+openapi: 3.0.3
+info:
+  title: Privacy Enhancing Technologies (PETs) API
+  description: 資料去識別化與隱私保護 API 規格。支援檔案上傳解析、K-匿名化與差分隱私參數設定、風險評估與資料集匯出。
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: 核心運算伺服器
+
+paths:
+  /dataset/upload:
+    post:
+      summary: 上傳原始資料集 (Step 1)
+      description: 接收前端上傳的 CSV 檔案，將實體檔案暫存於後端，並回傳檔案代碼 (dataset_id) 與欄位清單供前端渲染 Step 2 畫面。
+      operationId: uploadDataset
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 使用者上傳的原始 CSV 檔案
+      responses:
+        '200':
+          description: 檔案上傳與解析成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  dataset_id:
+                    type: string
+                    description: 檔案代碼，供後續 evaluate 步驟使用
+                  columns:
+                    type: array
+                    description: 解析出的欄位名稱清單
+                    items:
+                      type: string
+                  row_count:
+                    type: integer
+                    description: 資料總筆數
+              example:
+                status: "success"
+                dataset_id: "dataset_1689849201"
+                columns: ["id", "name", "age", "salary", "disease"]
+                row_count: 50000
+        '400':
+          description: 檔案格式錯誤或未夾帶檔案
+
+  /privacy/evaluate:
+    post:
+      summary: 執行隱私演算法與風險評估 (Step 4)
+      description: 接收前端的 Master Schema 隱私參數設定與 dataset_id，執行去識別化演算法，並回傳儀表板所需的風險指標與預覽資料。
+      operationId: evaluatePrivacySettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivacyEvaluateRequest'
+      responses:
+        '200':
+          description: 評估成功，回傳儀表板數據與預覽資料
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivacyEvaluateResponse'
+        '400':
+          description: 參數設定錯誤或不合法
+        '500':
+          description: 演算法執行失敗或伺服器錯誤
+
+  /privacy/export:
+    post:
+      summary: 下載安全資料集 (完成)
+      description: 根據指定的 job_id，匯出並下載最終完整的去識別化 CSV 檔案。
+      operationId: exportSafeDataset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - job_id
+              properties:
+                job_id:
+                  type: string
+                  description: Evaluate 階段產生的任務 ID，用來提取運算結果
+              example:
+                job_id: "job-98765-xyz"
+      responses:
+        '200':
+          description: 成功產出檔案流
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: 找不到對應的任務或資料已過期
+
+components:
+  schemas:
+    PrivacyEvaluateRequest:
+      type: object
+      required:
+        - dataset
+        - privacy_targets
+        - field_attributes
+      properties:
+        version:
+          type: string
+          description: 配置檔產生的時間戳記版本號
+        dataset:
+          type: string
+          description: Step 1 上傳後取得的資料集識別碼 (dataset_id)
+        privacy_targets:
+          type: object
+          description: 隱私保護目標設定
+          properties:
+            k_anonymity:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                k: { type: integer }
+                suppression_method: { type: string, enum: [row_suppression, cell_suppression] }
+                suppression_limit_percent: { type: number }
+                limit_exceeded_action: { type: string, enum: [stop_and_error, warn] }
+            differential_privacy:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                global_target_delta: { type: number, format: float }
+        field_attributes:
+          type: object
+          description: 各欄位的基本屬性宣告 (Key 為欄位名稱)
+          additionalProperties:
+            type: object
+            properties:
+              type: { type: string, enum: [string, numeric, categorical, temporal] }
+              role: { type: string, enum: [identifier, quasi_identifier, sensitive, non_sensitive] }
+        
+        masking_rules:
+          type: object
+          description: 直接識別碼的遮蔽策略
+          additionalProperties:
+            type: object
+            properties:
+              strategy: { type: string, enum: [keep_prefix, keep_suffix, full, hash, drop] }
+              keep_chars: { type: integer }
+              mask_char: { type: string }
+              hash_type: { type: string }
+        generalization_rules:
+          type: object
+          description: 準識別碼的泛化策略
+          additionalProperties:
+            type: object
+            properties:
+              strategy: { type: string }
+              param: { type: number }
+              max_level: { type: integer }
+        categorical_hierarchies:
+          type: object
+          description: 類別型欄位的自訂階層樹對應表
+          additionalProperties:
+            type: object
+            properties:
+              mapping:
+                type: object
+                additionalProperties:
+                  type: array
+                  items: { type: string }
+        numeric_bins:
+          type: object
+          description: 數值型欄位的區間設定
+          additionalProperties:
+            type: object
+            properties:
+              bin_width: { type: number }
+        temporal_hierarchies:
+          type: object
+          description: 時間型欄位的降階設定
+          additionalProperties:
+            type: object
+            properties:
+              levels:
+                type: array
+                items: { type: string }
+        
+        differential_privacy_rules:
+          type: object
+          description: 差分隱私各欄位的預算與邊界設定
+          additionalProperties:
+            type: object
+            properties:
+              enabled: { type: boolean }
+              mode: { type: string, enum: [epsilon, epsilon-delta] }
+              epsilon: { type: number, format: float }
+              delta: { type: number, format: float }
+              bounds:
+                type: object
+                properties:
+                  lower: { type: number }
+                  upper: { type: number }
+              allowed_categories:
+                type: array
+                items: { type: string }
+              max_length: { type: integer }
+      
+      # 🌟 加上完整的 Example，覆蓋 Swagger 預設的 additionalProp
+      example:
+        version: "2026-07-20_14-05-00"
+        dataset: "dataset_1689849201"
+        privacy_targets:
+          k_anonymity:
+            enabled: true
+            k: 5
+            suppression_method: "row_suppression"
+            suppression_limit_percent: 5
+            limit_exceeded_action: "stop_and_error"
+          differential_privacy:
+            enabled: true
+            global_target_delta: 0.0001
+        field_attributes:
+          id:
+            type: "string"
+            role: "identifier"
+          age:
+            type: "numeric"
+            role: "quasi_identifier"
+          salary:
+            type: "numeric"
+            role: "sensitive"
+        masking_rules:
+          id:
+            strategy: "hash"
+            hash_type: "sha256"
+        generalization_rules:
+          age:
+            strategy: "binning"
+            param: 10
+            max_level: 2
+        differential_privacy_rules:
+          salary:
+            enabled: true
+            mode: "epsilon"
+            epsilon: 1.5
+            delta: 0
+            bounds:
+              lower: 20000
+              upper: 150000
+
+    PrivacyEvaluateResponse:
+      type: object
+      properties:
+        status: { type: string }
+        job_id: { type: string, description: 運算任務 ID，用於後續下載 CSV }
+        is_overall_safe: { type: boolean, description: 是否通過整體安全標準 }
+        audit_metrics:
+          type: object
+          description: 隱私風險評估指標
+          properties:
+            k_risk_value: { type: number, format: float, description: 重新識別風險 (%) }
+            dp_epsilon_leakage: { type: number, format: float, description: 總等效 ε 洩漏值 }
+            cap_score: { type: number, format: float, description: CAP 正確歸因機率 (%) }
+            inference_risk_level: { type: string, enum: [低, 中, 高], description: 推斷風險 }
+        utility_metrics:
+          type: object
+          description: 資料效用指標
+          properties:
+            actual_suppression_rate: { type: number, format: float, description: 實際抑制率 (%) }
+            processed_fields_count: { type: integer, description: 受影響的欄位總數 }
+        preview_data:
+          type: array
+          description: 前 5~10 筆處理後的預覽資料
+          items:
+            type: object
+            additionalProperties: true
+      
+      # 🌟 加上完整的 Example，確保 Response 預覽漂亮
+      example:
+        status: "success"
+        job_id: "job-98765-xyz"
+        is_overall_safe: true
+        audit_metrics:
+          k_risk_value: 20.0
+          dp_epsilon_leakage: 1.5
+          cap_score: 16.0
+          inference_risk_level: "低"
+        utility_metrics:
+          actual_suppression_rate: 2.5
+          processed_fields_count: 5
+        preview_data:
+          - id: "8d969eef..."
+            name: "A****"
+            age: "[30 - 40)"
+            salary: 60512
+          - id: "9b71d224..."
+            name: "B****"
+            age: "[40 - 50)"
+            salary: 79841
