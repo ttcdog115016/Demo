@@ -4,22 +4,10 @@ import {
   UploadOutlined, DeleteOutlined, PlusOutlined, 
   DatabaseOutlined, CodeOutlined, ThunderboltOutlined, InfoCircleOutlined
 } from '@ant-design/icons';
-import { usePrivacyStore } from '../../store/usePrivacyStore';
 import { useTranslation } from 'react-i18next'; 
 
-type DPField = {
-  id: string;
-  fieldName: string;
-  fieldType: 'Unknown' | 'Numeric' | 'Categorical' | 'Text';
-  enabled: boolean;
-  mode: 'epsilon' | 'epsilon-delta';
-  epsilon: number;
-  delta: number;
-  lowerBound?: number;
-  upperBound?: number;
-  allowedCategories?: string;
-  maxLength?: number;
-};
+// 🌟 明確加上 type 匯入，解決 ts(1484) 錯誤
+import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
 
 export default function DifferentialPrivacyMapping() {
   const { token } = theme.useToken();
@@ -33,13 +21,12 @@ export default function DifferentialPrivacyMapping() {
   const { 
     columns,
     previewData,
-    dpFields, 
-    setFileData
-  } = usePrivacyStore();
-
-  // 🌟 保留本地的更新函數，以確保 UI 絕對不會被卡死
+    setFileData,
+    dpFields 
+  } = useWorkspaceStore();
+  
   const updateFieldLocal = <T extends keyof DPField>(id: string, key: T, val: DPField[T]) => {
-    usePrivacyStore.setState((state) => ({
+    useWorkspaceStore.setState((state) => ({
       dpFields: state.dpFields.map(f => f.id === id ? { ...f, [key]: val } : f)
     }));
   };
@@ -89,14 +76,10 @@ export default function DifferentialPrivacyMapping() {
   }, [dpFields]);
 
   const generateExportJSON = () => {
+    const storeState = useWorkspaceStore.getState();
     const fieldAttributes: Record<string, { type: string; role: string }> = {};
-    const dpRules: Record<string, object> = {};
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const preprocessingRules = (usePrivacyStore.getState() as any).preprocessingRules || {};
 
-    dpFields.forEach(f => {
-      if (!f.fieldName) return;
-
+    const formattedDpRules = dpFields.map(f => {
       let attrType = 'string';
       if (f.fieldType === 'Numeric') attrType = 'numeric';
       else if (f.fieldType === 'Categorical') attrType = 'categorical';
@@ -107,47 +90,49 @@ export default function DifferentialPrivacyMapping() {
         role: f.enabled ? (attrType === 'numeric' ? 'sensitive' : 'quasi_identifier') : 'identifier'
       };
 
-      if (f.enabled) {
-        type DPRule = {
-          enabled: boolean;
-          mode: string;
-          epsilon: number;
-          delta: number;
-          bounds?: { lower: number | null | undefined; upper: number | null | undefined };
-          allowed_categories?: string[];
-          max_length?: number | null | undefined;
-        };
-
-        const rule: DPRule = {
-          enabled: true,
-          mode: f.mode || 'epsilon',
-          epsilon: f.epsilon || 1.0,
-          delta: f.delta || 0,
-        };
-
-        if (f.fieldType === 'Numeric') {
-          rule.bounds = { lower: f.lowerBound ? Number(f.lowerBound) : null, upper: f.upperBound ? Number(f.upperBound) : null };
-        } else if (f.fieldType === 'Categorical') {
-          rule.allowed_categories = f.allowedCategories 
-            ? f.allowedCategories.split(',').map((s: string) => s.trim()).filter(Boolean) 
-            : [];
-        } else if (f.fieldType === 'Text') {
-          rule.max_length = f.maxLength ? Number(f.maxLength) : null;
-        }
-        dpRules[f.fieldName] = rule;
-      }
+      return {
+        id: f.id,
+        fieldName: f.fieldName,
+        fieldType: f.fieldType,
+        enabled: Boolean(f.enabled),
+        mode: f.mode || 'epsilon',
+        epsilon: f.epsilon || 1.0,
+        delta: f.delta || 0.0001,
+        lowerBound: f.lowerBound !== undefined ? Number(f.lowerBound) : undefined,
+        upperBound: f.upperBound !== undefined ? Number(f.upperBound) : undefined,
+        allowedCategories: f.allowedCategories || '',
+        maxLength: f.maxLength ? Number(f.maxLength) : undefined
+      };
     });
 
     return {
-      version: new Date().toISOString().replace(/T/, '_').replace(/\..+/, '').replace(/:/g, '-'),
-      dataset: "current_dataset",
-      privacy_targets: {
-        k_anonymity: { enabled: true, k: 5, suppression_method: "row_suppression", suppression_limit_percent: 5, limit_exceeded_action: "stop_and_error" },
-        differential_privacy: { enabled: true, global_target_delta: 0.0001 }
-      },
+      version: new Date().toISOString(),
+      dataset: storeState.fileName || "current_dataset",
+      privacy_mode: storeState.privacyMode || "differential-privacy",
+      columns: storeState.columns,
+      column_roles: storeState.columnRoles,
+      column_types: storeState.columnTypes,
+      preprocessing_rules: storeState.preprocessingRules && Object.keys(storeState.preprocessingRules).length > 0 ? storeState.preprocessingRules : undefined,
       field_attributes: fieldAttributes,
-      preprocessing_rules: Object.keys(preprocessingRules).length > 0 ? preprocessingRules : undefined,
-      differential_privacy_rules: Object.keys(dpRules).length > 0 ? dpRules : undefined
+      privacy_targets: {
+        k_anonymity: { 
+          enabled: storeState.privacyMode === 'k-anonymity', 
+          k: storeState.kValue ?? 5, 
+          l: storeState.lValue ?? 2,
+          t: storeState.tValue ?? 0.15,
+          suppression_method: storeState.suppressionMethod ?? "row_suppression", 
+          suppression_limit_percent: storeState.maxSuppression ?? 10, 
+          limit_exceeded_action: storeState.limitExceededAction ?? "stop_and_error" 
+        },
+        differential_privacy: { 
+          enabled: storeState.privacyMode === 'differential-privacy', 
+          global_target_delta: storeState.targetDelta ?? 0.0001,
+          simulate_query_count: storeState.queryCount ?? 1,
+          budget_limit: storeState.budgetLimitEpsilon ?? 10,
+          out_of_bounds_strategy: storeState.outOfBoundsStrategy ?? 'clip'
+        }
+      },
+      differential_privacy_rules: formattedDpRules
     };
   };
 
@@ -160,91 +145,156 @@ export default function DifferentialPrivacyMapping() {
       try {
         const json = JSON.parse(event.target?.result as string);
         
+        type DpRuleItem = {
+          id?: string;
+          fieldName?: string;
+          field_name?: string;
+          field?: string;
+          fieldType?: DPField['fieldType'];
+          field_type?: DPField['fieldType'];
+          enabled?: boolean;
+          mode?: 'epsilon' | 'epsilon-delta';
+          epsilon?: number;
+          delta?: number;
+          lowerBound?: number;
+          upperBound?: number;
+          allowedCategories?: string;
+          maxLength?: number;
+          bounds?: { lower?: number; upper?: number };
+          allowed_categories?: string[] | string;
+          max_length?: number;
+        };
+
+        type FieldMechanismItem = {
+          mechanism_type?: string;
+          budget_model?: string;
+          epsilon_budget?: number;
+          delta_budget?: number;
+          clipping_bounds?: { min?: number; max?: number };
+          out_of_bounds_strategy?: string;
+          rounding_step?: number;
+        };
+
+        const baseColumns = json.columns && Array.isArray(json.columns) && json.columns.length > 0 
+          ? json.columns 
+          : columns;
+
+        const columnIndexMap = new Map<string, number>();
+        baseColumns.forEach((colName: string, index: number) => {
+          columnIndexMap.set(colName, index);
+        });
+
         if (Array.isArray(json)) {
-          usePrivacyStore.setState({ dpFields: json });
-          messageApi.success(t('message.import_array_json_success'));
+          const parsed = (json as DpRuleItem[]).map((item, idx) => ({
+            id: item.id || `dp_col_${idx}_${Date.now()}`,
+            fieldName: item.fieldName || item.field_name || `column_${idx}`,
+            fieldType: item.fieldType || item.field_type || 'Unknown',
+            enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
+            mode: item.mode || 'epsilon',
+            epsilon: item.epsilon ?? 1.0,
+            delta: item.delta ?? 0.0001,
+            lowerBound: item.lowerBound ?? item.bounds?.lower,
+            upperBound: item.upperBound ?? item.bounds?.upper,
+            allowedCategories: item.allowedCategories ?? (Array.isArray(item.allowed_categories) ? item.allowed_categories.join(',') : ''),
+            maxLength: item.maxLength ?? item.max_length
+          }));
+
+          parsed.sort((a, b) => {
+            const idxA = columnIndexMap.has(a.fieldName) ? columnIndexMap.get(a.fieldName)! : 999;
+            const idxB = columnIndexMap.has(b.fieldName) ? columnIndexMap.get(b.fieldName)! : 999;
+            return idxA - idxB;
+          });
+
+          useWorkspaceStore.setState({ dpFields: parsed as DPField[] });
+          messageApi.success(t('message.import_array_json_success', '成功匯入欄位設定陣列！'));
+          return;
         } 
-        else if (json.field_attributes) {
-          const newFields: typeof dpFields = [];
-          
-          // 🌟 修正：最堅固的 JSON 規則萃取器，強制相容不同版本的 Schema
-          interface DPRule {
-            epsilon?: number;
-            delta?: number;
-            bounds?: { lower: number; upper: number };
-            mode?: 'epsilon' | 'epsilon-delta';
-            // optional fields that may exist in different schema versions
-            allowed_categories?: string[];
-            max_length?: number | null | undefined;
-          }
-          let dpRules: Record<string, DPRule> = {};
-          
-          // 1. 如果有舊版的 rules，先倒進來
-          if (json.differential_privacy_rules && Object.keys(json.differential_privacy_rules).length > 0) {
-            dpRules = { ...json.differential_privacy_rules };
-          }
-          
-          // 2. 如果有新版的 mechanisms，無條件抓取並覆蓋
-          if (json.privacy_targets?.differential_privacy?.field_mechanisms) {
-            const mechanisms = json.privacy_targets.differential_privacy.field_mechanisms;
-            Object.keys(mechanisms).forEach(key => {
-              const mech = mechanisms[key];
-              dpRules[key] = {
-                epsilon: mech.epsilon_budget,
-                delta: mech.delta_budget,
-                bounds: mech.clipping_bounds ? { lower: mech.clipping_bounds.min, upper: mech.clipping_bounds.max } : undefined,
-                mode: (mech.delta_budget && mech.delta_budget > 0) ? 'epsilon-delta' : 'epsilon'
-              };
-            });
-          }
 
-          const preRules = json.preprocessing_rules || {};
+        if (json.field_attributes || json.privacy_targets?.differential_privacy?.field_mechanisms || json.differential_privacy_rules) {
+          const newFields: DPField[] = [];
           
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          usePrivacyStore.setState({ preprocessingRules: preRules } as any);
+          const fieldAttrs = (json.field_attributes || {}) as Record<string, { type: string; role: string }>;
+          const mechanisms = (json.privacy_targets?.differential_privacy?.field_mechanisms || {}) as Record<string, FieldMechanismItem>;
+          
+          const dpRulesRaw = json.differential_privacy_rules;
+          const dpRulesList = Array.isArray(dpRulesRaw) ? (dpRulesRaw as DpRuleItem[]) : [];
+          const dpRulesObj = dpRulesRaw && !Array.isArray(dpRulesRaw) ? (dpRulesRaw as Record<string, DpRuleItem>) : {};
 
-          Object.keys(json.field_attributes).forEach((fieldName) => {
-            const attr = json.field_attributes[fieldName];
-            const dp = dpRules[fieldName] || {};
-            const hasRule = Object.keys(dp).length > 0; // 🌟 如果在 JSON 有找到這個欄位的規則，就是 true
-            
+          Object.keys(fieldAttrs).forEach((fieldName, idx) => {
+            const attr = fieldAttrs[fieldName]; 
+            const mech = mechanisms[fieldName]; 
+            const ruleObj = dpRulesObj[fieldName];
+            const ruleItem = dpRulesList.find(item => (item.fieldName || item.field_name || item.field) === fieldName);
+
             let mappedType: DPField['fieldType'] = 'Unknown';
             if (attr.type === 'numeric') mappedType = 'Numeric';
             else if (attr.type === 'categorical') mappedType = 'Categorical';
-            else if (['string', 'temporal'].includes(attr.type)) mappedType = 'Text';
-            
-            let allowedCat = Array.isArray(dp.allowed_categories) 
-              ? dp.allowed_categories.join(',') 
-              : dp.allowed_categories || '';
+            else if (['string', 'temporal'].includes(attr.type)) {
+              mappedType = attr.role === 'identifier' ? 'Text' : 'Categorical';
+            }
 
+            const hasRuleSetting = Boolean(mech || ruleObj || ruleItem);
+            let isEnabled = mappedType !== 'Text' && attr.role !== 'identifier' && hasRuleSetting;
+            
+            const explicitEnabled = ruleItem?.enabled ?? ruleObj?.enabled;
+            if (typeof explicitEnabled === 'boolean') {
+              isEnabled = explicitEnabled;
+            }
+
+            const eps = mech?.epsilon_budget ?? ruleItem?.epsilon ?? ruleObj?.epsilon ?? 1.0;
+            const dlt = mech?.delta_budget ?? ruleItem?.delta ?? ruleObj?.delta ?? 0.0001;
+            const modeVal: 'epsilon' | 'epsilon-delta' = (dlt && dlt > 0) ? 'epsilon-delta' : 'epsilon';
+
+            const lower = mech?.clipping_bounds?.min ?? ruleItem?.lowerBound ?? ruleItem?.bounds?.lower ?? ruleObj?.lowerBound ?? ruleObj?.bounds?.lower;
+            const upper = mech?.clipping_bounds?.max ?? ruleItem?.upperBound ?? ruleItem?.bounds?.upper ?? ruleObj?.upperBound ?? ruleObj?.bounds?.upper;
+
+            let allowedCat = ruleItem?.allowedCategories ?? ruleObj?.allowedCategories ?? '';
             if (!allowedCat && mappedType === 'Categorical' && json.categorical_hierarchies?.[fieldName]?.mapping) {
               allowedCat = Object.keys(json.categorical_hierarchies[fieldName].mapping).join(',');
             }
 
             newFields.push({
-              id: `import_${Math.random().toString(36).substr(2, 9)}`,
+              id: ruleItem?.id || `import_${idx}_${Math.random().toString(36).substring(2, 9)}`,
               fieldName: fieldName,
               fieldType: mappedType,
-              // 🌟 核心修正：只要是 Text 就強制關閉；若是其他型態，則依據 JSON 內「是否有設定規則」來決定是否啟用
-              enabled: mappedType === 'Text' ? false : hasRule, 
-              mode: dp.mode || (dp.delta && dp.delta > 0 ? 'epsilon-delta' : 'epsilon'),
-              epsilon: dp.epsilon ?? 1.0,
-              delta: dp.delta ?? 0.0001,
-              lowerBound: dp.bounds?.lower,
-              upperBound: dp.bounds?.upper,
+              enabled: isEnabled,
+              mode: modeVal,
+              epsilon: eps,
+              delta: dlt,
+              lowerBound: lower,
+              upperBound: upper,
               allowedCategories: allowedCat,
-              maxLength: dp.max_length || undefined
+              maxLength: ruleItem?.maxLength ?? ruleObj?.maxLength
             });
           });
 
-          usePrivacyStore.setState({ dpFields: newFields });
-          messageApi.success(t('message.import_master_json_success'));
-        } 
-        else {
-          messageApi.error(t('message.import_json_format_error'));
+          newFields.sort((a, b) => {
+            const idxA = columnIndexMap.has(a.fieldName) ? columnIndexMap.get(a.fieldName)! : 999;
+            const idxB = columnIndexMap.has(b.fieldName) ? columnIndexMap.get(b.fieldName)! : 999;
+            return idxA - idxB;
+          });
+
+          // 🌟 拔除最後一個萬惡的 any！改用嚴謹的型別斷言
+          if (json.preprocessing_rules) {
+            useWorkspaceStore.setState({ 
+              preprocessingRules: json.preprocessing_rules as Record<string, { action: string; param: string }>
+            });
+          }
+
+          const globalDelta = json.privacy_targets?.differential_privacy?.global_delta ?? json.privacy_targets?.differential_privacy?.global_target_delta;
+          const globalEps = json.privacy_targets?.differential_privacy?.global_epsilon ?? json.privacy_targets?.differential_privacy?.budget_limit;
+          
+          if (globalDelta !== undefined) useWorkspaceStore.setState({ targetDelta: globalDelta });
+          if (globalEps !== undefined) useWorkspaceStore.setState({ budgetLimitEpsilon: globalEps });
+
+          useWorkspaceStore.setState({ dpFields: newFields });
+          messageApi.success(t('message.import_master_json_success', '成功匯入隱私設定檔！'));
+        } else {
+          messageApi.error(t('message.import_json_format_error', 'JSON 格式不符合規範！'));
         }
-      } catch {
-        messageApi.error(t('message.import_json_error'));
+      } catch (error) {
+        console.error("JSON Import Error:", error);
+        messageApi.error(t('message.import_json_error', '解析 JSON 檔案失敗！'));
       } finally {
         if (fileInputRef.current) fileInputRef.current.value = ''; 
       }
@@ -268,8 +318,8 @@ export default function DifferentialPrivacyMapping() {
       return { ...f, enabled, fieldType: type !== 'Unknown' ? type : f.fieldType };
     });
     
-    usePrivacyStore.setState({ dpFields: updatedFields });
-    messageApi.success(t('message.apply_recommend_dp_success'));
+    useWorkspaceStore.setState({ dpFields: updatedFields });
+    messageApi.success(t('message.apply_recommend_dp_success', '已成功套用智慧推薦設定！'));
   };
 
   const addField = () => {
@@ -282,16 +332,16 @@ export default function DifferentialPrivacyMapping() {
       epsilon: 1.0,
       delta: 0.0001
     };
-    usePrivacyStore.setState({ dpFields: [...dpFields, newField] });
+    useWorkspaceStore.setState({ dpFields: [...dpFields, newField] });
   };
 
   const removeField = (id: string) => {
-    usePrivacyStore.setState({ dpFields: dpFields.filter(f => f.id !== id) });
+    useWorkspaceStore.setState({ dpFields: dpFields.filter(f => f.id !== id) });
   };
 
   const fieldColumns = [
     {
-      title: t('step2.col_name'),
+      title: t('step2.col_name', '欄位名稱'),
       dataIndex: 'fieldName',
       key: 'fieldName',
       width: '16%',
@@ -300,7 +350,7 @@ export default function DifferentialPrivacyMapping() {
           <Input 
             value={text} 
             onChange={(e) => updateFieldLocal(record.id, 'fieldName', e.target.value)}
-            placeholder={t('step2.ph_eg_salary')}
+            placeholder={t('step2.ph_eg_salary', '例：salary')}
             status={record.enabled && (!text || !text.trim()) ? 'error' : ''}
             style={{ width: '100%', background: 'transparent', borderRadius: '6px', textOverflow: 'ellipsis' }}
           />
@@ -308,7 +358,7 @@ export default function DifferentialPrivacyMapping() {
       ),
     },
     {
-      title: t('step2.data_type'),
+      title: t('step2.data_type', '資料型態'),
       dataIndex: 'fieldType',
       key: 'fieldType',
       width: '14%',
@@ -316,10 +366,10 @@ export default function DifferentialPrivacyMapping() {
         <Select
           style={{ width: '100%' }}
           value={type === 'Unknown' ? null : type}
-          placeholder={t('step2.ph_select')}
+          placeholder={t('step2.ph_select', '請選擇')}
           onChange={(val) => {
             const newType = val as 'Numeric' | 'Categorical' | 'Text';
-            usePrivacyStore.setState(state => ({
+            useWorkspaceStore.setState(state => ({
               dpFields: state.dpFields.map(f => 
                 f.id === record.id ? { ...f, fieldType: newType, enabled: newType === 'Text' ? false : f.enabled } : f
               )
@@ -328,17 +378,18 @@ export default function DifferentialPrivacyMapping() {
           disabled={!record.enabled && type !== 'Text'}
           status={record.enabled && type === 'Unknown' ? 'error' : ''}
           options={[
-            { value: 'Numeric', label: t('step2.opt_dp_numeric') },
-            { value: 'Categorical', label: t('step2.opt_dp_categorical') },
-            { value: 'Text', label: t('step2.opt_dp_text') },
+            { value: 'Numeric', label: t('step2.opt_dp_numeric', '連續數值型 (Numeric)') },
+            { value: 'Categorical', label: t('step2.opt_dp_categorical', '類別型 (Categorical)') },
+            { value: 'Text', label: t('step2.opt_dp_text', '文字/識別碼 (Text)') },
           ]}
         />
       ),
     },
     {
-      title: t('step2.apply_dp'),
+      title: t('step2.apply_dp', '套用 DP'),
       key: 'enabled',
       width: '10%',
+      // 🌟 使用 unknown，完全符合 ESLint 規範
       render: (_: unknown, record: DPField) => {
         const isText = record.fieldType === 'Text';
         return (
@@ -346,13 +397,13 @@ export default function DifferentialPrivacyMapping() {
             <Switch 
               checked={record.enabled} 
               onChange={() => {
-                usePrivacyStore.setState(state => ({
+                useWorkspaceStore.setState(state => ({
                   dpFields: state.dpFields.map(f => f.id === record.id ? { ...f, enabled: !f.enabled } : f)
                 }));
               }}
               disabled={isText}
-              checkedChildren={t('step2.enable')} 
-              unCheckedChildren={t('step2.disable')}
+              checkedChildren={t('step2.enable', '開啟')} 
+              unCheckedChildren={t('step2.disable', '關閉')}
             />
             {isText && (
               <Tooltip title={t('step2.text_dp_disabled_tooltip', '文本型資料無法套用差分隱私，請改用上方的「資料預先清洗」策略。')}>
@@ -366,14 +417,15 @@ export default function DifferentialPrivacyMapping() {
     {
       title: (
         <Space>
-          {t('step2.dp_param_settings')}
-          <Tooltip title={t('step2.dp_param_tooltip')}>
+          {t('step2.dp_param_settings', '邊界與規則設定')}
+          <Tooltip title={t('step2.dp_param_tooltip', '數值型請填寫上下限；類別型請填寫允許的類別清單 (以逗號分隔)。')}>
             <InfoCircleOutlined style={{ color: token.colorTextDescription }} />
           </Tooltip>
         </Space>
       ),
       key: 'bounds',
       width: '55%',
+      // 🌟 使用 unknown，完全符合 ESLint 規範
       render: (_: unknown, record: DPField) => {
         if (!record.enabled) return <span style={{ color: token.colorTextDescription }}>-</span>;
         
@@ -381,8 +433,8 @@ export default function DifferentialPrivacyMapping() {
           const lower = record.lowerBound;
           const upper = record.upperBound;
           
-          const isLowerMissing = lower === undefined || lower === null;
-          const isUpperMissing = upper === undefined || upper === null;
+          const isLowerMissing = lower === undefined || lower === null || lower === '';
+          const isUpperMissing = upper === undefined || upper === null || upper === '';
           const isOrderInvalid = !isLowerMissing && !isUpperMissing && Number(lower) >= Number(upper);
 
           const isLowerError = isLowerMissing || isOrderInvalid;
@@ -396,16 +448,16 @@ export default function DifferentialPrivacyMapping() {
             >
               <Space.Compact style={{ width: '100%' }}>
                 <InputNumber
-                  placeholder={t('step2.ph_lower_bound')}
-                  value={record.lowerBound}
+                  placeholder={t('step2.ph_lower_bound', '下限 (Lower Bound)')}
+                  value={record.lowerBound as number}
                   step="any"
                   onChange={(val) => updateFieldLocal(record.id, 'lowerBound', val === null ? undefined : val)}
                   style={{ width: '50%', background: 'transparent' }}
                   status={isLowerError ? 'error' : ''}
                 />
                 <InputNumber
-                  placeholder={t('step2.ph_upper_bound')}
-                  value={record.upperBound}
+                  placeholder={t('step2.ph_upper_bound', '上限 (Upper Bound)')}
+                  value={record.upperBound as number}
                   step="any"
                   onChange={(val) => updateFieldLocal(record.id, 'upperBound', val === null ? undefined : val)}
                   style={{ width: '50%', background: 'transparent' }}
@@ -419,7 +471,7 @@ export default function DifferentialPrivacyMapping() {
         if (record.fieldType === 'Categorical') {
           return (
             <Input
-              placeholder={t('step2.ph_allowed_categories')}
+              placeholder={t('step2.ph_allowed_categories', '允許類別，以逗號分隔 (例如: A,B,C)')}
               value={record.allowedCategories}
               onChange={(e) => updateFieldLocal(record.id, 'allowedCategories', e.target.value)}
               status={!record.allowedCategories || record.allowedCategories.trim() === '' ? 'error' : ''}
@@ -431,7 +483,7 @@ export default function DifferentialPrivacyMapping() {
         if (record.fieldType === 'Text') {
           return (
             <InputNumber
-              placeholder={t('step2.ph_max_length')}
+              placeholder={t('step2.ph_max_length', '最大長度限制')}
               value={record.maxLength}
               onChange={(val) => updateFieldLocal(record.id, 'maxLength', val === null ? undefined : val)}
               status={!record.maxLength || record.maxLength <= 0 ? 'error' : ''}
@@ -441,14 +493,15 @@ export default function DifferentialPrivacyMapping() {
           );
         }
 
-        return <span style={{ color: token.colorError }}>{t('step2.select_type_first')}</span>;
+        return <span style={{ color: token.colorError }}>{t('step2.select_type_first', '請先選擇資料型態')}</span>;
       },
     },
     {
-      title: t('step2.action'),
+      title: t('step2.action', '操作'),
       key: 'action',
       width: '5%',
       align: 'center' as const,
+      // 🌟 使用 unknown，完全符合 ESLint 規範
       render: (_: unknown, record: DPField) => (
         <Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeField(record.id)} />
       ),
@@ -461,10 +514,10 @@ export default function DifferentialPrivacyMapping() {
     <Card variant="borderless" style={{ background: 'transparent', padding: 0 }}>
       {!validationStatus.isValid && (
         <Alert
-          title={t('step2.incomplete_setting')}
+          title={t('step2.incomplete_setting', '欄位設定尚未完整')}
           description={
             <span style={{ fontSize: '13px' }}>
-              {t('step2.incomplete_desc_prefix')} <strong>{validationStatus.errorCount}</strong> {t('step2.incomplete_desc_suffix')} (包含未填欄位或下限大於等於上限)
+              {t('step2.incomplete_desc_prefix', '目前共有')} <strong>{validationStatus.errorCount}</strong> {t('step2.incomplete_desc_suffix', '個欄位設定未完成')} (包含未填欄位或下限大於等於上限)
             </span>
           }
           type="error"
@@ -485,26 +538,26 @@ export default function DifferentialPrivacyMapping() {
               onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} 
               style={{ display: 'none' }} 
             />
-            <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>{t('step2.btn_import')}</Button>
+            <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>{t('step2.btn_import', '匯入 JSON 設定檔')}</Button>
           </Space>
         }
         items={[
           {
             key: '1', 
-            label: <span style={{ padding: '0 8px' }}><DatabaseOutlined /> {t('step2.tab_dp_mapping')}</span>,
+            label: <span style={{ padding: '0 8px' }}><DatabaseOutlined /> {t('step2.tab_dp_mapping', '差分隱私欄位對應')}</span>,
             children: (
               <div style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: '8px', padding: '16px 20px', background: isDark ? '#141414' : '#fafafa' }}>
                 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <div style={{ fontWeight: 600, color: token.colorText }}>{t('step2.col_settings_list')}</div>
+                  <div style={{ fontWeight: 600, color: token.colorText }}>{t('step2.col_settings_list', '欄位參數設定清單')}</div>
                   <Button type="primary" icon={<ThunderboltOutlined />} onClick={handleApplyRecommendations} style={{ background: '#4F46E5', border: 'none', borderRadius: '6px' }}>
-                    {t('step2.btn_apply_recommend')}
+                    {t('step2.btn_apply_recommend', '自動智慧推薦')}
                   </Button>
                 </div>
                 
                 <div style={{ background: isDark ? '#1d1d1d' : '#ffffff', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${token.colorBorderSecondary}` }}>
                   <Table 
-                    dataSource={dpFields as unknown as DPField[]} 
+                    dataSource={dpFields} 
                     columns={fieldColumns} 
                     rowKey="id" 
                     pagination={false} 
@@ -516,7 +569,7 @@ export default function DifferentialPrivacyMapping() {
                 </div>
                 
                 <Button type="dashed" block icon={<PlusOutlined />} onClick={addField} style={{ marginTop: '16px' }}>
-                  {t('step2.btn_add_field')}
+                  {t('step2.btn_add_field', '新增自訂欄位')}
                 </Button>
               </div>
             )
@@ -532,7 +585,7 @@ export default function DifferentialPrivacyMapping() {
               key: '1', 
               label: (
                 <span style={{ fontWeight: 600, color: token.colorTextSecondary }}>
-                  <CodeOutlined style={{ marginRight: '6px' }} /> {t('step2.json_preview')}
+                  <CodeOutlined style={{ marginRight: '6px' }} /> {t('step2.json_preview', '即時設定檔預覽 (JSON Preview)')}
                 </span>
               ), 
               children: ( 

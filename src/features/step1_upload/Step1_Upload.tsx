@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { Card, Upload, Table, Alert, Button, Space, Typography, Popconfirm, theme, App as AntdApp, Radio, Row, Col, Spin } from 'antd';
 import { InboxOutlined, FileExcelOutlined, DeleteOutlined, CheckCircleFilled, SafetyCertificateOutlined, CodeSandboxOutlined } from '@ant-design/icons';
 import Papa from 'papaparse';
-import { usePrivacyStore } from '../../store/usePrivacyStore';
 import { useTranslation } from 'react-i18next';
+
+// 🌟 1. 改為引入拆分後的 Workspace Store
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
 const { Dragger } = Upload;
 const { Text, Title } = Typography;
@@ -15,15 +17,17 @@ export default function Step1_Upload() {
   const { message: messageApi } = AntdApp.useApp();
   const { t } = useTranslation();
   
-  const columns = usePrivacyStore((state) => state.columns);
-  const previewData = usePrivacyStore((state) => state.previewData);
-  const fileName = usePrivacyStore((state) => state.fileName as string | undefined);
-  const setFileData = usePrivacyStore((state) => state.setFileData);
-  const clearFileData = usePrivacyStore((state) => state.clearFileData as () => void);
+  // 🌟 2. 從 Workspace Store 取得對應狀態與操作
+  const columns = useWorkspaceStore((state) => state.columns);
+  const previewData = useWorkspaceStore((state) => state.previewData);
+  const fileName = useWorkspaceStore((state) => state.fileName);
+  // 注意：確保你的 useWorkspaceStore 中已經補上了 setFileData 與 clearFileData
+  const setFileData = useWorkspaceStore((state) => state.setFileData);
+  const clearFileData = useWorkspaceStore((state) => state.clearFileData);
   
-  const privacyMode = usePrivacyStore((state) => state.privacyMode);
-  const setPrivacyMode = usePrivacyStore((state) => state.setPrivacyMode);
-  const nextStep = usePrivacyStore((state) => state.nextStep);
+  const privacyMode = useWorkspaceStore((state) => state.privacyMode);
+  const setPrivacyMode = useWorkspaceStore((state) => state.setPrivacyMode);
+  const nextStep = useWorkspaceStore((state) => state.nextStep);
   
   const [isUploading, setIsUploading] = useState(false);
 
@@ -40,20 +44,18 @@ export default function Step1_Upload() {
 
     setIsUploading(true);
     
+    // 🌟 3. 效能優化：啟用 Web Worker 並限制讀取筆數
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      worker: true,       // 移至背景執行緒解析，徹底解決 UI 凍結問題
+      preview: 1000,      // 前端僅需預覽設定，限制讀取前 1000 筆防止記憶體溢出
       complete: (results) => {
         const parsedColumns = results.meta.fields || [];
         const rawData = results.data as Record<string, unknown>[];
-        const totalCount = rawData.length;
 
-        const SAFE_PREVIEW_LIMIT = 1000;
-        const safeData = totalCount > SAFE_PREVIEW_LIMIT 
-          ? rawData.slice(0, SAFE_PREVIEW_LIMIT) 
-          : rawData;
-
-        setFileData(parsedColumns, safeData, file.name);
+        // 因為已經使用了 preview，rawData 保證在安全數量內，無須再次 slice
+        setFileData(parsedColumns, rawData, file.name);
         
         if (!privacyMode) setPrivacyMode('k-anonymity');
         

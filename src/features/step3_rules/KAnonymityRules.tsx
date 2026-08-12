@@ -2,34 +2,40 @@ import { useState, useEffect } from 'react';
 import { Alert, Card, Slider, Row, Col, Divider, InputNumber, theme, Select, Button, Tag } from 'antd';
 import { LockOutlined, PlusOutlined, DeleteOutlined, WarningOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
-import { usePrivacyStore } from '../../store/usePrivacyStore';
 import { useTranslation } from 'react-i18next';
+
+// 🌟 1. 改用拆分後的 Store
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+
+// 🌟 2. 宣告 ECharts Tooltip 參數的精準介面，取代 any
+interface TooltipParams {
+  name: string;
+  seriesName?: string;
+  value: number[];
+  data: number[];
+}
 
 export default function KAnonymityRules() {
   const { token } = theme.useToken();
   const isDark = token.colorBgContainer !== '#ffffff';
   const { t } = useTranslation();
 
-  const { 
-    kValue, 
-    maxSuppression, 
-    lValue, 
-    tValue, 
-    suppressionMethod, 
-    limitExceededAction,
-    columns = [], 
-    columnRoles = {},
-    updateStep3Params,
-    setStepValidation // 🌟 引入防呆驗證函數
-  } = usePrivacyStore();
+  // 🌟 3. 改從 WorkspaceStore 中讀取狀態
+  const kValue = useWorkspaceStore((state) => state.kValue);
+  const maxSuppression = useWorkspaceStore((state) => state.maxSuppression);
+  const lValue = useWorkspaceStore((state) => state.lValue);
+  const tValue = useWorkspaceStore((state) => state.tValue);
+  const suppressionMethod = useWorkspaceStore((state) => state.suppressionMethod);
+  const limitExceededAction = useWorkspaceStore((state) => state.limitExceededAction);
+  const columns = useWorkspaceStore((state) => state.columns) || [];
+  const columnRoles = useWorkspaceStore((state) => state.columnRoles) || {};
+  const setStepValidation = useWorkspaceStore((state) => state.setStepValidation);
 
-  // 🌟 核心防呆邏輯：即時監聽參數變化，如果不合規，立即鎖定「下一步」
   useEffect(() => {
     if (kValue === undefined || kValue === null || kValue < 2) {
       setStepValidation(false, t('step3.error_k_too_small', 'K 值必須大於等於 2（K=1 等同於沒有匿名效果）。'));
       return;
     }
-    // 🌟 新增：K 與 L 的邏輯衝突驗證 (這在 UI 上是自由的，有可能發生)
     if (kValue < lValue) {
       setStepValidation(false, t('step3.error_k_less_than_l', `參數衝突：要求資料具備 ${lValue} 種多樣性 (L=${lValue})，但群組大小僅有 ${kValue} (K=${kValue})，這是數學上無法達成的。請確保 K ≥ L。`));
       return;
@@ -39,16 +45,16 @@ export default function KAnonymityRules() {
       return;
     }
     
-    // 參數全部通過驗證，解鎖「下一步」
     setStepValidation(true, null);
   }, [kValue, lValue, tValue, maxSuppression, setStepValidation, t]);
 
-  const handleKValueChange = (val: number | null) => updateStep3Params({ kValue: val ?? 2 });
-  const handleLValueChange = (val: number | null) => updateStep3Params({ lValue: val ?? 2 });
-  const handleTValueChange = (val: number | null) => updateStep3Params({ tValue: val ?? 0.15 });
-  const handleMaxSuppressionChange = (val: number | null) => updateStep3Params({ maxSuppression: val ?? 0 });
-  const handleSuppressionMethodChange = (val: 'row' | 'cell') => updateStep3Params({ suppressionMethod: val });
-  const handleLimitExceededActionChange = (val: string) => updateStep3Params({ limitExceededAction: val });
+  // 🌟 4. 利用 setState 直接更新屬性
+  const handleKValueChange = (val: number | null) => useWorkspaceStore.setState({ kValue: val ?? 2 });
+  const handleLValueChange = (val: number | null) => useWorkspaceStore.setState({ lValue: val ?? 2 });
+  const handleTValueChange = (val: number | null) => useWorkspaceStore.setState({ tValue: val ?? 0.15 });
+  const handleMaxSuppressionChange = (val: number | null) => useWorkspaceStore.setState({ maxSuppression: val ?? 0 });
+  const handleSuppressionMethodChange = (val: string) => useWorkspaceStore.setState({ suppressionMethod: val });
+  const handleLimitExceededActionChange = (val: string) => useWorkspaceStore.setState({ limitExceededAction: val });
 
   const filteredQiColumns = columns.filter(col => {
     const role = (columnRoles[col] || '').toLowerCase();
@@ -98,19 +104,19 @@ export default function KAnonymityRules() {
       backgroundColor: 'transparent',
       tooltip: { 
         trigger: 'item', 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        formatter: (params: any) => {
+        // 🌟 5. 套用精準型別，徹底移除 eslint-disable any
+        formatter: (params: TooltipParams) => {
           if (params.name === t('step3.current_setting')) {
             return `<div style="font-weight:bold;margin-bottom:4px;color:#faad14;">${t('step3.chart_eval')}</div>
-                    ${t('step3.chart_utility')}${params.data.coord[0]}%<br/>
-                    ${t('step3.chart_privacy')}${params.data.coord[1]}%<br/>
+                    ${t('step3.chart_utility')}${params.value[0]}%<br/>
+                    ${t('step3.chart_privacy')}${params.value[1]}%<br/>
                     <span style="font-size: 11px; color: #8c8c8c;">${t('step3.chart_distance')}${(optimalX - currentX).toFixed(1)}%</span>`;
           }
           return params.seriesName === t('step3.chart_pareto_front') 
             ? `${t('step3.chart_pareto_limit')}<br/>${t('step3.chart_util_short')} ${params.data[0]}% | ${t('step3.chart_priv_short')} ${params.data[1]}%` : '';
         } 
       },
-      grid: { top: '18%', left: '12%', right: '25%', bottom: '15%', containLabel: true },
+      grid: { top: '15%', left: '8%', right: '15%', bottom: '12%', containLabel: true },
       xAxis: { 
         type: 'value', min: 0, max: 100, name: t('step3.chart_x_axis'), nameLocation: 'center', nameGap: 30, 
         nameTextStyle: { color: token.colorTextSecondary, fontWeight: 500 }, 
@@ -125,25 +131,54 @@ export default function KAnonymityRules() {
       },
       series: [
         { 
-          name: t('step3.chart_pareto_front'), type: 'line', smooth: true, data: paretoLineData, 
-          lineStyle: { color: isDark ? '#5c6bc0' : '#3f51b5', width: 2, type: 'dashed' }, showSymbol: false 
+          name: t('step3.chart_pareto_front'), 
+          type: 'line', 
+          smooth: true, 
+          data: paretoLineData, 
+          lineStyle: { color: isDark ? '#5c6bc0' : '#3f51b5', width: 3 }, 
+          showSymbol: false,
+          areaStyle: {
+            color: {
+              type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: isDark ? 'rgba(92, 107, 192, 0.4)' : 'rgba(63, 81, 181, 0.4)' },
+                { offset: 1, color: isDark ? 'rgba(92, 107, 192, 0.05)' : 'rgba(63, 81, 181, 0.05)' }
+              ]
+            }
+          }
         },
         {
-          name: t('step3.current_status'), type: 'scatter', data: [],
+          name: 'Extremes',
+          type: 'scatter', 
+          data: [],
           markPoint: {
             symbol: 'circle',
             data: [
               { coord: [15, 95], name: t('step3.extreme_privacy'), itemStyle: { color: '#722ed1' }, symbolSize: 8, label: { show: true, position: 'top', formatter: t('step3.extreme_privacy'), color: token.colorTextDescription, fontSize: 11 } }, 
-              { coord: [100, 15], name: t('step3.extreme_utility'), itemStyle: { color: '#13c2c2' }, symbolSize: 8, label: { show: true, position: 'right', offset: [6, 0], formatter: t('step3.extreme_utility'), color: token.colorTextDescription, fontSize: 11 } }, 
-              { 
-                coord: currentPoint, 
-                name: t('step3.current_setting'), 
-                itemStyle: { color: '#faad14', borderColor: '#fff', borderWidth: 2, shadowBlur: 10, shadowColor: 'rgba(250, 173, 20, 0.5)' }, 
-                symbolSize: 16, 
-                label: { show: true, position: 'top', formatter: `${t('step3.current_setting')}\nU:${currentPoint[0]}% P:${currentPoint[1]}%`, fontWeight: 'bold', color: '#faad14', backgroundColor: isDark ? '#141414' : '#fff', padding: [4, 6], borderRadius: 4, borderWidth: 1, borderColor: token.colorBorder, lineHeight: 16 } 
-              }
+              { coord: [100, 15], name: t('step3.extreme_utility'), itemStyle: { color: '#13c2c2' }, symbolSize: 8, label: { show: true, position: 'right', offset: [6, 0], formatter: t('step3.extreme_utility'), color: token.colorTextDescription, fontSize: 11 } }
             ]
           }
+        },
+        {
+          name: t('step3.current_status'),
+          type: 'effectScatter',
+          coordinateSystem: 'cartesian2d',
+          data: [
+            { 
+              value: currentPoint, 
+              name: t('step3.current_setting'),
+              itemStyle: { color: '#faad14', shadowBlur: 10, shadowColor: 'rgba(250, 173, 20, 0.8)' }, 
+              symbolSize: 18, 
+              label: { 
+                show: true, position: 'top', 
+                formatter: `${t('step3.current_setting')}\nU:${currentPoint[0]}% P:${currentPoint[1]}%`, 
+                fontWeight: 'bold', color: '#faad14', 
+                backgroundColor: isDark ? '#141414' : '#fff', 
+                padding: [4, 6], borderRadius: 4, borderWidth: 1, borderColor: token.colorBorder, lineHeight: 16 
+              } 
+            }
+          ],
+          rippleEffect: { brushType: 'stroke', scale: 3 }
         }
       ]
     };
@@ -153,7 +188,8 @@ export default function KAnonymityRules() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <Alert title={t('step3.k_params_title')} description={t('step3.k_params_desc')} type="info" showIcon />
       <Row gutter={24} align="stretch">
-        <Col span={10}>
+        
+        <Col span={8}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', paddingRight: '4px' }}>
             <Card title={<span style={{ fontWeight: 600 }}><LockOutlined /> {t('step3.privacy_settings')}</span>} variant="borderless" style={{ background: token.colorBgContainer, boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)', flex: 1 }}>
               
@@ -238,7 +274,8 @@ export default function KAnonymityRules() {
             </Card>
           </div>
         </Col>
-        <Col span={14}>
+
+        <Col span={16}>
           <Card title={t('step3.solution_space')} variant="borderless" style={{ background: token.colorBgContainer, boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)', height: '100%' }}>
             <ReactECharts option={getKAnonymityChartOption()} style={{ height: '420px', width: '100%' }} theme={isDark ? 'dark' : 'light'} />
           </Card>

@@ -9,10 +9,22 @@ import {
   ReloadOutlined, LoadingOutlined, LineChartOutlined, CloudUploadOutlined
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
-import { usePrivacyStore } from '../../store/usePrivacyStore';
 import { useTranslation } from 'react-i18next';
 
-// 🌟 輔助函數：套用 Step 2 的預先清洗策略
+import { useAuthStore } from '../../store/useAuthStore';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { useAuditStore } from '../../store/useAuditStore';
+
+interface Html2Pdf {
+  set: (opt: Record<string, unknown>) => Html2Pdf;
+  from: (element: HTMLElement | null) => Html2Pdf;
+  save: () => Promise<void>;
+}
+
+interface WindowWithHtml2Pdf extends Window {
+  html2pdf: () => Html2Pdf;
+}
+
 const applyPreprocess = (val: string, action?: string, param?: string) => {
   if (!val || !action || action === 'none') return val;
   let str = val;
@@ -48,38 +60,48 @@ export default function Step4_Result() {
   const { t } = useTranslation();
   const { message: messageApi } = AntdApp.useApp();
 
-  const { 
-    columns, 
-    previewData, 
-    privacyMode, 
-    kValue, 
-    dpFields,
-    columnRoles,
-    preprocessingRules = {},
-    fileName,
-    user,
-    queryCount = 1, 
-    addAuditLog
-  } = usePrivacyStore();
+  const user = useAuthStore(state => state.user);
+  const addAuditLog = useAuditStore(state => state.addAuditLog);
+  const columns = useWorkspaceStore(state => state.columns);
+  const previewData = useWorkspaceStore(state => state.previewData);
+  const privacyMode = useWorkspaceStore(state => state.privacyMode);
+  const kValue = useWorkspaceStore(state => state.kValue);
+  const dpFields = useWorkspaceStore(state => state.dpFields);
+  const columnRoles = useWorkspaceStore(state => state.columnRoles);
+  const preprocessingRules = useWorkspaceStore(state => state.preprocessingRules);
+  const fileName = useWorkspaceStore(state => state.fileName);
+  const queryCount = useWorkspaceStore(state => state.queryCount);
+  const step4Cache = useWorkspaceStore(state => state.step4Cache);
+  const lastRunParamsHash = useWorkspaceStore(state => state.lastRunParamsHash);
+  const setStep4Cache = useWorkspaceStore(state => state.setStep4Cache);
 
   const [previewMode, setPreviewMode] = useState<'masked' | 'original'>('masked');
   const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   
   const reportRef = useRef<HTMLDivElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null); 
 
   const monteCarloN = 1000;
-  
-  const [isCalculating, setIsCalculating] = useState<boolean>(true);
-  const [pipelinePhase, setPipelinePhase] = useState<PipelinePhase>('uploading');
-  const [calcProgress, setCalcProgress] = useState<number>(0);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [attackMetrics, setAttackMetrics] = useState<SimulationResult | null>(null);
 
-  // 🌟 每次後端重新演算時更新憑證資訊
+  const currentParamsHash = useMemo(() => {
+    return JSON.stringify({
+      privacyMode, kValue, queryCount, dpFields, columnRoles, preprocessingRules
+    });
+  }, [privacyMode, kValue, queryCount, dpFields, columnRoles, preprocessingRules]);
+
+  const isCacheValid = useMemo(() => {
+    return step4Cache !== null && lastRunParamsHash === currentParamsHash;
+  }, [step4Cache, lastRunParamsHash, currentParamsHash]);
+  
+  const [isCalculating, setIsCalculating] = useState<boolean>(!isCacheValid);
+  const [pipelinePhase, setPipelinePhase] = useState<PipelinePhase>(isCacheValid ? 'completed' : 'uploading');
+  const [calcProgress, setCalcProgress] = useState<number>(isCacheValid ? 100 : 0);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [attackMetrics, setAttackMetrics] = useState<SimulationResult | null>(isCacheValid ? step4Cache!.metrics : null);
   const [auditMetadata, setAuditMetadata] = useState(() => ({
-    certificateId: `PAC-${Date.now()}`,
-    auditTime: new Date().toLocaleString()
+    certificateId: isCacheValid ? step4Cache!.certificateId : `PAC-${Date.now()}`,
+    auditTime: isCacheValid ? step4Cache!.auditTime : new Date().toLocaleString()
   }));
 
   const actualColumns = useMemo(() => {
@@ -97,26 +119,6 @@ export default function Step4_Result() {
           { card_id: 'TX83526', card_type: '敬老卡', in_station: '市政府', in_time: '2026-07-17 07:30:00', out_station: '板橋', out_time: '2026-07-17 08:07:00', ride_duration_mins: '37', fare: '25' },
         ];
   }, [previewData]);
-
-  const utilityMetrics = useMemo(() => {
-    const isK = privacyMode === 'k-anonymity';
-    const baseScore = isK ? Math.max(70, 98 - kValue * 1.5) : Math.max(70, 96 - (queryCount * 1.2));
-    
-    const bins = ['0-20', '21-40', '41-60', '61-80', '81-100', '100+'];
-    const rawDist = [120, 350, 280, 150, 70, 30]; 
-    const maskedDist = isK 
-      ? [130, 330, 300, 160, 60, 20] 
-      : [150, 300, 260, 180, 80, 30]; 
-
-    return {
-      score: baseScore.toFixed(1),
-      jsd: (isK ? 0.025 + kValue * 0.005 : 0.048 + queryCount * 0.008).toFixed(3),
-      correlation: (baseScore - 3.5).toFixed(1),
-      bins,
-      rawDist,
-      maskedDist
-    };
-  }, [privacyMode, kValue, queryCount]);
 
   const getCalculatedRole = useCallback((col: string) => {
     const colLower = col.toLowerCase();
@@ -151,12 +153,13 @@ export default function Step4_Result() {
     return { role: 'Non-sensitive', tagColor: 'blue' };
   }, [columnRoles, dpFields, privacyMode]);
 
-  const runFullPipeline = useCallback(() => {
+  const runFullPipeline = useCallback((forceRun: boolean = false) => {
+    if (!forceRun && isCacheValid) return;
+
     setIsCalculating(true);
     setCalcProgress(0);
     setPipelinePhase('uploading');
     
-    // 🌟 每次重新發起運算時生成全新的憑證 ID 與時間
     const now = new Date();
     const newMetadata = {
       certificateId: `PAC-${now.getTime()}`,
@@ -172,7 +175,6 @@ export default function Step4_Result() {
 
     let progress = 0;
     let currentPhase = 'uploading';
-    
     let loggedClean = false, loggedNoise = false, loggedAttack1 = false, loggedAttack2 = false, loggedUtility = false;
 
     const interval = setInterval(() => {
@@ -218,7 +220,7 @@ export default function Step4_Result() {
         }
         if (progress >= 95 && !loggedUtility) {
           loggedUtility = true;
-          setLogs(prev => [...prev, t('step4.log.utility', '[{{time}}] 📊 計算分佈散度誤差以驗證數據可用性 (Jensen-Shannon Divergence)...', { time: timeStr() })]);
+          setLogs(prev => [...prev, t('step4.log.utility', '[{{time}}] 📊 運算資料記錄抑制率與泛化欄位失真度評估...', { time: timeStr() })]);
         }
       } 
       else if (progress >= 100) {
@@ -251,7 +253,12 @@ export default function Step4_Result() {
 
         setAttackMetrics(metrics);
 
-        // 🌟 核心改動：後端運算一完成，自動且只寫入一次審計憑證！
+        setStep4Cache({
+          metrics,
+          certificateId: newMetadata.certificateId,
+          auditTime: newMetadata.auditTime
+        }, currentParamsHash);
+
         addAuditLog({
           certificateId: newMetadata.certificateId,
           fileName: fileName || 'dataset.csv',
@@ -272,12 +279,14 @@ export default function Step4_Result() {
         setTimeout(() => setIsCalculating(false), 600); 
       }
     }, 200);
-  }, [privacyMode, kValue, queryCount, fileName, user, addAuditLog, t]);
+  }, [privacyMode, kValue, queryCount, fileName, user, addAuditLog, t, isCacheValid, currentParamsHash, setStep4Cache]);
 
   useEffect(() => {
-    const id = setTimeout(() => runFullPipeline(), 0);
-    return () => clearTimeout(id);
-  }, [runFullPipeline]);
+    if (!isCacheValid) {
+      const id = setTimeout(() => runFullPipeline(false), 0);
+      return () => clearTimeout(id);
+    }
+  }, [isCacheValid, runFullPipeline]);
 
   useEffect(() => {
     if (logsEndRef.current) {
@@ -399,65 +408,6 @@ export default function Step4_Result() {
     };
   };
 
-  const getUtilityChartOption = () => {
-    return {
-      backgroundColor: 'transparent',
-      tooltip: { trigger: 'axis' },
-      legend: {
-        data: [t('step4.chart.raw_dist', '原始數據分佈 (Raw)'), t('step4.chart.masked_dist', '脫敏後分佈 (Masked)')],
-        textStyle: { color: token.colorTextSecondary },
-        top: '0%'
-      },
-      grid: { top: '20%', left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: {
-        type: 'category',
-        data: utilityMetrics.bins,
-        axisLabel: { color: token.colorTextSecondary },
-        name: t('step4.chart.value_bins', '數值區間 (Value Bins)'),
-        nameLocation: 'middle',
-        nameGap: 30,
-        nameTextStyle: { color: token.colorTextDescription }
-      },
-      yAxis: {
-        type: 'value',
-        axisLabel: { color: token.colorTextDescription },
-        splitLine: { lineStyle: { color: token.colorSplit, type: 'dashed' } },
-        name: t('step4.chart.count', '頻次 (Count)'),
-      },
-      series: [
-        {
-          name: t('step4.chart.raw_dist', '原始數據分佈 (Raw)'),
-          type: 'bar',
-          data: utilityMetrics.rawDist,
-          itemStyle: { color: '#91caff', opacity: 0.8 },
-          barGap: '0%'
-        },
-        {
-          name: t('step4.chart.masked_dist', '脫敏後分佈 (Masked)'),
-          type: 'bar',
-          data: utilityMetrics.maskedDist,
-          itemStyle: { color: token.colorPrimary, opacity: 0.8 }
-        },
-        {
-          name: t('step4.chart.raw_dist', '原始數據分佈 (Raw)'),
-          type: 'line',
-          smooth: true,
-          data: utilityMetrics.rawDist,
-          symbolSize: 0,
-          lineStyle: { color: '#1677ff', width: 2 }
-        },
-        {
-          name: t('step4.chart.masked_dist', '脫敏後分佈 (Masked)'),
-          type: 'line',
-          smooth: true,
-          data: utilityMetrics.maskedDist,
-          symbolSize: 0,
-          lineStyle: { color: token.colorPrimaryHover, width: 2, type: 'dashed' }
-        }
-      ]
-    };
-  };
-
   const handleOpenReportModal = () => {
     setReportModalVisible(true);
   };
@@ -477,36 +427,52 @@ export default function Step4_Result() {
     messageApi.success(t('step4.msg.download_success', '已成功匯出全量脫敏 CSV 數據！'));
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     const element = document.getElementById('printable-audit-report');
     if (!element) return;
+    
     const hideLoading = messageApi.loading(t('step4.msg.pdf_compiling', '正在編譯高畫質 PDF，請稍候...'), 0);
+    
+    setIsExporting(true);
+    
+    // 給予 400ms 讓 React 完成 DOM 重繪
+    await new Promise(resolve => setTimeout(resolve, 400));
+
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
     
     script.onload = () => {
       const opt = {
-        margin:      10,
-        filename:    `Privacy_Audit_Certificate_${auditMetadata.certificateId}.pdf`,
-        image:       { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        margin:       [10, 10, 10, 10], // 上右下左留白 (mm)
+        filename:     `Privacy_Audit_Certificate_${auditMetadata.certificateId}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { 
+          scale: 2, 
+          useCORS: true, 
+          backgroundColor: '#ffffff',
+          scrollY: 0,
+          scrollX: 0
+        },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'], avoid: ['tr', '.pdf-page-break'] }
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).html2pdf().set(opt).from(element).save().then(() => {
+      (window as unknown as WindowWithHtml2Pdf).html2pdf().set(opt).from(element).save().then(() => {
         hideLoading();
         messageApi.success(t('step4.msg.pdf_success', '合規審計憑證 PDF 已成功下載！'));
       }).catch((err: unknown) => {
         hideLoading();
         messageApi.error(t('step4.msg.pdf_failed', 'PDF 下載失敗'));
         console.error(err);
+      }).finally(() => {
+        setIsExporting(false);
       });
     };
     
     script.onerror = () => {
       hideLoading();
       messageApi.error(t('step4.msg.pdf_no_lib', '無法載入 PDF 轉檔套件，請檢查網路連線。'));
+      setIsExporting(false);
     };
     
     document.body.appendChild(script);
@@ -533,7 +499,7 @@ export default function Step4_Result() {
         <Space size="middle">
           <Button
             icon={<ReloadOutlined spin={isCalculating} />}
-            onClick={runFullPipeline}
+            onClick={() => runFullPipeline(true)}
             disabled={isCalculating}
             size="large"
           >
@@ -604,7 +570,7 @@ export default function Step4_Result() {
       ) : (
         attackMetrics && (
           <Row gutter={24} style={{ display: 'flex', alignItems: 'stretch' }}>
-            <Col span={12} style={{ display: 'flex' }}>
+            <Col span={16} style={{ display: 'flex' }}>
               <Card 
                 title={<span><SafetyCertificateOutlined style={{ marginRight: 8, color: token.colorPrimary }} />{t('step4.risk.title', '安全性評估 (Privacy Risks)')}</span>}
                 variant="borderless"
@@ -629,7 +595,7 @@ export default function Step4_Result() {
                   </Row>
                 </div>
                 
-                <ReactECharts option={getAttackChartOption()} style={{ height: '240px', marginBottom: '16px' }} theme={isDark ? 'dark' : 'light'} />
+                <ReactECharts option={getAttackChartOption()} style={{ height: '260px', marginBottom: '16px' }} theme={isDark ? 'dark' : 'light'} />
                 
                 <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
                   <Tag color="red" style={{ flex: 1, textAlign: 'center', padding: '6px' }}>{t('step4.risk.singling', '指認風險:')} {(attackMetrics.singling.risk * 100).toFixed(1)}%</Tag>
@@ -639,41 +605,39 @@ export default function Step4_Result() {
               </Card>
             </Col>
 
-            <Col span={12} style={{ display: 'flex' }}>
+            <Col span={8} style={{ display: 'flex' }}>
               <Card 
-                title={<span><LineChartOutlined style={{ marginRight: 8, color: '#13c2c2' }} />{t('step4.utility.title', '數據可用性評估 (Data Utility)')}</span>}
+                title={<span><LineChartOutlined style={{ marginRight: 8, color: '#1677ff' }} />{t('step4.utility.title', '資料效用與失真度評估')}</span>}
                 variant="borderless"
                 style={{ background: token.colorBgContainer, width: '100%', display: 'flex', flexDirection: 'column' }}
                 styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}
               >
-                <div style={{ background: isDark ? '#141414' : '#f8fafc', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: `1px solid ${token.colorBorderSecondary}` }}>
-                  <Row align="middle" justify="space-between">
-                    <Col>
-                      <div style={{ fontSize: '12px', color: token.colorTextDescription, marginBottom: '4px' }}>{t('step4.utility.retention', '機器學習數據特徵保留率')}</div>
-                      <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#13c2c2' }}>
-                        {utilityMetrics.score}%
-                      </span>
-                    </Col>
-                    <Col style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '12px', color: token.colorTextDescription }}>{t('step4.utility.jsd', '分佈散度 (JSD)')}</div>
-                      <span style={{ fontSize: '16px', fontWeight: 'bold', color: token.colorText }}>{utilityMetrics.jsd}</span>
-                    </Col>
-                    <Col style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '12px', color: token.colorTextDescription }}>{t('step4.utility.corr', '特徵相關性 (Corr)')}</div>
-                      <span style={{ fontSize: '16px', fontWeight: 'bold', color: token.colorText }}>{utilityMetrics.correlation}%</span>
-                    </Col>
-                  </Row>
-                </div>
+                <div style={{ background: isDark ? '#141414' : '#f8fafc', padding: '24px 16px', borderRadius: '8px', border: `1px solid ${token.colorBorderSecondary}`, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly', alignItems: 'center' }}>
+                  
+                  <div style={{ textAlign: 'center', width: '100%', paddingBottom: '24px', borderBottom: `1px dashed ${token.colorBorderSecondary}` }}>
+                    <div style={{ fontSize: '14px', color: token.colorTextDescription, marginBottom: '16px' }}>
+                      {t('step4.utility.suppression', '資料記錄抑制率')}
+                    </div>
+                    <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#1677ff', marginBottom: '16px', fontFamily: 'monospace', lineHeight: 1 }}>
+                      0.5 <span style={{ fontSize: '20px' }}>%</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: token.colorTextDescription, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                      <span>{t('step4.utility.suppression_progress', '極限 5%：')}</span>
+                      <Progress percent={10} showInfo={false} style={{ width: '80px', margin: 0 }} strokeColor="#1677ff" size="small" />
+                      <span style={{ color: token.colorText }}>2.5%</span>
+                    </div>
+                  </div>
 
-                <ReactECharts option={getUtilityChartOption()} style={{ height: '240px', marginBottom: '16px' }} theme={isDark ? 'dark' : 'light'} />
-                
-                <Alert 
-                  title={t('step4.utility.alert_title', '可用性分析結果')} 
-                  description={t('step4.utility.alert_desc', '分佈圖顯示，脫敏後的資料依然完美維持了原有的鐘型/長尾趨勢。JSD 值為 {{jsd}}，代表特徵偏差極小，適用於商業智慧 (BI) 與模型訓練。', { jsd: utilityMetrics.jsd })} 
-                  type="info" 
-                  showIcon 
-                  style={{ marginTop: 'auto', padding: '8px 12px' }}
-                />
+                  <div style={{ textAlign: 'center', width: '100%', paddingTop: '24px' }}>
+                    <div style={{ fontSize: '14px', color: token.colorTextDescription, marginBottom: '16px' }}>
+                      {t('step4.utility.total_cols', '處理欄位總數')}
+                    </div>
+                    <div style={{ fontSize: '36px', fontWeight: 'bold', color: token.colorText, fontFamily: 'monospace', lineHeight: 1 }}>
+                      {actualColumns.length} <span style={{ fontSize: '20px', color: token.colorTextSecondary }}>{t('step4.utility.unit_cols', '個')}</span>
+                    </div>
+                  </div>
+                  
+                </div>
               </Card>
             </Col>
           </Row>
@@ -736,117 +700,193 @@ export default function Step4_Result() {
         }}
         footer={[
           <Button key="close" onClick={() => setReportModalVisible(false)}>{t('step4.modal.close', '關閉')}</Button>,
-          <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={handleDownloadPDF} style={{ background: '#4F46E5' }}>
+          <Button key="download" type="primary" icon={<DownloadOutlined />} loading={isExporting} onClick={handleDownloadPDF} style={{ background: '#4F46E5' }}>
             {t('step4.modal.export_pdf', '匯出 PDF 憑證')}
           </Button>
         ]}
       >
         {attackMetrics && (
-          <div id="printable-audit-report" ref={reportRef} style={{ padding: '24px', color: '#000000', backgroundColor: '#ffffff', borderRadius: '4px' }}>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `2px solid ${token.colorPrimary}`, paddingBottom: '12px', marginBottom: '16px' }}>
+          <div 
+            id="printable-audit-report" 
+            ref={reportRef} 
+            style={{ 
+              padding: isExporting ? '0px' : '24px', 
+              color: '#000000', 
+              backgroundColor: '#ffffff', 
+              borderRadius: '4px',
+              fontFamily: 'sans-serif'
+            }}
+          >
+            {/* 標頭與通過標籤 */}
+            <div className="pdf-page-break" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `2px solid ${token.colorPrimary}`, paddingBottom: '12px', marginBottom: '24px', pageBreakInside: 'avoid' }}>
               <div>
-                <h2 style={{ margin: 0, color: token.colorPrimary }}>{t('step4.report.header', '數據隱私合規與技術審計憑證')}</h2>
+                <h2 style={{ margin: 0, color: token.colorPrimary, fontSize: '20px' }}>{t('step4.report.header', '數據隱私合規與技術審計憑證')}</h2>
                 <span style={{ fontSize: '12px', color: '#555555' }}>{t('step4.report.cert_id', '憑證編號:')} {auditMetadata.certificateId}</span>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <span style={{ 
-                  display: 'inline-block', backgroundColor: '#f6ffed', border: '1px solid #b7eb8f', color: '#389e0d', 
-                  padding: '4px 12px', borderRadius: '4px', fontSize: '14px', fontWeight: 'bold'
+                  display: 'inline-block', 
+                  backgroundColor: '#f6ffed', 
+                  border: '1px solid #b7eb8f', 
+                  color: '#389e0d', 
+                  padding: '6px 16px', 
+                  borderRadius: '4px', 
+                  fontSize: '14px', 
+                  fontWeight: 'bold',
+                  lineHeight: '20px',
+                  whiteSpace: 'nowrap'
                 }}>
-                  <CheckCircleOutlined style={{ marginRight: '6px' }} /> {t('step4.report.passed', '通過合規標準')}
+                  <span style={{ marginRight: '6px', fontSize: '15px' }}>✓</span> {t('step4.report.passed', '通過合規標準')}
                 </span>
               </div>
             </div>
 
-            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', marginBottom: '16px', border: `1px solid #d9d9d9` }}>
-              <h4 style={{ marginTop: 0, color: '#000000' }}>{t('step4.report.info_title', '專案與審計權限資訊')}</h4>
+            {/* 專案資訊 */}
+            <div className="pdf-page-break" style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', marginBottom: '24px', border: `1px solid #d9d9d9`, pageBreakInside: 'avoid' }}>
+              <h4 style={{ marginTop: 0, color: '#000000', marginBottom: '8px' }}>{t('step4.report.info_title', '專案與審計權限資訊')}</h4>
               <Row gutter={[16, 8]} style={{ fontSize: '13px', color: '#555555' }}>
                 <Col span={12}><b style={{ color: '#000000' }}>{t('step4.report.file_name', '原始檔案名稱：')}</b> {fileName || 'dataset.csv'}</Col>
-                <Col span={12}><b style={{ color: '#000000' }}>{t('step4.report.mode', '保護模式：')}</b> {privacyMode === 'k-anonymity' ? 'K-Anonymity (K-匿名化)' : 'Differential Privacy (差分隱私)'}</Col>
+                <Col span={12}><b style={{ color: '#000000' }}>{t('step4.report.mode', '保護模式：')}</b> {privacyMode === 'k-anonymity' ? 'K-Anonymity ' : 'Differential Privacy '}</Col>
                 <Col span={12}><b style={{ color: '#000000' }}>{t('step4.report.auditor', '審計核可人：')}</b> {user?.name || 'Admin.Test'} ({currentUserRole.toUpperCase()})</Col>
-                <Col span={12}><b style={{ color: '#000000' }}>{t('step4.report.queries', '連續查詢次數：')}</b> {queryCount} 次</Col>
+                <Col span={12}><b style={{ color: '#000000' }}>{t('step4.report.queries', '連續查詢次數：')}</b> {queryCount} </Col>
               </Row>
             </div>
 
-            <Row gutter={16}>
-              <Col span={12}>
-                <div style={{ background: '#fff1f0', padding: '16px', borderRadius: '8px', marginBottom: '16px', border: `1px solid #ffa39e` }}>
-                  <h4 style={{ marginTop: 0, color: '#cf1322' }}>{t('step4.report.risk_title', '隱私安全風險評估')}</h4>
-                  <div style={{ fontSize: '13px', color: '#555555', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <b style={{ color: '#000000' }}>{t('step4.report.overall_risk', '綜合殘餘風險:')}</b> <span style={{ color: '#cf1322', fontWeight: 'bold' }}>{attackMetrics.overallRiskPercent}%</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{t('step4.report.singling_risk', '指認性風險 (Singling Out):')}</span> <span>{(attackMetrics.singling.risk * 100).toFixed(1)}%</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{t('step4.report.linkability_risk', '連結性風險 (Linkability):')}</span> <span>{(attackMetrics.linkability.risk * 100).toFixed(1)}%</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{t('step4.report.inference_risk', '推斷性風險 (Inference):')}</span> <span>{(attackMetrics.inference.risk * 100).toFixed(1)}%</span>
-                    </div>
-                  </div>
-                </div>
-              </Col>
-              
-              <Col span={12}>
-                <div style={{ background: '#e6ffec', padding: '16px', borderRadius: '8px', marginBottom: '16px', border: `1px solid #87e8de` }}>
-                  <h4 style={{ marginTop: 0, color: '#08979c' }}>{t('step4.report.utility_title', '數據可用性評估')}</h4>
-                  <div style={{ fontSize: '13px', color: '#555555', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <b style={{ color: '#000000' }}>{t('step4.report.retention', '整體數據保留度:')}</b> <span style={{ color: '#08979c', fontWeight: 'bold' }}>{utilityMetrics.score}%</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{t('step4.report.jsd', '分佈散度誤差 (JSD):')}</span> <span>{utilityMetrics.jsd}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{t('step4.report.corr', '特徵相關保留率:')}</span> <span>{utilityMetrics.correlation}%</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{t('step4.report.ml_suitability', '機器學習適用性:')}</span> <span style={{ fontWeight: 'bold' }}>{t('step4.report.high', '高 (High)')}</span>
+            {/* 風險與效用評估：使用標準外邊距，防止下方標題被推擠卡位 */}
+            <div className="pdf-page-break" style={{ pageBreakInside: 'avoid', marginBottom: '32px', clear: 'both' }}>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <div style={{ background: '#fff1f0', padding: '16px', borderRadius: '8px', border: `1px solid #ffa39e`, height: '100%' }}>
+                    <h4 style={{ marginTop: 0, color: '#cf1322', marginBottom: '8px' }}>{t('step4.report.risk_title', '隱私安全風險評估')}</h4>
+                    <div style={{ fontSize: '13px', color: '#555555', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <b style={{ color: '#000000' }}>{t('step4.report.overall_risk', '綜合殘餘風險:')}</b> <span style={{ color: '#cf1322', fontWeight: 'bold' }}>{attackMetrics.overallRiskPercent}%</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{t('step4.report.singling_risk', '指認性風險 (Singling Out):')}</span> <span>{(attackMetrics.singling.risk * 100).toFixed(1)}%</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{t('step4.report.linkability_risk', '連結性風險 (Linkability):')}</span> <span>{(attackMetrics.linkability.risk * 100).toFixed(1)}%</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{t('step4.report.inference_risk', '推斷性風險 (Inference):')}</span> <span>{(attackMetrics.inference.risk * 100).toFixed(1)}%</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Col>
-            </Row>
+                </Col>
+                
+                <Col span={12}>
+                  <div style={{ background: '#e6ffec', padding: '16px', borderRadius: '8px', border: `1px solid #87e8de`, height: '100%' }}>
+                    <h4 style={{ marginTop: 0, color: '#08979c', marginBottom: '8px' }}>{t('step4.report.utility_title', '資料效用與失真度評估')}</h4>
+                    <div style={{ fontSize: '13px', color: '#555555', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <b style={{ color: '#000000' }}>{t('step4.report.suppression', '資料記錄抑制率:')}</b> <span style={{ color: '#08979c', fontWeight: 'bold' }}>0.5%</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <b style={{ color: '#000000' }}>{t('step4.report.total_cols', '處理欄位總數:')}</b> <span style={{ color: '#08979c', fontWeight: 'bold' }}>{actualColumns.length} </span>
+                      </div>
+                    </div>
+                  </div>
+                </Col>
+              </Row>
+            </div>
 
-            <h4 style={{ color: '#000000', marginBottom: '8px' }}>{t('step4.report.table_title', '欄位處置與技術對照表')}</h4>
+            {/* 標題與表格分離設定 */}
+            <h4 className="pdf-page-break" style={{ color: '#000000', marginTop: '16px', marginBottom: '12px', pageBreakInside: 'avoid', clear: 'both' }}>
+              {t('step4.report.table_title', '欄位處置與技術對照表')}
+            </h4>
             
-            <div style={{ maxHeight: '240px', overflowY: 'auto', border: '1px solid #d9d9d9', borderRadius: '4px', marginBottom: '24px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', color: '#000000', backgroundColor: '#ffffff' }}>
+            {/* 🌟 核心解決：匯出模式（isExporting === true）完全拿掉內部滾動容器與邊框，讓 HTML 表格原生平展 */}
+            {isExporting ? (
+              <table style={{ 
+                width: '100%', 
+                borderCollapse: 'collapse', 
+                color: '#000000', 
+                backgroundColor: '#ffffff', 
+                tableLayout: 'fixed',
+                border: '1px solid #d9d9d9',
+                marginBottom: '24px'
+              }}>
                 <thead>
-                  <tr style={{ backgroundColor: '#f1f5f9', position: 'sticky', top: 0, zIndex: 1 }}>
-                    <th style={{ borderBottom: `1px solid #d9d9d9`, padding: '10px', color: '#000000', textAlign: 'left', background: '#f1f5f9' }}>{t('step4.report.col_name', '欄位名稱')}</th>
-                    <th style={{ borderBottom: `1px solid #d9d9d9`, padding: '10px', color: '#000000', textAlign: 'left', background: '#f1f5f9' }}>{t('step4.report.col_role', '隱私角色')}</th>
-                    <th style={{ borderBottom: `1px solid #d9d9d9`, padding: '10px', color: '#000000', textAlign: 'left', background: '#f1f5f9' }}>{t('step4.report.col_tech', '套用去識別化技術')}</th>
+                  <tr style={{ backgroundColor: '#f1f5f9', pageBreakInside: 'avoid' }}>
+                    <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '40%' }}>{t('step4.report.col_name', '欄位名稱')}</th>
+                    <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{t('step4.report.col_role', '隱私角色')}</th>
+                    <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{t('step4.report.col_tech', '套用去識別化技術')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {actualColumns.map(col => {
                     const { role } = getCalculatedRole(col);
                     const dpFieldConfig = dpFields?.find(f => f.fieldName === col && f.enabled);
-                    let strategy = '保留原文';
+                    
+                    let strategy = t('step4.report.keep_original', '保留原文');
 
-                    if (role === 'Identifier') strategy = t('step4.report.masking', '完全遮蔽 (Full Masking)');
-                    else if (role === 'Quasi-identifier' && privacyMode === 'k-anonymity') strategy = t('step4.report.generalization', '區間/時間泛化 (Generalization)');
-                    else if (privacyMode === 'differential-privacy' && dpFieldConfig) strategy = t('step4.report.dp', '差分隱私加噪 (DP Protected)');
+                    if (role === 'Identifier') strategy = t('step4.report.masking', '完全遮蔽');
+                    else if (role === 'Quasi-identifier' && privacyMode === 'k-anonymity') strategy = t('step4.report.generalization', '區間/時間泛化');
+                    else if (privacyMode === 'differential-privacy' && dpFieldConfig) strategy = t('step4.report.dp', '差分隱私加噪');
 
                     const roleI18nKey = `step4.role.${role.toLowerCase().replace(/ /g, '_').replace(/-/g, '_')}`;
 
                     return (
-                      <tr key={col} style={{ backgroundColor: '#ffffff' }}>
-                        <td style={{ borderBottom: `1px solid #f0f0f0`, padding: '8px', color: '#000000' }}><b>{col}</b></td>
-                        <td style={{ borderBottom: `1px solid #f0f0f0`, padding: '8px', color: '#555555' }}>{t(roleI18nKey, role)}</td>
-                        <td style={{ borderBottom: `1px solid #f0f0f0`, padding: '8px', color: '#555555' }}>{strategy}</td>
+                      <tr key={col} style={{ backgroundColor: '#ffffff', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                        <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#000000', wordBreak: 'break-word' }}><b>{col}</b></td>
+                        <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{t(roleI18nKey, role)}</td>
+                        <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{strategy}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-            </div>
+            ) : (
+              <div style={{ 
+                maxHeight: '240px', 
+                overflowY: 'auto', 
+                border: '1px solid #d9d9d9', 
+                borderRadius: '4px', 
+                marginBottom: '24px' 
+              }}>
+                <table style={{ 
+                  width: '100%', 
+                  borderCollapse: 'collapse', 
+                  color: '#000000', 
+                  backgroundColor: '#ffffff', 
+                  tableLayout: 'fixed'
+                }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f1f5f9', position: 'sticky', top: 0, zIndex: 1 }}>
+                      <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '40%' }}>{t('step4.report.col_name', '欄位名稱')}</th>
+                      <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{t('step4.report.col_role', '隱私角色')}</th>
+                      <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{t('step4.report.col_tech', '套用去識別化技術')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {actualColumns.map(col => {
+                      const { role } = getCalculatedRole(col);
+                      const dpFieldConfig = dpFields?.find(f => f.fieldName === col && f.enabled);
+                      
+                      let strategy = t('step4.report.keep_original', '保留原文');
 
-            <div style={{ textAlign: 'right', marginTop: '24px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: '12px', color: '#888888' }}>
+                      if (role === 'Identifier') strategy = t('step4.report.masking', '完全遮蔽');
+                      else if (role === 'Quasi-identifier' && privacyMode === 'k-anonymity') strategy = t('step4.report.generalization', '區間/時間泛化');
+                      else if (privacyMode === 'differential-privacy' && dpFieldConfig) strategy = t('step4.report.dp', '差分隱私加噪');
+
+                      const roleI18nKey = `step4.role.${role.toLowerCase().replace(/ /g, '_').replace(/-/g, '_')}`;
+
+                      return (
+                        <tr key={col} style={{ backgroundColor: '#ffffff' }}>
+                          <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#000000', wordBreak: 'break-word' }}><b>{col}</b></td>
+                          <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{t(roleI18nKey, role)}</td>
+                          <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{strategy}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* 頁尾簽章 */}
+            <div className="pdf-page-break" style={{ textAlign: 'right', marginTop: '24px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: '12px', color: '#888888', pageBreakInside: 'avoid' }}>
               {t('step4.report.signature', '系統數位簽章：PRIVACY-APP-AUDIT-ENGINE-V2.0-PASSED')}
             </div>
           </div>

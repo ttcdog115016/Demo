@@ -73,3 +73,59 @@ export default defineConfig([
 ])
 
 ```
+
+
+### 🎭 展示模式設定 (Demo Mode Configuration)
+
+為了在向客戶或非技術人員進行產品展示 (Demo) 時保持流程專注，避免誤觸管理員功能，您可以透過以下設定將「Admin (系統管理員)」視角暫時隱藏，使整個系統純粹呈現「Data Owner (資料擁有者)」的工作流。
+
+#### 1. 隱藏右上角全域角色切換 (Global Header)
+在全域版面配置檔（如 `src/App.tsx`、`src/MainLayout.tsx` 或 Header 元件）中，找到 `userMenuItems` 下拉選單設定，將 Admin 選項註解：
+```tsx
+const userMenuItems = [
+  {
+    key: 'rbac-title',
+    label: 'Switch Role (RBAC Demo)',
+    disabled: true,
+  },
+  // 🌟 Demo 時先隱藏 Admin 切換按鈕
+  // {
+  //   key: 'switch-admin',
+  //   label: 'Admin',
+  //   onClick: () => setUserRole('admin'), 
+  // },
+  {
+    key: 'switch-data-owner',
+    label: 'Data Owner',
+    onClick: () => setUserRole('data_owner'),
+  },
+  // ...其他選項
+];
+```
+
+#### 2. 隱藏後台使用者列表中的 Admin (SystemPreferences.tsx)
+在 `src/features/settings/SystemPreferences.tsx` 中，利用 `filter` 陣列方法過濾掉 Admin 帳號，保持資料結構不變但畫面上不可見：
+```tsx
+<Table 
+  columns={userColumns} 
+  // 🌟 只顯示 data_owner
+  dataSource={users.filter(u => u.role === 'data_owner')} 
+  rowKey="id" 
+  pagination={{ pageSize: 5 }} 
+  size="middle" 
+/>
+```
+
+#### 3. 隱藏新增使用者的 Admin 選項
+同樣在 `SystemPreferences.tsx` 中，找到「新增使用者」的 `Modal` 表單，將 `Select` 的 Admin 選項註解：
+```tsx
+<Select 
+  options={[
+    // 🌟 隱藏建立 Admin 的選項
+    // { value: 'admin', label: t('admin.role_admin', 'Admin (系統管理員)') },
+    { value: 'data_owner', label: t('admin.role_data_owner', 'Data Owner (資料擁有者)') }
+  ]} 
+/>
+```
+
+> **💡 開發提示**：這是一種「非破壞性」的隱藏方式。未來若需要恢復完整的 RBAC (Role-Based Access Control) 開發測試功能，只需將上述程式碼的註解解除，並拿掉 `filter` 即可瞬間恢復雙角色切換。

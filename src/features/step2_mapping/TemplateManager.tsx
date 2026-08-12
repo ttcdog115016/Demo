@@ -6,6 +6,15 @@ import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
+// 🌟 1. 宣告明確的 Template 介面，徹底消滅 any
+interface TemplateItem {
+  id: string;
+  name: string;
+  description?: string;
+  privacyMode: string;
+  createdAt: string;
+}
+
 export default function TemplateManager() {
   const [open, setOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -15,7 +24,8 @@ export default function TemplateManager() {
   const { t } = useTranslation();
   
   const currentMode = usePrivacyStore((state) => state.privacyMode);
-  const templates = usePrivacyStore((state) => state.templates);
+  // 🌟 2. 確保取出的 templates 具備 TemplateItem[] 型別
+  const templates = usePrivacyStore((state) => state.templates) as TemplateItem[];
   const saveTemplate = usePrivacyStore((state) => state.saveTemplate);
   const applyTemplate = usePrivacyStore((state) => state.applyTemplate);
   const deleteTemplate = usePrivacyStore((state) => state.deleteTemplate);
@@ -33,7 +43,8 @@ export default function TemplateManager() {
     setOpen(false);
   };
 
-  const handleApplyClick = (template: any) => {
+  // 🌟 3. 將參數從 any 替換為 TemplateItem
+  const handleApplyClick = (template: TemplateItem) => {
     if (currentMode === template.privacyMode) {
       executeApply(template.id, template.name);
       return;
@@ -133,7 +144,6 @@ export default function TemplateManager() {
           </div>
         ) : (
           <Form form={form} layout="vertical" onFinish={handleCreate} style={{ marginTop: 16 }}>
-            {/* 🌟 加入了自訂的名稱重複檢查 validator */}
             <Form.Item 
               name="name" 
               label={t('template.nameLabel', '範本名稱')} 

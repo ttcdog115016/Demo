@@ -1,70 +1,58 @@
-  import { useEffect, useCallback } from 'react';
-  import { useNavigate, useSearchParams } from 'react-router-dom';
-  import { App as AntdApp } from 'antd';
-  import { useTranslation } from 'react-i18next';
-  import { usePrivacyStore } from '../../store/usePrivacyStore';
+import { useEffect, useRef } from 'react';
+import { App } from 'antd';
 
-  export const useIdleTimeout = (timeoutInMinutes: number) => {
-    const logout = usePrivacyStore((state) => state.logout);
-    const isAuthenticated = usePrivacyStore((state) => state.isAuthenticated);
+// 🌟 1. 改為引入拆分後的 Auth Store
+import { useAuthStore } from '../../store/useAuthStore';
 
-    const { modal } = AntdApp.useApp();
-    const { t } = useTranslation();
-    const navigate = useNavigate();
-    const [searchParams] = useSearchParams();
+export const useIdleTimeout = (timeoutMinutes: number = 30) => {
+  // 🌟 2. 從 AuthStore 取得登出方法與認證狀態
+  const logout = useAuthStore((state) => state.logout);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const { message } = App.useApp();
+  
+  const lastActivityRef = useRef<number>(0);
+  const intervalIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // 🌟 外掛測試：網址如果有 ?test_timeout=5 則優先使用
-    const devTestSeconds = searchParams.get('test_timeout');
-    const actualTimeoutMs = devTestSeconds 
-      ? Number(devTestSeconds) * 1000 
-      : timeoutInMinutes * 60 * 1000;
+  useEffect(() => {
+    if (!isAuthenticated) return;
 
-    const handleTimeout = useCallback(() => {
-      if (!isAuthenticated) return;
+    // 1. 使用者有任何操作時，更新最後活動時間
+    const updateLastActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
 
-      sessionStorage.removeItem('loginTimestamp');
-      logout();
-      navigate('/login');
+    // 綁定事件監聽 (加入 { passive: true } 提升頁面滾動效能)
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    events.forEach((event) => window.addEventListener(event, updateLastActivity, { passive: true }));
+
+    // 在副作用階段初始化最後活動時間
+    updateLastActivity();
+
+    // 2. 巡邏檢查：每 1 秒檢查一次是否超時
+    intervalIdRef.current = setInterval(() => {
+      const safeMinutes = timeoutMinutes || 30;
+      const timeoutMs = safeMinutes * 60 * 1000;
       
-      modal.warning({
-        title: t('timeout.title', '工作階段已逾時 (Session Expired)'),
-        content: t('timeout.content', '基於嚴格的資安規範，您在此頁面的授權停留時間已達上限 ({{min}} 分鐘)，系統已將您強制登出以保護資料安全。', { min: timeoutInMinutes }),
-        okText: t('modal.confirm', '重新登入'),
-      });
-    }, [isAuthenticated, logout, navigate, modal, t, timeoutInMinutes]);
+      const idleTime = Date.now() - lastActivityRef.current;
 
-    // 1. 初始化登入時間戳記
-    useEffect(() => {
-      if (isAuthenticated) {
-        if (!sessionStorage.getItem('loginTimestamp')) {
-          sessionStorage.setItem('loginTimestamp', Date.now().toString());
-        }
-      } else {
-        sessionStorage.removeItem('loginTimestamp');
-      }
-    }, [isAuthenticated]);
-
-    // 2. 輪詢稽查員：當 timeoutInMinutes 或 actualTimeoutMs 跨分頁被改動時，這段 Effect 會立刻重新響應！
-    useEffect(() => {
-      if (!isAuthenticated || actualTimeoutMs <= 0) return;
-
-      const checkSession = () => {
-        const startStr = sessionStorage.getItem('loginTimestamp');
-        if (!startStr) return;
-
-        const elapsed = Date.now() - Number(startStr);
+      // 若閒置時間 >= 規定超時時間，觸發強制登出
+      if (lastActivityRef.current !== 0 && idleTime >= timeoutMs) {
+        console.log(`[閒置偵測] 已閒置超過 ${safeMinutes} 分鐘，觸發強制登出！`);
+        logout();
+        message.warning('由於您已閒置過久，系統已自動將您登出。');
         
-        // 只要累積時間超過了最新的 timeout 設定，立刻觸發登出
-        if (elapsed >= actualTimeoutMs) {
-          handleTimeout();
+        if (intervalIdRef.current) {
+          clearInterval(intervalIdRef.current);
         }
-      };
+      }
+    }, 1000);
 
-      // 立即檢查一次
-      checkSession();
-
-      const intervalRef = setInterval(checkSession, 1000);
-
-      return () => clearInterval(intervalRef);
-    }, [actualTimeoutMs, isAuthenticated, handleTimeout]);
-  };
+    // 3. 清理資源
+    return () => {
+      events.forEach((event) => window.removeEventListener(event, updateLastActivity));
+      if (intervalIdRef.current) {
+        clearInterval(intervalIdRef.current);
+      }
+    };
+  }, [timeoutMinutes, logout, isAuthenticated, message]);
+};

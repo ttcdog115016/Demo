@@ -2,20 +2,23 @@ import { useNavigate } from 'react-router-dom';
 import { Steps, Button, Card, Layout, theme, App as AntdApp } from 'antd';
 import { useTranslation } from 'react-i18next';
 
-import { usePrivacyStore } from '../../store/usePrivacyStore';
+// 🌟 1. 改為引入拆分後的 Workspace Store
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+
 import Step1_Upload from '../step1_upload/Step1_Upload';
 import Step2_Mapping from '../step2_mapping/Step2_Mapping';
 import Step3_Rules from '../step3_rules/Step3_Rules';
 import Step4_Result from '../step4_result/Step4_Result';
-import { validateProgression } from './validateProgression'; // 🌟 改從獨立檔引入
+import { validateProgression } from './validateProgression'; 
 
 export default function MainLayout() {
   const { t } = useTranslation(); 
   const navigate = useNavigate(); 
   
-  const currentStep = usePrivacyStore((state) => state.currentStep);
-  const nextStep = usePrivacyStore((state) => state.nextStep);
-  const prevStep = usePrivacyStore((state) => state.prevStep);
+  // 🌟 2. 從 WorkspaceStore 取得狀態與行為
+  const currentStep = useWorkspaceStore((state) => state.currentStep);
+  const nextStep = useWorkspaceStore((state) => state.nextStep);
+  const prevStep = useWorkspaceStore((state) => state.prevStep);
   
   const { message: appMessage } = AntdApp.useApp(); 
   const isDarkMode = theme.useToken().token.colorBgContainer !== '#ffffff';
@@ -23,9 +26,11 @@ export default function MainLayout() {
   const handleStepClick = (targetStep: number) => {
     if (targetStep === currentStep) return;
 
-    const storeState = usePrivacyStore.getState();
+    // 🌟 3. 取得當前 WorkspaceStore 的快照進行驗證
+    const storeState = useWorkspaceStore.getState();
     if (targetStep > currentStep) {
-      const errorMsg = validateProgression(targetStep, currentStep, storeState, t);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const errorMsg = validateProgression(targetStep, currentStep, storeState as any, t);
       if (errorMsg) {
         appMessage.warning(errorMsg);
         navigate(`/workspace?step=${currentStep + 1}`, { replace: true });
@@ -33,15 +38,16 @@ export default function MainLayout() {
       }
     }
 
-    usePrivacyStore.setState({ currentStep: targetStep });
+    useWorkspaceStore.setState({ currentStep: targetStep });
     navigate(`/workspace?step=${targetStep + 1}`);
   };
 
   const handleNext = () => {
-    const storeState = usePrivacyStore.getState();
+    const storeState = useWorkspaceStore.getState();
     const targetStep = currentStep + 1;
     
-    const errorMsg = validateProgression(targetStep, currentStep, storeState, t);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const errorMsg = validateProgression(targetStep, currentStep, storeState as any, t);
     if (errorMsg) {
       appMessage.error(errorMsg);
       return; 
@@ -53,7 +59,7 @@ export default function MainLayout() {
 
   const handlePrev = () => {
     prevStep();
-    const newStep = usePrivacyStore.getState().currentStep;
+    const newStep = useWorkspaceStore.getState().currentStep;
     navigate(`/workspace?step=${newStep + 1}`); 
   };
 

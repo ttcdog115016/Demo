@@ -5,15 +5,78 @@ import { initReactI18next } from 'react-i18next';
 const resources = {
   zh_TW: {
     translation: {
-      // 🌟 新增：視圖切換 (Wizard / Audit)
+      // 🌟 新增：通用共用詞彙
+      common: {
+        email: "電子郵件",
+        real_name: "真實姓名",
+        company_email: "公司電子郵件",
+        department_reason: "部門 / 申請原因",
+        back_to_login: "返回登入"
+      },
+      // 🌟 新增：表單驗證提示
+      validation: {
+        invalid_email: "請輸入有效的電子郵件！",
+        real_name_required: "請輸入真實姓名！",
+        reason_required: "請填寫您的部門或申請原因！"
+      },
+      // 🌟 新增：輸入框佔位符
+      placeholder: {
+        email: "請輸入您的電子郵件",
+        real_name: "例如：張小明",
+        company_email: "name@company.com",
+        reason: "請簡述您所屬部門及為何需要使用隱私強化工具包..."
+      },
+      
+      // 🌟 忘記密碼頁面
+      forgot_password: {
+        title: "忘記密碼？",
+        subtitle: "請輸入您註冊時的電子郵件，我們將發送重設密碼的連結給您。",
+        submit: "發送重設連結"
+      },
+
+      // 🌟 申請權限頁面
+      request_access: {
+        title: "申請使用權限",
+        subtitle: "請填寫您的資料，管理員審核通過後將發送通知信。",
+        submit: "送出申請"
+      },
+
+      // 🌟 視圖切換 (Wizard / Audit)
       view: {
         wizard: "數據去識別化嚮導 (Wizard)",
         audit: "歷史審計與憑證管理 (Audit Log Hub)"
       },
-      // 🌟 新增：RBAC 角色
+      // 🌟 RBAC 角色
       role: {
         admin: " Admin (系統管理員)",
         data_owner: " Data Owner (資料擁有者)",
+        identifier: "直接識別 (Identifier)",
+        quasi_identifier: "準識別碼 (Quasi-identifier)",
+        dp_sensitive: "DP 敏感屬性",
+        retained: "保留欄位",
+        non_sensitive: "非敏感屬性"
+      },
+
+      // 🌟 登入頁面
+      login: {
+        welcome: "歡迎回來",
+        subtitle: "請登入您的帳號以繼續使用隱私強化工具包",
+        emailLabel: "電子郵件 / 帳號",
+        emailRequired: "請輸入電子郵件！",
+        emailPlaceholder: "請輸入您的電子郵件",
+        passwordLabel: "密碼",
+        passwordRequired: "請輸入密碼！",
+        passwordPlaceholder: "請輸入您的密碼",
+        rememberMe: "保持登入狀態",
+        forgotPassword: "忘記密碼？",
+        submitBtn: "登入系統",
+        quickLoginBtn: " 一鍵快速登入 (測試用)",
+        noAccount: "還沒有帳號？",
+        requestAccess: "申請使用權限",
+        success: "登入成功！正在為您準備工作區...",
+        quickSuccess: " 快速登入成功！",
+        error: "登入失敗，請檢查您的電子郵件與密碼。",
+        networkError: "無法連線至伺服器，請稍後再試。"
       },
       
       // 🌟 Step 1: 資料匯入
@@ -41,7 +104,7 @@ const resources = {
         btn_cancel: "取消",
         error_file_too_large: "檔案大小不能超過 50MB！",
         large_file_notice: "檢測到大型資料集（共 {{total}} 筆）。已啟用效能保護模式，擷取前 {{limit}} 筆進行實時預覽與去識別化計算。",
-        performance_mode_active: "⚡ 效能保護模式已啟用",
+        performance_mode_active: " 效能保護模式已啟用",
         performance_mode_desc: "當前資料集較大，前端僅載入前 1,000 筆作為即時演算預覽與風險審計標籤，此模式可確保系統運作絕對流暢。"
       },
 
@@ -127,19 +190,19 @@ const resources = {
         enable: "啟用",
         disable: "停用",
         dp_param_settings: "參數設定 (邊界 / 敏感度)",
-        dp_param_tooltip: "必填。差分隱私需透過設定上下界或清單來控制全局敏感度 (Global Sensitivity)。",
-        ph_lower_bound: "下界 (Min)",
-        ph_upper_bound: "上界 (Max)",
+        dp_param_tooltip: "必填。差分隱私需透過設定上下界或清單來控制全局敏感度 。",
+        ph_lower_bound: "下界 ",
+        ph_upper_bound: "上界 ",
         ph_allowed_categories: "例: 男,女 (請以半形逗號分隔)",
-        ph_max_length: "最大字元長度 (例: 100)",
+        ph_max_length: "最大字元長度 ",
         select_type_first: "請先選擇資料類型",
         incomplete_setting: "設定不完整",
         incomplete_desc_prefix: "尚有",
         incomplete_desc_suffix: "項設定不完整的欄位，請檢查下方標示紅框的區域。",
         tab_dp_mapping: "欄位屬性與邊界設定",
-        opt_dp_numeric: "數值型 (Numeric)",
-        opt_dp_categorical: "類別型 (Categorical)",
-        opt_dp_text: "文本型 (Text)",
+        opt_dp_numeric: "數值型 ",
+        opt_dp_categorical: "類別型 ",
+        opt_dp_text: "文本型 ",
         ph_select: "請選擇",
         ph_eg_salary: "e.g. salary"
       },
@@ -162,15 +225,15 @@ const resources = {
         select_field: "選擇欄位",
         add_threat_combo: "新增威脅組合",
         suppression_strategy: "資料抑制策略",
-        suppress_method: "抑制方式：",
-        row_suppression: "列抑制 (Row)",
-        cell_suppression: "值抑制 (Cell)",
+        suppression_method: "抑制方式：",
+        row_suppression: "列抑制 ",
+        cell_suppression: "值抑制 ",
         suppress_limit: "抑制上限：",
         exceed_behavior: "超限行為：",
         stop_and_error: "停止並報錯",
         relax_k: "自動放寬 K 值",
         force_suppress: "強制抑制(降效用)",
-        solution_space: "K-Anonymity 隱私與效用解空間 (Solution Space)",
+        solution_space: "K-Anonymity 隱私與效用解空間 ",
         current_setting: "目前設定",
         extreme_privacy: "極端隱私",
         extreme_utility: "極端可用",
@@ -184,8 +247,8 @@ const resources = {
         chart_priv_short: "隱私:",
         chart_pareto_front: "最優邊界",
         chart_pareto_limit: "柏雷托最優極限",
-        chart_x_axis: "資料效用 (Data Utility)",
-        chart_y_axis: "資料隱私 (Data Privacy)",
+        chart_x_axis: "資料效用 ",
+        chart_y_axis: "資料隱私 ",
         current_status: "目前狀態"
       },
 
@@ -198,10 +261,10 @@ const resources = {
         global_delta_desc: "定義資料集整體的容錯率上限。當欄位模式為 epsilon-delta 時，將以此值為基準進行換算。",
         simulate_query: "模擬連續查詢 / 發布次數",
         query_times: "{{count}} 次",
-        out_of_bounds_strategy: "數值邊界越界處理策略 (Out-of-Bounds Strategy)",
+        out_of_bounds_strategy: "數值邊界越界處理策略 ",
         strategy_clip: "1. 截斷至邊界 (固定在極值)",
         strategy_wrap: "2. 循環環繞 (繞一圈回去)",
-        strategy_reflect: "3. 鏡像折返 (撞球般折返回去)",
+        strategy_reflect: "3. 鏡像折返 (折返回去)",
         out_of_bounds_desc: "當數值型資料加入數學雜訊後超出您在上一階段設定的上下界時，系統將依據此策略進行數值校正，以確保資料格式的合理性。",
         field_tuning_title: "2. 個別欄位微調",
         eps_dp: "ε-DP",
@@ -209,7 +272,7 @@ const resources = {
         epsilon: "Epsilon (ε)",
         delta: "Delta (δ)",
         field_disabled: "此欄位不套用差分隱私",
-        card2_title: "2. 隱私預算中心 (Budget Center)",
+        card2_title: "2. 隱私預算中心 ",
         col_field: "欄位名稱",
         col_original: "原始設定",
         col_equivalent: "等效 ε",
@@ -238,14 +301,14 @@ const resources = {
           uploading: "[{{time}}] ⬆ Uploading Chunk [{{part}}/10]... ({{prog}}%)",
           uploaded: "[{{time}}]  檔案切片傳輸完成，驗證 Checksum 成功。",
           init_engine: "[{{time}}]  初始化分佈式去識別化引擎 (Mode: {{mode}})",
-          cleaning: "[{{time}}]  執行資料預處理與正規化清洗 (Regex & Trim)...",
-          k_anon: "[{{time}}]  運算 K-匿名泛化樹 (Generalization Hierarchy)...",
-          dp_noise: "[{{time}}]  注入拉普拉斯擾動雜訊 (Laplace Noise)...",
+          cleaning: "[{{time}}]  執行資料預處理與正規化清洗 ...",
+          k_anon: "[{{time}}]  運算 K-匿名泛化樹 ...",
+          dp_noise: "[{{time}}]  注入拉普拉斯擾動雜訊 ...",
           start_mc: "[{{time}}]  脫敏完成，啟動蒙地卡羅攻擊模擬器 (N={{n}})",
-          attack1: "[{{time}}]  執行指認性與跨表連結攻擊測試 (Singling-Out & Linkability)...",
-          attack2: "[{{time}}]  訓練隨機森林模型評估推斷攻擊 (Inference Attack)...",
-          utility: "[{{time}}]  計算分佈散度誤差以驗證數據可用性 (Jensen-Shannon Divergence)...",
-          finished: "[{{time}}]  後端管線運算完畢，合規憑證已成功簽發！"
+          attack1: "[{{time}}]  執行指認性與跨表連結攻擊測試 ...",
+          attack2: "[{{time}}]  訓練隨機森林模型評估推斷攻擊 ...",
+          utility: "[{{time}}]  計算分佈散度誤差以驗證數據可用性 ...",
+          finished: "[{{time}}]  後端運算完畢，合規憑證已成功簽發！"
         },
         alert: {
           title: "去識別化矩陣演算與風險審計完成",
@@ -263,13 +326,13 @@ const resources = {
           complete: { title: "完成簽發" }
         },
         loading: {
-          uploading: "正在將大數據切片 (Chunk) 傳輸至後端伺服器...",
+          uploading: "正在將大資料切片 (Chunk) 傳輸至後端伺服器...",
           processing: "後端正在執行去識別化矩陣與加噪演算...",
           auditing: "正在執行蒙地卡羅攻擊模擬與可用性評估...",
           completed: "後端演算完畢，正在生成最終合規報告..."
         },
         risk: {
-          title: "安全性評估 (Privacy Risks)",
+          title: "安全性評估",
           overall_desc: "連續發布 M={{m}} 次之綜合殘餘風險",
           passed: "防禦驗證通過",
           singling: "指認風險:",
@@ -277,20 +340,20 @@ const resources = {
           inference: "推斷風險:"
         },
         utility: {
-          title: "數據可用性評估 (Data Utility)",
-          retention: "機器學習數據特徵保留率",
+          title: "資料可用性評估",
+          retention: "機器學習資料特徵保留率",
           jsd: "分佈散度 (JSD)",
           corr: "特徵相關性 (Corr)",
           alert_title: "可用性分析結果",
           alert_desc: "分佈圖顯示，脫敏後的資料依然完美維持了原有的鐘型/長尾趨勢。JSD 值為 {{jsd}}，代表特徵偏差極小，適用於商業智慧 (BI) 與模型訓練。"
         },
         preview: {
-          title: "脫敏結果預覽對照 (First 10 Rows)",
-          masked: "脫敏後數據 (Masked)",
-          raw: "原始明文數據 (Raw)"
+          title: "脫敏結果預覽對照",
+          masked: "脫敏後數據",
+          raw: "原始明文數據"
         },
         modal: {
-          title: "合規審計報告 (Privacy Audit Certificate)",
+          title: "合規審計報告",
           close: "關閉",
           export_pdf: "匯出 PDF 憑證"
         },
@@ -305,9 +368,9 @@ const resources = {
           queries: "連續查詢次數：",
           risk_title: "隱私安全風險評估",
           overall_risk: "綜合殘餘風險:",
-          singling_risk: "指認性風險 (Singling Out):",
-          linkability_risk: "連結性風險 (Linkability):",
-          inference_risk: "推斷性風險 (Inference):",
+          singling_risk: "指認性風險:",
+          linkability_risk: "連結性風險:",
+          inference_risk: "推斷性風險:",
           utility_title: "數據可用性評估",
           retention: "整體數據保留度:",
           jsd: "分佈散度誤差 (JSD):",
@@ -318,38 +381,22 @@ const resources = {
           col_name: "欄位名稱",
           col_role: "隱私角色",
           col_tech: "套用去識別化技術",
-          masking: "完全遮蔽 (Full Masking)",
-          generalization: "區間/時間泛化 (Generalization)",
-          dp: "差分隱私加噪 (DP Protected)",
+          masking: "完全遮蔽",
+          generalization: "區間/時間泛化",
+          dp: "差分隱私加噪",
           signature: "系統數位簽章：PRIVACY-APP-AUDIT-ENGINE-V2.0-PASSED"
         },
         chart: {
           s_ori: "S_ori (主要攻擊成功率)",
           s_ctrl: "S_ctrl (控制組偽陽性率)",
           s_base: "S_base (基線猜測率)",
-          singling: "指認性攻擊 (Singling Out)",
-          linkability: "連結性攻擊 (Linkability)",
-          inference: "推斷性攻擊 (Inference)",
-          raw_dist: "原始數據分佈 (Raw)",
-          masked_dist: "脫敏後分佈 (Masked)",
-          value_bins: "數值區間 (Value Bins)",
+          singling: "指認性攻擊",
+          linkability: "連結性攻擊",
+          inference: "推斷性攻擊",
+          raw_dist: "原始數據分佈",
+          masked_dist: "脫敏後分佈",
+          value_bins: "數值區間",
           count: "頻次 (Count)"
-        },
-        msg: {
-          no_report_perm: "權限不足：您目前的角色無法簽發合規審計憑證",
-          no_csv_perm: "權限不足：您目前的角色無法下載去識別化全量 CSV 數據",
-          download_success: "已成功匯出全量脫敏 CSV 數據！",
-          pdf_compiling: "正在編譯高畫質 PDF，請稍候...",
-          pdf_success: "合規審計憑證 PDF 已成功下載！",
-          pdf_failed: "PDF 下載失敗",
-          pdf_no_lib: "無法載入 PDF 轉檔套件，請檢查網路連線。"
-        },
-        role: {
-          identifier: "直接識別 (Identifier)",
-          quasi_identifier: "準識別碼 (Quasi-identifier)",
-          dp_sensitive: "DP 敏感屬性",
-          retained: "保留欄位",
-          non_sensitive: "非敏感屬性"
         }
       },
       
@@ -360,9 +407,8 @@ const resources = {
         preview_export: "預覽匯出",
         profile_settings: "個人資料設定",
         system_preferences: "系統偏好設定",
-        // 🌟 補齊 menu 缺少的鍵值
         audit_log: "歷史審計憑證 (Audit Log)",
-        role_switch_demo: "切換測試角色 (RBAC Demo)"
+        role_switch_demo: "切換測試角色"
       },
       header: {
         project_space: "專案空間",
@@ -371,8 +417,8 @@ const resources = {
         differential_privacy: "差分隱私",
         select_mode: "選擇模式",
         logout: "登出系統",
-        // 🌟 補齊 header 缺少的鍵值
-        audit_log: "歷史審計紀錄與憑證管理"
+        audit_log: "歷史審計紀錄與憑證管理",
+        back_to_select_mode: "回到選擇模式"
       },
       notification: {
         update: "系統通知：差分隱私模組已更新",
@@ -385,7 +431,10 @@ const resources = {
         logout_title: "確定要登出系統嗎？",
         logout_content: "登出後將清除當前工作區的未儲存設定。",
         confirm_logout: "確認登出",
-        cancel: "取消"
+        cancel: "取消",
+        warning_title: "系統提示",
+        reset_warning: "切換模式將會遺失當前未儲存的設定進度，確定要返回選擇模式嗎？",
+        confirm: "確定"
       },
       message: {
         logout_success: "已成功登出",
@@ -407,8 +456,16 @@ const resources = {
         import_master_json_success: "已成功匯入全局隱私配置 (Master Schema)！",
         import_json_format_error: "格式錯誤：無法識別的 JSON 結構",
         apply_recommend_dp_success: "已為所有欄位套用最佳實務推薦設定！請記得補齊參數。",
-        // 🌟 補齊 message 缺少的鍵值
-        role_switched: "已將全域角色切換為：{{role}}"
+        role_switched: "已將全域角色切換為：{{role}}",
+        reset_email_sent: "密碼重設信件已發送至 {{email}}，請至信箱收取！",
+        request_sent: "申請已送出！系統管理員將會審核 {{name}} 的存取權限。",
+        no_report_perm: "權限不足：您目前的角色無法簽發合規審計憑證",
+        no_csv_perm: "權限不足：您目前的角色無法下載去識別化全量 CSV 數據",
+        download_success: "已成功匯出全量脫敏 CSV 數據！",
+        pdf_compiling: "正在編譯高畫質 PDF，請稍候...",
+        pdf_success: "合規審計憑證 PDF 已成功下載！",
+        pdf_failed: "PDF 下載失敗",
+        pdf_no_lib: "無法載入 PDF 轉檔套件，請檢查網路連線。"
       },
       button: {
         prev: "上一步",
@@ -416,7 +473,7 @@ const resources = {
       },
       preferences: {
         title: "系統偏好設定",
-        dark_mode: "外觀主題 (Dark Mode)",
+        dark_mode: "外觀主題",
         dark_mode_desc: "切換系統的深色或淺色視覺體驗",
         language: "系統語系",
         language_desc: "選擇操作介面的預設顯示語言"
@@ -432,7 +489,7 @@ const resources = {
         confirmApply: "確認套用並切換",
         cancel: "取消",
         deleteSuccess: "已刪除該範本",
-        buttonText: "範本管理 (Templates)",
+        buttonText: "範本管理",
         modalTitle: "專案 Schema 範本庫管理",
         instruction: "可一鍵套用預先設定好的欄位清洗與隱私對映規則：",
         saveNew: "將當前設定存為新範本",
@@ -449,13 +506,124 @@ const resources = {
         descPlaceholder: "例：將 ID 完全遮蔽，Age 作為 QI，Fare 進行區間化...",
         confirmSave: "確認儲存",
         nameDuplicate: "此範本名稱已存在，請更換名稱"
-      }
+      },
+      profile: {
+        title: "個人資料與安全設定",
+        info_title: "基本資料",
+        name: "使用者名稱",
+        email: "Email",
+        role: "系統角色",
+        change_password: "變更密碼",
+        old_password: "目前密碼",
+        require_old_password: "請輸入目前密碼",
+        ph_old_password: "請輸入原密碼",
+        new_password: "新密碼",
+        require_new_password: "請輸入新密碼",
+        password_min_length: "密碼長度至少需要 8 個字元",
+        password_complexity: "密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)",
+        password_same_as_old: "新密碼不能與目前密碼相同！",
+        ph_new_password: "至少 8 個字元",
+        confirm_password: "確認新密碼",
+        require_confirm_password: "請再次確認新密碼",
+        password_mismatch: "兩次輸入的密碼不一致！",
+        ph_confirm_password: "請再次確認新密碼",
+        btn_save_password: "更新密碼",
+        password_changed: "密碼已成功變更！請妥善保管新密碼。",
+        password_strength: "密碼強度",
+        strength_weak: "弱",
+        strength_medium: "中",
+        strength_strong: "強",
+        password_hint_1: "• 長度與複雜度：目標至少 12 個字元，並交織大小寫、數字及符號。",
+        password_hint_2: "• 易記性：建議使用對您有意義的「長句助記詞」(如生動的單字組合)。",
+        password_hint_3: "• 獨特性：請確保此密碼為本系統專屬，勿與其他平台共用。"
+      },
+      audit: {
+        stats_total: "累積合規簽發憑證總數",
+        unit_certificates: "份",
+        stats_passed: "審計合規通過率",
+        stats_avg_risk: "當前全域殘餘風險平均值",
+        hub_title: "歷史審計軌跡與憑證數據庫",
+        search_placeholder: "搜尋憑證編號、檔案名稱、操作者...",
+        filter_all: "全部保護模式",
+        col_cert_id: "憑證編號",
+        col_file_name: "處置檔案名稱",
+        col_privacy_mode: "保護模式",
+        col_operator: "操作者 / 角色",
+        col_risks: "三大攻擊殘餘風險",
+        risk_singling: "指認",
+        risk_linkability: "連結",
+        risk_inference: "推斷",
+        col_overall_risk: "綜合殘餘風險",
+        col_audit_time: "審計時間",
+        col_action: "操作與調閱",
+        btn_view_cert: "調閱憑證",
+        modal_title: "歷史審計憑證調閱",
+        btn_close: "關閉",
+        btn_export_pdf: "匯出 PDF 憑證",
+        msg_pdf_compiling: "正在編譯高畫質 PDF，請稍候...",
+        msg_pdf_success: "歷史審計憑證 PDF 已成功下載！",
+        msg_pdf_failed: "PDF 下載失敗",
+        msg_pdf_no_lib: "無法載入 PDF 轉檔套件，請檢查網路連線。",
+        report_title: "數據隱私合規與技術審計憑證",
+        report_cert_id: "憑證編號:",
+        report_passed: "驗證合格",
+        report_track_title: "專案與執行軌跡",
+        report_file_name: "資料檔案：",
+        report_tech: "套用技術：",
+        report_operator: "執行人員：",
+        report_time: "簽發時間：",
+        report_risk_title: "殘餘風險與量測結果",
+        report_singling: "指認性風險:",
+        report_linkability: "連結性風險:",
+        report_inference: "推斷性風險:",
+        report_overall_risk: "綜合殘餘風險:",
+        report_table_title: "欄位處置與技術對照表",
+        table_col_name: "欄位名稱",
+        table_col_role: "隱私角色",
+        table_col_tech: "套用去識別化技術",
+        tech_keep_original: "保留原文",
+        tech_full_masking: "完全遮蔽",
+        tech_generalization: "區間/時間泛化",
+        tech_dp: "差分隱私加噪",
+        report_sha: "數位防篡改指核 (SHA-256):",
+        report_signature: "系統數位簽章：PRIVACY-APP-AUDIT-ENGINE-V2.0-PASSED"
+      },
     }
   },
 
   en_US: {
     translation: {
-      // 🌟 新增：視圖切換 (Wizard / Audit)
+      common: {
+        email: "Email",
+        real_name: "Real Name",
+        company_email: "Company Email",
+        department_reason: "Department / Reason",
+        back_to_login: "Back to Login"
+      },
+      validation: {
+        invalid_email: "Please enter a valid email address!",
+        real_name_required: "Please enter your real name!",
+        reason_required: "Please enter your department or reason!"
+      },
+      placeholder: {
+        email: "Enter your email",
+        real_name: "e.g., John Doe",
+        company_email: "name@company.com",
+        reason: "Briefly describe your department and why you need access..."
+      },
+      
+      forgot_password: {
+        title: "Forgot Password?",
+        subtitle: "Enter your registered email and we will send you a reset link.",
+        submit: "Send Reset Link"
+      },
+
+      request_access: {
+        title: "Request Access",
+        subtitle: "Fill out your details. An admin will review and notify you.",
+        submit: "Submit Request"
+      },
+
       admin: {
         dashboard_title: "Admin Dashboard",
         dashboard_desc: "You are currently logged in as an Admin. Based on the Separation of Duties (SoD) principle, this interface does not participate in frontend business data operations. Below is the system infrastructure health and security overview.",
@@ -501,16 +669,48 @@ const resources = {
         delete_confirm_title: "Confirm Deletion",
         delete_confirm_desc: "Are you sure you want to delete this account? This action cannot be undone.",
         msg_user_deleted: "User deleted successfully",
-        btn_confirm: "Confirm"
+        btn_confirm: "Confirm",
+        setting_updated: "Security settings successfully updated!",
+        password_policy_title: "Password Security Policy Control",
+        enable_expiry: "Enforce Password Expiry",
+        enable_expiry_desc: "When enabled, all users must change their passwords within the set period.",
+        expiry_days: "Password Validity Period",
+        expiry_days_desc: "Recommended setting for corporate security policy is 90 days.",
+        days: "Days"
       },
       view: {
         wizard: "Data Anonymization Wizard",
         audit: "Audit Log Hub"
       },
-      // 🌟 新增：RBAC 角色
       role: {
         admin: " Admin",
-        data_owner: " Data Owner"
+        data_owner: " Data Owner",
+        identifier: "Identifier",
+        quasi_identifier: "Quasi-identifier",
+        dp_sensitive: "DP Sensitive",
+        retained: "Retained",
+        non_sensitive: "Non-sensitive"
+      },
+
+      login: {
+        welcome: "Welcome Back",
+        subtitle: "Please log in to continue using Privacy Toolkit",
+        emailLabel: "Email / Username",
+        emailRequired: "Please enter your email!",
+        emailPlaceholder: "Enter your email",
+        passwordLabel: "Password",
+        passwordRequired: "Please enter your password!",
+        passwordPlaceholder: "Enter your password",
+        rememberMe: "Remember me",
+        forgotPassword: "Forgot password?",
+        submitBtn: "Log In",
+        quickLoginBtn: " One-Click Quick Login",
+        noAccount: "Don't have an account?",
+        requestAccess: "Request Access",
+        success: "Login successful! Preparing workspace...",
+        quickSuccess: " Quick login successful!",
+        error: "Login failed. Please check your credentials.",
+        networkError: "Network error. Please try again later."
       },
 
       step1: {
@@ -774,7 +974,11 @@ const resources = {
           jsd: "Jensen-Shannon Divergence (JSD)",
           corr: "Feature Correlation",
           alert_title: "Utility Analysis Result",
-          alert_desc: "The distribution chart shows the masked data perfectly maintains the original trend. JSD is {{jsd}}, indicating minimal deviation, suitable for BI and ML training."
+          alert_desc: "The distribution chart shows the masked data perfectly maintains the original trend. JSD is {{jsd}}, indicating minimal deviation, suitable for BI and ML training.",
+          suppression: "Data Suppression Rate",
+          suppression_progress: "Limit 5%:",
+          total_cols: "Total Processed Columns",
+          unit_cols: "Cols"
         },
         preview: {
           title: "Masking Result Preview (First 10 Rows)",
@@ -813,7 +1017,10 @@ const resources = {
           masking: "Full Masking",
           generalization: "Generalization",
           dp: "DP Protected",
-          signature: "System Digital Signature: PRIVACY-APP-AUDIT-ENGINE-V2.0-PASSED"
+          signature: "System Digital Signature: PRIVACY-APP-AUDIT-ENGINE-V2.0-PASSED",
+          suppression: "Data Suppression Rate",
+          total_cols: "Total Processed Columns",
+          qi_cols: "Quasi-identifier Columns",
         },
         chart: {
           s_ori: "S_ori (Primary Attack Success Rate)",
@@ -826,22 +1033,6 @@ const resources = {
           masked_dist: "Masked Data",
           value_bins: "Value Bins",
           count: "Count"
-        },
-        msg: {
-          no_report_perm: "Permission denied: Current role cannot issue audit certificates.",
-          no_csv_perm: "Permission denied: Current role cannot download masked CSV.",
-          download_success: "Successfully exported masked CSV data!",
-          pdf_compiling: "Compiling high-quality PDF, please wait...",
-          pdf_success: "Audit Certificate PDF downloaded successfully!",
-          pdf_failed: "Failed to download PDF.",
-          pdf_no_lib: "Cannot load PDF conversion library, please check your network."
-        },
-        role: {
-          identifier: "Identifier",
-          quasi_identifier: "Quasi-identifier",
-          dp_sensitive: "DP Sensitive",
-          retained: "Retained",
-          non_sensitive: "Non-sensitive"
         }
       },
       
@@ -852,7 +1043,6 @@ const resources = {
         preview_export: "Preview & Export",
         profile_settings: "Profile Settings",
         system_preferences: "System Preferences",
-        // 🌟 補齊 menu 缺少的鍵值
         audit_log: "Audit Log",
         role_switch_demo: "Switch Role (RBAC Demo)",
         admin_dashboard: "Admin Dashboard"
@@ -864,8 +1054,8 @@ const resources = {
         differential_privacy: "Differential Privacy",
         select_mode: "Select Mode",
         logout: "Logout",
-        // 🌟 補齊 header 缺少的鍵值
-        audit_log: "Audit Log & Certificates"
+        audit_log: "Audit Log & Certificates",
+        back_to_select_mode: "Back to Select Mode"
       },
       notification: {
         update: "System: DP module updated",
@@ -878,7 +1068,10 @@ const resources = {
         logout_title: "Are you sure you want to log out?",
         logout_content: "Unsaved settings in the current workspace will be cleared.",
         confirm_logout: "Confirm Logout",
-        cancel: "Cancel"
+        cancel: "Cancel",
+        warning_title: "System Warning",
+        reset_warning: "Switching modes will lose your current unsaved settings. Are you sure you want to return to Select Mode?",
+        confirm: "Confirm"
       },
       message: {
         logout_success: "Logged out successfully",
@@ -900,8 +1093,16 @@ const resources = {
         import_master_json_success: "Global privacy configuration (Master Schema) imported successfully!",
         import_json_format_error: "Format error: Unrecognized JSON structure",
         apply_recommend_dp_success: "Best practice recommendations applied! Please remember to fill in missing parameters.",
-        // 🌟 補齊 message 缺少的鍵值
-        role_switched: "Global role switched to: {{role}}"
+        role_switched: "Global role switched to: {{role}}",
+        reset_email_sent: "Password reset link sent to {{email}}. Please check your inbox!",
+        request_sent: "Request submitted! An admin will review access for {{name}}.",
+        no_report_perm: "Permission denied: Current role cannot issue audit certificates.",
+        no_csv_perm: "Permission denied: Current role cannot download masked CSV.",
+        download_success: "Successfully exported masked CSV data!",
+        pdf_compiling: "Compiling high-quality PDF, please wait...",
+        pdf_success: "Audit Certificate PDF downloaded successfully!",
+        pdf_failed: "Failed to download PDF.",
+        pdf_no_lib: "Cannot load PDF conversion library, please check your network."
       },
       button: {
         prev: "Previous",
@@ -942,7 +1143,88 @@ const resources = {
         descPlaceholder: "e.g., Full mask on ID, Age as QI, Fare binned...",
         confirmSave: "Confirm Save",
         nameDuplicate: "This template name already exists, please choose another one."
-      }
+      },
+      profile: {
+        title: "Profile & Security Settings",
+        info_title: "Basic Information",
+        name: "Username",
+        email: "Email",
+        role: "System Role",
+        change_password: "Change Password",
+        old_password: "Current Password",
+        require_old_password: "Please enter your current password",
+        ph_old_password: "Enter current password",
+        new_password: "New Password",
+        require_new_password: "Please enter a new password",
+        password_min_length: "Password must be at least 8 characters long",
+        password_complexity: "Insufficient complexity: Must include upper/lowercase letters, numbers, and symbols (e.g. @$!%*?&#)",
+        password_same_as_old: "New password cannot be the same as the current password!",
+        ph_new_password: "At least 8 characters",
+        confirm_password: "Confirm New Password",
+        require_confirm_password: "Please confirm your new password",
+        password_mismatch: "Passwords do not match!",
+        ph_confirm_password: "Confirm your new password",
+        btn_save_password: "Update Password",
+        password_changed: "Password changed successfully! Please keep your new password safe.",
+        password_strength: "Password Strength",
+        strength_weak: "Weak",
+        strength_medium: "Medium",
+        strength_strong: "Strong",
+        password_hint_1: "• Length & Complexity: Aim for at least 12 characters, mixing upper/lowercase, numbers, and symbols.",
+        password_hint_2: "• Memorability: Use a meaningful 'passphrase' (e.g., vivid word combinations).",
+        password_hint_3: "• Uniqueness: Ensure this password is unique to this system and not shared across platforms."
+      },
+      audit: {
+        stats_total: "Total Compliance Certificates Issued",
+        unit_certificates: "certs",
+        stats_passed: "Audit Compliance Pass Rate",
+        stats_avg_risk: "Current Global Avg. Residual Risk",
+        hub_title: "Audit Logs & Certificates Hub",
+        search_placeholder: "Search Cert ID, File Name, Operator...",
+        filter_all: "All Protection Modes",
+        col_cert_id: "Certificate ID",
+        col_file_name: "Processed File Name",
+        col_privacy_mode: "Protection Mode",
+        col_operator: "Operator / Role",
+        col_risks: "Residual Risks (Singling/Link/Inf)",
+        risk_singling: "Singling",
+        risk_linkability: "Link",
+        risk_inference: "Inf",
+        col_overall_risk: "Overall Risk",
+        col_audit_time: "Audit Time",
+        col_action: "Action",
+        btn_view_cert: "View Cert",
+        modal_title: "Historical Certificate Viewer",
+        btn_close: "Close",
+        btn_export_pdf: "Export PDF",
+        msg_pdf_compiling: "Compiling high-quality PDF, please wait...",
+        msg_pdf_success: "Audit Certificate PDF exported successfully!",
+        msg_pdf_failed: "Failed to download PDF.",
+        msg_pdf_no_lib: "Cannot load PDF conversion library, check network.",
+        report_title: "Data Privacy Compliance & Technical Audit Certificate",
+        report_cert_id: "Certificate ID:",
+        report_passed: "Validation Passed",
+        report_track_title: "Project & Execution Track",
+        report_file_name: "Data File:",
+        report_tech: "Applied Tech:",
+        report_operator: "Operator:",
+        report_time: "Issue Time:",
+        report_risk_title: "Residual Risks & Measurement Results",
+        report_singling: "Singling Out Risk:",
+        report_linkability: "Linkability Risk:",
+        report_inference: "Inference Risk:",
+        report_overall_risk: "Overall Residual Risk (Final Risk):",
+        report_table_title: "Field Disposition & Technical Mapping Table",
+        table_col_name: "Field Name",
+        table_col_role: "Privacy Role",
+        table_col_tech: "Applied De-identification Tech",
+        tech_keep_original: "Keep Original",
+        tech_full_masking: "Full Masking",
+        tech_generalization: "Generalization",
+        tech_dp: "DP Protected",
+        report_sha: "Digital Anti-tamper Fingerprint (SHA-256):",
+        report_signature: "System Digital Signature: PRIVACY-APP-AUDIT-ENGINE-V2.0-PASSED"
+      },
     }
   }
 };

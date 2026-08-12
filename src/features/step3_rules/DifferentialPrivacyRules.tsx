@@ -1,45 +1,75 @@
 import { useMemo, useEffect } from 'react';
 import { 
   Alert, Card, Slider, Row, Col, Statistic, Divider, 
-  InputNumber, theme, Switch, Select, Space, Progress, Typography, Table, Tag
+  InputNumber, theme, Select, Space, Progress, Typography, Table, Tag
 } from 'antd';
 import { 
-  LockOutlined, LineChartOutlined, CalculatorOutlined, 
-  DashboardOutlined, GlobalOutlined, ControlOutlined
+  LineChartOutlined, CalculatorOutlined, 
+  DashboardOutlined, GlobalOutlined, ControlOutlined, LockOutlined
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
-import { usePrivacyStore } from '../../store/usePrivacyStore';
 import { useTranslation } from 'react-i18next';
 
+import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
+
 const { Text } = Typography;
+
+export type ConvertedField = DPField & {
+  equivalentEpsilon: number;
+};
 
 export default function DifferentialPrivacyRules() {
   const { token } = theme.useToken();
   const isDark = token.colorBgContainer !== '#ffffff';
   const { t } = useTranslation();
   
-  const { 
-    dpFields, 
-    targetDelta, 
-    queryCount, 
-    budgetLimitEpsilon,
-    outOfBoundsStrategy,
-    toggleFieldEnable,
-    updateFieldDP,
-    updateStep3Params,
-    setStepValidation // 🌟 引入防呆驗證函數
-  } = usePrivacyStore();
+  // 🌟 移除所有的 `|| []` 和 `|| {}`，依靠 Store 內建的初始值，徹底解決 useEffect 依賴警告！
+  const dpFields = useWorkspaceStore(state => state.dpFields);
+  const columns = useWorkspaceStore(state => state.columns);
+  const columnRoles = useWorkspaceStore(state => state.columnRoles);
+  const targetDelta = useWorkspaceStore(state => state.targetDelta);
+  const queryCount = useWorkspaceStore(state => state.queryCount);
+  const budgetLimitEpsilon = useWorkspaceStore(state => state.budgetLimitEpsilon);
+  const outOfBoundsStrategy = useWorkspaceStore(state => state.outOfBoundsStrategy);
+  const setStepValidation = useWorkspaceStore(state => state.setStepValidation);
 
-  const activeFields = useMemo(() => dpFields?.filter(f => f.enabled) || [], [dpFields]);
+  const updateFieldDP = <T extends keyof DPField>(id: string, key: T, val: DPField[T]) => {
+    useWorkspaceStore.setState((state) => ({
+      dpFields: state.dpFields.map(f => f.id === id ? { ...f, [key]: val } : f)
+    }));
+  };
+
+  useEffect(() => {
+    if ((!dpFields || dpFields.length === 0) && columns.length > 0) {
+      const initialFields: DPField[] = columns
+        .filter(col => (columnRoles[col] || '').toLowerCase() !== 'identifier')
+        .map((col, idx) => ({
+          id: `dp-col-${idx}-${col}`,
+          fieldName: col,
+          fieldType: columnRoles[col] || 'Quasi-Identifier',
+          enabled: true,
+          epsilon: 1.0,
+          delta: 1e-5,
+          mode: 'epsilon'
+        }));
+
+      useWorkspaceStore.setState({ dpFields: initialFields });
+    }
+  }, [columns, columnRoles, dpFields]);
+
+  const activeFields = useMemo(() => dpFields.filter(f => f.enabled), [dpFields]);
 
   const convertedFields = useMemo(() => {
     return activeFields.map(field => {
-      let eqEps = field.epsilon;
-      if (field.mode === 'epsilon-delta' && field.delta > 0 && targetDelta > 0 && field.delta !== targetDelta) {
-        const ratio = Math.log(1 / targetDelta) / Math.log(1 / field.delta);
-        eqEps = field.epsilon * ratio;
+      const eps = field.epsilon ?? 1.0;
+      const dlt = field.delta ?? 1e-5;
+      
+      let eqEps = eps;
+      if (field.mode === 'epsilon-delta' && dlt > 0 && targetDelta > 0 && dlt !== targetDelta) {
+        const ratio = Math.log(1 / targetDelta) / Math.log(1 / dlt);
+        eqEps = eps * ratio;
       }
-      return { ...field, equivalentEpsilon: parseFloat(eqEps.toFixed(4)) };
+      return { ...field, equivalentEpsilon: parseFloat(eqEps.toFixed(4)) } as ConvertedField;
     });
   }, [activeFields, targetDelta]);
 
@@ -49,30 +79,30 @@ export default function DifferentialPrivacyRules() {
   }, [convertedFields]);
 
   const accumulatedEpsilon = parseFloat((totalEquivalentEpsilon * queryCount).toFixed(3));
-  const budgetUsagePercent = Math.min((accumulatedEpsilon / budgetLimitEpsilon) * 100, 100);
+  const safeLimit = budgetLimitEpsilon || 10;
+  const budgetUsagePercent = Math.min((accumulatedEpsilon / safeLimit) * 100, 100);
   const isBudgetDanger = budgetUsagePercent >= 90;
   const isBudgetWarning = budgetUsagePercent >= 75 && !isBudgetDanger;
 
-  // 🌟 核心防呆邏輯：DP 參數即時驗證
   useEffect(() => {
-    if (targetDelta === undefined || targetDelta === null || targetDelta < 0 || targetDelta >= 1) {
+    if (targetDelta === undefined || targetDelta === null || targetDelta <= 0 || targetDelta >= 1) {
       setStepValidation(false, t('step3_dp.error_delta_invalid', '目標 Delta (δ) 必須介於 0 與 1 之間。'));
       return;
     }
     
-    const hasInvalidEpsilon = activeFields.some(f => f.epsilon <= 0);
+    const hasInvalidEpsilon = activeFields.some(f => (f.epsilon ?? 1.0) <= 0);
     if (hasInvalidEpsilon) {
-      setStepValidation(false, t('step3_dp.error_epsilon_zero', '啟用的欄位中，Epsilon (ε) 必須大於 0。'));
+      setStepValidation(false, t('step3_dp.error_epsilon_zero', '欄位中，Epsilon (ε) 必須大於 0。'));
       return;
     }
 
-    if (budgetUsagePercent > 100) {
+    if (accumulatedEpsilon > safeLimit) {
       setStepValidation(false, t('step3_dp.error_budget_exceeded', '消耗的總隱私預算已超過設定上限，請調降各欄位的 ε 或是減少模擬查詢次數。'));
       return;
     }
 
     setStepValidation(true, null);
-  }, [targetDelta, activeFields, budgetUsagePercent, setStepValidation, t]);
+  }, [targetDelta, activeFields, accumulatedEpsilon, safeLimit, setStepValidation, t]);
 
   const getDPOption = () => {
     const originalDistribution = [5, 18, 45, 85, 100, 85, 45, 18, 5];
@@ -87,34 +117,24 @@ export default function DifferentialPrivacyRules() {
       backgroundColor: 'transparent',
       tooltip: { trigger: 'axis', axisPointer: { type: 'line', lineStyle: { color: token.colorBorder, type: 'dashed' } } },
       legend: { data: [t('step3_dp.chart_original', 'Original Distribution'), t('step3_dp.chart_noisy', 'Noisy Distribution')], textStyle: { color: token.colorTextSecondary }, top: '0%', icon: 'circle' },
-      grid: { top: '15%', left: '8%', right: '8%', bottom: '12%', containLabel: true },
+      grid: { top: '15%', left: '5%', right: '5%', bottom: '12%', containLabel: true },
       xAxis: { type: 'category', boundaryGap: false, data: ['20K', '30K', '40K', '50K', '60K', '70K', '80K', '90K', '100K'], name: t('step3_dp.chart_x_axis', 'Value Range'), nameLocation: 'center', nameGap: 30, nameTextStyle: { color: token.colorTextSecondary, fontWeight: 500 }, axisLabel: { color: token.colorTextDescription }, axisLine: { lineStyle: { color: token.colorBorder } } },
       yAxis: { type: 'value', name: t('step3_dp.chart_y_axis', 'Density/Frequency'), nameLocation: 'end', nameTextStyle: { color: token.colorTextSecondary }, axisLabel: { show: false }, splitLine: { lineStyle: { color: token.colorSplit } }, axisLine: { show: false } },
       series: [
         { name: t('step3_dp.chart_original', 'Original Distribution'), type: 'line', smooth: true, color: isDark ? '#434343' : '#d9d9d9', data: originalDistribution, areaStyle: { opacity: 0.05 }, lineStyle: { width: 1.5, type: 'dashed' }, showSymbol: false }, 
-        { name: t('step3_dp.chart_noisy', 'Noisy Distribution'), type: 'line', smooth: true, color: token.colorPrimary, data: noisyDistribution, areaStyle: { opacity: isDark ? 0.15 : 0.2 }, lineStyle: { width: 3.5 }, showSymbol: false, itemStyle: { shadowBlur: 8, shadowColor: token.colorPrimary } }
+        { name: t('step3_dp.chart_noisy', 'Noisy Distribution'), type: 'line', smooth: true, color: token.colorPrimary, data: noisyDistribution, areaStyle: { opacity: isDark ? 0.2 : 0.25 }, lineStyle: { width: 3.5 }, showSymbol: false, itemStyle: { shadowBlur: 12, shadowColor: token.colorPrimary } }
       ]
     };
   };
 
-  type ConvertedField = {
-    id: string;
-    fieldName: string;
-    epsilon: number;
-    delta: number;
-    mode: 'epsilon' | 'epsilon-delta';
-    equivalentEpsilon: number;
-  };
-
   const conversionColumns = [
-    { title: t('step3_dp.col_field', 'Field Name'), dataIndex: 'fieldName', key: 'fieldName', render: (text: string) => <Text strong style={{fontSize: 12}}>{text}</Text> },
+    { title: t('step3_dp.col_field', 'Field Name'), dataIndex: 'fieldName', key: 'fieldName', render: (text: string) => <Text strong style={{fontSize: 13}}>{text}</Text> },
     { 
       title: t('step3_dp.col_original', 'Original Setting'), 
       key: 'original', 
       render: (_: unknown, record: ConvertedField) => (
-        <div style={{ fontSize: 11, color: token.colorTextSecondary }}>
-          <div>ε: {record.epsilon}</div>
-          {record.mode === 'epsilon-delta' && <div>δ: {record.delta}</div>}
+        <div style={{ fontSize: 12, color: token.colorTextSecondary }}>
+          ε: {record.epsilon ?? 1.0} {record.mode === 'epsilon-delta' && ` | δ: ${record.delta ?? 1e-5}`}
         </div>
       )
     },
@@ -122,7 +142,8 @@ export default function DifferentialPrivacyRules() {
       title: t('step3_dp.col_equivalent', 'Equivalent ε'), 
       dataIndex: 'equivalentEpsilon', 
       key: 'equivalentEpsilon', 
-      render: (val: number) => <Tag color="purple" style={{ margin: 0 }}>{val}</Tag> 
+      align: 'right' as const,
+      render: (val: number) => <Text strong style={{ color: '#722ed1', fontSize: 14 }}>{val}</Text> 
     }
   ];
 
@@ -147,10 +168,11 @@ export default function DifferentialPrivacyRules() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text strong>{t('step3_dp.global_delta', 'Global Target Delta (Baseline δ)')}</Text>
                 <InputNumber 
-                  min={0.00001} max={0.1} step={0.0001} 
+                  min={1e-10} max={0.9999999999} step={0.0001} 
                   value={targetDelta} 
-                  onChange={(val) => updateStep3Params({ targetDelta: val ?? 0.0001 })} 
-                  style={{ width: '120px' }} 
+                  onChange={(val) => useWorkspaceStore.setState({ targetDelta: val ?? 1e-5 })} 
+                  style={{ width: '150px' }} 
+                  stringMode
                 />
               </div>
               <Text type="secondary" style={{ fontSize: 13 }}>
@@ -165,17 +187,17 @@ export default function DifferentialPrivacyRules() {
                 <Space>
                   <Text strong style={{ color: token.colorWarning }}>{t('step3_dp.query_times', { count: queryCount, defaultValue: `${queryCount} Times` })}</Text>
                   <InputNumber 
-                    min={1} max={20} 
+                    min={1} max={10000} 
                     value={queryCount} 
-                    onChange={(val) => updateStep3Params({ queryCount: val ?? 1 })} 
-                    size="small" style={{ width: '60px' }} 
+                    onChange={(val) => useWorkspaceStore.setState({ queryCount: val ?? 1 })} 
+                    size="small" style={{ width: '100px' }} 
                   />
                 </Space>
               </div>
               <Slider 
-                min={1} max={20} 
+                min={1} max={1000} 
                 value={queryCount} 
-                onChange={(val) => updateStep3Params({ queryCount: val })} 
+                onChange={(val) => useWorkspaceStore.setState({ queryCount: val })} 
                 style={{ margin: 0 }}
               />
             </div>
@@ -184,23 +206,53 @@ export default function DifferentialPrivacyRules() {
         
         <Divider dashed style={{ margin: '20px 0' }} />
         <Row gutter={48}>
-          <Col span={24}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <Text strong>{t('step3_dp.out_of_bounds_strategy', 'Out-of-Bounds Strategy')}</Text>
-              <Select 
-                value={outOfBoundsStrategy ?? 'clip'} 
-                onChange={(val) => updateStep3Params({ outOfBoundsStrategy: val })} 
-                style={{ width: '320px' }}
-                options={[
-                  { value: 'clip', label: t('step3_dp.strategy_clip', '1. Clamp / Clip to Bounds') },
-                  { value: 'wrap', label: t('step3_dp.strategy_wrap', '2. Wrap-around (Modulo)') },
-                  { value: 'reflect', label: t('step3_dp.strategy_reflect', '3. Reflect / Bounce Back') },
-                ]}
-              />
+          <Col span={12}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text strong>{t('step3_dp.budget_limit_label', 'Total Budget Limit (ε Limit)')}</Text>
+                <InputNumber 
+                  step={0.5} 
+                  value={budgetLimitEpsilon} 
+                  onChange={(val) => useWorkspaceStore.setState({ budgetLimitEpsilon: val === null ? undefined : val })} 
+                  onBlur={(e) => {
+                    const currentVal = parseFloat(e.target.value);
+                    if (isNaN(currentVal)) {
+                      useWorkspaceStore.setState({ budgetLimitEpsilon: 10 });
+                    } 
+                    else if (currentVal < 0.1) {
+                      useWorkspaceStore.setState({ budgetLimitEpsilon: 0.1 });
+                    } 
+                    else if (currentVal > 100) {
+                      useWorkspaceStore.setState({ budgetLimitEpsilon: 100 });
+                    }
+                  }}
+                  style={{ width: '150px' }} 
+                />
+              </div>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                {t('step3_dp.budget_limit_desc', 'Set maximum allowable cumulative epsilon budget before system flags budget risk.')}
+              </Text>
             </div>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              {t('step3_dp.out_of_bounds_desc', 'When noisy numerical data exceeds the lower/upper bounds set in Stage 2, the system applies this post-processing strategy to keep values realistic.')}
-            </Text>
+          </Col>
+          <Col span={12}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text strong>{t('step3_dp.out_of_bounds_strategy', 'Out-of-Bounds Strategy')}</Text>
+                <Select 
+                  value={outOfBoundsStrategy ?? 'clip'} 
+                  onChange={(val) => useWorkspaceStore.setState({ outOfBoundsStrategy: val })} 
+                  style={{ width: '220px' }}
+                  options={[
+                    { value: 'clip', label: t('step3_dp.strategy_clip', '1. Clamp / Clip to Bounds') },
+                    { value: 'wrap', label: t('step3_dp.strategy_wrap', '2. Wrap-around (Modulo)') },
+                    { value: 'reflect', label: t('step3_dp.strategy_reflect', '3. Reflect / Bounce Back') },
+                  ]}
+                />
+              </div>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                {t('step3_dp.out_of_bounds_desc', 'When noisy numerical data exceeds lower/upper bounds, applies post-processing to keep values realistic.')}
+              </Text>
+            </div>
           </Col>
         </Row>
       </Card>
@@ -209,106 +261,133 @@ export default function DifferentialPrivacyRules() {
         title={<span><ControlOutlined style={{ marginRight: 8, color: '#13c2c2' }} />{t('step3_dp.field_tuning_title', '2. Individual Field Fine-Tuning')}</span>} 
         variant="borderless" 
         style={{ background: token.colorBgContainer, boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)' }}
+        styles={{ body: { padding: '16px' } }}
       >
-        <Row gutter={[24, 24]}>
-          {dpFields?.map((field) => (
-            <Col span={8} key={field.id}>
-              <Card 
-                type="inner" 
-                title={<Space><Switch checked={field.enabled} onChange={() => toggleFieldEnable(field.id)} size="small" />{field.fieldName}</Space>}
-                extra={<Text type="secondary" style={{ fontSize: 12 }}>{field.fieldType}</Text>}
-                style={{ 
-                  borderColor: field.enabled ? token.colorPrimaryBorder : token.colorBorderSecondary, 
-                  opacity: field.enabled ? 1 : 0.45,
-                  background: field.enabled ? (isDark ? '#141414' : '#fafafa') : 'transparent',
-                  transition: 'all 0.3s',
-                  height: '100%'
+        <div style={{ 
+          maxHeight: '320px', 
+          overflowY: 'auto', 
+          paddingRight: '12px',
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '8px' 
+        }}>
+          {activeFields.length === 0 ? (
+            <Text type="secondary" style={{ textAlign: 'center', padding: '24px 0', display: 'block' }}>
+              未包含需執行差分隱私處理的欄位。
+            </Text>
+          ) : (
+            activeFields.map((field) => (
+              <div 
+                key={field.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '12px 16px',
+                  background: isDark ? '#1f1f1f' : '#f8fafc',
+                  border: `1px solid ${token.colorPrimaryBorder}`,
+                  borderRadius: '8px',
+                  transition: 'all 0.2s ease',
                 }}
               >
-                {field.enabled ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <Select 
-                      size="small" 
-                      value={field.mode} 
-                      onChange={(val) => updateFieldDP(field.id, 'mode', val)}
-                      options={[{ value: 'epsilon', label: t('step3_dp.eps_dp', 'Pure ε-DP') }, { value: 'epsilon-delta', label: t('step3_dp.eps_delta_dp', '(ε, δ)-DP') }]}
-                    />
-                    
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', marginBottom: '4px' }}>
-                        <Text type="secondary">{t('step3_dp.epsilon', 'Epsilon (ε)')}</Text>
-                        <InputNumber 
-                          min={0.01} max={2.0} step={0.01} 
-                          value={field.epsilon} 
-                          onChange={(val) => updateFieldDP(field.id, 'epsilon', val || 0.01)} 
-                          size="small" style={{ width: '80px' }} 
-                        />
-                      </div>
+                <div style={{ flex: '0 0 25%', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ overflow: 'hidden' }}>
+                    <Text strong style={{ display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {field.fieldName}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: '12px' }}>{field.fieldType || 'QI'}</Text>
+                  </div>
+                </div>
+
+                <div style={{ flex: 1, display: 'flex', gap: '24px', alignItems: 'center' }}>
+                  <Select 
+                    size="middle" 
+                    value={field.mode || 'epsilon'} 
+                    onChange={(val) => updateFieldDP(field.id, 'mode', val)}
+                    options={[{ value: 'epsilon', label: 'ε-DP' }, { value: 'epsilon-delta', label: '(ε, δ)-DP' }]}
+                    style={{ width: '110px' }}
+                  />
+
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Text type="secondary" style={{ width: '20px', textAlign: 'right' }}>ε</Text>
                       <Slider 
-                        min={0.01} max={2.0} step={0.01} 
-                        value={field.epsilon} 
+                        min={0.01} max={10} step={0.01} 
+                        value={field.epsilon ?? 1.0} 
                         onChange={(val) => updateFieldDP(field.id, 'epsilon', val)} 
-                        style={{ margin: '4px 0 12px 0' }}
+                        style={{ flex: 1, margin: 0 }}
+                      />
+                      <InputNumber 
+                        min={0.001} max={100} step={0.01} 
+                        value={field.epsilon ?? 1.0} 
+                        onChange={(val) => updateFieldDP(field.id, 'epsilon', val || 0.01)} 
+                        size="small" style={{ width: '100px' }} 
                       />
                     </div>
 
                     {field.mode === 'epsilon-delta' && (
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', marginBottom: '4px' }}>
-                          <Text type="secondary">{t('step3_dp.delta', 'Delta (δ)')}</Text>
-                          <InputNumber 
-                            min={0.0001} max={0.01} step={0.0001} 
-                            value={field.delta} 
-                            onChange={(val) => updateFieldDP(field.id, 'delta', val || 0.0001)} 
-                            size="small" style={{ width: '80px' }} 
-                          />
-                        </div>
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Text type="secondary" style={{ width: '20px', textAlign: 'right' }}>δ</Text>
                         <Slider 
-                          min={0.0001} max={0.01} step={0.0001} 
-                          value={field.delta} 
+                          min={1e-8} max={0.1} step={0.0001} 
+                          value={field.delta ?? 1e-5} 
                           onChange={(val) => updateFieldDP(field.id, 'delta', val)} 
-                          style={{ margin: '4px 0 8px 0' }} 
-                          tooltip={{ formatter: (val) => val?.toFixed(4) }}
+                          style={{ flex: 1, margin: 0 }} 
+                          tooltip={{ formatter: (val) => val?.toFixed(6) }}
+                        />
+                        <InputNumber 
+                          min={1e-10} max={0.99} step={0.0001} 
+                          value={field.delta ?? 1e-5} 
+                          onChange={(val) => updateFieldDP(field.id, 'delta', val || 1e-5)} 
+                          size="small" style={{ width: '100px' }} 
+                          stringMode
                         />
                       </div>
                     )}
                   </div>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '60px' }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{t('step3_dp.field_disabled', 'Field Disabled')}</Text>
-                  </div>
-                )}
-              </Card>
-            </Col>
-          ))}
-        </Row>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </Card>
 
       <Row gutter={24} style={{ alignItems: 'stretch' }}>
         
         <Col span={8}>
           <Card 
-            title={<span><DashboardOutlined style={{ marginRight: 8, color: token.colorWarning }} />{t('step3_dp.card2_title', '3. Privacy Budget Usage')}</span>} 
+            title={<span><DashboardOutlined style={{ marginRight: 8, color: '#faad14' }} />{t('step3_dp.card2_title', '3. Privacy Budget Center')}</span>} 
             variant="borderless" 
-            style={{ height: '100%', background: token.colorBgContainer, boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)' }}
+            style={{ 
+              height: '100%', 
+              background: isDark ? '#141414' : '#fafafa',
+              border: `1px solid ${isDark ? '#303030' : '#e8e8e8'}`,
+              boxShadow: isDark ? 'inset 0 2px 10px rgba(0,0,0,0.5)' : 'none'
+            }}
           >
-            <div style={{ textAlign: 'center', padding: '16px 0' }}>
+            <div style={{ textAlign: 'center', padding: '24px 0 16px 0' }}>
               <Progress 
                 type="dashboard" 
                 percent={budgetUsagePercent} 
                 format={() => `${accumulatedEpsilon}`}
-                strokeColor={isBudgetDanger ? token.colorError : isBudgetWarning ? token.colorWarning : token.colorSuccess}
-                size={160}
+                strokeColor={isBudgetDanger ? { '0%': '#ff4d4f', '100%': '#cf1322' } : isBudgetWarning ? { '0%': '#faad14', '100%': '#d48806' } : { '0%': '#13c2c2', '100%': '#52c41a' }}
+                strokeWidth={10} 
+                size={220} 
+                style={{ filter: isDark ? 'drop-shadow(0 0 8px rgba(0,0,0,0.5))' : 'none' }}
               />
-              <div style={{ marginTop: 16 }}>
-                <Text type="secondary" style={{ fontSize: 13, display: 'block' }}>{t('step3_dp.accumulated_cost', { limit: budgetLimitEpsilon, defaultValue: `Accumulated Cost (Limit: ${budgetLimitEpsilon})` })}</Text>
-                <Text strong style={{ fontSize: 16, color: isBudgetDanger ? token.colorError : isBudgetWarning ? token.colorWarning : token.colorSuccess }}>
-                  {isBudgetDanger ? t('step3_dp.budget_danger', 'Over Budget Risk') : isBudgetWarning ? t('step3_dp.budget_warning', 'Budget Running Low') : t('step3_dp.budget_safe', 'Sufficient Budget')}
+              <div style={{ marginTop: 24 }}>
+                <Text type="secondary" style={{ fontSize: 14, display: 'block', marginBottom: 4 }}>
+                  {t('step3_dp.accumulated_cost', { limit: safeLimit, defaultValue: `Accumulated Cost / Limit (${safeLimit})` })}
                 </Text>
+                <Tag 
+                  color={isBudgetDanger ? 'error' : isBudgetWarning ? 'warning' : 'success'} 
+                  style={{ fontSize: 16, padding: '4px 16px', borderRadius: 4, fontWeight: 'bold' }}
+                >
+                  {isBudgetDanger ? t('step3_dp.budget_danger', 'Over Budget Risk') : isBudgetWarning ? t('step3_dp.budget_warning', 'Budget Running Low') : t('step3_dp.budget_safe', 'Sufficient Budget')}
+                </Tag>
               </div>
             </div>
 
-            <Divider dashed style={{ margin: '16px 0' }} />
+            <Divider style={{ margin: '24px 0', borderColor: isDark ? '#303030' : '#e8e8e8' }} />
             
             <Table 
               dataSource={convertedFields}
@@ -316,11 +395,13 @@ export default function DifferentialPrivacyRules() {
               rowKey="id"
               pagination={false}
               size="small"
-              scroll={{ y: 150 }}
+              bordered={false}
+              scroll={{ y: 160 }}
+              style={{ background: 'transparent' }}
               footer={() => (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <Text>{t('step3_dp.single_equivalent', 'Single Query Equivalent')}</Text>
-                  <Text strong style={{ color: token.colorPrimary }}>ε = {totalEquivalentEpsilon}</Text>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, padding: '8px 4px 0 4px' }}>
+                  <Text strong>{t('step3_dp.single_equivalent', 'Single Query Equivalent')}</Text>
+                  <Text strong style={{ color: '#722ed1', fontSize: 18 }}>ε = {totalEquivalentEpsilon}</Text>
                 </div>
               )}
             />
@@ -329,15 +410,33 @@ export default function DifferentialPrivacyRules() {
 
         <Col span={16}>
           <Card 
-            title={<span><LineChartOutlined style={{ marginRight: 8, color: '#722ed1' }} />{t('step3_dp.card3_title', 'Utility & Protection Assessment')}</span>} 
+            title={<span><LineChartOutlined style={{ marginRight: 8, color: '#722ed1' }} />{t('step3_dp.card3_title', '4. Global Noise Simulation')}</span>} 
             variant="borderless" 
-            style={{ height: '100%', background: token.colorBgContainer, boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)' }}
+            style={{ 
+              height: '100%', 
+              background: isDark ? '#141414' : '#fafafa',
+              border: `1px solid ${isDark ? '#303030' : '#e8e8e8'}`,
+              boxShadow: isDark ? 'inset 0 2px 10px rgba(0,0,0,0.5)' : 'none'
+            }}
           >
-            <div style={{ display: 'flex', gap: '32px', marginBottom: '16px' }}>
-              <Statistic title={t('step3_dp.unified_eps', 'Total Equivalent Epsilon')} value={totalEquivalentEpsilon} prefix={<CalculatorOutlined />} styles={{ content: { color: token.colorPrimary } }} />
-              <Statistic title={t('step3_dp.protection_level', 'Current Protection Level')} value={totalEquivalentEpsilon <= 2.0 ? t('step3_dp.level_high', 'High') : totalEquivalentEpsilon <= 8.0 ? t('step3_dp.level_medium', 'Medium') : t('step3_dp.level_low', 'Low')} prefix={<LockOutlined />} styles={{ content:{ color: totalEquivalentEpsilon <= 2.0 ? '#722ed1' : totalEquivalentEpsilon <= 8.0 ? '#13c2c2' : '#fa8c16' } }} />
+            <div style={{ display: 'flex', gap: '48px', marginBottom: '8px', padding: '0 16px' }}>
+              <Statistic 
+                title={<Text type="secondary" style={{ fontSize: 14 }}>{t('step3_dp.unified_eps', 'Total Equivalent Epsilon')}</Text>} 
+                value={totalEquivalentEpsilon} 
+                prefix={<CalculatorOutlined style={{ fontSize: 24, marginRight: 8, color: token.colorPrimary }}/>} 
+                formatter={(val) => <span style={{ fontSize: 42, fontWeight: 'bold', color: token.colorPrimary }}>{val}</span>}
+              />
+              <Statistic 
+                title={<Text type="secondary" style={{ fontSize: 14 }}>{t('step3_dp.protection_level', 'Current Protection Level')}</Text>} 
+                value={totalEquivalentEpsilon <= 2.0 ? t('step3_dp.level_high', 'High Security') : totalEquivalentEpsilon <= 8.0 ? t('step3_dp.level_medium', 'Medium Security') : t('step3_dp.level_low', 'Low Security')} 
+                prefix={<LockOutlined style={{ fontSize: 28, marginRight: 8, color: totalEquivalentEpsilon <= 2.0 ? '#722ed1' : totalEquivalentEpsilon <= 8.0 ? '#13c2c2' : '#fa8c16' }}/>} 
+                formatter={(val) => <span style={{ fontSize: 42, fontWeight: 'bold', color: totalEquivalentEpsilon <= 2.0 ? '#722ed1' : totalEquivalentEpsilon <= 8.0 ? '#13c2c2' : '#fa8c16' }}>{val}</span>}
+              />
             </div>
-            <ReactECharts option={getDPOption()} style={{ height: '400px', width: '100%' }} theme={isDark ? 'dark' : 'light'} />
+
+            <Divider style={{ margin: '16px 0', borderColor: isDark ? '#303030' : '#e8e8e8' }} />
+
+            <ReactECharts option={getDPOption()} style={{ height: '420px', width: '100%' }} theme={isDark ? 'dark' : 'light'} />
           </Card>
         </Col>
 

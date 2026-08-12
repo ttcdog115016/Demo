@@ -5,8 +5,10 @@ import {
   SaveOutlined, DatabaseOutlined, SisternodeOutlined, 
   CodeOutlined, ThunderboltOutlined, QuestionCircleOutlined
 } from '@ant-design/icons';
-import { usePrivacyStore } from '../../store/usePrivacyStore';
-import { useTranslation } from 'react-i18next'; // 🌟 引入翻譯 hook
+import CryptoJS from 'crypto-js';
+import { useTranslation } from 'react-i18next'; 
+
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
 interface FieldDef {
   id: string; name: string; type: string; role: string; maskStrategy: string;
@@ -38,6 +40,18 @@ const applyPreprocess = (val: unknown, action: string, param: string) => {
       const reg = new RegExp(param, 'g');
       str = str.replace(reg, '');
     } catch { /* ignore */ }
+  } else if (action === 'hash') {
+    try {
+      let hashResult = '';
+      const cleanParam = param?.toLowerCase().trim();
+      if (cleanParam === 'md5') hashResult = CryptoJS.MD5(str).toString();
+      else if (cleanParam === 'sha512') hashResult = CryptoJS.SHA512(str).toString();
+      else hashResult = CryptoJS.SHA256(str).toString();
+      str = hashResult.substring(0, 16) + '...';
+    } catch (error) {
+      console.error('Hashing error:', error);
+      str = 'Hash Error';
+    }
   }
 
   return str;
@@ -50,16 +64,20 @@ let globalCachedColsKey: string = '';
 export default function KAnonymityMapping() {
   const { token } = theme.useToken();
   const isDark = token.colorBgContainer !== '#ffffff';
-  const { t } = useTranslation(); // 🌟 啟用翻譯功能
+  const { t } = useTranslation(); 
   
   const { message: messageApi } = AntdApp.useApp();
 
-  const storeColumns = usePrivacyStore((state) => state.columns);
-  const storeColumnRoles = usePrivacyStore((state) => state.columnRoles);
-  const storeColumnTypes = usePrivacyStore((state) => state.columnTypes);
-  const kValue = usePrivacyStore((state) => state.kValue);
-  const maxSuppression = usePrivacyStore((state) => state.maxSuppression);
-  const previewData = usePrivacyStore((state) => state.previewData); 
+  // 🌟 徹底移除所有 as unknown 斷言，直接調用
+  const storeColumns = useWorkspaceStore((state) => state.columns);
+  const storeColumnRoles = useWorkspaceStore((state) => state.columnRoles);
+  const storeColumnTypes = useWorkspaceStore((state) => state.columnTypes);
+  const kValue = useWorkspaceStore((state) => state.kValue);
+  const maxSuppression = useWorkspaceStore((state) => state.maxSuppression);
+  const previewData = useWorkspaceStore((state) => state.previewData); 
+  
+  const setStepValidation = useWorkspaceStore((state) => state.setStepValidation);
+  const preprocessingRules = useWorkspaceStore((state) => state.preprocessingRules);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -74,8 +92,8 @@ export default function KAnonymityMapping() {
     const tempHier: Record<string, { levels: string[] }> = {};
     const catHierarchies: Record<string, { mapping: Record<string, string[]> }> = {};
     
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const preprocessingRules = (usePrivacyStore.getState() as any).preprocessingRules || {};
+    const storeState = useWorkspaceStore.getState();
+    const currentPreRules = storeState.preprocessingRules || {};
 
     fields.forEach(f => {
       if (!f.name) return;
@@ -112,7 +130,7 @@ export default function KAnonymityMapping() {
         differential_privacy: { enabled: false }
       },
       field_attributes: fieldAttributes,
-      preprocessing_rules: Object.keys(preprocessingRules).length > 0 ? preprocessingRules : undefined,
+      preprocessing_rules: Object.keys(currentPreRules).length > 0 ? currentPreRules : undefined,
       categorical_hierarchies: Object.keys(catHierarchies).length > 0 ? catHierarchies : undefined,
       numeric_bins: Object.keys(numBins).length > 0 ? numBins : undefined,
       temporal_hierarchies: Object.keys(tempHier).length > 0 ? tempHier : undefined,
@@ -121,25 +139,49 @@ export default function KAnonymityMapping() {
     };
   };
 
-  const handleExportJSON = () => {
-    try {
-      const liveJson = generateExportJSON();
-      const jsonStr = JSON.stringify(liveJson, null, 2);
-      const blob = new Blob([jsonStr], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `privacy_config_${Date.now()}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      messageApi.success(t('message.export_json_success'));
-    } catch (error) {
-      console.error("匯出錯誤:", error);
-      messageApi.error(t('message.export_json_error'));
+  useEffect(() => {
+    const actionsRequiringParam = ['keep_before', 'keep_until', 'regex_replace'];
+    const hasPreprocessError = storeColumns.some(col => {
+      const rule = preprocessingRules?.[col];
+      return rule && actionsRequiringParam.includes(rule.action) && (!rule.param || rule.param.trim() === '');
+    });
+
+    if (hasPreprocessError) {
+      setStepValidation(false, t('step2.preprocess_validation_error', '資料預先處理有未填寫的參數，請確認紅色框線欄位並輸入完畢。'));
+      return;
     }
-  };
+
+    let kAnonErrorMsg = null;
+    for (const field of fields) {
+      if (field.role === 'Identifier' && field.maskStrategy === 'keep' && (!field.maskKeepChars || field.maskKeepChars <= 0)) {
+        kAnonErrorMsg = `欄位 [${field.name}] 選擇保留部分字元，其保留字元數必須大於 0。`;
+        break;
+      }
+      
+      if (field.role === 'Quasi-identifier') {
+        if (field.genStrategy === 'tree') {
+          const table = hierarchies.find(h => h.fieldName === field.name);
+          const hasValidMapping = table && table.mappings.length > 0 && table.mappings.some(m => m[0] && m[0].trim() !== '');
+          if (!hasValidMapping) {
+            kAnonErrorMsg = `欄位 [${field.name}] 選擇「階層樹 (Tree)」泛化，請至「泛化階層映射」分頁設定至少一組有效的對應關係。`;
+            break;
+          }
+        } else if (['binning', 'rounding', 'segment', 'prefix', 'masking', 'length'].includes(field.genStrategy)) {
+          if (field.genParam === undefined || field.genParam === null || field.genParam <= 0) {
+            kAnonErrorMsg = `欄位 [${field.name}] 的泛化參數設定有誤 (不可小於等於 0)。`;
+            break;
+          }
+        }
+      }
+    }
+
+    if (kAnonErrorMsg) {
+      setStepValidation(false, kAnonErrorMsg);
+      return;
+    }
+
+    setStepValidation(true, null);
+  }, [fields, hierarchies, storeColumns, preprocessingRules, setStepValidation, t]);
 
   useEffect(() => {
     const colsKey = JSON.stringify(storeColumns);
@@ -195,10 +237,15 @@ export default function KAnonymityMapping() {
       cols.push(f.name);
     });
 
-    const currentStore = usePrivacyStore.getState();
+    const currentStore = useWorkspaceStore.getState();
     globalCachedFields = fields;
     
-    usePrivacyStore.setState({ columnRoles: newRoles, columnTypes: newTypes, columns: currentStore.columns.length > 0 ? currentStore.columns : cols });
+    // 🌟 不再需要任何型別斷言
+    useWorkspaceStore.setState({ 
+      columnRoles: newRoles, 
+      columnTypes: newTypes, 
+      columns: currentStore.columns.length > 0 ? currentStore.columns : cols 
+    });
 
   }, [fields]);
 
@@ -218,6 +265,27 @@ export default function KAnonymityMapping() {
   }, [fields]);
 
   useEffect(() => { globalCachedHierarchies = hierarchies; }, [hierarchies]);
+
+  useEffect(() => {
+    const syncToStore = () => {
+      const liveJson = generateExportJSON();
+      // 🌟 直接更新，不再需要 as unknown
+      useWorkspaceStore.setState({
+        kAnonymityFields: fields,
+        kAnonymityHierarchies: hierarchies,
+        fieldAttributes: liveJson.field_attributes || {},
+        maskingRules: liveJson.masking_rules || {},
+        generalizationRules: liveJson.generalization_rules || {},
+        categoricalHierarchies: liveJson.categorical_hierarchies || {},
+        numericBins: liveJson.numeric_bins || {},
+        temporalHierarchies: liveJson.temporal_hierarchies || {}
+      });
+    };
+    
+    const timer = setTimeout(syncToStore, 0);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields, hierarchies]);
 
   const getTransformedPreview = (val: unknown, field: FieldDef) => {
     if (val == null || val === '') return '-';
@@ -300,7 +368,11 @@ export default function KAnonymityMapping() {
         const json = JSON.parse(event.target?.result as string);
         
         if (json.privacy_targets?.k_anonymity?.enabled) {
-          usePrivacyStore.setState({ privacyMode: 'k-anonymity', kValue: json.privacy_targets.k_anonymity.k ?? 5, maxSuppression: json.privacy_targets.k_anonymity.suppression_limit_percent ?? 5 });
+          useWorkspaceStore.setState({ 
+            privacyMode: 'k-anonymity', 
+            kValue: json.privacy_targets.k_anonymity.k ?? 5, 
+            maxSuppression: json.privacy_targets.k_anonymity.suppression_limit_percent ?? 5 
+          });
         }
 
         const attributes = json.field_attributes || {};
@@ -308,8 +380,7 @@ export default function KAnonymityMapping() {
         const genRules = json.generalization_rules || {}; 
         const preRules = json.preprocessing_rules || {}; 
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        usePrivacyStore.setState({ preprocessingRules: preRules } as any);
+        useWorkspaceStore.setState({ preprocessingRules: preRules });
 
         const newFields = [...fields]; 
         
@@ -535,7 +606,6 @@ export default function KAnonymityMapping() {
           <Space style={{ paddingBottom: '8px' }}>
             <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportJSON} onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} style={{ display: 'none' }} />
             <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>{t('step2.btn_import')}</Button>
-            <Button icon={<CodeOutlined />} onClick={handleExportJSON}>{t('step2.btn_export')}</Button>
           </Space>
         }
         items={[
@@ -563,8 +633,7 @@ export default function KAnonymityMapping() {
                     scroll={{ y: 400 }} 
                     expandable={{ 
                       expandedRowRender: (record) => { 
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const storeState = usePrivacyStore.getState() as any;
+                        const storeState = useWorkspaceStore.getState();
                         const preRules = storeState.preprocessingRules || {};
                         const colRule = preRules[record.name] || { action: 'none', param: '' };
 

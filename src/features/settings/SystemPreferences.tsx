@@ -18,8 +18,12 @@ import {
   MoreOutlined,
   ExclamationCircleFilled
 } from '@ant-design/icons';
-import { usePrivacyStore } from '../../store/usePrivacyStore'; 
 import { useTranslation } from 'react-i18next';
+
+// 🌟 1. 改為引入拆分後的新 Stores
+import { useAuthStore } from '../../store/useAuthStore';
+import { useUIStore } from '../../store/useUIStore';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
 const { Text, Title } = Typography;
 
@@ -32,14 +36,40 @@ interface UserRecord {
   lastLogin: string;
 }
 
+// 安全與環境參數表單的介面
+interface EnvSecurityValues {
+  sessionTimeout: number;
+  maxFailedLogins: number;
+  maintenanceMode: boolean;
+  enablePasswordExpiry: boolean;
+  passwordExpiryDays: number;
+}
+
+// 擴充 Workspace Store 中的安全設定介面
+interface ExtendedWorkspaceSecurity {
+  sessionTimeout?: number;
+  maxFailedLogins?: number;
+  isMaintenanceMode?: boolean;
+  enablePasswordExpiry?: boolean;
+  passwordExpiryDays?: number;
+  updateSecuritySettings?: (settings: {
+    sessionTimeout: number;
+    maxFailedLogins: number;
+    isMaintenanceMode: boolean;
+    enablePasswordExpiry: boolean;
+    passwordExpiryDays: number;
+  }) => void;
+}
+
 const BasicPreferences = ({ currentUserRole }: { currentUserRole: string }) => {
   const { token } = theme.useToken();
   const { t } = useTranslation();
   
-  const isDarkMode = usePrivacyStore((state) => state.isDarkMode);
-  const setIsDarkMode = usePrivacyStore((state) => state.setIsDarkMode);
-  const language = usePrivacyStore((state) => state.language);
-  const setLanguage = usePrivacyStore((state) => state.setLanguage);
+  // 🌟 2. 從 UIStore 取得主題與語言設定
+  const isDarkMode = useUIStore((state) => state.isDarkMode);
+  const setIsDarkMode = useUIStore((state) => state.setIsDarkMode);
+  const language = useUIStore((state) => state.language);
+  const setLanguage = useUIStore((state) => state.setLanguage);
 
   return (
     <div style={{ maxWidth: '600px', margin: currentUserRole === 'admin' ? '0' : '40px auto' }}>
@@ -105,35 +135,46 @@ export default function SystemPreferences() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'users'; 
   
-  const isDarkMode = usePrivacyStore((state) => state.isDarkMode);
+  const isDarkMode = useUIStore((state) => state.isDarkMode);
   
-  const user = usePrivacyStore((state) => state.user);
+  // 🌟 3. 從 AuthStore 獲取當前登入使用者與角色
+  const user = useAuthStore((state) => state.user);
   const currentUserRole = user?.role || 'admin';
 
-  // 🌟 從 Store 獲取所有環境變數與更新方法
-  const sessionTimeout = usePrivacyStore((state) => state.sessionTimeout);
-  const maxFailedLogins = usePrivacyStore((state) => state.maxFailedLogins);
-  const isMaintenanceMode = usePrivacyStore((state) => state.isMaintenanceMode);
-  const updateSecuritySettings = usePrivacyStore((state) => state.updateSecuritySettings);
+  // 🌟 4. 從 WorkspaceStore 獲取環境 security 參數與方法 (使用安全轉型)
+  const storeState = useWorkspaceStore((state) => state as unknown as ExtendedWorkspaceSecurity);
+  const sessionTimeout = storeState.sessionTimeout || 15;
+  const maxFailedLogins = storeState.maxFailedLogins || 5;
+  const isMaintenanceMode = storeState.isMaintenanceMode || false;
+  const enablePasswordExpiry = storeState.enablePasswordExpiry !== false; 
+  const passwordExpiryDays = storeState.passwordExpiryDays || 90;
+  
+  const updateSecuritySettings = storeState.updateSecuritySettings || ((settings) => {
+    useWorkspaceStore.setState(settings as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+  });
 
-  const [envForm] = Form.useForm();
+  const [envForm] = Form.useForm<EnvSecurityValues>();
 
-  // 🌟 初始化表單：將 Store 內的值帶入 envForm
+  // 初始化表單：將 Store 內的值帶入 envForm
   useEffect(() => {
     envForm.setFieldsValue({
-      sessionTimeout: sessionTimeout || 15,
-      maxFailedLogins: maxFailedLogins || 5,
-      maintenanceMode: isMaintenanceMode === true
+      sessionTimeout: sessionTimeout,
+      maxFailedLogins: maxFailedLogins,
+      maintenanceMode: isMaintenanceMode === true,
+      enablePasswordExpiry: enablePasswordExpiry,
+      passwordExpiryDays: passwordExpiryDays
     });
-  }, [sessionTimeout, maxFailedLogins, isMaintenanceMode, envForm]);
+  }, [sessionTimeout, maxFailedLogins, isMaintenanceMode, enablePasswordExpiry, passwordExpiryDays, envForm]);
 
-  // 🌟 儲存環境設定：寫入 Store (觸發持久化)
+  // 儲存環境設定：寫入 Store
   const handleSaveEnvSettings = () => {
-    envForm.validateFields().then(values => {
+    envForm.validateFields().then((values: EnvSecurityValues) => {
       updateSecuritySettings({
         sessionTimeout: Number(values.sessionTimeout),
         maxFailedLogins: Number(values.maxFailedLogins),
-        isMaintenanceMode: !!values.maintenanceMode
+        isMaintenanceMode: !!values.maintenanceMode,
+        enablePasswordExpiry: !!values.enablePasswordExpiry,
+        passwordExpiryDays: Number(values.passwordExpiryDays)
       });
       message.success(t('admin.msg_env_saved', '環境與安全設定已成功儲存'));
     });
@@ -332,7 +373,7 @@ export default function SystemPreferences() {
                 {t('admin.add_user', '新增使用者')}
               </Button>
             </div>
-            <Table columns={userColumns} dataSource={users} rowKey="id" pagination={{ pageSize: 5 }} size="middle" />
+            <Table columns={userColumns} dataSource={users.filter(u => u.role === 'data_owner')} rowKey="id" pagination={{ pageSize: 5 }} size="middle" />
           </div>
         ),
       },
@@ -359,19 +400,46 @@ export default function SystemPreferences() {
           <div style={{ maxWidth: '600px' }}>
             <Form form={envForm} layout="vertical">
               <Card type="inner" title={t('admin.conn_security', '連線安全設定')} style={{ marginBottom: '16px' }}>
-                {/* 🌟 補上 name="sessionTimeout" */}
                 <Form.Item name="sessionTimeout" label={t('admin.session_timeout', 'Session 閒置強制登出時間 (分鐘)')} extra={t('admin.session_timeout_desc', '設定使用者在無操作狀態下多久後會被系統自動登出。')}>
                   <InputNumber min={1} max={120} style={{ width: '100px' }} />
                 </Form.Item>
-                {/* 🌟 補上 name="maxFailedLogins" */}
                 <Form.Item name="maxFailedLogins" label={t('admin.max_login_attempts', '密碼錯誤鎖定次數')} extra={t('admin.max_login_desc', '連續登入失敗達此次數後，帳號將被鎖定 15 分鐘。')}>
                   <InputNumber min={1} max={10} style={{ width: '100px' }} />
+                </Form.Item>
+              </Card>
+
+              {/* 密碼安全政策卡片 */}
+              <Card type="inner" title={t('admin.password_policy_title', '密碼安全政策快速控管')} style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+                  <Form.Item name="enablePasswordExpiry" valuePropName="checked" style={{ marginBottom: 0 }}>
+                    <Switch style={{ marginTop: '2px' }} />
+                  </Form.Item>
+                  <div>
+                    <Text strong style={{ display: 'block', marginBottom: '4px' }}>
+                      {t('admin.enable_expiry', '強制密碼過期輪替')}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: '13px' }}>
+                      {t('admin.enable_expiry_desc', '開啟後，所有帳號必須在設定的週期內變更密碼。')}
+                    </Text>
+                  </div>
+                </div>
+                
+                <Form.Item noStyle shouldUpdate={(prevValues: EnvSecurityValues, currentValues: EnvSecurityValues) => prevValues.enablePasswordExpiry !== currentValues.enablePasswordExpiry}>
+                  {({ getFieldValue }) => {
+                    const isEnabled = getFieldValue('enablePasswordExpiry');
+                    return (
+                      <div style={{ opacity: isEnabled ? 1 : 0.4, pointerEvents: isEnabled ? 'auto' : 'none', transition: 'all 0.3s' }}>
+                        <Form.Item name="passwordExpiryDays" label={t('admin.expiry_days', '密碼有效天數')} extra={t('admin.expiry_days_desc', '建議企業內部安全規範設定為 90 天。')}>
+                          <InputNumber min={1} max={365} style={{ width: '120px' }} addonAfter={t('admin.days', '天')} />
+                        </Form.Item>
+                      </div>
+                    );
+                  }}
                 </Form.Item>
               </Card>
               
               <Card type="inner" title={t('admin.maintenance_mode', '系統維護模式')}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                  {/* 維持 name="maintenanceMode" */}
                   <Form.Item name="maintenanceMode" valuePropName="checked" style={{ marginBottom: 0 }}>
                     <Switch style={{ marginTop: '2px' }} />
                   </Form.Item>
@@ -453,7 +521,6 @@ export default function SystemPreferences() {
             >
               <Select 
                 options={[
-                  { value: 'admin', label: t('admin.role_admin', 'Admin (系統管理員)') },
                   { value: 'data_owner', label: t('admin.role_data_owner', 'Data Owner (資料擁有者)') }
                 ]} 
               />
@@ -487,11 +554,15 @@ export default function SystemPreferences() {
               label={t('profile.new_password', '新密碼')}
               rules={[
                 { required: true, message: t('profile.require_new_password', '請輸入新密碼') },
-                { min: 8, message: t('profile.password_min_length', '密碼長度至少需要 8 個字元') }
+                { min: 12, message: t('profile.password_min_length', '密碼長度至少需要 12 個字元') },
+                {
+                  pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#\-_+=])[A-Za-z\d@$!%*?&#\-_+=]{12,}$/,
+                  message: t('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
+                }
               ]}
               hasFeedback
             >
-              <Input.Password placeholder={t('profile.ph_new_password', '至少 8 個字元')} size="large" />
+              <Input.Password placeholder={t('profile.ph_new_password', '至少 12 個字元')} size="large" />
             </Form.Item>
 
             <Form.Item

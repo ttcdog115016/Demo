@@ -1,13 +1,24 @@
-import { useEffect } from 'react';
-import { Card, Table, Select, Input, Typography, theme, Space } from 'antd';
-import { ToolOutlined, SafetyOutlined, ArrowRightOutlined } from '@ant-design/icons';
-import { usePrivacyStore } from '../../store/usePrivacyStore';
+import { Card, Table, Select, Input, Typography, theme, Space, Alert } from 'antd';
+import { ToolOutlined, SafetyOutlined, ArrowRightOutlined, LockOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import CryptoJS from 'crypto-js'; // 🌟 引入標準密碼學套件，取代不安全的自製迴圈
+
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { useAuthStore } from '../../store/useAuthStore';
+
 import KAnonymityMapping from './KAnonymityMapping';
 import DifferentialPrivacyMapping from './DifferentialPrivacyMapping';
 import TemplateManager from './TemplateManager';
-import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
+
+interface MappingRecord {
+  key: string;
+  name: string;
+  action: string;
+  param: string;
+  sampleValue: string;
+}
 
 const applyPreprocess = (val: unknown, action: string, param: string) => {
   if (val == null || val === '') return '-';
@@ -30,17 +41,26 @@ const applyPreprocess = (val: unknown, action: string, param: string) => {
       str = str.replace(reg, '');
     } catch{ /* ignore */ }
   } else if (action === 'hash') {
-    // 簡易 Hash 模擬邏輯
-    let hashVal = 0;
-    for (let i = 0; i < str.length; i++) { 
-      hashVal = ((hashVal << 5) - hashVal) + str.charCodeAt(i); 
-      hashVal |= 0; 
+    // 🌟 使用真實的密碼學雜湊演算法
+    try {
+      let hashResult = '';
+      const cleanParam = param?.toLowerCase().trim();
+      
+      if (cleanParam === 'md5') {
+        hashResult = CryptoJS.MD5(str).toString();
+      } else if (cleanParam === 'sha512') {
+        hashResult = CryptoJS.SHA512(str).toString();
+      } else {
+        // 預設使用業界標準的 SHA-256
+        hashResult = CryptoJS.SHA256(str).toString();
+      }
+      
+      // 為了 UI 預覽美觀，擷取前 16 碼並加上刪節號
+      str = hashResult.substring(0, 16) + '...';
+    } catch (error) {
+      console.error('Hashing error:', error);
+      str = 'Hash Error';
     }
-    const hex = Math.abs(hashVal).toString(16).padStart(8, '0');
-    // 可透過 param 決定 hash 類型，預設為模擬 SHA-256 的長度
-    if (param === 'md5') str = hex + hex + '...';
-    else if (param === 'sha512') str = hex.repeat(4) + '...';
-    else str = hex.repeat(2) + '...'; 
   }
   
   return str || '-';
@@ -51,20 +71,17 @@ export default function Step2_Mapping() {
   const isDark = token.colorBgContainer !== '#ffffff';
   const { t } = useTranslation();
 
-  const privacyMode = usePrivacyStore(state => state.privacyMode);
-  const columns = usePrivacyStore(state => state.columns);
-  const previewData = usePrivacyStore(state => state.previewData);
-  const dpFields = usePrivacyStore(state => state.dpFields);
-  const columnRoles = usePrivacyStore(state => state.columnRoles);
-  
-  const rawPreprocessingRules = usePrivacyStore(state => state.preprocessingRules);
-  const preprocessingRules = rawPreprocessingRules || {};
-  const setStepValidation = usePrivacyStore(state => state.setStepValidation);
+  const user = useAuthStore(state => state.user);
+  const canEditRules = user?.role === 'data_owner'; 
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setPreprocessingRules = (rules: any) => usePrivacyStore.setState({ preprocessingRules: rules } as any);
+  const privacyMode = useWorkspaceStore(state => state.privacyMode);
+  const columns = useWorkspaceStore(state => state.columns);
+  const previewData = useWorkspaceStore(state => state.previewData);
+  const preprocessingRules = useWorkspaceStore(state => state.preprocessingRules) || {};
+  const setPreprocessingRules = useWorkspaceStore(state => state.setPreprocessingRules);
 
   const handleRuleChange = (col: string, key: 'action' | 'param', val: string) => {
+    if (!canEditRules) return;
     setPreprocessingRules({
       ...preprocessingRules,
       [col]: {
@@ -80,56 +97,7 @@ export default function Step2_Mapping() {
     return rule && actionsRequiringParam.includes(rule.action) && (!rule.param || rule.param.trim() === '');
   });
 
-  useEffect(() => {
-    const hasPreprocessError = errorCols.length > 0;
-    let hasDpError = false;
-    let dpErrorMessage = '';
-
-    let hasKError = false;
-    let kErrorMessage = '';
-    
-    if (privacyMode === 'differential-privacy') {
-      const enabledFields = dpFields.filter(f => f.enabled);
-      
-      const hasTextDp = enabledFields.some(f => f.fieldType === 'Text' || f.fieldType === 'Text型');
-      const invalidNumeric = enabledFields.some(f => 
-        (f.fieldType === 'Numeric' || f.fieldType === 'Numeric型') && 
-        (f.lowerBound === undefined || f.upperBound === undefined)
-      );
-
-      if (hasTextDp) {
-        hasDpError = true;
-        dpErrorMessage = t('step2.dp_text_error', '【設定錯誤】純文本型資料無法套用差分隱私，請關閉「文本型」欄位的 DP 開關，並改用上方的資料預先策略。');
-      } else if (invalidNumeric) {
-        hasDpError = true;
-        dpErrorMessage = t('step2.validation_error', '設定尚未完成，請確認所有啟用的「數值型」欄位皆已填寫最小值與最大值。');
-      }
-    }
-
-    // K-匿名模式驗證
-    if (privacyMode === 'k-anonymity') {
-      const hasQuasiIdentifier = Object.values(columnRoles || {}).some(role => role === 'Quasi-identifier');
-      if (!hasQuasiIdentifier) {
-        hasKError = true;
-        kErrorMessage = t('step2.k_validation_error', '【設定錯誤】K-匿名模式至少需要設定一個「準識別碼」。');
-      }
-    }
-
-    if (hasPreprocessError) {
-      setStepValidation(false, t('step2.preprocess_validation_error', '資料預先處理有未填寫的參數，請確認紅色框線欄位並輸入完畢。'));
-    } else if (hasDpError) {
-      setStepValidation(false, dpErrorMessage);
-    }
-    else if (hasKError) {
-      setStepValidation(false, kErrorMessage); // 阻擋沒有準識別碼的 K-匿名設定
-    } else {
-      setStepValidation(true, null);
-    }
-    
-    return () => setStepValidation(true, null);
-  }, [errorCols.length, dpFields, privacyMode, columnRoles , setStepValidation, t]);
-  
-  const tableData = columns.map(col => ({
+  const tableData: MappingRecord[] = columns.map(col => ({
     key: col,
     name: col,
     action: preprocessingRules[col]?.action || 'none',
@@ -148,11 +116,11 @@ export default function Step2_Mapping() {
       title: t('step2.clean_strategy', 'Cleansing Strategy'),
       dataIndex: 'action', 
       width: '25%',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      render: (val: string, record: any) => (
+      render: (val: string, record: MappingRecord) => (
         <Select
           value={val}
           onChange={(v) => handleRuleChange(record.name, 'action', v)}
+          disabled={!canEditRules}
           style={{ width: '100%' }}
           options={[
             { value: 'none', label: t('step2.no_action', '不處理') },
@@ -170,9 +138,8 @@ export default function Step2_Mapping() {
       title: t('step2.param_setting', 'Parameter Setting'),
       dataIndex: 'param', 
       width: '20%',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      render: (val: string, record: any) => {
-        const disabled = ['none', 'remove_digits', 'remove_spaces'].includes(record.action);
+      render: (val: string, record: MappingRecord) => {
+        const disabled = !canEditRules || ['none', 'remove_digits', 'remove_spaces'].includes(record.action);
         const hasError = errorCols.includes(record.name);
         
         return (
@@ -182,10 +149,7 @@ export default function Step2_Mapping() {
             onChange={(e) => handleRuleChange(record.name, 'param', e.target.value)}
             disabled={disabled}
             status={hasError ? 'error' : undefined}
-            style={{ 
-              width: '100%', 
-              backgroundColor: hasError ? (isDark ? '#2c1618' : '#fff2f0') : undefined
-            }}
+            style={{ width: '100%', backgroundColor: hasError ? (isDark ? '#2c1618' : '#fff2f0') : undefined }}
           />
         );
       }
@@ -194,8 +158,7 @@ export default function Step2_Mapping() {
       title: t('step2.live_preview', '即時預覽 (取首筆資料)'),
       key: 'preview', 
       width: '35%',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      render: (_: any, record: any) => {
+      render: (_: unknown, record: MappingRecord) => {
         const original = record.sampleValue;
         const processed = applyPreprocess(original, record.action, record.param);
         const isChanged = original !== processed;
@@ -213,6 +176,10 @@ export default function Step2_Mapping() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
+      {!canEditRules && (
+        <Alert type="info" showIcon icon={<LockOutlined />} message="唯讀保護模式 (Read-Only Mode)" description="當前角色無權限修改欄位屬性與預先處理規則。畫面設定已全數鎖定，僅供瀏覽與預覽。" />
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <TemplateManager />
       </div>
@@ -223,16 +190,7 @@ export default function Step2_Mapping() {
         style={{ background: token.colorBgContainer, padding: 0 }}
         styles={{ body: { padding: '16px' } }}
       >
-        <Table
-          dataSource={tableData}
-          columns={preColumns}
-          pagination={false}
-          size="small"
-          bordered={false}
-          rowKey="key"
-          scroll={{ y: 250 }} 
-          style={{ background: isDark ? '#141414' : '#fafafa', borderRadius: 8, border: `1px solid ${token.colorBorderSecondary}` }}
-        />
+        <Table dataSource={tableData} columns={preColumns} pagination={false} size="small" bordered={false} rowKey="key" scroll={{ y: 250 }} style={{ background: isDark ? '#141414' : '#fafafa', borderRadius: 8, border: `1px solid ${token.colorBorderSecondary}` }} />
       </Card>
 
       <Card 
@@ -244,11 +202,7 @@ export default function Step2_Mapping() {
         {privacyMode === 'k-anonymity' ? <KAnonymityMapping /> : <DifferentialPrivacyMapping />}
       </Card>
 
-      <style>{`
-        .ant-table-thead > tr > th {
-          background: ${isDark ? '#262626' : '#f0f2f5'} !important;
-        }
-      `}</style>
+      <style>{`.ant-table-thead > tr > th { background: ${isDark ? '#262626' : '#f0f2f5'} !important; }`}</style>
     </div>
   );
 }

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
 import { 
   ConfigProvider, theme, Layout, Menu, Avatar, Badge, 
-  App as AntdApp, Dropdown, Tag, Segmented 
+  App as AntdApp, Dropdown, Tag 
 } from 'antd'; 
 import { useTranslation } from 'react-i18next';
 
@@ -18,13 +18,15 @@ import {
   UserOutlined,
   BellOutlined,
   LogoutOutlined,
-  UserSwitchOutlined,
   AuditOutlined,
   DashboardOutlined
 } from '@ant-design/icons';
 
-import { usePrivacyStore } from './store/usePrivacyStore';
-import type { UserRole } from './store/usePrivacyStore';
+// 🌟 1. 改為引入拆分後的三個獨立 Stores
+import { useAuthStore, type UserRole } from './store/useAuthStore';
+import { useUIStore } from './store/useUIStore';
+import { useWorkspaceStore } from './store/useWorkspaceStore';
+
 import Login from './features/login/Login';
 import ForgotPassword from './features/login/ForgotPassword';
 import RequestAccess from './features/login/RequestAccess';
@@ -42,13 +44,13 @@ const { Header, Content, Sider } = Layout;
 // 🛡️ 路由防護元件 (Route Guards)
 // ==========================================
 const RequireAuth = ({ children }: { children: React.ReactNode }) => {
-  const isAuthenticated = usePrivacyStore((state) => state.isAuthenticated);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 };
 
 const RBACGuard = ({ allowedRoles, redirectPath }: { allowedRoles: UserRole[], redirectPath: string }) => {
-  const user = usePrivacyStore((state) => state.user);
+  const user = useAuthStore((state) => state.user);
   const { message } = AntdApp.useApp();
   const { t } = useTranslation();
   const currentRole = user?.role || 'data_owner';
@@ -66,7 +68,7 @@ const RBACGuard = ({ allowedRoles, redirectPath }: { allowedRoles: UserRole[], r
 };
 
 const RoleBasedRedirect = () => {
-  const user = usePrivacyStore((state) => state.user);
+  const user = useAuthStore((state) => state.user);
   return user?.role === 'admin' 
     ? <Navigate to="/admin" replace /> 
     : <Navigate to="/workspace?step=1" replace />; 
@@ -81,19 +83,47 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
   const location = useLocation();
   const { message: appMessage, modal } = AntdApp.useApp();
 
-  const sessionTimeout = usePrivacyStore((state) => state.sessionTimeout);
+  // 🌟 從各自專屬 Store 讀取狀態
+  const user = useAuthStore((state) => state.user);
+  const setUserRole = useAuthStore((state) => state.setUserRole);
+  const logout = useAuthStore((state) => state.logout);
+  
+  const currentStep = useWorkspaceStore((state) => state.currentStep);
+  const privacyMode = useWorkspaceStore((state) => state.privacyMode);
+  const clearFileData = useWorkspaceStore((state) => state.clearFileData);
+
+  // 靜態/動態相容擴充
+  const sessionTimeout = (user as unknown as { sessionTimeout?: number })?.sessionTimeout || 1800;
+  const isMaintenanceMode = (user as unknown as { isMaintenanceMode?: boolean })?.isMaintenanceMode || false;
+  const isPasswordExpired = (user as unknown as { isPasswordExpired?: boolean })?.isPasswordExpired || false;
+
   useIdleTimeout(sessionTimeout);
 
   const [searchParams] = useSearchParams();
   const stepParam = searchParams.get('step');
 
-  const currentStep = usePrivacyStore((state) => state.currentStep);
-  const user = usePrivacyStore((state) => state.user);
-  const setUserRole = usePrivacyStore((state) => state.setUserRole);
-  const logout = usePrivacyStore((state) => state.logout);
-  const isMaintenanceMode = usePrivacyStore((state) => state.isMaintenanceMode);
+  const hasShownExpireModal = useRef(false);
+  const currentUserRole = user?.role || 'data_owner';
 
-  const currentUserRole = user?.role || 'admin';
+  // 密碼過期強制變更邏輯
+  useEffect(() => {
+    if (isPasswordExpired && location.pathname !== '/settings/profile') {
+      if (!hasShownExpireModal.current) {
+        hasShownExpireModal.current = true;
+        
+        modal.warning({
+          title: t('profile.password_expired_title', '密碼已過期強制變更'),
+          content: t('profile.password_expired_desc', '基於系統安全性政策，您的密碼已過期（或為首次登入）。在變更密碼前，您無法進行其他操作。'),
+          okText: t('modal.confirm', '立即變更'),
+          keyboard: false,
+          onOk: () => {
+            navigate('/settings/profile', { replace: true });
+            hasShownExpireModal.current = false;
+          }
+        });
+      }
+    }
+  }, [isPasswordExpired, location.pathname, navigate, modal, t]);
 
   useEffect(() => {
     if (isMaintenanceMode && currentUserRole === 'data_owner') {
@@ -109,11 +139,13 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
     }
   }, [isMaintenanceMode, currentUserRole, logout, modal, navigate, t]);
 
+  // 🌟 URL Step 同步與驗證防呆
   useEffect(() => {
     if (location.pathname === '/workspace') {
       if (stepParam !== null) {
         const urlStep = Number(stepParam) - 1; 
-        const storeState = usePrivacyStore.getState();
+        // 🌟 此處傳入完整的 WorkspaceStore 快照，完全消滅型別不符的警告！
+        const storeState = useWorkspaceStore.getState();
         const currentStoreStep = storeState.currentStep;
 
         if (urlStep >= 0 && urlStep <= 3 && urlStep !== currentStoreStep) {
@@ -126,12 +158,12 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
             }
           }
 
-          usePrivacyStore.setState({ currentStep: urlStep });
+          useWorkspaceStore.setState({ currentStep: urlStep });
         } else if (urlStep < 0 || urlStep > 3) {
-            navigate(`/workspace?step=${currentStoreStep + 1}`, { replace: true });
+          navigate(`/workspace?step=${currentStoreStep + 1}`, { replace: true });
         }
       } else {
-        navigate(`/workspace?step=${usePrivacyStore.getState().currentStep + 1}`, { replace: true });
+        navigate(`/workspace?step=${useWorkspaceStore.getState().currentStep + 1}`, { replace: true });
       }
     }
   }, [stepParam, location.pathname, navigate, appMessage, t]);
@@ -155,6 +187,8 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
       cancelText: t('modal.cancel', '取消'),
       onOk: () => {
         logout();
+        if (clearFileData) clearFileData();
+        useWorkspaceStore.setState({ currentStep: 0, privacyMode: null });
         appMessage.success(t('message.logout_success', '已成功登出'));
       }
     });
@@ -198,14 +232,16 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
   const userMenu: MenuProps = {
     selectedKeys: [`role_${currentUserRole}`],
     items: [
-      { key: 'role_header', label: <span style={{ fontWeight: 600, color: '#8c8c8c' }}><UserSwitchOutlined /> {t('menu.role_switch_demo', '切換測試角色 (RBAC Demo)')}</span>, disabled: true },
-      { key: 'role_admin', label: t('role.admin', ' Admin (系統管理員)') },
       { key: 'role_data_owner', label: t('role.data_owner', ' Data Owner (資料擁有者)') },
       { type: 'divider' },
       { key: 'profile', label: t('menu.profile_settings', '個人設定'), icon: <UserOutlined /> },
       { key: 'preferences', label: t('menu.system_preferences', '系統偏好'), icon: <SettingOutlined /> },
     ],
     onClick: (e) => {
+      if (isPasswordExpired && e.key !== 'profile') {
+        appMessage.warning(t('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
+        return;
+      }
       if (e.key.startsWith('role_')) {
         const role = e.key.replace('role_', '') as UserRole;
         if (role === 'data_owner' && isMaintenanceMode) {
@@ -224,9 +260,15 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
   };
 
   const handleSidebarStepChange = (targetStep: number) => {
-    if (targetStep === currentStep) return;
+    if (isPasswordExpired) {
+      appMessage.warning(t('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
+      return;
+    }
 
-    const storeState = usePrivacyStore.getState();
+    if (location.pathname === '/workspace' && targetStep === currentStep) return;
+
+    // 🌟 此處同樣使用 useWorkspaceStore 正確型別快照
+    const storeState = useWorkspaceStore.getState();
     if (targetStep > currentStep) {
       const errorMsg = validateProgression(targetStep, currentStep, storeState, t);
       if (errorMsg) {
@@ -236,7 +278,7 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
       }
     }
 
-    usePrivacyStore.setState({ currentStep: targetStep });
+    useWorkspaceStore.setState({ currentStep: targetStep });
     navigate(`/workspace?step=${targetStep + 1}`);
   };
 
@@ -256,10 +298,22 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
         { key: '2', icon: <PieChartOutlined />, label: t('menu.privacy_settings', '隱私設定'), onClick: () => handleSidebarStepChange(2) },
         { key: '3', icon: <DownloadOutlined />, label: t('menu.preview_export', '預覽匯出'), onClick: () => handleSidebarStepChange(3) },
         { type: 'divider' },
-        { key: 'audit', icon: <AuditOutlined />, label: t('menu.audit_log', '歷史審計憑證 (Audit Log)'), onClick: () => navigate('/audit') }
+        { key: 'audit', icon: <AuditOutlined />, label: t('menu.audit_log', '歷史審計憑證 (Audit Log)'), onClick: () => {
+          if (isPasswordExpired) {
+            appMessage.warning(t('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
+            return;
+          }
+          navigate('/audit');
+        }}
       ]
     : [
-        { key: 'admin_dashboard', icon: <DashboardOutlined />, label: t('menu.admin_dashboard', '系統管理大廳'), onClick: () => navigate('/admin') }
+        { key: 'admin_dashboard', icon: <DashboardOutlined />, label: t('menu.admin_dashboard', '系統管理大廳'), onClick: () => {
+          if (isPasswordExpired) {
+            appMessage.warning(t('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
+            return;
+          }
+          navigate('/admin');
+        }}
       ];
 
   const selectedKeys = (() => {
@@ -268,8 +322,6 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
     if (location.pathname === '/workspace') return [String(currentStep)];
     return [];
   })();
-
-  const privacyMode = usePrivacyStore((state) => state.privacyMode);
 
   return (
     <>
@@ -299,7 +351,51 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
           theme={isDarkMode ? "dark" : "light"}
           style={{ background: colors.bgComponent, borderRight: `1px solid ${colors.border}`, transition: 'background 0.3s' }}
         >
-          <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', padding: '0 24px', gap: '12px', marginBottom: '16px' }}>
+          <div 
+            style={{ 
+              height: 64, 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: collapsed ? 'center' : 'flex-start', 
+              padding: '0 24px', 
+              gap: '12px', 
+              marginBottom: '16px',
+              cursor: 'pointer',
+              transition: 'opacity 0.2s'
+            }}
+            onClick={() => {
+              if (isPasswordExpired) {
+                appMessage.warning(t('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
+                return;
+              }
+
+              if (currentUserRole === 'admin') {
+                if (location.pathname !== '/admin') navigate('/admin');
+                return;
+              }
+
+              if (location.pathname === '/workspace' && currentStep === 0) return; 
+
+              if (location.pathname === '/workspace' && currentStep > 0) {
+                modal.confirm({
+                  title: t('modal.warning_title', '系統提示'),
+                  content: t('modal.reset_warning', '切換模式將會遺失當前未儲存的設定進度，確定要返回選擇模式嗎？'),
+                  okText: t('modal.confirm', '確定'),
+                  cancelText: t('modal.cancel', '取消'),
+                  onOk: () => {
+                    useWorkspaceStore.setState({ currentStep: 0 });
+                    navigate('/workspace?step=1');
+                  }
+                });
+              } else {
+                useWorkspaceStore.setState({ currentStep: 0 });
+                navigate('/workspace?step=1');
+              }
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+            title={currentUserRole === 'admin' ? t('menu.admin_dashboard', '系統管理大廳') : t('header.back_to_select_mode', '回到選擇模式')}
+          >
             <SafetyCertificateOutlined style={{ fontSize: '24px', color: '#3f51b5' }} />
             {!collapsed && <span style={{ fontWeight: 'bold', fontSize: '16px', letterSpacing: '1px', color: colors.textMain }}>PRIVACY APP</span>}
           </div>
@@ -316,11 +412,69 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
         <Layout style={{ background: 'transparent' }}>
           <Header style={{ background: colors.bgComponent, padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${colors.border}`, transition: 'background 0.3s' }}>
             
-            <div style={{ color: colors.textMuted, fontSize: '14px' }}>
-              {t('header.project_space', '專案空間')} / <span style={{ color: colors.textMain, fontWeight: 'bold' }}>{t('header.privacy_toolkit', '隱私強化工具包')}</span>
-              {currentUserRole === 'data_owner' && location.pathname === '/audit' && <span style={{ color: '#3f51b5', fontWeight: 'bold' }}> / {t('header.audit_log', '歷史審計紀錄與憑證管理')}</span>}
+            <div style={{ color: colors.textMuted, fontSize: '14px', display: 'flex', alignItems: 'center' }}>
+              {t('header.project_space', '專案空間')} / 
+              
+              <span 
+                style={{ 
+                  color: colors.textMain, 
+                  fontWeight: 'bold',
+                  cursor: (location.pathname === '/workspace' && currentStep === 0) ? 'default' : 'pointer',
+                  marginLeft: '4px',
+                  transition: 'color 0.2s'
+                }}
+                onClick={() => {
+                  if (isPasswordExpired) {
+                    appMessage.warning(t('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
+                    return;
+                  }
+
+                  if (location.pathname === '/workspace' && currentStep === 0) return; 
+
+                  if (location.pathname === '/workspace' && currentStep > 0) {
+                    modal.confirm({
+                      title: t('modal.warning_title', '系統提示'),
+                      content: t('modal.reset_warning', '切換模式將會遺失當前未儲存的設定進度，確定要返回選擇模式嗎？'),
+                      okText: t('modal.confirm', '確定'),
+                      cancelText: t('modal.cancel', '取消'),
+                      onOk: () => {
+                        useWorkspaceStore.setState({ currentStep: 0 });
+                        navigate('/workspace?step=1');
+                      }
+                    });
+                  } else {
+                    useWorkspaceStore.setState({ currentStep: 0 });
+                    navigate('/workspace?step=1');
+                  }
+                }}
+                onMouseEnter={(e) => {
+                  if (location.pathname !== '/workspace' || currentStep > 0) {
+                    e.currentTarget.style.color = '#3f51b5';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = colors.textMain;
+                }}
+                title={t('header.back_to_select_mode', '回到選擇模式')}
+              >
+                {t('header.privacy_toolkit', '隱私強化工具包')}
+              </span>
+
+              {currentUserRole === 'data_owner' && location.pathname === '/audit' && (
+                <span style={{ color: '#3f51b5', fontWeight: 'bold' }}>
+                   &nbsp;/ {t('header.audit_log', '歷史審計紀錄與憑證管理')}
+                </span>
+              )}
+
               {currentUserRole === 'data_owner' && location.pathname === '/workspace' && (
-                <> / <span style={{ color: '#3f51b5', fontWeight: 'bold' }}>{currentStep > 0 ? (privacyMode === 'k-anonymity' ? t('header.k_anonymity', 'K-匿名化') : t('header.differential_privacy', '差分隱私')) : t('header.select_mode', '選擇模式')}</span></>
+                <>
+                  <span style={{ margin: '0 4px' }}>/</span>
+                  <span style={{ color: '#3f51b5', fontWeight: 'bold' }}>
+                    {currentStep > 0 
+                      ? (privacyMode === 'k-anonymity' ? t('header.k_anonymity', 'K-匿名化') : t('header.differential_privacy', '差分隱私')) 
+                      : t('header.select_mode', '選擇模式')}
+                  </span>
+                </>
               )}
             </div>
             
@@ -351,23 +505,7 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
 
           <Content style={{ padding: '24px', display: 'flex', flexDirection: 'column' }}>
             <div style={{ width: '100%', margin: '0 auto', flex: 1 }}>
-              
-              {currentUserRole === 'data_owner' && (location.pathname === '/workspace' || location.pathname === '/audit') && (
-                <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-start' }}>
-                  <Segmented 
-                    options={[
-                      { label: t('view.wizard', '數據去識別化嚮導 (Wizard)'), value: '/workspace' },
-                      { label: t('view.audit', '歷史審計與憑證管理 (Audit Log Hub)'), value: '/audit' }
-                    ]}
-                    value={location.pathname}
-                    onChange={(val) => navigate(val as string)}
-                    size="large"
-                  />
-                </div>
-              )}
-              
               <Outlet />
-
             </div>
           </Content>
         </Layout>
@@ -380,9 +518,10 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
 // 🚀 最外層入口：Router 與全域配置
 // ==========================================
 export default function App() {
-  const isDarkMode = usePrivacyStore((state) => state.isDarkMode);
-  const setIsDarkMode = usePrivacyStore((state) => state.setIsDarkMode);
-  const language = usePrivacyStore((state) => state.language);
+  // 🌟 使用 UIStore 管理全域主題與語系
+  const isDarkMode = useUIStore((state) => state.isDarkMode);
+  const setIsDarkMode = useUIStore((state) => state.setIsDarkMode);
+  const language = useUIStore((state) => state.language);
   
   const { i18n } = useTranslation();
 
