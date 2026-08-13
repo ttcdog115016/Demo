@@ -1,158 +1,253 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+/**
+ * ============================================================================
+ * 檔案名稱 (File): index.css
+ * 模組功能 (Description): 全域樣式表 (Global Stylesheet，提供系統主題變數、排版重置、深淺色模式適配與自訂滾動條樣式)
+ * 專案名稱 (Project): Privacy Protection Toolkit
+ * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術字串與尺寸數字，統一抽離為 CSS Variables)
+ * ============================================================================
+ */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+:root 
+{
+    /* ============================================================================
+       1. 顏色系統變數 (Color System Variables)
+       規範對照: 消除色碼魔術字串，以具備語意之變數名稱取代
+       ============================================================================ */
+    --text-primary-color: #6b6375;
+    --text-heading-color: #08060d;
+    --background-primary-color: #fff;
+    --border-primary-color: #e5e4e7;
+    --code-background-color: #f4f3ec;
+    
+    --accent-primary-color: #aa3bff;
+    --accent-background-color: rgba(170, 59, 255, 0.1);
+    --accent-border-color: rgba(170, 59, 255, 0.5);
+    
+    --social-background-color: rgba(244, 243, 236, 0.5);
+    --box-shadow-default: rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    /* ============================================================================
+       2. 字體家族變數 (Typography System Variables)
+       ============================================================================ */
+    --font-family-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+    --font-family-heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+    --font-family-mono: ui-monospace, Consolas, monospace;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+    /* ============================================================================
+       3. 尺寸與間距系統變數 (Size & Spacing Variables)
+       規範對照: 消除像素 (px) 等魔術數字，集中管理以利後續 RWD 維護
+       ============================================================================ */
+    --font-size-base: 18px;
+    --font-size-base-mobile: 16px;
+    --font-size-h1: 56px;
+    --font-size-h1-mobile: 36px;
+    --font-size-h2: 24px;
+    --font-size-h2-mobile: 20px;
+    --font-size-code: 15px;
+    
+    --spacing-margin-h1: 32px 0;
+    --spacing-margin-h1-mobile: 20px 0;
+    --spacing-padding-code: 4px 8px;
+    
+    --border-radius-default: 4px;
+    
+    --scrollbar-size-default: 6px;
+
+    /* ============================================================================
+       4. 全域基礎 HTML 節點樣式套用 (Global Base Styles)
+       ============================================================================ */
+    font: var(--font-size-base)/145% var(--font-family-sans);
+    letter-spacing: 0.18px;
+    color-scheme: light dark; /* 提示瀏覽器支援深淺色模式，以正確渲染原生 UI 元件 */
+    color: var(--text-primary-color);
+    background: var(--background-primary-color);
+    
+    /* 字體渲染優化配置 */
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+/* ============================================================================
+   響應式設計：針對平板與手機版 (螢幕寬度 <= 1024px) 覆寫基礎字級
+   ============================================================================ */
+@media (max-width: 1024px) 
+{
+    :root 
+    {
+        font-size: var(--font-size-base-mobile);
+    }
 }
 
-#root {
-  width: 100%;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+/* ============================================================================
+   深色模式適配 (Dark Mode Support)
+   說明: 當作業系統或瀏覽器偏好設為深色時，覆寫 :root 之顏色變數
+   ============================================================================ */
+@media (prefers-color-scheme: dark) 
+{
+    :root 
+    {
+        --text-primary-color: #9ca3af;
+        --text-heading-color: #f3f4f6;
+        --background-primary-color: #16171d;
+        --border-primary-color: #2e303a;
+        --code-background-color: #1f2028;
+        
+        --accent-primary-color: #c084fc;
+        --accent-background-color: rgba(192, 132, 252, 0.15);
+        --accent-border-color: rgba(192, 132, 252, 0.5);
+        
+        --social-background-color: rgba(47, 48, 58, 0.5);
+        --box-shadow-default: rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+    }
+
+    /* 針對深色模式下的社群按鈕圖示，執行濾鏡反轉與提亮以確保對比度可見性 */
+    #social .button-icon 
+    {
+        filter: invert(1) brightness(2);
+    }
 }
 
-body {
-  margin: 0;
+/* ============================================================================
+   應用程式根容器樣式 (#root)
+   ============================================================================ */
+#root 
+{
+    width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+    text-align: center;
+    border-inline: 1px solid var(--border-primary-color);
+    min-height: 100svh; /* 確保至少撐滿整個動態可視高度 (包含手機瀏覽器網址列縮放) */
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
 }
 
+body 
+{
+    margin: 0;
+}
+
+/* ============================================================================
+   標題與排版元素樣式 (Typography Elements Styles)
+   ============================================================================ */
 h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+h2 
+{
+    font-family: var(--font-family-heading);
+    font-weight: 500;
+    color: var(--text-heading-color);
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+h1 
+{
+    font-size: var(--font-size-h1);
+    letter-spacing: -1.68px;
+    margin: var(--spacing-margin-h1);
 }
 
+@media (max-width: 1024px) 
+{
+    h1 
+    {
+        font-size: var(--font-size-h1-mobile);
+        margin: var(--spacing-margin-h1-mobile);
+    }
+}
+
+h2 
+{
+    font-size: var(--font-size-h2);
+    line-height: 118%;
+    letter-spacing: -0.24px;
+    margin: 0 0 8px;
+}
+
+@media (max-width: 1024px) 
+{
+    h2 
+    {
+        font-size: var(--font-size-h2-mobile);
+    }
+}
+
+p 
+{
+    margin: 0;
+}
+
+/* ============================================================================
+   程式碼與計數器標籤樣式 (Code & Counter Elements Styles)
+   ============================================================================ */
 code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+.counter 
+{
+    font-family: var(--font-family-mono);
+    display: inline-flex;
+    border-radius: var(--border-radius-default);
+    color: var(--text-heading-color);
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+code 
+{
+    font-size: var(--font-size-code);
+    line-height: 135%;
+    padding: var(--spacing-padding-code);
+    background: var(--code-background-color);
 }
 
+/* ============================================================================
+   全域滾動條質感美化 (Custom Webkit Scrollbar Configurations)
+   說明: 取代作業系統預設之醜陋滾動條，提供較符合現代 UI 之細緻滑軌設計
+   ============================================================================ */
 
-/* ==========================================
-   全域滾動條質感美化 (Custom Webkit Scrollbar)
-   ========================================== */
-
-/* 1. 調整滾動條整體寬度與高度 */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* 1. 定義滾動條整體寬度與高度 (水平與垂直通用) */
+::-webkit-scrollbar 
+{
+    width: var(--scrollbar-size-default);
+    height: var(--scrollbar-size-default);
 }
 
-/* 2. 滾動條滑軌背景 (預設透明) */
-::-webkit-scrollbar-track {
-  background: transparent;
-  border-radius: 4px;
+/* 2. 定義滾動條滑軌背景 (預設透明，不干擾版面) */
+::-webkit-scrollbar-track 
+{
+    background: transparent;
+    border-radius: var(--border-radius-default);
 }
 
-/* 3. 滾動條滑塊 (Thumb) 預設為輕量灰 */
-::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-  transition: background 0.2s ease-in-out;
+/* 3. 定義滾動條滑塊 (Thumb) 預設為輕量黑色透明度，避免過度搶眼 */
+::-webkit-scrollbar-thumb 
+{
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: var(--border-radius-default);
+    transition: background 0.2s ease-in-out;
 }
 
-/* 4. 滑鼠懸停於滑塊上時加深顏色 */
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.4);
+/* 4. 滑鼠懸停於滑塊上時加深透明度，提示目前可拖曳狀態 */
+::-webkit-scrollbar-thumb:hover 
+{
+    background: rgba(0, 0, 0, 0.4);
 }
 
-/* 5. 徹底隱藏傳統 Windows 滾動條頂端與底部的黑色小箭頭 */
-::-webkit-scrollbar-button {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
+/* 5. 徹底隱藏傳統 Windows 滾動條頂端與底部的黑色按鈕箭頭 */
+::-webkit-scrollbar-button 
+{
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
 }
 
-/* 6. 當系統處於深色模式 (Dark Mode) 時的滑塊適配 */
+/* 6. 當系統環境處於深色模式 (Dark Mode) 或側邊欄處於深色系時，將滑塊顏色反轉為白色透明度 */
 [data-theme='dark'] ::-webkit-scrollbar-thumb,
-.ant-layout-sider-dark ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+.ant-layout-sider-dark ::-webkit-scrollbar-thumb 
+{
+    background: rgba(255, 255, 255, 0.2);
 }
 
 [data-theme='dark'] ::-webkit-scrollbar-thumb:hover,
-.ant-layout-sider-dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.4);
+.ant-layout-sider-dark ::-webkit-scrollbar-thumb:hover 
+{
+    background: rgba(255, 255, 255, 0.4);
 }
