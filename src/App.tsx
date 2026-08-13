@@ -397,7 +397,7 @@ function InnerApp({ isDarkMode }: { isDarkMode: boolean }) {
             title={currentUserRole === 'admin' ? t('menu.admin_dashboard', '系統管理大廳') : t('header.back_to_select_mode', '回到選擇模式')}
           >
             <SafetyCertificateOutlined style={{ fontSize: '24px', color: '#3f51b5' }} />
-            {!collapsed && <span style={{ fontWeight: 'bold', fontSize: '16px', letterSpacing: '1px', color: colors.textMain }}>PRIVACY APP</span>}
+            {!collapsed && <span style={{ fontWeight: 'bold', fontSize: '16px', letterSpacing: '1px', color: colors.textMain }}>PRIVACY APP V1.0</span>}
           </div>
           
           <Menu 
