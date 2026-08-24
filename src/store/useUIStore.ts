@@ -15,6 +15,13 @@ import { create } from 'zustand';
  */
 const DARK_MODE_MEDIA_QUERY = '(prefers-color-scheme: dark)';
 const DEFAULT_LANGUAGE_CODE = 'zh_TW';
+const DEFAULT_FONT_SIZE_LEVEL: FontSizeLevel = 'medium';
+
+/**
+ * 字級調整選項型別
+ * 規範對照: 符合規範 e) 避免使用不易理解之常數字串 (Magic String)
+ */
+export type FontSizeLevel = 'small' | 'medium' | 'large' | 'extraLarge';
 
 /**
  * 全域 UI 介面偏好狀態與 Actions 介面
@@ -22,8 +29,9 @@ const DEFAULT_LANGUAGE_CODE = 'zh_TW';
  */
 interface UIState 
 {
-	isDarkMode: boolean; // 當前系統是否處於深色模式 (true: 深色模式 | false: 淺色模式)
-	language: string;    // 當前系統顯示語系碼 (如 'zh_TW' | 'en_US')
+	isDarkMode: boolean;       // 當前系統是否處於深色模式 (true: 深色模式 | false: 淺色模式)
+	language: string;         // 當前系統顯示語系碼 (如 'zh_TW' | 'en_US')
+	fontSizeLevel: FontSizeLevel; // 當前系統全域字體大小級距 ('small' | 'medium' | 'large')
 
 	/**
 	 * 函數名稱: setIsDarkMode
@@ -52,6 +60,20 @@ interface UIState
 	 * 規範對照: 符合規範 b) 函數開頭註記, c) 確保透過正規 Action 修改全域變數
 	 */
 	setLanguage: (languageCodeString: string) => void;
+
+	/**
+	 * 函數名稱: setFontSizeLevel
+	 * 函數功能: 更新系統全域字體大小級距設定。
+	 *
+	 * 輸入參數 (Input):
+	 *   - fontSizeLevelValue (FontSizeLevel): 字體大小級距 ('small' | 'medium' | 'large')
+	 * 輸出參數 (Output): 無
+	 * 返回值 (Return): void
+	 * 呼叫關係 (Call Relations): 被 SystemPreferences 偏好設定元件調用，並透過 App 根組件同步套用至 CSS 變數
+	 *
+	 * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素, c) 確保透過正規 Action 修改全域變數
+	 */
+	setFontSizeLevel: (fontSizeLevelValue: FontSizeLevel) => void;
 }
 
 /**
@@ -67,12 +89,18 @@ export const useUIStore = create<UIState>(
 			
 			// 初始化語系：預設系統顯示語系為繁體中文 (zh_TW) (符合規範 g)
 			language: DEFAULT_LANGUAGE_CODE,
-			
+
+			// 初始化字體大小級距：預設為中 (medium) (符合規範 g)
+			fontSizeLevel: DEFAULT_FONT_SIZE_LEVEL,
+
 			// 實作深色模式切換 Action
 			setIsDarkMode: (isDarkThemeActiveStatus) => setStoreStateAction({ isDarkMode: isDarkThemeActiveStatus }),
-			
+
 			// 實作語系切換 Action
 			setLanguage: (languageCodeString) => setStoreStateAction({ language: languageCodeString }),
+
+			// 實作字體大小切換 Action
+			setFontSizeLevel: (fontSizeLevelValue) => setStoreStateAction({ fontSizeLevel: fontSizeLevelValue }),
 		}
 	)
 );

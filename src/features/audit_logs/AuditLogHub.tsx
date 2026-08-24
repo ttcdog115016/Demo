@@ -19,7 +19,6 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
-import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
 
 /**
@@ -62,7 +61,7 @@ const { Text, Title } = Typography;
  *   - React.ReactElement: 歷史審計軌跡頁面 UI 視圖 JSX 結構
  * 呼叫關係 (Call Relations): 
  *   - 被 AppRouter 主路由組件載入渲染
- *   - 訂閱用 useAuditStore (歷史紀錄) 與 useWorkspaceStore (欄位結構)
+ *   - 訂閱用 useAuditStore (歷史紀錄，欄位結構已隨紀錄一併快照儲存)
  * 
  * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素
  */
@@ -78,20 +77,7 @@ export default function AuditLogHub(): React.ReactElement
 		(state) => state.auditLogs
 	);
 	
-	// 從 WorkspaceStore 取回欄位清單與角色，防呆處理空值 (符合規範 d, f)
-	const globalColumnsList = useWorkspaceStore(
-		(state) => state.columns
-	) || ['card_id', 'card_type', 'in_station', 'in_time', 'out_station', 'out_time', 'ride_duration_mins', 'fare'];
-
-	const columnRolesMap = useWorkspaceStore(
-		(state) => state.columnRoles
-	) || {};
-
-	const dpFieldsConfigList = useWorkspaceStore(
-		(state) => state.dpFields
-	) || [];
-
-	const [searchKeywordText, setSearchKeywordText] = useState<string>(''); 
+	const [searchKeywordText, setSearchKeywordText] = useState<string>('');
 
 	const [privacyFilterMode, setPrivacyFilterMode] = useState<string>('all'); 
 
@@ -252,62 +238,20 @@ export default function AuditLogHub(): React.ReactElement
 	};
 
 	/**
-	 * 函數名稱: getCalculatedRole
-	 * 函數功能: 依據欄位名稱與保護模式，計算並推導該欄位所套用之隱私角色 (Identifier, Quasi-identifier, DP Sensitive, Retained, Non-sensitive)。
-	 * 
+	 * 函數名稱: getSnapshotRole
+	 * 函數功能: 從歷史審計紀錄自身之欄位角色快照 (columnRoleSnapshot) 讀取該欄位簽發當下所套用之隱私角色，
+	 *           不依賴目前 WorkspaceStore 狀態，確保歷史紀錄檢視結果不受後續操作 (清空/切換資料集) 影響。
+	 *
 	 * 輸入參數 (Input):
+	 *   - targetAuditLogItem (AuditLogItem): 目前選取之歷史審計紀錄物件
 	 *   - targetColumnName (string): 欄位名稱
-	 *   - targetPrivacyModeName (string): 保護模式 ('k-anonymity' | 'differential-privacy')
 	 * 輸出參數 (Output): 無
-	 * 返回值 (Return): 
-	 *   - { role: string }: 包含計算後隱私角色名稱之物件
+	 * 返回值 (Return):
+	 *   - { role: string }: 包含簽發當下隱私角色名稱之物件
 	 */
-	const getCalculatedRole = (targetColumnName: string, targetPrivacyModeName: string): { role: string } => 
+	const getSnapshotRole = (targetAuditLogItem: AuditLogItem, targetColumnName: string): { role: string } =>
 	{
-		const lowerCaseColumnName = targetColumnName.toLowerCase();
-
-		const rawRoleSettingName = (columnRolesMap[targetColumnName] || '').toLowerCase();
-
-		const targetDpFieldConfigItem = dpFieldsConfigList?.find(
-			(fieldConfigItem) => fieldConfigItem.fieldName === targetColumnName
-		);
-
-		if (targetPrivacyModeName === 'k-anonymity') 
-		{
-			if (rawRoleSettingName.includes('identifier') && !rawRoleSettingName.includes('quasi')) 
-			{
-				return { role: 'Identifier' };
-			}
-
-			if (rawRoleSettingName.includes('quasi') || rawRoleSettingName === 'qi') 
-			{
-				return { role: 'Quasi-identifier' };
-			}
-		}
-
-		const isExplicitIdentifierMatched = /(^|_)(id|card_id|nric|phone|email|name|ssn)($|_)/i.test(lowerCaseColumnName);
-
-		if (isExplicitIdentifierMatched) 
-		{
-			return { role: 'Identifier' };
-		}
-
-		if (targetPrivacyModeName === 'differential-privacy') 
-		{
-			if (targetDpFieldConfigItem && targetDpFieldConfigItem.enabled) 
-			{
-				return { role: 'DP Sensitive' };
-			}
-
-			return { role: 'Retained' };
-		}
-
-		if (/(station|time|date|zip|age|gender|card_type)/i.test(lowerCaseColumnName)) 
-		{
-			return { role: 'Quasi-identifier' };
-		}
-
-		return { role: 'Non-sensitive' };
+		return { role: targetAuditLogItem.columnRoleSnapshot?.[targetColumnName] || 'Non-sensitive' };
 	};
 
 	// 儀表板資料表格欄位配置
@@ -606,26 +550,24 @@ export default function AuditLogHub(): React.ReactElement
 								</thead>
 
 								<tbody>
-									{globalColumnsList.map(
-										(targetColumnNameString) => 
+									{selectedAuditLog.columnsSnapshot.map(
+										(targetColumnNameString) =>
 										{
-											const { role: calculatedRoleName } = getCalculatedRole(targetColumnNameString, selectedAuditLog.privacyMode);
+											const { role: calculatedRoleName } = getSnapshotRole(selectedAuditLog, targetColumnNameString);
 
-											const targetDpFieldConfigItem = dpFieldsConfigList?.find(
-												(fieldConfigItem) => fieldConfigItem.fieldName === targetColumnNameString && fieldConfigItem.enabled
-											);
-											
+											const isDpFieldEnabled = selectedAuditLog.dpEnabledFieldNamesSnapshot.includes(targetColumnNameString);
+
 											let selectedStrategyDescription = translate('audit.tech_keep_original', '保留原文');
 
-											if (calculatedRoleName === 'Identifier') 
+											if (calculatedRoleName === 'Identifier')
 											{
 												selectedStrategyDescription = translate('audit.tech_full_masking', '完全遮蔽');
 											}
-											else if (calculatedRoleName === 'Quasi-identifier' && selectedAuditLog.privacyMode === 'k-anonymity') 
+											else if (calculatedRoleName === 'Quasi-identifier' && selectedAuditLog.privacyMode === 'k-anonymity')
 											{
 												selectedStrategyDescription = translate('audit.tech_generalization', '區間/時間泛化');
 											}
-											else if (selectedAuditLog.privacyMode === 'differential-privacy' && targetDpFieldConfigItem) 
+											else if (selectedAuditLog.privacyMode === 'differential-privacy' && isDpFieldEnabled)
 											{
 												selectedStrategyDescription = translate('audit.tech_dp', '差分隱私加噪');
 											}
@@ -671,26 +613,24 @@ export default function AuditLogHub(): React.ReactElement
 									</thead>
 
 									<tbody>
-										{globalColumnsList.map(
-											(targetColumnNameString) => 
+										{selectedAuditLog.columnsSnapshot.map(
+											(targetColumnNameString) =>
 											{
-												const { role: calculatedRoleName } = getCalculatedRole(targetColumnNameString, selectedAuditLog.privacyMode);
+												const { role: calculatedRoleName } = getSnapshotRole(selectedAuditLog, targetColumnNameString);
 
-												const targetDpFieldConfigItem = dpFieldsConfigList?.find(
-													(fieldConfigItem) => fieldConfigItem.fieldName === targetColumnNameString && fieldConfigItem.enabled
-												);
-												
+												const isDpFieldEnabled = selectedAuditLog.dpEnabledFieldNamesSnapshot.includes(targetColumnNameString);
+
 												let selectedStrategyDescription = translate('audit.tech_keep_original', '保留原文');
 
-												if (calculatedRoleName === 'Identifier') 
+												if (calculatedRoleName === 'Identifier')
 												{
 													selectedStrategyDescription = translate('audit.tech_full_masking', '完全遮蔽');
 												}
-												else if (calculatedRoleName === 'Quasi-identifier' && selectedAuditLog.privacyMode === 'k-anonymity') 
+												else if (calculatedRoleName === 'Quasi-identifier' && selectedAuditLog.privacyMode === 'k-anonymity')
 												{
 													selectedStrategyDescription = translate('audit.tech_generalization', '區間/時間泛化');
 												}
-												else if (selectedAuditLog.privacyMode === 'differential-privacy' && targetDpFieldConfigItem) 
+												else if (selectedAuditLog.privacyMode === 'differential-privacy' && isDpFieldEnabled)
 												{
 													selectedStrategyDescription = translate('audit.tech_dp', '差分隱私加噪');
 												}

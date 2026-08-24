@@ -21,13 +21,17 @@ export interface AuditLogItem
 	privacyMode: string;     // 套用之脫敏保護模式 ('k-anonymity' | 'differential-privacy')
 	operator: string;        // 執行簽發處置之操作者名稱
 	operatorRole: string;    // 操作者之系統角色 (如: 'data_owner' | 'admin')
-	auditTime: string;       // 審計簽發時間字串 (如: '2026-07-30 10:00:00')
+	auditTime: string;       // 審計簽發時間顯示字串 (依當地語系格式化，如: '2026/7/30 上午10:00:00'，僅供畫面顯示，不可用於日期運算)
+	auditTimestamp: number;  // 審計簽發時間之 Unix 時間戳記 (毫秒)，供月份/區間篩選等日期運算使用
 	parameters: string;      // 該次處置套用之關鍵參數摘要字串
 	singlingRisk: string;    // 指認性攻擊殘餘風險百分比字串 (如: '12.5%')
 	linkabilityRisk: string; // 連結性攻擊殘餘風險百分比字串 (如: '18.2%')
 	inferenceRisk: string;   // 推斷性攻擊殘餘風險百分比字串 (如: '15.0%')
 	overallRisk: string;     // 綜合殘餘風險百分比字串 (如: '18.2%')
 	status: 'passed' | 'failed'; // 審計驗證結果狀態 ('passed' | 'failed')
+	columnsSnapshot: string[];                  // 簽發當下資料集之欄位名稱陣列快照 (不隨後續 WorkspaceStore 變動而改變)
+	columnRoleSnapshot: Record<string, string>; // 簽發當下各欄位最終隱私角色快照 (如 Identifier/Quasi-identifier/DP Sensitive/Retained/Non-sensitive)
+	dpEnabledFieldNamesSnapshot: string[];      // 簽發當下已啟用差分隱私之欄位名稱清單快照
 }
 
 /**

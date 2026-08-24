@@ -9,19 +9,20 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { 
-	Card, Switch, Select, Space, Divider, theme, Typography, 
-	Tabs, Table, Tag, Button, Form, InputNumber, Alert, Modal, Input, App as AntdApp, Dropdown 
+import {
+	Card, Switch, Select, Segmented, Space, Divider, theme, Typography,
+	Tabs, Table, Tag, Button, Form, InputNumber, Alert, Modal, Input, App as AntdApp, Dropdown
 } from 'antd';
 import type { MenuProps } from 'antd';
-import { 
-	SettingOutlined, 
-	MoonOutlined, 
-	SunOutlined, 
+import {
+	SettingOutlined,
+	MoonOutlined,
+	SunOutlined,
 	GlobalOutlined,
-	TeamOutlined, 
-	CodeOutlined, 
-	SafetyCertificateOutlined, 
+	FontSizeOutlined,
+	TeamOutlined,
+	CodeOutlined,
+	SafetyCertificateOutlined,
 	PlusOutlined,
 	KeyOutlined,
 	MoreOutlined,
@@ -30,7 +31,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
-import { useUIStore } from '../../store/useUIStore';
+import { useUIStore, type FontSizeLevel } from '../../store/useUIStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
 const { Text, Title } = Typography;
@@ -141,6 +142,14 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 		(state) => state.setLanguage
 	);
 
+	const currentFontSizeLevel = useUIStore(
+		(state) => state.fontSizeLevel
+	);
+
+	const setFontSizeLevelAction = useUIStore(
+		(state) => state.setFontSizeLevel
+	);
+
 	return (
 		<div style={{ maxWidth: '600px', margin: currentUserRole === 'admin' ? '0' : '40px auto' }}>
 			<Card
@@ -193,12 +202,41 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 
 					<Select
 						value={currentLanguageCode}
-						onChange={(selectedLanguageVal) => setLanguageAction(selectedLanguageVal)} 
+						onChange={(selectedLanguageVal) => setLanguageAction(selectedLanguageVal)}
 						style={{ width: 140 }}
 						options={
 							[
 								{ value: 'zh_TW', label: '繁體中文' },
 								{ value: 'en_US', label: 'English' },
+							]
+						}
+					/>
+				</div>
+
+				<Divider dashed style={{ margin: '16px 0' }} />
+
+				{/* 字體大小調整行 */}
+				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
+					<Space size="middle">
+						<div style={{ backgroundColor: token.colorFillAlter, padding: '10px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: token.colorPrimary }}>
+							<FontSizeOutlined style={{ fontSize: '18px' }} />
+						</div>
+
+						<div style={{ display: 'flex', flexDirection: 'column' }}>
+							<Text strong style={{ fontSize: '15px' }}>{translate('preferences.font_size', '字體大小')}</Text>
+							<Text type="secondary" style={{ fontSize: '13px' }}>{translate('preferences.font_size_desc', '調整系統介面文字顯示大小')}</Text>
+						</div>
+					</Space>
+
+					<Segmented
+						value={currentFontSizeLevel}
+						onChange={(selectedFontSizeLevelVal) => setFontSizeLevelAction(selectedFontSizeLevelVal as FontSizeLevel)}
+						options={
+							[
+								{ value: 'small', label: translate('preferences.font_size_small', '小') },
+								{ value: 'medium', label: translate('preferences.font_size_medium', '中') },
+								{ value: 'large', label: translate('preferences.font_size_large', '大') },
+								{ value: 'extraLarge', label: translate('preferences.font_size_extra_large', '特大') },
 							]
 						}
 					/>
