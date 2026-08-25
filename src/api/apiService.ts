@@ -116,9 +116,9 @@ export const runKAnonymity = async (
     }
     
     const response = await axios.post(
-      'http://127.0.0.1:8000/api/v1/k-anonymity', 
-      formData, 
-      { responseType: 'blob' } 
+      '/api/v1/k-anonymity',
+      formData,
+      { responseType: 'blob' }
     );
 
     // 讀取 Header 中的報告數據
@@ -185,7 +185,7 @@ export const runDifferentialPrivacy = async (
     if (options.default_delta !== undefined) formData.append('default_delta', options.default_delta.toString());
 
     const response = await axios.post(
-      'http://127.0.0.1:8000/api/v1/dp',
+      '/api/v1/dp',
       formData,
       { responseType: 'blob' }
     );
