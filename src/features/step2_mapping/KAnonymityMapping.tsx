@@ -55,9 +55,9 @@ const VALID_MASK_STRATEGIES_BY_ROLE: Record<string, string[]> = {
     'Non-sensitive': ['none', 'remove'],
 };
 
-// 依隱私角色分類之預設遮蔽策略 (Open-PETs API：identifier 為 hash，其餘為 none)
+// 依隱私角色分類之預設遮蔽策略 (Open-PETs API：identifier 為 remove，其餘為 none)
 const DEFAULT_MASK_STRATEGY_BY_ROLE: Record<string, string> = {
-    'Identifier': 'hash',
+    'Identifier': 'remove',
     'Sensitive': 'none',
     'Non-sensitive': 'none',
 };
@@ -788,9 +788,9 @@ export default function KAnonymityMapping(): React.ReactElement
             let recommendedMaskingStrategyValue: string; 
             let recommendedGeneralizationStrategyValue = fieldItemRecord.genStrategy;
 
-            if (/(id|name|card|nric|phone|email)/.test(lowerCaseFieldNameString)) { 
-                recommendedPrivacyRoleValue = 'Identifier'; 
-                recommendedMaskingStrategyValue = 'hash'; 
+            if (/(id|name|card|nric|phone|email)/.test(lowerCaseFieldNameString)) {
+                recommendedPrivacyRoleValue = 'Identifier';
+                recommendedMaskingStrategyValue = 'remove';
             } else if (/(date|age|zip|gender|station|city|region)/.test(lowerCaseFieldNameString)) {
                 recommendedPrivacyRoleValue = 'Quasi-identifier'; 
                 recommendedMaskingStrategyValue = 'none';
@@ -930,10 +930,10 @@ export default function KAnonymityMapping(): React.ReactElement
             dataIndex: 'strategy', width: '15%',
             render: (_: unknown, rowRecordItem: FieldDef) => {
                 if (rowRecordItem.role !== 'Quasi-identifier') {
-                    // ★ 規範對照: 依 Open-PETs API 驗證標準，identifier 之 strategy 僅接受 hash 與 remove，
+                    // ★ 規範對照: 依 Open-PETs API 驗證標準，identifier 僅提供 remove 供使用者選擇 (hash 已自 UI 移除)，
                     //   其餘角色維持 none／remove，避免產生匯出後會被後端忽略之無效組合設定
                     const maskStrategyOptionList = rowRecordItem.role === 'Identifier'
-                        ? [{ value: 'hash', label: translate('step2.opt_hash', '雜湊化') }, { value: 'remove', label: translate('step2.opt_drop') }]
+                        ? [{ value: 'remove', label: translate('step2.opt_drop') }]
                         : [{ value: 'none', label: translate('step2.opt_keep_original') }, { value: 'remove', label: translate('step2.opt_drop') }];
 
                     return <Select value={rowRecordItem.maskStrategy} onChange={(dropdownSelectedValue) => handleFieldChange(rowRecordItem.id, 'maskStrategy', dropdownSelectedValue)} style={{ width: '100%' }} options={maskStrategyOptionList} />;
