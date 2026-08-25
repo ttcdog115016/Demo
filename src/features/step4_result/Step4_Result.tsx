@@ -258,32 +258,33 @@ export default function Step4_Result(): React.ReactElement
                 (matchedKAnonymityFieldItem?.role as string) || columnPrivacyRolesMapDict[cleanColName] || ''
             ).toLowerCase();
             const targetDpFieldConfigItem = currentDpFieldsListArray?.find(fieldItemRecord => fieldItemRecord.fieldName === cleanColName);
+            const matchedIdentifierMaskStrategyString = (matchedKAnonymityFieldItem?.maskStrategy as string) || '';
 
-            if (rawConfiguredRoleNameString.includes('identifier') && !rawConfiguredRoleNameString.includes('quasi')) 
-                return { role: 'Identifier', tagColor: 'magenta' };
+            if (rawConfiguredRoleNameString.includes('identifier') && !rawConfiguredRoleNameString.includes('quasi'))
+                return { role: 'Identifier', tagColor: 'magenta', maskStrategy: matchedIdentifierMaskStrategyString };
 
-            if (rawConfiguredRoleNameString.includes('quasi') || rawConfiguredRoleNameString === 'qi') 
-                return { role: 'Quasi-identifier', tagColor: 'orange' };
+            if (rawConfiguredRoleNameString.includes('quasi') || rawConfiguredRoleNameString === 'qi')
+                return { role: 'Quasi-identifier', tagColor: 'orange', maskStrategy: matchedIdentifierMaskStrategyString };
 
-            if (rawConfiguredRoleNameString.includes('sensitive')) 
-                return { role: 'Sensitive', tagColor: 'purple' };
+            if (rawConfiguredRoleNameString.includes('sensitive'))
+                return { role: 'Sensitive', tagColor: 'purple', maskStrategy: matchedIdentifierMaskStrategyString };
 
             const isExplicitIdentifierMatched = /(^|_)(id|card_id|sn|person_sn|nric|phone|email|name|ssn)($|_)/i.test(lowerCaseColumnNameString);
 
-            if (isExplicitIdentifierMatched) 
-                return { role: 'Identifier', tagColor: 'magenta' };
+            if (isExplicitIdentifierMatched)
+                return { role: 'Identifier', tagColor: 'magenta', maskStrategy: matchedIdentifierMaskStrategyString };
 
-            if (currentPrivacyModeTypeStr === 'differential-privacy') 
+            if (currentPrivacyModeTypeStr === 'differential-privacy')
             {
-                if (targetDpFieldConfigItem && targetDpFieldConfigItem.enabled) 
-                    return { role: 'DP Sensitive', tagColor: 'purple' };
-                return { role: 'Retained', tagColor: 'blue' };
+                if (targetDpFieldConfigItem && targetDpFieldConfigItem.enabled)
+                    return { role: 'DP Sensitive', tagColor: 'purple', maskStrategy: matchedIdentifierMaskStrategyString };
+                return { role: 'Retained', tagColor: 'blue', maskStrategy: matchedIdentifierMaskStrategyString };
             }
 
-            if (/(station|time|date|zip|age|gender|card_type|年齡|地區|職業|性別|地址|生日)/i.test(lowerCaseColumnNameString)) 
-                return { role: 'Quasi-identifier', tagColor: 'orange' };
+            if (/(station|time|date|zip|age|gender|card_type|年齡|地區|職業|性別|地址|生日)/i.test(lowerCaseColumnNameString))
+                return { role: 'Quasi-identifier', tagColor: 'orange', maskStrategy: matchedIdentifierMaskStrategyString };
 
-            return { role: 'Non-sensitive', tagColor: 'blue' };
+            return { role: 'Non-sensitive', tagColor: 'blue', maskStrategy: matchedIdentifierMaskStrategyString };
         },
         [columnPrivacyRolesMapDict, currentDpFieldsListArray, currentPrivacyModeTypeStr, kAnonymityFieldsList]
     );
@@ -610,6 +611,12 @@ export default function Step4_Result(): React.ReactElement
                     return accumulatorDict;
                 }, {} as Record<string, string>);
 
+                const identifierMaskStrategySnapshotDict = actualProcessedColumnsList.reduce((accumulatorDict, columnNameString) => {
+                    const { maskStrategy: resolvedMaskStrategyString } = getCalculatedRole(columnNameString);
+                    if (resolvedMaskStrategyString) accumulatorDict[columnNameString] = resolvedMaskStrategyString;
+                    return accumulatorDict;
+                }, {} as Record<string, string>);
+
                 const dpEnabledFieldNamesSnapshotList = (currentDpFieldsListArray || [])
                     .filter((field: DpStoreField) => field.enabled)
                     .map((field: DpStoreField) => field.fieldName);
@@ -630,6 +637,7 @@ export default function Step4_Result(): React.ReactElement
                     status: pipelineComplianceValidStatus ? 'passed' : 'failed',
                     columnsSnapshot: actualProcessedColumnsList,
                     columnRoleSnapshot: columnRoleSnapshotDict,
+                    identifierMaskStrategySnapshot: identifierMaskStrategySnapshotDict,
                     dpEnabledFieldNamesSnapshot: dpEnabledFieldNamesSnapshotList
                 });
 
@@ -1009,11 +1017,15 @@ export default function Step4_Result(): React.ReactElement
                                 </thead>
                                 <tbody>
                                     {actualProcessedColumnsList.map((columnNameString) => {
-                                        const { role: configuredRoleNameString } = getCalculatedRole(columnNameString);
+                                        const { role: configuredRoleNameString, maskStrategy: configuredMaskStrategyString } = getCalculatedRole(columnNameString);
                                         const targetDpFieldConfigItemObj = currentDpFieldsListArray?.find(fieldItemRecord => fieldItemRecord.fieldName === columnNameString && fieldItemRecord.enabled);
                                         let resolvedStrategyDescriptionText = translate('step4.report.tech_keep_original', '保留原文');
 
-                                        if (configuredRoleNameString === 'Identifier') resolvedStrategyDescriptionText = translate('step4.report.tech_full_masking', '完全遮蔽');
+                                        if (configuredRoleNameString === 'Identifier') {
+                                            resolvedStrategyDescriptionText = configuredMaskStrategyString === 'remove'
+                                                ? translate('step4.report.tech_removed', '直接移除')
+                                                : translate('step4.report.tech_full_masking', '完全遮蔽');
+                                        }
                                         else if (configuredRoleNameString === 'Quasi-identifier' && currentPrivacyModeTypeStr === 'k-anonymity') resolvedStrategyDescriptionText = translate('step4.report.tech_generalization', '區間/時間泛化');
                                         else if (currentPrivacyModeTypeStr === 'differential-privacy' && targetDpFieldConfigItemObj) resolvedStrategyDescriptionText = translate('step4.report.tech_dp', '差分隱私加噪');
 

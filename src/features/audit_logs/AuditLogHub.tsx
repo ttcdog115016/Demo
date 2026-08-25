@@ -561,7 +561,9 @@ export default function AuditLogHub(): React.ReactElement
 
 											if (calculatedRoleName === 'Identifier')
 											{
-												selectedStrategyDescription = translate('audit.tech_full_masking', '完全遮蔽');
+												selectedStrategyDescription = selectedAuditLog.identifierMaskStrategySnapshot?.[targetColumnNameString] === 'remove'
+													? translate('audit.tech_removed', '直接移除')
+													: translate('audit.tech_full_masking', '完全遮蔽');
 											}
 											else if (calculatedRoleName === 'Quasi-identifier' && selectedAuditLog.privacyMode === 'k-anonymity')
 											{
@@ -624,7 +626,9 @@ export default function AuditLogHub(): React.ReactElement
 
 												if (calculatedRoleName === 'Identifier')
 												{
-													selectedStrategyDescription = translate('audit.tech_full_masking', '完全遮蔽');
+													selectedStrategyDescription = selectedAuditLog.identifierMaskStrategySnapshot?.[targetColumnNameString] === 'remove'
+														? translate('audit.tech_removed', '直接移除')
+														: translate('audit.tech_full_masking', '完全遮蔽');
 												}
 												else if (calculatedRoleName === 'Quasi-identifier' && selectedAuditLog.privacyMode === 'k-anonymity')
 												{

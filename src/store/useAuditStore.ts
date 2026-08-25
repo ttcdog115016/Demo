@@ -29,9 +29,10 @@ export interface AuditLogItem
 	inferenceRisk: string;   // 推斷性攻擊殘餘風險百分比字串 (如: '15.0%')
 	overallRisk: string;     // 綜合殘餘風險百分比字串 (如: '18.2%')
 	status: 'passed' | 'failed'; // 審計驗證結果狀態 ('passed' | 'failed')
-	columnsSnapshot: string[];                  // 簽發當下資料集之欄位名稱陣列快照 (不隨後續 WorkspaceStore 變動而改變)
-	columnRoleSnapshot: Record<string, string>; // 簽發當下各欄位最終隱私角色快照 (如 Identifier/Quasi-identifier/DP Sensitive/Retained/Non-sensitive)
-	dpEnabledFieldNamesSnapshot: string[];      // 簽發當下已啟用差分隱私之欄位名稱清單快照
+	columnsSnapshot: string[];                        // 簽發當下資料集之欄位名稱陣列快照 (不隨後續 WorkspaceStore 變動而改變)
+	columnRoleSnapshot: Record<string, string>;       // 簽發當下各欄位最終隱私角色快照 (如 Identifier/Quasi-identifier/DP Sensitive/Retained/Non-sensitive)
+	identifierMaskStrategySnapshot: Record<string, string>; // 簽發當下 Identifier 欄位實際套用之遮蔽策略快照 ('hash' | 'remove')，用以區分套用技術對照表顯示「完全遮蔽」或「直接移除」
+	dpEnabledFieldNamesSnapshot: string[];            // 簽發當下已啟用差分隱私之欄位名稱清單快照
 }
 
 /**
