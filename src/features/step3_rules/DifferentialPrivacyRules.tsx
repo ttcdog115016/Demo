@@ -136,7 +136,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 			return;
 		}
 
-		const perFieldEpsilonValue = parseFloat((targetTotalEpsilonValue / activeDpFieldsList.length).toFixed(4));
+		const perFieldEpsilonValue = parseFloat((targetTotalEpsilonValue / activeDpFieldsList.length).toFixed(2));
 
 		useWorkspaceStore.setState(
 			(currentStoreState) =>
@@ -179,7 +179,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 						calculatedEquivalentEpsilonValue = originalEpsilonValue * deltaRatioCalculatedValue;
 					}
 
-					return { ...activeFieldItemRecord, equivalentEpsilon: parseFloat(calculatedEquivalentEpsilonValue.toFixed(4)) } as ConvertedField;
+					return { ...activeFieldItemRecord, equivalentEpsilon: parseFloat(calculatedEquivalentEpsilonValue.toFixed(2)) } as ConvertedField;
 				}
 			);
 		}, 
@@ -193,7 +193,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 				(accumulatorValue, currentConvertedFieldItem) => accumulatorValue + currentConvertedFieldItem.equivalentEpsilon, 
 				0
 			);
-			return parseFloat(epsilonSummationResultValue.toFixed(4));
+			return parseFloat(epsilonSummationResultValue.toFixed(2));
 		}, 
 		[equivalentConvertedFieldsList]
 	);
@@ -265,7 +265,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 			key: 'original', 
 			render: (_: unknown, convertedRecordItem: ConvertedField) => (
 				<div style={{ fontSize: 12, color: token.colorTextSecondary }}>
-					ε: {convertedRecordItem.epsilon ?? DEFAULT_EPSILON_BUDGET} {convertedRecordItem.mode === 'epsilon-delta' && ` | δ: ${convertedRecordItem.delta ?? DEFAULT_DELTA_BUDGET}`}
+					ε: {(convertedRecordItem.epsilon ?? DEFAULT_EPSILON_BUDGET).toFixed(2)} {convertedRecordItem.mode === 'epsilon-delta' && ` | δ: ${convertedRecordItem.delta ?? DEFAULT_DELTA_BUDGET}`}
 				</div>
 			)
 		},
@@ -468,17 +468,18 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 										<div style={{ flex: 1, display: 'flex', gap: '24px', alignItems: 'center' }}>
 											<div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
 												<Text type="secondary" style={{ width: '20px', textAlign: 'right' }}>ε</Text>
-												<Slider 
-													min={0.01} max={20} step={0.01} 
-													value={activeFieldItemRecord.epsilon ?? DEFAULT_EPSILON_BUDGET} 
-													onChange={(sliderEpsilonNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'epsilon', sliderEpsilonNumberValue)} 
+												<Slider
+													min={0.01} max={20} step={0.01}
+													value={activeFieldItemRecord.epsilon ?? DEFAULT_EPSILON_BUDGET}
+													onChange={(sliderEpsilonNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'epsilon', sliderEpsilonNumberValue)}
 													style={{ flex: 1, margin: 0 }}
+													tooltip={{ formatter: (tooltipEpsilonNumberValue) => tooltipEpsilonNumberValue?.toFixed(2) }}
 												/>
-												<InputNumber 
-													min={0.001} max={100} step={0.01} 
-													value={activeFieldItemRecord.epsilon ?? DEFAULT_EPSILON_BUDGET} 
-													onChange={(inputEpsilonNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'epsilon', inputEpsilonNumberValue || 0.01)} 
-													size="small" style={{ width: '100px' }} 
+												<InputNumber
+													min={0.001} max={100} step={0.01} precision={2}
+													value={activeFieldItemRecord.epsilon ?? DEFAULT_EPSILON_BUDGET}
+													onChange={(inputEpsilonNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'epsilon', inputEpsilonNumberValue || 0.01)}
+													size="small" style={{ width: '100px' }}
 												/>
 											</div>
 
@@ -490,7 +491,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 														value={activeFieldItemRecord.delta ?? DEFAULT_DELTA_BUDGET} 
 														onChange={(sliderDeltaNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'delta', sliderDeltaNumberValue)} 
 														style={{ flex: 1, margin: 0 }} 
-														tooltip={{ formatter: (tooltipDeltaNumberValue) => tooltipDeltaNumberValue?.toFixed(6) }}
+														tooltip={{ formatter: (tooltipDeltaNumberValue) => tooltipDeltaNumberValue?.toExponential(2) }}
 													/>
 													<InputNumber 
 														min={1e-10} max={0.99} step={0.0001} 
