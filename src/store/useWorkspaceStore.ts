@@ -27,13 +27,24 @@ const DEFAULT_BUDGET_LIMIT_EPSILON = 10;
 const DEFAULT_TARGET_DELTA = 0.0001;
 
 /**
- * 預處理清洗規則介面
+ * 預處理清洗規則介面 (單一序列轉換步驟)
  * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
  */
-export interface PreprocessingRule 
+export interface PreprocessingRule
 {
-    action: string; // 清洗動作指令 (如 'remove_digits', 'remove_spaces', 'hash')
-    param: string;  // 清洗動作附帶之參數
+    action: string;                          // 清洗動作指令 (如 'trim', 'slice', 'hash')
+    params: Record<string, string | number>; // 該動作所需之參數集合，鍵值依 action 種類而異
+}
+
+/**
+ * 缺失值處理規則介面 (與序列轉換步驟互斥，每欄位僅能擇一)
+ * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
+ */
+export interface MissingValueRule
+{
+    strategy: 'none' | 'drop' | 'constant' | 'fill';                  // 缺失值處理策略
+    constantValue?: string;                                           // strategy = 'constant' 時之填充常數值
+    fillMethod?: 'forward' | 'backward' | 'interpolate' | 'mean';     // strategy = 'fill' 時之填充方法
 }
 
 /**
@@ -87,7 +98,8 @@ interface WorkspaceState
     privacyMode: 'k-anonymity' | 'differential-privacy' | null;               // 脫敏保護模式
     columns: string[];                                                       // 數據集欄位名稱陣列
     previewData: Record<string, unknown>[];                                  // 前端預覽數據紀錄陣列
-    preprocessingRules: Record<string, PreprocessingRule>;                    // 預處理清洗規則表
+    preprocessingRules: Record<string, PreprocessingRule[]>;                  // 預處理清洗規則表 (每欄位可設定多道依序執行之策略)
+    missingValueRules: Record<string, MissingValueRule>;                     // 缺失值處理規則表 (每欄位僅能擇一，與 preprocessingRules 互斥並存)
     fileName?: string;                                                       // 當前載入之檔案名稱
     
     // 核心陣列與物件 (符合規範 g)
@@ -129,7 +141,8 @@ interface WorkspaceState
     // Actions 宣告
     setDataFile: (file: File | null) => void;
     setPrivacyMode: (privacyModeTypeStr: 'k-anonymity' | 'differential-privacy') => void;
-    setPreprocessingRules: (preprocessingRulesMapDict: Record<string, PreprocessingRule>) => void;
+    setPreprocessingRules: (preprocessingRulesMapDict: Record<string, PreprocessingRule[]>) => void;
+    setMissingValueRules: (missingValueRulesMapDict: Record<string, MissingValueRule>) => void;
     nextStep: () => void;
     prevStep: () => void;
     setStep4Cache: (step4CacheDataObj: Step4Cache, paramsHashString: string) => void;
@@ -182,6 +195,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
             columns: [],
             previewData: [],
             preprocessingRules: {},
+            missingValueRules: {},
             fileName: undefined,
             columnRoles: {},
             columnTypes: {},
@@ -212,6 +226,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
             setDataFile: (file) => setStoreStateAction({ dataFile: file }),          
             setPrivacyMode: (privacyModeTypeStr) => setStoreStateAction({ privacyMode: privacyModeTypeStr }),
             setPreprocessingRules: (preprocessingRulesMapDict) => setStoreStateAction({ preprocessingRules: preprocessingRulesMapDict }),
+            setMissingValueRules: (missingValueRulesMapDict) => setStoreStateAction({ missingValueRules: missingValueRulesMapDict }),
             nextStep: () => setStoreStateAction((currentStoreStateData) => ({ currentStep: currentStoreStateData.currentStep + 1 })),
             prevStep: () => setStoreStateAction((currentStoreStateData) => ({ currentStep: currentStoreStateData.currentStep - 1 })),
             setStep4Cache: (step4CacheDataObj, paramsHashString) => setStoreStateAction({ step4Cache: step4CacheDataObj, lastRunParamsHash: paramsHashString }),
@@ -226,9 +241,10 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 columns: [], 
                 previewData: [], 
                 fileName: undefined, 
-                privacyMode: null, 
+                privacyMode: null,
                 preprocessingRules: {},
-                dpFields: [] 
+                missingValueRules: {},
+                dpFields: []
             }),
             setStepValidation: (isValidBooleanStatus, errorMessageString) => setStoreStateAction({ isStepValid: isValidBooleanStatus, stepErrorMessage: errorMessageString }),
             setDpFields: (dpFieldsListArray) => setStoreStateAction({ dpFields: dpFieldsListArray }),
@@ -239,6 +255,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 columns: [],
                 previewData: [],
                 preprocessingRules: {},
+                missingValueRules: {},
                 fileName: undefined,
                 columnRoles: {},
                 columnTypes: {},

@@ -17,7 +17,6 @@ import { App } from 'antd';
 
 vi.mock('../../features/step2_mapping/KAnonymityMapping', () => ({ default: () => <div data-testid="k-anon-mapping" /> }));
 vi.mock('../../features/step2_mapping/DifferentialPrivacyMapping', () => ({ default: () => <div data-testid="dp-mapping" /> }));
-vi.mock('../../features/step2_mapping/TemplateManager', () => ({ default: () => <div data-testid="template-manager" /> }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }),

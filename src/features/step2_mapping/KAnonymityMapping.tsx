@@ -8,16 +8,16 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Table, Select, Button, Input, InputNumber, Segmented, theme, Tabs, Space, Popconfirm, Collapse, Tooltip, App as AntdApp } from 'antd';
-import { 
-    UploadOutlined, DeleteOutlined, PlusOutlined, 
-    SaveOutlined, DatabaseOutlined, SisternodeOutlined, 
-    CodeOutlined, ThunderboltOutlined, QuestionCircleOutlined
+import { Card, Table, Select, Button, Input, InputNumber, Segmented, theme, Tabs, Space, Popconfirm, Tooltip, App as AntdApp } from 'antd';
+import {
+    UploadOutlined, DeleteOutlined, PlusOutlined,
+    SaveOutlined, DatabaseOutlined, SisternodeOutlined,
+    CodeOutlined, ThunderboltOutlined, QuestionCircleOutlined, CopyOutlined
 } from '@ant-design/icons';
 import CryptoJS from 'crypto-js';
 import { useTranslation } from 'react-i18next'; 
 
-import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { useWorkspaceStore, type PreprocessingRule } from '../../store/useWorkspaceStore';
 
 /**
  * ============================================================================
@@ -48,9 +48,9 @@ const MASK_STRATEGY_ALIAS_MAP: Record<string, string> = {
 
 // 依隱私角色分類之合法遮蔽策略白名單
 // 規範對照: 依 Open-PETs API 交付文件 4-1 節之驗證標準——
-//   identifier 僅接受 hash 與 remove，填入其他值 (含 none／keep／full) 將被忽略並退回角色預設值
+//   identifier 一律僅接受 remove，填入其他值 (含 hash／none／keep／full) 將被忽略並退回角色預設值
 const VALID_MASK_STRATEGIES_BY_ROLE: Record<string, string[]> = {
-    'Identifier': ['hash', 'remove'],
+    'Identifier': ['remove'],
     'Sensitive': ['none', 'remove'],
     'Non-sensitive': ['none', 'remove'],
 };
@@ -132,79 +132,179 @@ interface HierarchyTable
     [key: string]: unknown;
 }
 
-const applyPreprocess = (cellValueData: unknown, actionTypeStr: string, actionParameterStr: string): string => 
+const FULLWIDTH_CHAR_CODE_OFFSET = 0xFEE0;
+const FULLWIDTH_SPACE_CHAR_CODE = 0x3000;
+
+/**
+ * 函數名稱: applyPreprocessStep
+ * 函數功能: 依據選定之單一動作與參數集合，對字串執行對應之預處理轉換。與 Step2_Mapping.tsx 之同名函數
+ *           邏輯一致，供本頁「欄位參數設定清單」展開列之即時預覽使用。
+ */
+const applyPreprocessStep = (cellValueStr: string, stepItemRecord: PreprocessingRule): string =>
 {
-    if (cellValueData == null || cellValueData === '') 
+    const { action: actionTypeStr, params: actionParamsDict } = stepItemRecord;
+
+    switch (actionTypeStr)
+    {
+        case 'trim':
+        {
+            const trimModeStr = String(actionParamsDict.mode || 'edges');
+            return trimModeStr === 'all' ? cellValueStr.replace(/\s+/g, '') : cellValueStr.trim();
+        }
+
+        case 'slice':
+        {
+            const sliceDirectionStr = String(actionParamsDict.direction || 'left');
+            const sliceCountNum = Math.max(0, Number(actionParamsDict.count) || 0);
+
+            if (sliceCountNum === 0) return cellValueStr;
+
+            return sliceDirectionStr === 'left'
+                ? cellValueStr.slice(sliceCountNum)
+                : cellValueStr.slice(0, Math.max(0, cellValueStr.length - sliceCountNum));
+        }
+
+        case 'anchor_truncate':
+        {
+            const anchorCharStr = String(actionParamsDict.anchor || '');
+            const anchorDirectionStr = String(actionParamsDict.direction || 'front');
+            const keepCountNum = Math.max(0, Number(actionParamsDict.keepCount) || 0);
+
+            if (!anchorCharStr) return cellValueStr;
+
+            const anchorIndexNum = anchorDirectionStr === 'front' ? cellValueStr.indexOf(anchorCharStr) : cellValueStr.lastIndexOf(anchorCharStr);
+
+            if (anchorIndexNum === -1) return cellValueStr;
+
+            if (keepCountNum === 0) return '';
+
+            const extraKeepCountNum = keepCountNum - 1; // 總保留字數含錨點本身，鄰近字元數需扣除錨點的 1 個字
+
+            if (anchorDirectionStr === 'front')
+            {
+                const frontPartStr = cellValueStr.slice(Math.max(0, anchorIndexNum - extraKeepCountNum), anchorIndexNum);
+                return frontPartStr + anchorCharStr;
+            }
+
+            const backPartStr = cellValueStr.slice(anchorIndexNum + 1, Math.min(cellValueStr.length, anchorIndexNum + 1 + extraKeepCountNum));
+            return anchorCharStr + backPartStr;
+        }
+
+        case 'type_cast':
+        {
+            const targetTypeStr = String(actionParamsDict.targetType || 'integer');
+
+            if (targetTypeStr === 'boolean')
+            {
+                const normalizedValueStr = cellValueStr.trim().toLowerCase();
+                return ['true', '1', 'yes', 'y'].includes(normalizedValueStr) ? 'true' : 'false';
+            }
+
+            if (targetTypeStr === 'float')
+            {
+                const cleanedFloatStr = cellValueStr.replace(/[^0-9.-]/g, '');
+                const parsedFloatNum = parseFloat(cleanedFloatStr);
+                return Number.isNaN(parsedFloatNum) ? '0' : String(parsedFloatNum);
+            }
+
+            const cleanedIntStr = cellValueStr.replace(/[^0-9-]/g, '');
+            const parsedIntNum = parseInt(cleanedIntStr, 10);
+            return Number.isNaN(parsedIntNum) ? '0' : String(parsedIntNum);
+        }
+
+        case 'normalize':
+        {
+            let normalizedResultStr = cellValueStr;
+
+            if (actionParamsDict.widthMode === 'full_to_half')
+            {
+                normalizedResultStr = normalizedResultStr
+                    .replace(/[！-～]/g, (fullWidthCharStr) => String.fromCharCode(fullWidthCharStr.charCodeAt(0) - FULLWIDTH_CHAR_CODE_OFFSET))
+                    .replace(new RegExp(String.fromCharCode(FULLWIDTH_SPACE_CHAR_CODE), 'g'), ' ');
+            }
+
+            if (actionParamsDict.caseMode === 'upper') normalizedResultStr = normalizedResultStr.toUpperCase();
+            else if (actionParamsDict.caseMode === 'lower') normalizedResultStr = normalizedResultStr.toLowerCase();
+
+            return normalizedResultStr;
+        }
+
+        case 'clamp':
+        {
+            const parsedNumericValue = parseFloat(cellValueStr);
+            if (Number.isNaN(parsedNumericValue)) return cellValueStr;
+
+            const lowerBoundNum = actionParamsDict.min !== undefined ? Number(actionParamsDict.min) : -Infinity;
+            const upperBoundNum = actionParamsDict.max !== undefined ? Number(actionParamsDict.max) : Infinity;
+
+            return String(Math.min(upperBoundNum, Math.max(lowerBoundNum, parsedNumericValue)));
+        }
+
+        case 'hash':
+        {
+            try
+            {
+                const algorithmStr = String(actionParamsDict.algorithm || 'sha256');
+                const seedModeStr = String(actionParamsDict.seedMode || 'none');
+
+                let seedSuffixStr = '';
+                if (seedModeStr === 'fixed') seedSuffixStr = String(actionParamsDict.seedValue || '');
+                else if (seedModeStr === 'timestamp') seedSuffixStr = String(Date.now());
+
+                const hashInputStr = cellValueStr + seedSuffixStr;
+
+                let calculatedHashResult = '';
+                if (algorithmStr === 'md5') calculatedHashResult = CryptoJS.MD5(hashInputStr).toString();
+                else if (algorithmStr === 'sha512') calculatedHashResult = CryptoJS.SHA512(hashInputStr).toString();
+                else calculatedHashResult = CryptoJS.SHA256(hashInputStr).toString();
+
+                return calculatedHashResult.substring(0, HASH_PREVIEW_TRUNCATE_LENGTH) + '...';
+            }
+            catch (hashingErrorExecution)
+            {
+                console.error('Hashing error:', hashingErrorExecution);
+                return 'Hash Error';
+            }
+        }
+
+        case 'regex_replace':
+        {
+            const regexPatternStr = String(actionParamsDict.pattern || '');
+            const placeholderStr = actionParamsDict.placeholder !== undefined ? String(actionParamsDict.placeholder) : '***';
+
+            if (!regexPatternStr) return cellValueStr;
+
+            try
+            {
+                const regexMatcherInstance = new RegExp(regexPatternStr, 'g');
+                return cellValueStr.replace(regexMatcherInstance, placeholderStr);
+            }
+            catch
+            {
+                return cellValueStr;
+            }
+        }
+
+        default:
+            return cellValueStr;
+    }
+};
+
+/**
+ * 函數名稱: applyPreprocessSteps
+ * 函數功能: 依序套用同一欄位之多道預處理策略 (由上而下)，上一步驟之輸出即為下一步驟之輸入。
+ */
+const applyPreprocessSteps = (cellValueData: unknown, stepsArray: PreprocessingRule[]): string =>
+{
+    if (cellValueData == null || cellValueData === '')
     {
         return DEFAULT_PREPROCESS_SYMBOL;
     }
 
-    let targetPreprocessString = String(cellValueData);
-
-    if (actionTypeStr === 'none' || !actionTypeStr) 
-    {
-        return targetPreprocessString;
-    }
-
-    if (actionTypeStr === 'remove_digits') 
-    {
-        targetPreprocessString = targetPreprocessString.replace(/\d+/g, '');
-    } 
-    else if (actionTypeStr === 'remove_spaces') 
-    {
-        targetPreprocessString = targetPreprocessString.replace(/\s+/g, '');
-    } 
-    else if (actionTypeStr === 'keep_before' && actionParameterStr) 
-    {
-        const targetSubstringIndex = targetPreprocessString.indexOf(actionParameterStr);
-
-        if (targetSubstringIndex !== -1) 
-        {
-            targetPreprocessString = targetPreprocessString.substring(0, targetSubstringIndex);
-        }
-    } 
-    else if (actionTypeStr === 'keep_until' && actionParameterStr) 
-    {
-        const targetSubstringIndex = targetPreprocessString.indexOf(actionParameterStr);
-
-        if (targetSubstringIndex !== -1) 
-        {
-            targetPreprocessString = targetPreprocessString.substring(0, targetSubstringIndex + actionParameterStr.length);
-        }
-    } 
-    else if (actionTypeStr === 'regex_replace' && actionParameterStr) 
-    {
-        try 
-        {
-            const regexMatcherInstance = new RegExp(actionParameterStr, 'g');
-            targetPreprocessString = targetPreprocessString.replace(regexMatcherInstance, '');
-        } 
-        catch 
-        { 
-            /* ignore regex syntax error */ 
-        }
-    } 
-    else if (actionTypeStr === 'hash') 
-    {
-        try 
-        {
-            let calculatedHashResult = '';
-            const cleanedAlgorithmParamName = actionParameterStr?.toLowerCase().trim();
-
-            if (cleanedAlgorithmParamName === 'md5') calculatedHashResult = CryptoJS.MD5(targetPreprocessString).toString();
-            else if (cleanedAlgorithmParamName === 'sha512') calculatedHashResult = CryptoJS.SHA512(targetPreprocessString).toString();
-            else calculatedHashResult = CryptoJS.SHA256(targetPreprocessString).toString();
-
-            targetPreprocessString = calculatedHashResult.substring(0, HASH_PREVIEW_TRUNCATE_LENGTH) + '...';
-        } 
-        catch (hashingErrorExecution) 
-        {
-            console.error('Hashing error:', hashingErrorExecution);
-            targetPreprocessString = 'Hash Error';
-        }
-    }
-
-    return targetPreprocessString;
+    return stepsArray.reduce(
+        (accumulatedResultString, stepItemRecord) => applyPreprocessStep(accumulatedResultString, stepItemRecord),
+        String(cellValueData)
+    );
 };
 
 const buildExportJSON = (fieldsList: FieldDef[], hierarchiesList: HierarchyTable[]): Record<string, unknown> => {
@@ -370,11 +470,23 @@ export default function KAnonymityMapping(): React.ReactElement
 
     // 1. 表單防呆驗證
     useEffect(() => {
-        const preprocessingActionsRequiringParamArray = ['keep_before', 'keep_until', 'regex_replace'];
+        // ★ 依 Step2_Mapping.tsx 之預處理動作定義，各動作所需之必填參數鍵值 (符合規範 e)
+        const isPreprocessStepMissingRequiredParam = (stepItemRecord: PreprocessingRule): boolean => {
+            if (stepItemRecord.action === 'anchor_truncate') {
+                return !String(stepItemRecord.params.anchor || '').trim();
+            }
+            if (stepItemRecord.action === 'regex_replace') {
+                return !String(stepItemRecord.params.pattern || '').trim();
+            }
+            if (stepItemRecord.action === 'hash' && stepItemRecord.params.seedMode === 'fixed') {
+                return !String(stepItemRecord.params.seedValue || '').trim();
+            }
+            return false;
+        };
 
         const hasPreprocessErrorStatus = storeColumnsList.some((columnNameString) => {
-            const currentColumnPreprocessingRule = preprocessingRulesMap?.[columnNameString];
-            return currentColumnPreprocessingRule && preprocessingActionsRequiringParamArray.includes(currentColumnPreprocessingRule.action) && (!currentColumnPreprocessingRule.param || currentColumnPreprocessingRule.param.trim() === '');
+            const currentColumnPreprocessingSteps = preprocessingRulesMap?.[columnNameString];
+            return currentColumnPreprocessingSteps?.some(isPreprocessStepMissingRequiredParam) ?? false;
         });
 
         if (hasPreprocessErrorStatus) {
@@ -636,8 +748,22 @@ export default function KAnonymityMapping(): React.ReactElement
                     });
                 }
 
-                // ★ 使用型別斷言替代 any
-                useWorkspaceStore.setState({ preprocessingRules: importedPreprocessingRulesMap as Record<string, import('../../store/useWorkspaceStore').PreprocessingRule> });
+                // ★ 相容匯入舊版單一策略物件格式 ({action, param})，統一正規化為新版多策略陣列格式 ({action, params})
+                const normalizedImportedPreprocessingRulesMap: Record<string, PreprocessingRule[]> = {};
+                Object.keys(importedPreprocessingRulesMap).forEach((columnNameKeyStr) => {
+                    const rawRuleValue = importedPreprocessingRulesMap[columnNameKeyStr];
+                    const rawRuleArray = Array.isArray(rawRuleValue) ? rawRuleValue : [rawRuleValue];
+
+                    normalizedImportedPreprocessingRulesMap[columnNameKeyStr] = rawRuleArray.map((rawStepItemData) => {
+                        const rawStepObj = rawStepItemData as { action?: string; param?: string; params?: Record<string, string | number> };
+                        return {
+                            action: rawStepObj.action || 'none',
+                            params: rawStepObj.params ?? (rawStepObj.param !== undefined ? { legacyParam: rawStepObj.param } : {})
+                        };
+                    });
+                });
+
+                useWorkspaceStore.setState({ preprocessingRules: normalizedImportedPreprocessingRulesMap });
 
                 const updatedKAnonymityFieldsList: FieldDef[] = [];
                 const updatedColumnRolesMap: Record<string, string> = {};
@@ -825,8 +951,10 @@ export default function KAnonymityMapping(): React.ReactElement
                         else if (updatedFieldObjectItem.type === 'temporal') updatedFieldObjectItem.genStrategy = 'downgrade';
                         else if (updatedFieldObjectItem.type === 'categorical') updatedFieldObjectItem.genStrategy = 'tree';
                         else updatedFieldObjectItem.genStrategy = 'prefix';
-                    } else { 
-                        updatedFieldObjectItem.maskStrategy = 'none'; 
+                    } else {
+                        // ★ 規範對照: identifier 之合法策略僅有 remove (見 VALID_MASK_STRATEGIES_BY_ROLE)，
+                        //   切換角色時一律套用該角色預設策略，避免 identifier 卡在 UI 未提供之 'none' 選項
+                        updatedFieldObjectItem.maskStrategy = DEFAULT_MASK_STRATEGY_BY_ROLE[updatedFieldObjectItem.role] || 'none';
                     }
                 }
 
@@ -1037,11 +1165,33 @@ export default function KAnonymityMapping(): React.ReactElement
     const removeMappingRow = (targetHierarchyTableIdStr: string, targetRowIndexNumber: number): void => setKAnonymityHierarchiesList(kAnonymityHierarchiesList.map(hierarchyItemRecord => hierarchyItemRecord.id === targetHierarchyTableIdStr ? { ...hierarchyItemRecord, mappings: hierarchyItemRecord.mappings.filter((_, mappingRowIndex) => mappingRowIndex !== targetRowIndexNumber) } : hierarchyItemRecord));
 
     const liveJsonPreviewDataObject = buildSpecCompliantPreviewJSON(kAnonymityFieldsList, kAnonymityHierarchiesList);
+    const liveJsonPreviewFormattedString = JSON.stringify(liveJsonPreviewDataObject, null, 2);
+    const liveJsonPreviewLineArray = liveJsonPreviewFormattedString.split('\n');
+
+    /**
+     * 函數名稱: handleCopyJsonPreviewToClipboard
+     * 函數功能: 將右側即時 JSON 預覽面板之完整內容複製至剪貼簿，並顯示成功／失敗提示訊息。
+     */
+    const handleCopyJsonPreviewToClipboard = async (): Promise<void> =>
+    {
+        try
+        {
+            await navigator.clipboard.writeText(liveJsonPreviewFormattedString);
+            messageApi.success(translate('step2.json_preview_copy_success', '已複製 JSON 預覽內容至剪貼簿'));
+        }
+        catch (clipboardCopyErrorExecution)
+        {
+            console.error('複製 JSON 預覽失敗:', clipboardCopyErrorExecution);
+            messageApi.error(translate('step2.json_preview_copy_failed', '複製失敗，請手動選取複製'));
+        }
+    };
 
     return (
+        <div className="kanon-split-layout">
+        <div className="kanon-split-form-column">
         <Card variant="borderless" style={{ background: 'transparent', padding: 0 }}>
-            <Tabs 
-                defaultActiveKey="1" 
+            <Tabs
+                defaultActiveKey="1"
                 tabBarExtraContent={
                     <Space style={{ paddingBottom: '8px' }}>
                         <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportJSON} onClick={(fileInputEvent) => { (fileInputEvent.target as HTMLInputElement).value = ''; }} style={{ display: 'none' }} />
@@ -1079,19 +1229,19 @@ export default function KAnonymityMapping(): React.ReactElement
                                                     { 
                                                         const currentWorkspaceStoreStateData = useWorkspaceStore.getState();
                                                         const currentPreprocessingRulesMap = currentWorkspaceStoreStateData.preprocessingRules || {};
-                                                        const targetColumnPreprocessingRule = currentPreprocessingRulesMap[rowRecordItem.name] || { action: 'none', param: '' };
+                                                        const targetColumnPreprocessingSteps = currentPreprocessingRulesMap[rowRecordItem.name] || [{ action: 'none', param: '' }];
 
                                                         const samplePreviewRowsDataArray = datasetPreviewRowsList.slice(0, 3).map(
-                                                            (dataRowRecordItem, rowIndexNumber) => 
+                                                            (dataRowRecordItem, rowIndexNumber) =>
                                                             {
                                                                 const rawStringValueData = String(dataRowRecordItem[rowRecordItem.name] || '-');
-                                                                const preprocessedStringValueData = applyPreprocess(rawStringValueData, targetColumnPreprocessingRule.action, targetColumnPreprocessingRule.param);
+                                                                const preprocessedStringValueData = applyPreprocessSteps(rawStringValueData, targetColumnPreprocessingSteps);
                                                                 const transformedStringValueData = getTransformedPreview(preprocessedStringValueData, rowRecordItem);
                                                                 return { key: rowIndexNumber, raw: rawStringValueData, preprocessed: preprocessedStringValueData, transformed: transformedStringValueData };
                                                             }
-                                                        ); 
+                                                        );
 
-                                                        const hasPreprocessActionConfigured = targetColumnPreprocessingRule.action && targetColumnPreprocessingRule.action !== 'none';
+                                                        const hasPreprocessActionConfigured = targetColumnPreprocessingSteps.some((stepItemRecord) => stepItemRecord.action && stepItemRecord.action !== 'none');
                                                         const previewTableColumnsConfig = [
                                                             { title: translate('step2.preview_raw'), dataIndex: 'raw', key: 'raw', width: hasPreprocessActionConfigured ? '33%' : '50%' },
                                                             ...(hasPreprocessActionConfigured ? [{ title: translate('step2.preview_preprocessed'), dataIndex: 'preprocessed', key: 'preprocessed', className: 'preprocessed-col', width: '33%' }] : []),
@@ -1217,22 +1367,18 @@ export default function KAnonymityMapping(): React.ReactElement
                 }
             />
 
-            <div style={{ marginTop: '24px' }}>
-                <Collapse ghost items={[{ key: '1', label: <span style={{ fontWeight: 600, color: token.colorTextSecondary }}><CodeOutlined style={{ marginRight: '6px' }} /> {translate('step2.json_preview')}</span>, children: ( <pre style={{ background: isDarkModeActive ? '#141414' : '#f0f2f5', padding: '16px', borderRadius: '8px', border: `1px solid ${token.colorBorderSecondary}`, overflowX: 'auto', fontSize: '13px', color: isDarkModeActive ? '#a6accd' : '#333', margin: 0 }}> {JSON.stringify(liveJsonPreviewDataObject, null, 2)} </pre> ) }]} />
-            </div>
-
             <style>{`
-                .attribute-table .ant-table-thead > tr > th { 
-                    background: ${isDarkModeActive ? '#262626' : '#fafafa'} !important; 
-                    border-bottom: 1px solid ${token.colorBorderSecondary} !important; 
-                    color: ${token.colorTextSecondary} !important; 
-                    font-weight: 500; 
-                    white-space: nowrap; 
-                    padding: 8px 8px !important; 
+                .attribute-table .ant-table-thead > tr > th {
+                    background: ${isDarkModeActive ? '#262626' : '#fafafa'} !important;
+                    border-bottom: 1px solid ${token.colorBorderSecondary} !important;
+                    color: ${token.colorTextSecondary} !important;
+                    font-weight: 500;
+                    white-space: nowrap;
+                    padding: 8px 8px !important;
                 }
-                .attribute-table .ant-table-tbody > tr > td { 
-                    border-bottom: 1px solid ${token.colorBorderSecondary} !important; 
-                    padding: 8px 8px !important; 
+                .attribute-table .ant-table-tbody > tr > td {
+                    border-bottom: 1px solid ${token.colorBorderSecondary} !important;
+                    padding: 8px 8px !important;
                 }
                 .attribute-table .ant-table-expanded-row > td {
                     padding: 0 !important;
@@ -1240,7 +1386,86 @@ export default function KAnonymityMapping(): React.ReactElement
                 .preprocessed-col {
                     background-color: ${isDarkModeActive ? 'rgba(250, 173, 20, 0.1)' : 'rgba(250, 173, 20, 0.05)'};
                 }
+                .kanon-split-layout {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 24px;
+                }
+                .kanon-split-form-column {
+                    flex: 2 1 0%;
+                    min-width: 0;
+                }
+                .kanon-split-preview-column {
+                    flex: 1 1 0%;
+                    min-width: 320px;
+                    position: sticky;
+                    top: 24px;
+                }
+                @media (max-width: 1200px) {
+                    .kanon-split-layout {
+                        flex-direction: column;
+                    }
+                    .kanon-split-preview-column {
+                        flex: 1 1 auto;
+                        width: 100%;
+                        min-width: 0;
+                        position: static;
+                    }
+                }
+                .kanon-json-preview-line {
+                    display: flex;
+                }
+                .kanon-json-preview-line-number {
+                    flex: 0 0 auto;
+                    width: 36px;
+                    text-align: right;
+                    padding-right: 12px;
+                    user-select: none;
+                    color: ${isDarkModeActive ? '#5c6370' : '#a0aec0'};
+                }
+                .kanon-json-preview-line-content {
+                    flex: 1 1 auto;
+                    white-space: pre;
+                }
             `}</style>
         </Card>
+        </div>
+
+        <div className="kanon-split-preview-column">
+            <Card
+                variant="borderless"
+                title={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><CodeOutlined style={{ color: token.colorPrimary }} />{translate('step2.json_preview')}</span>}
+                extra={<Button size="small" icon={<CopyOutlined />} onClick={handleCopyJsonPreviewToClipboard}>{translate('step2.json_preview_copy', '複製')}</Button>}
+                style={{
+                    background: isDarkModeActive ? '#141414' : '#fafafa',
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    boxShadow: isDarkModeActive ? 'none' : '0 2px 8px rgba(0,0,0,0.04)'
+                }}
+                styles={{ body: { padding: 0 }, header: { borderBottom: `1px solid ${token.colorBorderSecondary}` } }}
+            >
+                <div
+                    style={{
+                        background: isDarkModeActive ? '#141414' : '#f8fafc',
+                        borderRadius: '0 0 8px 8px',
+                        padding: '16px 12px',
+                        overflow: 'auto',
+                        maxHeight: 'calc(100vh - 160px)',
+                        fontSize: '13px',
+                        fontFamily: 'Consolas, Menlo, Monaco, "Courier New", monospace',
+                        color: isDarkModeActive ? '#a6accd' : '#333'
+                    }}
+                >
+                    {liveJsonPreviewLineArray.map(
+                        (jsonPreviewLineTextString, jsonPreviewLineIndexNumber) => (
+                            <div className="kanon-json-preview-line" key={jsonPreviewLineIndexNumber}>
+                                <span className="kanon-json-preview-line-number">{jsonPreviewLineIndexNumber + 1}</span>
+                                <span className="kanon-json-preview-line-content">{jsonPreviewLineTextString}</span>
+                            </div>
+                        )
+                    )}
+                </div>
+            </Card>
+        </div>
+        </div>
     );
 }

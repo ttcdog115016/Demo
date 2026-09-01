@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 檔案名稱 (File): usePrivacyStore.ts
- * 模組功能 (Description): 整合式全域隱私防護工作區狀態數據庫 (Zustand Persistent Master Privacy Store，提供去識別化工作流、範本庫、審計軌跡與系統安全參數管理)
+ * 模組功能 (Description): 整合式全域隱私防護工作區狀態數據庫 (Zustand Persistent Master Privacy Store，提供去識別化工作流、審計軌跡與系統安全參數管理)
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之縮寫) 以及變數撰寫參考 a) ~ h)
  * ============================================================================
@@ -45,22 +45,6 @@ export interface UserProfile
 	name: string;   // 使用者顯示名稱
 	email: string;  // 使用者電子郵件帳號
 	role: UserRole; // 使用者系統角色 ('admin' | 'data_owner')
-}
-
-/**
- * 隱私防護欄位屬性與清洗範本結構介面
- * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
- */
-export interface PrivacyTemplate 
-{
-	id: string;                                                // 範本唯一識別碼
-	name: string;                                              // 範本自訂名稱
-	description?: string;                                      // 範本備註說明文字
-	createdAt: string;                                         // 範本建立日期字串
-	privacyMode: 'k-anonymity' | 'differential-privacy';       // 範本所屬保護模式
-	columnRoles: Record<string, string>;                       // 欄位隱私角色對應表
-	columnTypes: Record<string, string>;                       // 欄位資料型態對應表
-	preprocessingRules: Record<string, { action: string; param: string }>; // 預處理清洗規則表
 }
 
 /**
@@ -270,9 +254,8 @@ export interface PrivacyState
 	dpFields: DpField[];                                   // 差分隱私欄位配置陣列
 
 	// ============================================================================
-	// 範本、審計軌跡與快照數據庫 (Persistence & History State)
+	// 審計軌跡與快照數據庫 (Persistence & History State)
 	// ============================================================================
-	templates: PrivacyTemplate[];                          // 歷史範本清單
 	auditLogs: AuditLogItem[];                             // 歷史審計憑證清單
 	step4Cache: Step4Cache | null;                         // 步驟四檢測快照
 	lastRunParamsHash: string | null;                      // 參數驗證 Hash 快照
@@ -314,40 +297,7 @@ export interface PrivacyState
 	updateFieldDP(targetFieldName: string, updatedFieldsObj: Partial<DpField>): void;
 	updateFieldDP<AttributeKey extends keyof DpField>(targetFieldName: string, attributeKey: AttributeKey, attributeValue?: DpField[AttributeKey]): void;
 	updateStep3Params: (paramsObj: Partial<Step3Params>) => void;
-	saveTemplate: (templateName: string, templateDescription?: string) => void;
-	applyTemplate: (targetTemplateId: string) => void;
-	deleteTemplate: (targetTemplateId: string) => void;
-	exportTemplatesJson: () => void;
-	importTemplatesJson: (importJsonString: string) => boolean;
 }
-
-/**
- * 函數名稱: loadSavedTemplates
- * 函數功能: 從瀏覽器本地 localStorage 讀取先前儲存之 Schema 脫敏範本清單。
- * 
- * 輸入參數 (Input): 無
- * 輸出參數 (Output): 無
- * 返回值 (Return): 
- *   - PrivacyTemplate[]: 歷史範本物件陣列 (讀取失敗時回傳空陣列 [])
- * 呼叫關係 (Call Relations): 於 Zustand Store 初始化時被調用
- * 
- * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素
- */
-const loadSavedTemplates = (): PrivacyTemplate[] => 
-{
-	try 
-	{
-		const savedTemplatesStringData = localStorage.getItem('privacy_app_templates');
-
-		return savedTemplatesStringData ? JSON.parse(savedTemplatesStringData) : [];
-	} 
-	catch (localStorageReadError) 
-	{
-		console.error('Failed to load templates from localStorage:', localStorageReadError);
-
-		return [];
-	}
-};
 
 /**
  * 全域 Master 隱私 Store 實例 (usePrivacyStore)
@@ -444,8 +394,6 @@ export const usePrivacyStore = create<PrivacyState>()(
 				budgetLimitEpsilon: DEFAULT_BUDGET_LIMIT_EPSILON,
 				outOfBoundsStrategy: 'clip',
 				dpFields: [],
-
-				templates: loadSavedTemplates(),
 
 				auditLogs: [
 					{
@@ -786,7 +734,7 @@ export const usePrivacyStore = create<PrivacyState>()(
 				 * 函數功能: 批次更新步驟三隱私參數。
 				 */
 				updateStep3Params: (parametersBatchObj) => setStoreStateAction(
-					(currentStoreStateData) => 
+					(currentStoreStateData) =>
 					(
 						{
 							...currentStoreStateData,
@@ -794,175 +742,6 @@ export const usePrivacyStore = create<PrivacyState>()(
 						}
 					)
 				),
-
-				/**
-				 * 函數名稱: saveTemplate
-				 * 函數功能: 將當前 Schema 與脫敏規則儲存為新範本，並同步至 localStorage。
-				 */
-				saveTemplate: (newTemplateNameStr, newTemplateDescriptionStr) => 
-				{
-					const currentStoreStateData = getStoreStateAction();
-
-					const newlyConstructedTemplateItem: PrivacyTemplate = {
-						id: `tmpl-${Date.now()}`,
-						name: newTemplateNameStr,
-						description: newTemplateDescriptionStr,
-						createdAt: new Date().toLocaleDateString(),
-						privacyMode: currentStoreStateData.privacyMode || 'k-anonymity',
-						columnRoles: currentStoreStateData.columnRoles,
-						columnTypes: currentStoreStateData.columnTypes,
-						preprocessingRules: currentStoreStateData.preprocessingRules,
-					};
-
-					const updatedTemplatesListArray = [newlyConstructedTemplateItem, ...currentStoreStateData.templates];
-
-					try 
-					{
-						localStorage.setItem('privacy_app_templates', JSON.stringify(updatedTemplatesListArray));
-					} 
-					catch (localStorageWriteError) 
-					{
-						console.error('Failed to save template to localStorage:', localStorageWriteError);
-					}
-
-					setStoreStateAction({ templates: updatedTemplatesListArray });
-				},
-
-				/**
-				 * 函數名稱: applyTemplate
-				 * 函數功能: 套用指定範本之 Schema 設定。
-				 */
-				applyTemplate: (targetTemplateIdStr) => 
-				{
-					const { templates: currentTemplatesListArray, columns: currentColumnsListArray } = getStoreStateAction();
-
-					const targetTemplateItemRecord = currentTemplatesListArray.find((templateItemRecord: PrivacyTemplate) => templateItemRecord.id === targetTemplateIdStr);
-
-					if (!targetTemplateItemRecord) 
-					{
-						return;
-					}
-
-					const updatedPrivacyRolesMapDict: Record<string, string> = {};
-
-					const updatedDataTypesMapDict: Record<string, string> = {};
-
-					const updatedPreprocessingRulesMapDict: Record<string, { action: string; param: string }> = {};
-
-					currentColumnsListArray.forEach(
-						(columnNameStr: string) => 
-						{
-							updatedPrivacyRolesMapDict[columnNameStr] = targetTemplateItemRecord.columnRoles[columnNameStr] || 'Non-sensitive';
-
-							updatedDataTypesMapDict[columnNameStr] = targetTemplateItemRecord.columnTypes[columnNameStr] || '字串';
-
-							if (targetTemplateItemRecord.preprocessingRules[columnNameStr]) 
-							{
-								updatedPreprocessingRulesMapDict[columnNameStr] = targetTemplateItemRecord.preprocessingRules[columnNameStr];
-							}
-						}
-					);
-
-					setStoreStateAction({
-						privacyMode: targetTemplateItemRecord.privacyMode,
-						columnRoles: updatedPrivacyRolesMapDict,
-						columnTypes: updatedDataTypesMapDict,
-						preprocessingRules: updatedPreprocessingRulesMapDict,
-					});
-				},
-
-				/**
-				 * 函數名稱: deleteTemplate
-				 * 函數功能: 刪除指定之 Schema 範本並更新 localStorage。
-				 */
-				deleteTemplate: (targetTemplateIdStr) => 
-				{
-					const updatedTemplatesListArray = getStoreStateAction().templates.filter((templateItemRecord: PrivacyTemplate) => templateItemRecord.id !== targetTemplateIdStr);
-
-					try 
-					{
-						localStorage.setItem('privacy_app_templates', JSON.stringify(updatedTemplatesListArray));
-					} 
-					catch (localStorageWriteError) 
-					{
-						console.error('Failed to update localStorage:', localStorageWriteError);
-					}
-
-					setStoreStateAction({ templates: updatedTemplatesListArray });
-				},
-
-				/**
-				 * 函數名稱: exportTemplatesJson
-				 * 函數功能: 匯出範本清單為 JSON 檔案。
-				 */
-				exportTemplatesJson: () => 
-				{
-					const { templates: currentTemplatesListArray } = getStoreStateAction();
-
-					const formattedJsonStringOutput = JSON.stringify(currentTemplatesListArray, null, 2);
-
-					const generatedJsonBlobObject = new Blob([formattedJsonStringOutput], { type: 'application/json' });
-
-					const blobDownloadUrlString = URL.createObjectURL(generatedJsonBlobObject);
-
-					const downloadAnchorHtmlElement = document.createElement('a');
-
-					downloadAnchorHtmlElement.href = blobDownloadUrlString;
-
-					downloadAnchorHtmlElement.download = `privacy_templates_export_${Date.now()}.json`;
-
-					document.body.appendChild(downloadAnchorHtmlElement);
-
-					downloadAnchorHtmlElement.click();
-
-					document.body.removeChild(downloadAnchorHtmlElement);
-
-					URL.revokeObjectURL(blobDownloadUrlString);
-				},
-
-				/**
-				 * 函數名稱: importTemplatesJson
-				 * 函數功能: 解析並匯入範本 JSON 字串。
-				 */
-				importTemplatesJson: (importedJsonStringData: string) => 
-				{
-					try 
-					{
-						const parsedJsonDataArray = JSON.parse(importedJsonStringData);
-
-						if (!Array.isArray(parsedJsonDataArray)) 
-						{
-							return false;
-						}
-
-						const isImportFormatValidStatus = parsedJsonDataArray.every((templateItemRecord: PrivacyTemplate) => templateItemRecord.id && templateItemRecord.name && templateItemRecord.columnRoles);
-
-						if (!isImportFormatValidStatus) 
-						{
-							return false;
-						}
-
-						const currentTemplatesListArray = getStoreStateAction().templates;
-
-						const existingTemplateIdsHashSet = new Set(currentTemplatesListArray.map((templateItemRecord: PrivacyTemplate) => templateItemRecord.id));
-
-						const filteredNewTemplateItemsList = parsedJsonDataArray.filter((templateItemRecord: PrivacyTemplate) => !existingTemplateIdsHashSet.has(templateItemRecord.id));
-
-						const mergedFinalTemplatesListArray = [...filteredNewTemplateItemsList, ...currentTemplatesListArray];
-
-						localStorage.setItem('privacy_app_templates', JSON.stringify(mergedFinalTemplatesListArray));
-
-						setStoreStateAction({ templates: mergedFinalTemplatesListArray });
-
-						return true;
-					} 
-					catch (jsonParsingExecutionError) 
-					{
-						console.error('JSON Import failed:', jsonParsingExecutionError);
-
-						return false;
-					}
-				}
 			}
 		),
 		{

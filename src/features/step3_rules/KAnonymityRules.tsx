@@ -100,6 +100,17 @@ export default function KAnonymityRules(): React.ReactElement
         (state) => state.columns
     ) || [];                                               // 數據欄位名稱清單
 
+    const datasetRowsListArray = useWorkspaceStore(
+        (state) => state.previewData
+    ) || [];                                               // 數據資料列清單 (用於計算資料源筆數上限)
+
+    const datasetRowCountValue = datasetRowsListArray.length; // 資料源總筆數 (0 代表尚未載入資料)
+
+    // K 值實際可選上限：不得超過資料源筆數，亦不得超過系統設定之 MAX_K_VALUE
+    const effectiveMaxKValue = datasetRowCountValue > 0
+        ? Math.min(MAX_K_VALUE, datasetRowCountValue)
+        : MAX_K_VALUE;
+
     const columnPrivacyRolesMapDict = useWorkspaceStore(
         (state) => state.columnRoles
     ) || {};                                               // 欄位隱私角色對應
@@ -126,8 +137,20 @@ export default function KAnonymityRules(): React.ReactElement
                 return;
             }
 
-            // 2. 驗證 K 必須大於等於 L (L-Diversity 數學限制：多樣性類別數不可能超過群組筆數)
-            if (currentKValue < currentLValue) 
+            // 2. 驗證 K 值是否超過資料源總筆數 (K-匿名群組大小不可能超過資料集本身的資料筆數)
+            if (datasetRowCountValue > 0 && currentKValue > datasetRowCountValue)
+            {
+                setStepValidationAction(false, translate(
+                    'step3.error_k_exceeds_dataset',
+                    '參數錯誤：K 值 ({{k}}) 不可大於資料源總筆數 ({{rows}})。',
+                    { k: currentKValue, rows: datasetRowCountValue }
+                ));
+
+                return;
+            }
+
+            // 3. 驗證 K 必須大於等於 L (L-Diversity 數學限制：多樣性類別數不可能超過群組筆數)
+            if (currentKValue < currentLValue)
             {
                 setStepValidationAction(false, translate(
                     'step3.error_k_less_than_l',
@@ -138,7 +161,7 @@ export default function KAnonymityRules(): React.ReactElement
                 return;
             }
 
-            // 3. 驗證 T 值是否落在 0~1 的機率範圍內
+            // 4. 驗證 T 值是否落在 0~1 的機率範圍內
             if (currentTValue === undefined || currentTValue === null || currentTValue <= 0 || currentTValue > 1) 
             {
                 setStepValidationAction(false, translate('step3.error_t_range', 'T-Closeness (t) 必須介於 0 與 1 之間。'));
@@ -149,16 +172,18 @@ export default function KAnonymityRules(): React.ReactElement
             // 驗證通過，解鎖進入下一步的權限
             setStepValidationAction(true, null);
         }, 
-        [currentKValue, currentLValue, currentTValue, maxSuppressionPercentageValue, setStepValidationAction, translate]
+        [currentKValue, currentLValue, currentTValue, maxSuppressionPercentageValue, datasetRowCountValue, setStepValidationAction, translate]
     );
 
     /**
      * 函數名稱: handleKValueChange
      * 函數功能: 處理 K-匿名 k 數值變更事件，寫入全域 WorkspaceStore。
      */
-    const handleKValueChange = (inputKNumberValue: number | null): void => 
+    const handleKValueChange = (inputKNumberValue: number | null): void =>
     {
-        useWorkspaceStore.setState({ kValue: inputKNumberValue ?? MIN_K_VALUE });
+        const clampedKNumberValue = Math.min(inputKNumberValue ?? MIN_K_VALUE, effectiveMaxKValue);
+
+        useWorkspaceStore.setState({ kValue: clampedKNumberValue });
     };
 
     /**
@@ -416,8 +441,8 @@ export default function KAnonymityRules(): React.ReactElement
                             {/* k-anonymity 滑桿 */}
                             <Row gutter={16} align="middle" style={{ marginBottom: '6px' }}>
                                 <Col span={8}><span style={{ color: token.colorText }}>k-anonymity (k)：</span></Col>
-                                <Col span={10}><Slider min={MIN_K_VALUE} max={MAX_K_VALUE} value={currentKValue} onChange={handleKValueChange} /></Col>
-                                <Col span={6}><InputNumber min={MIN_K_VALUE} max={MAX_K_VALUE} value={currentKValue} onChange={handleKValueChange} style={{ width: '100%' }} /></Col>
+                                <Col span={10}><Slider min={MIN_K_VALUE} max={effectiveMaxKValue} value={currentKValue} onChange={handleKValueChange} /></Col>
+                                <Col span={6}><InputNumber min={MIN_K_VALUE} max={effectiveMaxKValue} value={currentKValue} onChange={handleKValueChange} style={{ width: '100%' }} /></Col>
                             </Row>
                             
                             {/* 運算範圍選擇 */}

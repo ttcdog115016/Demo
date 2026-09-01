@@ -29,14 +29,98 @@ const { Text } = Typography;
  */
 const DEFAULT_EPSILON_BUDGET = 1.0;
 const DEFAULT_DELTA_BUDGET = 1e-5;
-const DEFAULT_GLOBAL_TARGET_DELTA = 1e-5;
-const DEFAULT_BUDGET_LIMIT_EPSILON = 10;
+const DEFAULT_BUDGET_LIMIT_EPSILON = 50;
 const MIN_EPSILON_BUDGET_LIMIT = 0.1;
 const MAX_EPSILON_BUDGET_LIMIT = 100;
 const DANGER_BUDGET_USAGE_PERCENT_THRESHOLD = 90;
 const WARNING_BUDGET_USAGE_PERCENT_THRESHOLD = 75;
 const HIGH_SECURITY_EPSILON_THRESHOLD = 2.0;
 const MEDIUM_SECURITY_EPSILON_THRESHOLD = 8.0;
+
+/**
+ * Delta (δ) 相關欄位可容許範圍常數宣告
+ * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
+ */
+const GLOBAL_TARGET_DELTA_MIN_BOUND = 1e-10;
+const GLOBAL_TARGET_DELTA_MAX_BOUND = 0.9999999999;
+const FIELD_DELTA_INPUT_MIN_BOUND = 1e-10;
+const FIELD_DELTA_INPUT_MAX_BOUND = 0.99;
+const FIELD_DELTA_SLIDER_MIN_BOUND = 1e-8;
+const FIELD_DELTA_SLIDER_MAX_BOUND = 0.1;
+
+/**
+ * Epsilon (ε) 相關欄位可容許範圍常數宣告
+ * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
+ */
+const FIELD_EPSILON_SLIDER_MIN_BOUND = 0.01;
+const FIELD_EPSILON_SLIDER_MAX_BOUND = 20;
+const FIELD_EPSILON_INPUT_MIN_BOUND = 0.001;
+const FIELD_EPSILON_INPUT_MAX_BOUND = 100;
+
+/**
+ * 函數名稱: getScientificNotationPrecisionByRange
+ * 函數功能: 依據欄位可容許之最小/最大值範圍，動態計算科學記號尾數應顯示之小數位數，
+ *           使精度得以延伸至最小允許值的前一個數量級，避免顯示超出實際可容許範圍之無意義精度。
+ *
+ * 輸入參數 (Input):
+ *   - minAllowedValueNumber (number): 該欄位允許之最小值
+ *   - maxAllowedValueNumber (number): 該欄位允許之最大值
+ * 返回值 (Return): number，科學記號尾數應顯示之小數位數 (最少為 0)
+ */
+const getScientificNotationPrecisionByRange = (minAllowedValueNumber: number, maxAllowedValueNumber: number): number =>
+{
+	const minValueExponentNumber = Math.floor(Math.log10(Math.abs(minAllowedValueNumber)));
+	const maxValueExponentNumber = Math.floor(Math.log10(Math.abs(maxAllowedValueNumber)));
+	return Math.max(0, maxValueExponentNumber - minValueExponentNumber - 1);
+};
+
+/**
+ * 函數名稱: formatFloatValueAsScientificNotation
+ * 函數功能: 將浮點數以科學記號格式化顯示，尾數小數位數依 getScientificNotationPrecisionByRange 動態計算。
+ *
+ * 輸入參數 (Input):
+ *   - targetFloatValueNumber (number): 欲格式化之浮點數數值 (Ant Design InputNumber 內部初始化時可能傳入字串，故於此一併容錯轉型)
+ *   - minAllowedValueNumber (number): 該欄位允許之最小值
+ *   - maxAllowedValueNumber (number): 該欄位允許之最大值
+ * 返回值 (Return): string，科學記號格式化後之字串 (例如 "1.2345e-5")；若數值無法轉換則原樣以字串傳回
+ */
+const formatFloatValueAsScientificNotation = (targetFloatValueNumber: number | string, minAllowedValueNumber: number, maxAllowedValueNumber: number): string =>
+{
+	const parsedFloatValueNumber = typeof targetFloatValueNumber === 'number' ? targetFloatValueNumber : Number(targetFloatValueNumber);
+	if (Number.isNaN(parsedFloatValueNumber)) return String(targetFloatValueNumber);
+	if (parsedFloatValueNumber === 0) return (0).toExponential(0);
+	const scientificNotationPrecisionValue = getScientificNotationPrecisionByRange(minAllowedValueNumber, maxAllowedValueNumber);
+	return parsedFloatValueNumber.toExponential(scientificNotationPrecisionValue);
+};
+
+/**
+ * 函數名稱: truncateFloatValueAsScientificNotationTowardZero
+ * 函數功能: 將浮點數以科學記號格式化顯示，尾數一律「無條件捨去」至指定小數位數 (不四捨五入)。
+ *           採字串切割而非乘冪運算進行捨位，避免浮點數運算誤差導致捨位結果失準。
+ *           限「個別欄位微調」區塊之 ε/δ 顯示使用；其餘全域/總計數值仍維持標準四捨五入顯示。
+ *
+ * 輸入參數 (Input):
+ *   - targetFloatValueNumber (number): 欲格式化之浮點數數值
+ *   - minAllowedValueNumber (number): 該欄位允許之最小值
+ *   - maxAllowedValueNumber (number): 該欄位允許之最大值
+ * 返回值 (Return): string，無條件捨去後之科學記號字串 (例如 "1.2345e-5")
+ */
+const truncateFloatValueAsScientificNotationTowardZero = (targetFloatValueNumber: number | string, minAllowedValueNumber: number, maxAllowedValueNumber: number): string =>
+{
+	const parsedFloatValueNumber = typeof targetFloatValueNumber === 'number' ? targetFloatValueNumber : Number(targetFloatValueNumber);
+	if (Number.isNaN(parsedFloatValueNumber)) return String(targetFloatValueNumber);
+	if (parsedFloatValueNumber === 0) return (0).toExponential(0);
+
+	const scientificNotationPrecisionValue = getScientificNotationPrecisionByRange(minAllowedValueNumber, maxAllowedValueNumber);
+	const negativeSignPrefixString = parsedFloatValueNumber < 0 ? '-' : '';
+	const highPrecisionExponentialStringValue = Math.abs(parsedFloatValueNumber).toExponential(20);
+	const [mantissaPartString, exponentPartString] = highPrecisionExponentialStringValue.split('e');
+	const [mantissaIntegerPartString, mantissaFractionPartString = ''] = mantissaPartString.split('.');
+	const truncatedMantissaFractionPartString = mantissaFractionPartString.slice(0, scientificNotationPrecisionValue).padEnd(scientificNotationPrecisionValue, '0');
+	const truncatedMantissaString = scientificNotationPrecisionValue > 0 ? `${mantissaIntegerPartString}.${truncatedMantissaFractionPartString}` : mantissaIntegerPartString;
+
+	return `${negativeSignPrefixString}${truncatedMantissaString}e${exponentPartString}`;
+};
 
 /**
  * 隱私等級預設清單：點擊後將「目標總預算」均分給目前已啟用的欄位，並同步更新總預算上限
@@ -201,8 +285,10 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 	// 移除 M 次邏輯，單次耗損即為總耗損
 	const safeBudgetLimitThresholdValue = globalBudgetLimitEpsilonValue || DEFAULT_BUDGET_LIMIT_EPSILON;                      
 	const budgetUsagePercentageValue = Math.min((totalEquivalentEpsilonSumValue / safeBudgetLimitThresholdValue) * 100, 100);          
-	const isBudgetDangerAlertStatus = budgetUsagePercentageValue >= DANGER_BUDGET_USAGE_PERCENT_THRESHOLD;            
-	const isBudgetWarningAlertStatus = budgetUsagePercentageValue >= WARNING_BUDGET_USAGE_PERCENT_THRESHOLD && !isBudgetDangerAlertStatus; 
+	const isBudgetDangerAlertStatus = budgetUsagePercentageValue >= DANGER_BUDGET_USAGE_PERCENT_THRESHOLD;
+	const isBudgetWarningAlertStatus = budgetUsagePercentageValue >= WARNING_BUDGET_USAGE_PERCENT_THRESHOLD && !isBudgetDangerAlertStatus;
+	// ★ budgetUsagePercentageValue 已用 Math.min 封頂於 100，無法區分「即將耗盡」與「已實際超支」，故另以原始總量比對判斷
+	const isBudgetExceededStatus = totalEquivalentEpsilonSumValue > safeBudgetLimitThresholdValue;
 
 	useEffect(
 		() => 
@@ -265,7 +351,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 			key: 'original', 
 			render: (_: unknown, convertedRecordItem: ConvertedField) => (
 				<div style={{ fontSize: 12, color: token.colorTextSecondary }}>
-					ε: {(convertedRecordItem.epsilon ?? DEFAULT_EPSILON_BUDGET).toFixed(2)} {convertedRecordItem.mode === 'epsilon-delta' && ` | δ: ${convertedRecordItem.delta ?? DEFAULT_DELTA_BUDGET}`}
+					ε: {(convertedRecordItem.epsilon ?? DEFAULT_EPSILON_BUDGET).toFixed(2)} {convertedRecordItem.mode === 'epsilon-delta' && ` | δ: ${formatFloatValueAsScientificNotation(convertedRecordItem.delta ?? DEFAULT_DELTA_BUDGET, FIELD_DELTA_INPUT_MIN_BOUND, FIELD_DELTA_INPUT_MAX_BOUND)}`}
 				</div>
 			)
 		},
@@ -301,12 +387,18 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 							<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 								<Text strong>{translate('step3_dp.global_delta', '全域目標 Delta (基準 δ)')}</Text>
-								<InputNumber 
-									min={1e-10} max={0.9999999999} step={0.0001} 
-									value={globalTargetDeltaValue} 
-									onChange={(inputTargetDeltaNumberValue) => useWorkspaceStore.setState({ targetDelta: inputTargetDeltaNumberValue ?? DEFAULT_GLOBAL_TARGET_DELTA })} 
-									style={{ width: '120px' }} 
-									stringMode
+								<InputNumber
+									min={GLOBAL_TARGET_DELTA_MIN_BOUND} max={GLOBAL_TARGET_DELTA_MAX_BOUND} step={0.0001}
+									value={globalTargetDeltaValue}
+									onChange={(inputTargetDeltaNumberValue) => useWorkspaceStore.setState({ targetDelta: inputTargetDeltaNumberValue === null ? undefined : inputTargetDeltaNumberValue })}
+									formatter={
+										(formatterInputValue, formatterInfoObj) =>
+										{
+											if (formatterInfoObj?.userTyping || formatterInputValue === undefined || formatterInputValue === null) return String(formatterInputValue ?? '');
+											return formatFloatValueAsScientificNotation(formatterInputValue, GLOBAL_TARGET_DELTA_MIN_BOUND, GLOBAL_TARGET_DELTA_MAX_BOUND);
+										}
+									}
+									style={{ width: '150px' }}
 								/>
 							</div>
 							<Text type="secondary" style={{ fontSize: 13, lineHeight: 1.5, textAlign: 'left' }}>
@@ -319,12 +411,12 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 							<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 								<Text strong>{translate('step3_dp.budget_limit_label', '總隱私預算上限 (ε Limit)')}</Text>
-								<InputNumber 
-									step={0.5} 
-									value={globalBudgetLimitEpsilonValue} 
-									onChange={(inputBudgetLimitNumberValue) => useWorkspaceStore.setState({ budgetLimitEpsilon: inputBudgetLimitNumberValue === null ? undefined : inputBudgetLimitNumberValue })} 
+								<InputNumber
+									step={0.5}
+									value={globalBudgetLimitEpsilonValue}
+									onChange={(inputBudgetLimitNumberValue) => useWorkspaceStore.setState({ budgetLimitEpsilon: inputBudgetLimitNumberValue === null ? undefined : inputBudgetLimitNumberValue })}
 									onBlur={
-										(inputBlurEventObj) => 
+										(inputBlurEventObj) =>
 										{
 											const parsedCurrentInputNumberValue = parseFloat(inputBlurEventObj.target.value);
 											if (isNaN(parsedCurrentInputNumberValue)) useWorkspaceStore.setState({ budgetLimitEpsilon: DEFAULT_BUDGET_LIMIT_EPSILON });
@@ -332,7 +424,14 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 											else if (parsedCurrentInputNumberValue > MAX_EPSILON_BUDGET_LIMIT) useWorkspaceStore.setState({ budgetLimitEpsilon: MAX_EPSILON_BUDGET_LIMIT });
 										}
 									}
-									style={{ width: '120px' }} 
+									formatter={
+										(formatterInputValue, formatterInfoObj) =>
+										{
+											if (formatterInfoObj?.userTyping || formatterInputValue === undefined || formatterInputValue === null) return String(formatterInputValue ?? '');
+											return formatFloatValueAsScientificNotation(formatterInputValue, MIN_EPSILON_BUDGET_LIMIT, MAX_EPSILON_BUDGET_LIMIT);
+										}
+									}
+									style={{ width: '150px' }}
 								/>
 							</div>
 							<Text type="secondary" style={{ fontSize: 13, lineHeight: 1.5, textAlign: 'left' }}>
@@ -469,36 +568,49 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 											<div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
 												<Text type="secondary" style={{ width: '20px', textAlign: 'right' }}>ε</Text>
 												<Slider
-													min={0.01} max={20} step={0.01}
+													min={FIELD_EPSILON_SLIDER_MIN_BOUND} max={FIELD_EPSILON_SLIDER_MAX_BOUND} step={0.01}
 													value={activeFieldItemRecord.epsilon ?? DEFAULT_EPSILON_BUDGET}
 													onChange={(sliderEpsilonNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'epsilon', sliderEpsilonNumberValue)}
 													style={{ flex: 1, margin: 0 }}
-													tooltip={{ formatter: (tooltipEpsilonNumberValue) => tooltipEpsilonNumberValue?.toFixed(2) }}
+													tooltip={{ formatter: (tooltipEpsilonNumberValue) => tooltipEpsilonNumberValue === undefined ? '' : truncateFloatValueAsScientificNotationTowardZero(tooltipEpsilonNumberValue, FIELD_EPSILON_SLIDER_MIN_BOUND, FIELD_EPSILON_SLIDER_MAX_BOUND) }}
 												/>
 												<InputNumber
-													min={0.001} max={100} step={0.01} precision={2}
-													value={activeFieldItemRecord.epsilon ?? DEFAULT_EPSILON_BUDGET}
-													onChange={(inputEpsilonNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'epsilon', inputEpsilonNumberValue || 0.01)}
-													size="small" style={{ width: '100px' }}
+													min={FIELD_EPSILON_INPUT_MIN_BOUND} max={FIELD_EPSILON_INPUT_MAX_BOUND} step={0.01}
+													value={activeFieldItemRecord.epsilon}
+													onChange={(inputEpsilonNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'epsilon', inputEpsilonNumberValue === null ? undefined : inputEpsilonNumberValue)}
+													formatter={
+														(formatterInputValue, formatterInfoObj) =>
+														{
+															if (formatterInfoObj?.userTyping || formatterInputValue === undefined || formatterInputValue === null) return String(formatterInputValue ?? '');
+															return truncateFloatValueAsScientificNotationTowardZero(formatterInputValue, FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND);
+														}
+													}
+													size="small" style={{ width: '130px' }}
 												/>
 											</div>
 
 											{activeFieldItemRecord.mode === 'epsilon-delta' && (
 												<div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
 													<Text type="secondary" style={{ width: '20px', textAlign: 'right' }}>δ</Text>
-													<Slider 
-														min={1e-8} max={0.1} step={0.0001} 
-														value={activeFieldItemRecord.delta ?? DEFAULT_DELTA_BUDGET} 
-														onChange={(sliderDeltaNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'delta', sliderDeltaNumberValue)} 
-														style={{ flex: 1, margin: 0 }} 
-														tooltip={{ formatter: (tooltipDeltaNumberValue) => tooltipDeltaNumberValue?.toExponential(2) }}
+													<Slider
+														min={FIELD_DELTA_SLIDER_MIN_BOUND} max={FIELD_DELTA_SLIDER_MAX_BOUND} step={0.0001}
+														value={activeFieldItemRecord.delta ?? DEFAULT_DELTA_BUDGET}
+														onChange={(sliderDeltaNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'delta', sliderDeltaNumberValue)}
+														style={{ flex: 1, margin: 0 }}
+														tooltip={{ formatter: (tooltipDeltaNumberValue) => tooltipDeltaNumberValue === undefined ? '' : truncateFloatValueAsScientificNotationTowardZero(tooltipDeltaNumberValue, FIELD_DELTA_SLIDER_MIN_BOUND, FIELD_DELTA_SLIDER_MAX_BOUND) }}
 													/>
-													<InputNumber 
-														min={1e-10} max={0.99} step={0.0001} 
-														value={activeFieldItemRecord.delta ?? DEFAULT_DELTA_BUDGET} 
-														onChange={(inputDeltaNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'delta', inputDeltaNumberValue || DEFAULT_DELTA_BUDGET)} 
-														size="small" style={{ width: '100px' }} 
-														stringMode
+													<InputNumber
+														min={FIELD_DELTA_INPUT_MIN_BOUND} max={FIELD_DELTA_INPUT_MAX_BOUND} step={0.0001}
+														value={activeFieldItemRecord.delta}
+														onChange={(inputDeltaNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'delta', inputDeltaNumberValue === null ? undefined : inputDeltaNumberValue)}
+														formatter={
+															(formatterInputValue, formatterInfoObj) =>
+															{
+																if (formatterInfoObj?.userTyping || formatterInputValue === undefined || formatterInputValue === null) return String(formatterInputValue ?? '');
+																return truncateFloatValueAsScientificNotationTowardZero(formatterInputValue, FIELD_DELTA_INPUT_MIN_BOUND, FIELD_DELTA_INPUT_MAX_BOUND);
+															}
+														}
+														size="small" style={{ width: '130px' }}
 													/>
 												</div>
 											)}
@@ -529,13 +641,21 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 						}
 					>
 						<div style={{ textAlign: 'center', padding: '24px 0 16px 0' }}>
-							<Progress 
-								type="dashboard" 
-								percent={budgetUsagePercentageValue} 
-								format={() => `${totalEquivalentEpsilonSumValue}`}
+							<Progress
+								type="dashboard"
+								percent={budgetUsagePercentageValue}
+								status={isBudgetDangerAlertStatus ? 'exception' : isBudgetWarningAlertStatus ? 'normal' : 'success'}
+								format={
+									() =>
+									(
+										<span style={{ color: isBudgetDangerAlertStatus ? '#cf1322' : isBudgetWarningAlertStatus ? '#d48806' : '#52c41a' }}>
+											{formatFloatValueAsScientificNotation(totalEquivalentEpsilonSumValue, FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}
+										</span>
+									)
+								}
 								strokeColor={isBudgetDangerAlertStatus ? { '0%': '#ff4d4f', '100%': '#cf1322' } : isBudgetWarningAlertStatus ? { '0%': '#faad14', '100%': '#d48806' } : { '0%': '#13c2c2', '100%': '#52c41a' }}
-								strokeWidth={10} 
-								size={220} 
+								strokeWidth={10}
+								size={220}
 								style={{ filter: isDarkModeActiveStatus ? 'drop-shadow(0 0 8px rgba(0,0,0,0.5))' : 'none' }}
 							/>
 
@@ -548,7 +668,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 									color={isBudgetDangerAlertStatus ? 'error' : isBudgetWarningAlertStatus ? 'warning' : 'success'} 
 									style={{ fontSize: 16, padding: '4px 16px', borderRadius: 4, fontWeight: 'bold' }}
 								>
-									{isBudgetDangerAlertStatus ? translate('step3_dp.budget_danger', '預算透支風險') : isBudgetWarningAlertStatus ? translate('step3_dp.budget_warning', '預算水位偏低') : translate('step3_dp.budget_safe', '預算水位安全')}
+									{isBudgetExceededStatus ? translate('step3_dp.budget_exceeded', '⚠️ 危險：預算已超支') : isBudgetDangerAlertStatus ? translate('step3_dp.budget_danger', '預算透支風險') : isBudgetWarningAlertStatus ? translate('step3_dp.budget_warning', '預算水位偏低') : translate('step3_dp.budget_safe', '預算水位安全')}
 								</Tag>
 							</div>
 						</div>
@@ -569,7 +689,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 								(
 									<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, padding: '8px 4px 0 4px' }}>
 										<Text strong>{translate('step3_dp.single_equivalent', '各欄位等效加總')}</Text>
-										<Text strong style={{ color: '#722ed1', fontSize: 18 }}>ε = {totalEquivalentEpsilonSumValue}</Text>
+										<Text strong style={{ color: '#722ed1', fontSize: 18 }}>ε = {formatFloatValueAsScientificNotation(totalEquivalentEpsilonSumValue, FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}</Text>
 									</div>
 								)
 							}
@@ -594,9 +714,9 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 						<div style={{ display: 'flex', gap: '48px', marginBottom: '8px', padding: '0 16px' }}>
 							<Statistic 
 								title={<Text type="secondary" style={{ fontSize: 14 }}>{translate('step3_dp.unified_eps', '總等效 Epsilon')}</Text>} 
-								value={totalEquivalentEpsilonSumValue} 
-								prefix={<CalculatorOutlined style={{ fontSize: 24, marginRight: 8, color: token.colorPrimary }} />} 
-								formatter={(formatterOutputValue) => <span style={{ fontSize: 42, fontWeight: 'bold', color: token.colorPrimary }}>{formatterOutputValue}</span>}
+								value={totalEquivalentEpsilonSumValue}
+								prefix={<CalculatorOutlined style={{ fontSize: 24, marginRight: 8, color: token.colorPrimary }} />}
+								formatter={(formatterOutputValue) => <span style={{ fontSize: 42, fontWeight: 'bold', color: token.colorPrimary }}>{formatFloatValueAsScientificNotation(Number(formatterOutputValue), FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}</span>}
 							/>
 
 							<Statistic 

@@ -8,14 +8,14 @@
  */
 
 import React, { useEffect, useRef, useMemo } from 'react';
-import { Card, Table, Select, Button, Input, InputNumber, Switch, theme, Tabs, Space, Collapse, Tooltip, Alert, App as AntdApp } from 'antd';
-import { 
-	UploadOutlined, DeleteOutlined, PlusOutlined, 
-	DatabaseOutlined, CodeOutlined, ThunderboltOutlined, InfoCircleOutlined
+import { Card, Table, Select, Button, Input, InputNumber, Switch, theme, Tabs, Space, Tooltip, Alert, App as AntdApp } from 'antd';
+import {
+	UploadOutlined, DeleteOutlined, PlusOutlined,
+	DatabaseOutlined, CodeOutlined, ThunderboltOutlined, InfoCircleOutlined, CopyOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next'; 
 
-import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
+import { useWorkspaceStore, type DPField, type PreprocessingRule } from '../../store/useWorkspaceStore';
 
 /**
  * 預設隱私參數常數宣告
@@ -472,10 +472,27 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 						}
 					);
 
-					if (parsedJsonContentData.preprocessing_rules) 
+					if (parsedJsonContentData.preprocessing_rules)
 					{
-						useWorkspaceStore.setState({ 
-							preprocessingRules: parsedJsonContentData.preprocessing_rules as Record<string, { action: string; param: string }>
+						// ★ 相容匯入舊版單一策略物件格式 ({action, param})，統一正規化為新版多策略陣列格式 ({action, params})
+						const rawImportedPreprocessingRulesMap = parsedJsonContentData.preprocessing_rules as Record<string, unknown>;
+						const normalizedImportedPreprocessingRulesMap: Record<string, PreprocessingRule[]> = {};
+
+						Object.keys(rawImportedPreprocessingRulesMap).forEach((columnNameKeyStr) => {
+							const rawRuleValue = rawImportedPreprocessingRulesMap[columnNameKeyStr];
+							const rawRuleArray = Array.isArray(rawRuleValue) ? rawRuleValue : [rawRuleValue];
+
+							normalizedImportedPreprocessingRulesMap[columnNameKeyStr] = rawRuleArray.map((rawStepItemData) => {
+								const rawStepObj = rawStepItemData as { action?: string; param?: string; params?: Record<string, string | number> };
+								return {
+									action: rawStepObj.action || 'none',
+									params: rawStepObj.params ?? (rawStepObj.param !== undefined ? { legacyParam: rawStepObj.param } : {})
+								};
+							});
+						});
+
+						useWorkspaceStore.setState({
+							preprocessingRules: normalizedImportedPreprocessingRulesMap
 						});
 					}
 
@@ -782,8 +799,30 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 	];
 
 	const liveJsonPreviewDataObject = buildSpecCompliantPreviewJSON();
+	const liveJsonPreviewFormattedString = JSON.stringify(liveJsonPreviewDataObject, null, 2);
+	const liveJsonPreviewLineArray = liveJsonPreviewFormattedString.split('\n');
+
+	/**
+	 * 函數名稱: handleCopyJsonPreviewToClipboard
+	 * 函數功能: 將右側即時 JSON 預覽面板之完整內容複製至剪貼簿，並顯示成功／失敗提示訊息。
+	 */
+	const handleCopyJsonPreviewToClipboard = async (): Promise<void> =>
+	{
+		try
+		{
+			await navigator.clipboard.writeText(liveJsonPreviewFormattedString);
+			messageApi.success(translate('step2.json_preview_copy_success', '已複製 JSON 預覽內容至剪貼簿'));
+		}
+		catch (clipboardCopyErrorExecution)
+		{
+			console.error('複製 JSON 預覽失敗:', clipboardCopyErrorExecution);
+			messageApi.error(translate('step2.json_preview_copy_failed', '複製失敗，請手動選取複製'));
+		}
+	};
 
 	return (
+		<div className="dp-split-layout">
+		<div className="dp-split-form-column">
 		<Card variant="borderless" style={{ background: 'transparent', padding: 0 }}>
 			{!validationStatusResult.isValid && (
 				<Alert
@@ -826,24 +865,90 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				]}
 			/>
 
-			<div style={{ marginTop: '24px' }}>
-				<Collapse 
-					ghost 
-					items={[
-						{ 
-							key: '1', 
-							label: (<span style={{ fontWeight: 600, color: token.colorTextSecondary }}><CodeOutlined style={{ marginRight: '6px' }} /> {translate('step2.json_preview', '即時設定檔預覽 (JSON Preview)')}</span>), 
-							children: ( <pre style={{ textAlign: 'left', maxHeight: '400px', overflowY: 'auto', background: isDarkModeActive ? '#141414' : '#f0f2f5', padding: '16px', borderRadius: '8px', border: `1px solid ${token.colorBorderSecondary}`, overflowX: 'auto', fontSize: '13px', color: isDarkModeActive ? '#a6accd' : '#333', margin: 0 }}> {JSON.stringify(liveJsonPreviewDataObject, null, 2)} </pre> ) 
-						}
-					]} 
-				/>
-			</div>
-
 			<style>{`
 				.attribute-table .ant-table-thead > tr > th { background: ${isDarkModeActive ? '#262626' : '#fafafa'} !important; border-bottom: 1px solid ${token.colorBorderSecondary} !important; color: ${token.colorTextSecondary} !important; font-weight: 500; white-space: nowrap; padding: 8px 8px !important; }
 				.attribute-table .ant-table-tbody > tr > td { border-bottom: 1px solid ${token.colorBorderSecondary} !important; padding: 8px 8px !important; }
 				.attribute-table .ant-table-expanded-row > td { padding: 0 !important; }
+				.dp-split-layout {
+					display: flex;
+					align-items: flex-start;
+					gap: 24px;
+				}
+				.dp-split-form-column {
+					flex: 2 1 0%;
+					min-width: 0;
+				}
+				.dp-split-preview-column {
+					flex: 1 1 0%;
+					min-width: 320px;
+					position: sticky;
+					top: 24px;
+				}
+				@media (max-width: 1200px) {
+					.dp-split-layout {
+						flex-direction: column;
+					}
+					.dp-split-preview-column {
+						flex: 1 1 auto;
+						width: 100%;
+						min-width: 0;
+						position: static;
+					}
+				}
+				.dp-json-preview-line {
+					display: flex;
+				}
+				.dp-json-preview-line-number {
+					flex: 0 0 auto;
+					width: 36px;
+					text-align: right;
+					padding-right: 12px;
+					user-select: none;
+					color: ${isDarkModeActive ? '#5c6370' : '#a0aec0'};
+				}
+				.dp-json-preview-line-content {
+					flex: 1 1 auto;
+					white-space: pre;
+				}
 			`}</style>
 		</Card>
+		</div>
+
+		<div className="dp-split-preview-column">
+			<Card
+				variant="borderless"
+				title={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><CodeOutlined style={{ color: token.colorPrimary }} />{translate('step2.json_preview', '即時設定檔預覽 (JSON Preview)')}</span>}
+				extra={<Button size="small" icon={<CopyOutlined />} onClick={handleCopyJsonPreviewToClipboard}>{translate('step2.json_preview_copy', '複製')}</Button>}
+				style={{
+					background: isDarkModeActive ? '#141414' : '#fafafa',
+					border: `1px solid ${token.colorBorderSecondary}`,
+					boxShadow: isDarkModeActive ? 'none' : '0 2px 8px rgba(0,0,0,0.04)'
+				}}
+				styles={{ body: { padding: 0 }, header: { borderBottom: `1px solid ${token.colorBorderSecondary}` } }}
+			>
+				<div
+					style={{
+						background: isDarkModeActive ? '#141414' : '#f8fafc',
+						borderRadius: '0 0 8px 8px',
+						padding: '16px 12px',
+						overflow: 'auto',
+						maxHeight: 'calc(100vh - 160px)',
+						fontSize: '13px',
+						fontFamily: 'Consolas, Menlo, Monaco, "Courier New", monospace',
+						color: isDarkModeActive ? '#a6accd' : '#333'
+					}}
+				>
+					{liveJsonPreviewLineArray.map(
+						(jsonPreviewLineTextString, jsonPreviewLineIndexNumber) => (
+							<div className="dp-json-preview-line" key={jsonPreviewLineIndexNumber}>
+								<span className="dp-json-preview-line-number">{jsonPreviewLineIndexNumber + 1}</span>
+								<span className="dp-json-preview-line-content">{jsonPreviewLineTextString}</span>
+							</div>
+						)
+					)}
+				</div>
+			</Card>
+		</div>
+		</div>
 	);
 }

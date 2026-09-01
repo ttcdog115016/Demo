@@ -149,7 +149,7 @@ export default function Step1_Upload(): React.ReactElement
             {
                 header: true,         // 將第一行視為欄位名稱
                 skipEmptyLines: true, // 略過空白行
-                worker: true,         // 啟用 Web Worker 背景處理，避免阻塞 UI 執行緒
+                worker: false,         // 啟用 Web Worker 背景處理，避免阻塞 UI 執行緒
                 preview: PARSE_PREVIEW_ROW_LIMIT, // 僅解析前 N 筆，確保效能
                 complete: (parseResultsObj) => 
                 {
