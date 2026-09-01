@@ -27,9 +27,8 @@ import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuditStore } from '../../store/useAuditStore';
 
 // 引入 API 服務
-import { runKAnonymity, runDifferentialPrivacy, type KAnonymityQualityReport, type DpQualityReport } from '../../api/apiService';
+import { runKAnonymity, runDifferentialPrivacy, runRiskKAnonymity, runRiskDp, runRiskCap, runReport, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
 
-const MONTE_CARLO_SIMULATION_COUNT = 1000;
 const SIMULATION_COMPLETION_DELAY_MS = 600;
 const PDF_COMPILATION_DELAY_MS = 400;
 
@@ -173,6 +172,11 @@ export default function Step4_Result(): React.ReactElement
             ? ((step4AnalysisCacheData as unknown as Record<string, unknown>).processedCsvBlob as Blob | null) || null 
             : null
     );
+
+    // 風險評估（三攻擊 + CAP + PDF 報告）真實 API 回傳結果
+    const [attackReportData, setAttackReportData] = useState<AttackReport | null>(null);
+    const [capReportData, setCapReportData] = useState<CapReport | null>(null);
+    const [riskReportPdfBlob, setRiskReportPdfBlob] = useState<Blob | null>(null);
 
     const [realMaskedDataRows, setRealMaskedDataRows] = useState<Record<string, unknown>[]>([]);
     
@@ -345,7 +349,9 @@ export default function Step4_Result(): React.ReactElement
                 if (currentPrivacyModeTypeStr === 'k-anonymity') {
                     const columnsMap: Record<string, { role: string; type: string; strategy?: string; }> = {};
                     const qiGeneralizationLevelsMap: Record<string, number> = {};
-                    const generalizationMatricesMap: Record<string, string[][]> = {};
+                    // 後端要求每欄位的類別階層以 { mapping: { 原始值: [原始值, 上一層, ...] } } 包裝
+                    // （不是原始 row 陣列），格式依據 app/core/config.py 的 parse_categorical_mapping()
+                    const generalizationMatricesMap: Record<string, { mapping: Record<string, string[]> }> = {};
                     const generalizationHierarchiesMap: Record<string, unknown> = {};
 
                     actualProcessedColumnsList.forEach((colName) => {
@@ -418,18 +424,42 @@ export default function Step4_Result(): React.ReactElement
                                 const rowArray = row as string[];
                                 return Array.isArray(rowArray) && rowArray.length > 0 && rowArray[0] && typeof rowArray[0] === 'string' && rowArray[0].trim() !== '';
                             }) as string[][];
-                            
-                            if (validMappings.length > 0) {
-                                generalizationMatricesMap[fieldName] = validMappings;
+
+                            // 每個 row 是 [原始值, 上一層, 更上層, ...]（row[0] 即原始值本身），
+                            // 轉成後端要的 { 原始值: 去除空白尾格後的階梯陣列 }，再包一層 mapping
+                            const mappingObj: Record<string, string[]> = {};
+                            validMappings.forEach((row) => {
+                                const cleanedRow = row
+                                    .map((cell) => (cell ?? '').trim())
+                                    .filter((cell) => cell !== '');
+                                if (cleanedRow.length > 0) {
+                                    mappingObj[cleanedRow[0]] = cleanedRow;
+                                }
+                            });
+
+                            if (Object.keys(mappingObj).length > 0) {
+                                generalizationMatricesMap[fieldName] = { mapping: mappingObj };
                             }
                         }
                     });
 
+                    // v1.2.0 後端要求「大包」格式：所有參數（含 k／suppression_limit_percent／
+                    // limit_exceeded_action／suppression_method）都要寫在 k_anonymity 區塊內、
+                    // enabled 設為 true；後端本身不接受另開表單欄位傳這些參數（會被忽略，
+                    // 之前 422 的原因就是設定檔沒有 k_anonymity 這個外層區塊）。
+                    // 格式依據：docs/manual_test/config_k_anonymity.json
                     configObject = {
-                        columns: columnsMap,
-                        ...(Object.keys(generalizationHierarchiesMap).length > 0 && { generalization_hierarchies: generalizationHierarchiesMap }),
-                        ...(Object.keys(generalizationMatricesMap).length > 0 && { generalization_matrices: generalizationMatricesMap }),
-                        ...(Object.keys(qiGeneralizationLevelsMap).length > 0 && { qi_generalization_levels: qiGeneralizationLevelsMap })
+                        k_anonymity: {
+                            enabled: true,
+                            k: currentKValueNumber,
+                            suppression_limit_percent: currentMaxSuppressionNumber ?? 5,
+                            limit_exceeded_action: (currentLimitExceededActionStr || 'stop_and_error') as 'stop_and_error' | 'allow_with_warning',
+                            suppression_method: (currentSuppressionMethodStr === 'cell' ? 'cell_suppression' : 'row_suppression') as 'row_suppression' | 'cell_suppression',
+                            columns: columnsMap,
+                            ...(Object.keys(generalizationHierarchiesMap).length > 0 && { generalization_hierarchies: generalizationHierarchiesMap }),
+                            ...(Object.keys(generalizationMatricesMap).length > 0 && { generalization_matrices: generalizationMatricesMap }),
+                            ...(Object.keys(qiGeneralizationLevelsMap).length > 0 && { qi_generalization_levels: qiGeneralizationLevelsMap })
+                        }
                     };
                 } 
                 else if (currentPrivacyModeTypeStr === 'differential-privacy') {
@@ -452,13 +482,14 @@ export default function Step4_Result(): React.ReactElement
                                 mappedBackendType = 'categorical';
                             }
 
+                            // 欄位名稱為 v1.2.0 格式：epsilon_budget／delta_budget（非 v1.0.1 的 epsilon／delta）
                             const baseBudgetConfig: Record<string, unknown> = {
                                 type: mappedBackendType,
-                                epsilon: Number(field.epsilon || 1.0),
+                                epsilon_budget: Number(field.epsilon || 1.0),
                             };
 
                             if (isNumeric) {
-                                baseBudgetConfig.delta = Number(field.delta || 0.0);
+                                baseBudgetConfig.delta_budget = Number(field.delta || 0.0);
                                 if (field.upperBound !== undefined && field.lowerBound !== undefined) {
                                     baseBudgetConfig.sensitivity = Number(field.upperBound) - Number(field.lowerBound);
                                 }
@@ -468,7 +499,17 @@ export default function Step4_Result(): React.ReactElement
                         }
                     });
                     
-                    configObject = { column_budgets: columnBudgetsMap };
+                    // v1.2.0 後端要求「大包」格式：column_budgets／accumulated_epsilon／
+                    // accumulated_delta 都要寫在 differential_privacy 區塊內、enabled 設為 true。
+                    // 格式依據：docs/manual_test/config_dp.json
+                    configObject = {
+                        differential_privacy: {
+                            enabled: true,
+                            column_budgets: columnBudgetsMap,
+                            accumulated_epsilon: 0,
+                            accumulated_delta: 0
+                        }
+                    };
                 }
 
                 console.log(`🔥 傳給後端 (${currentPrivacyModeTypeStr}) 的 JSON Config:`, configObject);
@@ -559,34 +600,149 @@ export default function Step4_Result(): React.ReactElement
 
                 setCalculationProgressValue(65);
                 setCurrentPipelinePhaseType('auditing');
-                setSystemSimulationLogsList(prev => [...prev, translate('step4.log.start_mc', '[{{time}}] 🚀 脫敏完成，啟動蒙地卡羅攻擊模擬器 (N={{n}})', { time: formatCurrentTimeForLogString(), n: MONTE_CARLO_SIMULATION_COUNT })]);
-                
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                setSystemSimulationLogsList(prev => [...prev, translate('step4.log.start_risk', '[{{time}}] 🚀 脫敏完成，啟動真實風險評估（三大攻擊模擬）', { time: formatCurrentTimeForLogString() })]);
+
+                // 將 columnsMap 只保留 quasi_identifier／sensitive 角色（後端 RiskColumnInfo.role
+                // 只接受這兩種，identifier／non_sensitive 不在風險評估範圍內），
+                // 格式依據：docs/manual_test/config_risk_k_anonymity.json
+                const riskColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
+                actualProcessedColumnsList.forEach((colName) => {
+                    const cleanName = colName.replace(/^[\uFEFF\u200B]+/, '').trim();
+                    const matchedField = kAnonymityFieldsList.find(
+                        (item: unknown) => {
+                            const record = item as Record<string, unknown>;
+                            return record && typeof record.name === 'string' && record.name.replace(/^[\uFEFF\u200B]+/, '').trim() === cleanName;
+                        }
+                    ) as Record<string, unknown> | undefined;
+
+                    let backendRole = 'non_sensitive';
+                    let colType = 'string';
+
+                    if (matchedField) {
+                        const privacyRoleMappingDict: Record<string, string> = {
+                            'Identifier': 'identifier',
+                            'Quasi-identifier': 'quasi_identifier',
+                            'Sensitive': 'sensitive',
+                            'Non-sensitive': 'non_sensitive'
+                        };
+                        backendRole = privacyRoleMappingDict[String(matchedField.role)] || 'non_sensitive';
+                        colType = String(matchedField.type) || 'string';
+                    } else {
+                        const { role: uiRole } = getCalculatedRole(cleanName);
+                        if (uiRole === 'Identifier') backendRole = 'identifier';
+                        if (uiRole === 'Quasi-identifier') backendRole = 'quasi_identifier';
+                        if (uiRole === 'Sensitive') backendRole = 'sensitive';
+                    }
+
+                    if (backendRole === 'quasi_identifier' || backendRole === 'sensitive') {
+                        riskColumnsMap[cleanName] = { role: backendRole as 'quasi_identifier' | 'sensitive', type: colType };
+                    }
+                });
+
+                const sensitiveColumnCount = Object.values(riskColumnsMap).filter((c) => c.role === 'sensitive').length;
+                if (sensitiveColumnCount !== 1) {
+                    throw new Error(`風險評估要求「敏感欄位」剛好 1 個，目前偵測到 ${sensitiveColumnCount} 個，請回到欄位設定調整角色標記後再重新運算。`);
+                }
+
+                // 官方範例參數（docs/manual_test/config_risk_*.json 及 report_request.json 的
+                // risk_params 預設值），目前畫面未開放調整，一律採用官方預設
+                const riskAttacksBlock = {
+                    enabled: true,
+                    columns: riskColumnsMap,
+                    n_iter: 50,
+                    ctrl_ratio: 0.2,
+                    seed: 42,
+                    n_subset: 500,
+                    n_repeats: 1,
+                    overlap_ratio: 0.0
+                };
+
+                let attackReportResult: AttackReport | null = null;
+                let capReportResult: CapReport | null = null;
+
+                if (currentPrivacyModeTypeStr === 'k-anonymity') {
+                    const riskConfigObject = {
+                        version: 'step4_risk_k_anonymity',
+                        dataset: currentDatasetFileNameString || 'dataset',
+                        risk_attacks: riskAttacksBlock,
+                        k_anonymity: (configObject as Record<string, unknown>).k_anonymity
+                    };
+                    const riskConfigBlob = new Blob([JSON.stringify(riskConfigObject)], { type: 'application/json;charset=utf-8' });
+                    const riskConfigFile = new File([riskConfigBlob], 'risk_config.json', { type: 'application/json' });
+
+                    const riskResponse = await runRiskKAnonymity(safeDataFile, riskConfigFile);
+                    if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error('三攻擊風險評估（K-匿名）API 請求未成功'));
+                    attackReportResult = riskResponse.report;
+                } else if (currentPrivacyModeTypeStr === 'differential-privacy') {
+                    const riskConfigObject = {
+                        version: 'step4_risk_dp',
+                        dataset: currentDatasetFileNameString || 'dataset',
+                        risk_attacks: riskAttacksBlock,
+                        differential_privacy: (configObject as Record<string, unknown>).differential_privacy
+                    };
+                    const riskConfigBlob = new Blob([JSON.stringify(riskConfigObject)], { type: 'application/json;charset=utf-8' });
+                    const riskConfigFile = new File([riskConfigBlob], 'risk_config.json', { type: 'application/json' });
+
+                    const riskResponse = await runRiskDp(safeDataFile, riskConfigFile);
+                    if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error('三攻擊風險評估（DP）API 請求未成功'));
+                    attackReportResult = riskResponse.report;
+                }
+
+                setAttackReportData(attackReportResult);
+                if (attackReportResult) {
+                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ✅ 三攻擊風險評估完成（指認性 ${(attackReportResult!.singling_out_risk * 100).toFixed(1)}%／連結性 ${(attackReportResult!.linkability_risk * 100).toFixed(1)}%／推斷性 ${(attackReportResult!.inference_risk * 100).toFixed(1)}%）`]);
+                }
+
+                if (finalCsvBlobData) {
+                    try {
+                        const processedFileForCap = new File([finalCsvBlobData], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' });
+                        const capConfigObject = {
+                            version: 'step4_risk_cap',
+                            dataset: currentDatasetFileNameString || 'dataset',
+                            risk_cap: { enabled: true, columns: riskColumnsMap }
+                        };
+                        const capConfigBlob = new Blob([JSON.stringify(capConfigObject)], { type: 'application/json;charset=utf-8' });
+                        const capConfigFile = new File([capConfigBlob], 'cap_config.json', { type: 'application/json' });
+
+                        const capResponse = await runRiskCap(safeDataFile, processedFileForCap, capConfigFile);
+                        if (!capResponse.success || !capResponse.report) throw (capResponse.error || new Error('CAP 前後對比 API 請求未成功'));
+                        capReportResult = capResponse.report;
+                        setCapReportData(capReportResult);
+                        setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ✅ CAP 前後對比完成（處理前 ${(capReportResult!.cap_before * 100).toFixed(1)}% → 處理後 ${(capReportResult!.cap_after * 100).toFixed(1)}%）`]);
+                    } catch (capErrorPayload) {
+                        console.error('CAP 前後對比失敗:', capErrorPayload);
+                        setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ CAP 前後對比失敗，已略過（不影響風險評估結果）`]);
+                    }
+                } else {
+                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ 未取得脫敏後資料集，略過 CAP 前後對比`]);
+                }
+
+                try {
+                    const reportResponse = await runReport({
+                        task_id: auditMetadataObject.certificateId,
+                        attack_report: attackReportResult,
+                        cap_report: capReportResult
+                    });
+                    if (!reportResponse.success || !reportResponse.data) throw (reportResponse.error || new Error('風險報告 PDF 產出 API 請求未成功'));
+                    setRiskReportPdfBlob(reportResponse.data);
+                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ✅ 風險報告 PDF 已產生，可於下方下載`]);
+                } catch (reportErrorPayload) {
+                    console.error('風險報告 PDF 產出失敗:', reportErrorPayload);
+                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ 風險報告 PDF 產出失敗，已略過（不影響風險評估結果）`]);
+                }
 
                 setCalculationProgressValue(100);
                 setCurrentPipelinePhaseType('completed');
-                
-                const isModeKAnonymityStatus = currentPrivacyModeTypeStr === 'k-anonymity';
-                const calculatedQueryCompositionFactorValue = currentPrivacyModeTypeStr === 'differential-privacy' ? Math.min(2.0, 1 + (simulatedQueryCountValue - 1) * 0.15) : 1.0;
 
-                const simulatedOriginalSinglingRiskValue = (isModeKAnonymityStatus ? Math.max(0.05, 0.45 - currentKValueNumber * 0.03) : 0.12) * calculatedQueryCompositionFactorValue;
-                const simulatedOriginalLinkabilityRiskValue = (isModeKAnonymityStatus ? Math.max(0.08, 0.52 - currentKValueNumber * 0.04) : 0.18) * calculatedQueryCompositionFactorValue;
-                const simulatedOriginalInferenceRiskValue = (isModeKAnonymityStatus ? Math.max(0.10, 0.60 - currentKValueNumber * 0.035) : 0.22) * calculatedQueryCompositionFactorValue;
-
-                const calculateNormalizedRiskRateFunction = (originalRateValue: number, controlRateValue: number, baselineRateValue: number) => {
-                    const calculatedMaxDenominatorValue = Math.max(controlRateValue, baselineRateValue);
-                    return Math.max(0, (originalRateValue - calculatedMaxDenominatorValue) / (1 - calculatedMaxDenominatorValue));
-                };
-
-                const finalNormalizedSinglingRiskValue = calculateNormalizedRiskRateFunction(simulatedOriginalSinglingRiskValue, 0.02, 0.01);
-                const finalNormalizedLinkabilityRiskValue = calculateNormalizedRiskRateFunction(simulatedOriginalLinkabilityRiskValue, 0.03, 0.02);
-                const finalNormalizedInferenceRiskValue = calculateNormalizedRiskRateFunction(simulatedOriginalInferenceRiskValue, 0.05, 0.04);
-                const calculatedOverallMaxRiskScoreValue = Math.max(finalNormalizedSinglingRiskValue, finalNormalizedLinkabilityRiskValue, finalNormalizedInferenceRiskValue);
+                const finalSinglingRiskValue = attackReportResult?.singling_out_risk ?? 0;
+                const finalLinkabilityRiskValue = attackReportResult?.linkability_risk ?? 0;
+                const finalInferenceRiskValue = attackReportResult?.inference_risk ?? 0;
+                const calculatedOverallMaxRiskScoreValue = Math.max(finalSinglingRiskValue, finalLinkabilityRiskValue, finalInferenceRiskValue);
 
                 const generatedSimulationMetricsObject: SimulationResult = {
-                    singling: { ori: simulatedOriginalSinglingRiskValue, ctrl: 0.02, base: 0.01, risk: finalNormalizedSinglingRiskValue },
-                    linkability: { ori: simulatedOriginalLinkabilityRiskValue, ctrl: 0.03, base: 0.02, risk: finalNormalizedLinkabilityRiskValue },
-                    inference: { ori: simulatedOriginalInferenceRiskValue, ctrl: 0.05, base: 0.04, risk: finalNormalizedInferenceRiskValue },
+                    singling: { ori: finalSinglingRiskValue, ctrl: 0, base: 0, risk: finalSinglingRiskValue },
+                    linkability: { ori: finalLinkabilityRiskValue, ctrl: 0, base: 0, risk: finalLinkabilityRiskValue },
+                    inference: { ori: finalInferenceRiskValue, ctrl: 0, base: 0, risk: finalInferenceRiskValue },
                     overallRiskPercent: (calculatedOverallMaxRiskScoreValue * 100).toFixed(1)
                 };
 
@@ -630,9 +786,9 @@ export default function Step4_Result(): React.ReactElement
                     auditTime: generatedNewAuditMetadataObj.auditTime,
                     auditTimestamp: generatedNewAuditMetadataObj.auditTimestamp,
                     parameters: currentPrivacyModeTypeStr === 'k-anonymity' ? `K = ${currentKValueNumber}` : `發布次數 M = ${simulatedQueryCountValue}`,
-                    singlingRisk: `${(finalNormalizedSinglingRiskValue * 100).toFixed(1)}%`,
-                    linkabilityRisk: `${(finalNormalizedLinkabilityRiskValue * 100).toFixed(1)}%`,
-                    inferenceRisk: `${(finalNormalizedInferenceRiskValue * 100).toFixed(1)}%`,
+                    singlingRisk: `${(finalSinglingRiskValue * 100).toFixed(1)}%`,
+                    linkabilityRisk: `${(finalLinkabilityRiskValue * 100).toFixed(1)}%`,
+                    inferenceRisk: `${(finalInferenceRiskValue * 100).toFixed(1)}%`,
                     overallRisk: `${generatedSimulationMetricsObject.overallRiskPercent}%`,
                     status: pipelineComplianceValidStatus ? 'passed' : 'failed',
                     columnsSnapshot: actualProcessedColumnsList,
@@ -688,8 +844,8 @@ export default function Step4_Result(): React.ReactElement
         return {
             backgroundColor: 'transparent',
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-            legend: { 
-                data: [translate('step4.chart.s_ori', '主要攻擊成功率'), translate('step4.chart.s_ctrl', '控制組偽陽性率'), translate('step4.chart.s_base', '基線猜測率')],
+            legend: {
+                data: [translate('step4.chart.s_risk', '攻擊成功率（真實後端評估）')],
                 textStyle: { color: token.colorTextSecondary }, top: '0%'
             },
             grid: { top: '18%', left: '3%', right: '4%', bottom: '3%', containLabel: true },
@@ -704,9 +860,7 @@ export default function Step4_Result(): React.ReactElement
                 splitLine: { lineStyle: { color: token.colorSplit } }
             },
             series: [
-                { name: translate('step4.chart.s_ori', '主要攻擊成功率'), type: 'bar', data: [attackSimulationMetricsData.singling.ori, attackSimulationMetricsData.linkability.ori, attackSimulationMetricsData.inference.ori], itemStyle: { color: '#ff4d4f', borderRadius: [4, 4, 0, 0] } },
-                { name: translate('step4.chart.s_ctrl', '控制組偽陽性率'), type: 'bar', data: [attackSimulationMetricsData.singling.ctrl, attackSimulationMetricsData.linkability.ctrl, attackSimulationMetricsData.inference.ctrl], itemStyle: { color: '#faad14', borderRadius: [4, 4, 0, 0] } },
-                { name: translate('step4.chart.s_base', '基線猜測率'), type: 'bar', data: [attackSimulationMetricsData.singling.base, attackSimulationMetricsData.linkability.base, attackSimulationMetricsData.inference.base], itemStyle: { color: '#91caff', borderRadius: [4, 4, 0, 0] } }
+                { name: translate('step4.chart.s_risk', '攻擊成功率（真實後端評估）'), type: 'bar', data: [attackSimulationMetricsData.singling.risk, attackSimulationMetricsData.linkability.risk, attackSimulationMetricsData.inference.risk], itemStyle: { color: '#ff4d4f', borderRadius: [4, 4, 0, 0] } }
             ]
         };
     };
@@ -728,6 +882,24 @@ export default function Step4_Result(): React.ReactElement
             messageApi.success(translate('step4.msg.download_success', '已成功匯出全量脫敏 CSV 數據！'));
         } else {
             messageApi.error(translate('step4.msg.download_failed', '無法取得脫敏檔案，請重新運算。'));
+        }
+    };
+
+    const handleDownloadRiskReportPdf = () =>
+    {
+        if (riskReportPdfBlob)
+        {
+            const blobDownloadUrlString = URL.createObjectURL(riskReportPdfBlob);
+            const downloadAnchorHtmlElement = document.createElement('a');
+            downloadAnchorHtmlElement.href = blobDownloadUrlString;
+            downloadAnchorHtmlElement.download = `risk_report_${auditMetadataObject.certificateId}.pdf`;
+            document.body.appendChild(downloadAnchorHtmlElement);
+            downloadAnchorHtmlElement.click();
+            document.body.removeChild(downloadAnchorHtmlElement);
+            URL.revokeObjectURL(blobDownloadUrlString);
+            messageApi.success(translate('step4.msg.risk_pdf_download_success', '已成功下載風險評估 PDF 報告！'));
+        } else {
+            messageApi.error(translate('step4.msg.risk_pdf_download_failed', '無法取得風險評估 PDF 報告，請重新運算。'));
         }
     };
 
@@ -876,6 +1048,21 @@ export default function Step4_Result(): React.ReactElement
                                     <Tag color="red" style={{ flex: 1, textAlign: 'center', padding: '6px' }}>{translate('step4.risk.singling', '指認風險:')} {(attackSimulationMetricsData.singling.risk * 100).toFixed(1)}%</Tag>
                                     <Tag color="orange" style={{ flex: 1, textAlign: 'center', padding: '6px' }}>{translate('step4.risk.linkability', '連結風險:')} {(attackSimulationMetricsData.linkability.risk * 100).toFixed(1)}%</Tag>
                                     <Tag color="cyan" style={{ flex: 1, textAlign: 'center', padding: '6px' }}>{translate('step4.risk.inference', '推斷風險:')} {(attackSimulationMetricsData.inference.risk * 100).toFixed(1)}%</Tag>
+                                </div>
+                                {capReportData && (
+                                    <div style={{ marginTop: '12px', fontSize: '12px', color: token.colorTextDescription }}>
+                                        {translate('step4.risk.cap_label', 'CAP 前後對比：')} {(capReportData.cap_before * 100).toFixed(1)}% → {(capReportData.cap_after * 100).toFixed(1)}%
+                                    </div>
+                                )}
+                                {attackReportData?.message && (
+                                    <div style={{ marginTop: '4px', fontSize: '12px', color: token.colorTextDescription }}>
+                                        {attackReportData.message}
+                                    </div>
+                                )}
+                                <div style={{ marginTop: '12px' }}>
+                                    <Button size="small" icon={<DownloadOutlined />} disabled={!riskReportPdfBlob} onClick={handleDownloadRiskReportPdf}>
+                                        {translate('step4.risk.download_pdf', '下載風險評估 PDF 報告')}
+                                    </Button>
                                 </div>
                             </Card>
                         </Col>

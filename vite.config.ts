@@ -15,7 +15,7 @@ export default defineConfig({
       // 開發環境代理：讓瀏覽器對 /api 的請求由 Vite 開發伺服器轉發至本機 Docker 後端，
       // 前端程式碼應改用相對路徑 (如 /api/v1/k-anonymity) 呼叫，避免瀏覽器端跨網域 (CORS) 問題
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:8001',
         changeOrigin: true,
       },
     },
