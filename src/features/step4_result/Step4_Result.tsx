@@ -607,53 +607,9 @@ export default function Step4_Result(): React.ReactElement
                 setCurrentPipelinePhaseType('auditing');
                 setSystemSimulationLogsList(prev => [...prev, translate('step4.log.start_risk', '[{{time}}] 🚀 脫敏完成，啟動真實風險評估（三大攻擊模擬）', { time: formatCurrentTimeForLogString() })]);
 
-                // 將 columnsMap 只保留 quasi_identifier／sensitive 角色（後端 RiskColumnInfo.role
-                // 只接受這兩種，identifier／non_sensitive 不在風險評估範圍內），
-                // 格式依據：docs/manual_test/config_risk_k_anonymity.json
-                const riskColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
-                actualProcessedColumnsList.forEach((colName) => {
-                    const cleanName = colName.replace(/^[\uFEFF\u200B]+/, '').trim();
-                    const matchedField = kAnonymityFieldsList.find(
-                        (item: unknown) => {
-                            const record = item as Record<string, unknown>;
-                            return record && typeof record.name === 'string' && record.name.replace(/^[\uFEFF\u200B]+/, '').trim() === cleanName;
-                        }
-                    ) as Record<string, unknown> | undefined;
-
-                    let backendRole = 'non_sensitive';
-                    let colType = 'string';
-
-                    if (matchedField) {
-                        const privacyRoleMappingDict: Record<string, string> = {
-                            'Identifier': 'identifier',
-                            'Quasi-identifier': 'quasi_identifier',
-                            'Sensitive': 'sensitive',
-                            'Non-sensitive': 'non_sensitive'
-                        };
-                        backendRole = privacyRoleMappingDict[String(matchedField.role)] || 'non_sensitive';
-                        colType = String(matchedField.type) || 'string';
-                    } else {
-                        const { role: uiRole } = getCalculatedRole(cleanName);
-                        if (uiRole === 'Identifier') backendRole = 'identifier';
-                        if (uiRole === 'Quasi-identifier') backendRole = 'quasi_identifier';
-                        if (uiRole === 'Sensitive') backendRole = 'sensitive';
-                    }
-
-                    if (backendRole === 'quasi_identifier' || backendRole === 'sensitive') {
-                        riskColumnsMap[cleanName] = { role: backendRole as 'quasi_identifier' | 'sensitive', type: colType };
-                    }
-                });
-
-                const sensitiveColumnCount = Object.values(riskColumnsMap).filter((c) => c.role === 'sensitive').length;
-                if (sensitiveColumnCount !== 1) {
-                    throw new Error(`風險評估要求「敏感欄位」剛好 1 個，目前偵測到 ${sensitiveColumnCount} 個，請回到欄位設定調整角色標記後再重新運算。`);
-                }
-
-                // 官方範例參數（docs/manual_test/config_risk_*.json 及 report_request.json 的
+                // 風險評估官方範例參數（docs/manual_test/config_risk_*.json 及 report_request.json 的
                 // risk_params 預設值），目前畫面未開放調整，一律採用官方預設
-                const riskAttacksBlock = {
-                    enabled: true,
-                    columns: riskColumnsMap,
+                const RISK_ATTACK_DEFAULT_PARAMS = {
                     n_iter: 50,
                     ctrl_ratio: 0.2,
                     seed: 42,
@@ -664,12 +620,57 @@ export default function Step4_Result(): React.ReactElement
 
                 let attackReportResult: AttackReport | null = null;
                 let capReportResult: CapReport | null = null;
+                let finalRiskColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
 
                 if (currentPrivacyModeTypeStr === 'k-anonymity') {
+                    // K-匿名模式：欄位角色（identifier／quasi_identifier／sensitive／non_sensitive）
+                    // 已在 Step2「屬性分類」寫入 columnRoles／kAnonymityFields，可直接採用單一組角色，
+                    // 並要求「敏感欄位」剛好 1 個（後端 RiskConfig.validate_config() 的硬性限制）。
+                    const riskColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
+                    actualProcessedColumnsList.forEach((colName) => {
+                        const cleanName = colName.replace(/^[\uFEFF\u200B]+/, '').trim();
+                        const matchedField = kAnonymityFieldsList.find(
+                            (item: unknown) => {
+                                const record = item as Record<string, unknown>;
+                                return record && typeof record.name === 'string' && record.name.replace(/^[\uFEFF\u200B]+/, '').trim() === cleanName;
+                            }
+                        ) as Record<string, unknown> | undefined;
+
+                        let backendRole = 'non_sensitive';
+                        let colType = 'string';
+
+                        if (matchedField) {
+                            const privacyRoleMappingDict: Record<string, string> = {
+                                'Identifier': 'identifier',
+                                'Quasi-identifier': 'quasi_identifier',
+                                'Sensitive': 'sensitive',
+                                'Non-sensitive': 'non_sensitive'
+                            };
+                            backendRole = privacyRoleMappingDict[String(matchedField.role)] || 'non_sensitive';
+                            colType = String(matchedField.type) || 'string';
+                        } else {
+                            const { role: uiRole } = getCalculatedRole(cleanName);
+                            if (uiRole === 'Identifier') backendRole = 'identifier';
+                            if (uiRole === 'Quasi-identifier') backendRole = 'quasi_identifier';
+                            if (uiRole === 'Sensitive') backendRole = 'sensitive';
+                        }
+
+                        if (backendRole === 'quasi_identifier' || backendRole === 'sensitive') {
+                            riskColumnsMap[cleanName] = { role: backendRole as 'quasi_identifier' | 'sensitive', type: colType };
+                        }
+                    });
+
+                    const sensitiveColumnCount = Object.values(riskColumnsMap).filter((c) => c.role === 'sensitive').length;
+                    if (sensitiveColumnCount !== 1) {
+                        throw new Error(`風險評估要求「敏感欄位」剛好 1 個，目前偵測到 ${sensitiveColumnCount} 個，請回到欄位設定調整角色標記後再重新運算。`);
+                    }
+
+                    finalRiskColumnsMap = riskColumnsMap;
+
                     const riskConfigObject = {
                         version: 'step4_risk_k_anonymity',
                         dataset: currentDatasetFileNameString || 'dataset',
-                        risk_attacks: riskAttacksBlock,
+                        risk_attacks: { enabled: true, columns: riskColumnsMap, ...RISK_ATTACK_DEFAULT_PARAMS },
                         k_anonymity: (configObject as Record<string, unknown>).k_anonymity
                     };
                     const riskConfigBlob = new Blob([JSON.stringify(riskConfigObject)], { type: 'application/json;charset=utf-8' });
@@ -679,18 +680,80 @@ export default function Step4_Result(): React.ReactElement
                     if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error('三攻擊風險評估（K-匿名）API 請求未成功'));
                     attackReportResult = riskResponse.report;
                 } else if (currentPrivacyModeTypeStr === 'differential-privacy') {
-                    const riskConfigObject = {
-                        version: 'step4_risk_dp',
-                        dataset: currentDatasetFileNameString || 'dataset',
-                        risk_attacks: riskAttacksBlock,
-                        differential_privacy: (configObject as Record<string, unknown>).differential_privacy
-                    };
-                    const riskConfigBlob = new Blob([JSON.stringify(riskConfigObject)], { type: 'application/json;charset=utf-8' });
-                    const riskConfigFile = new File([riskConfigBlob], 'risk_config.json', { type: 'application/json' });
+                    // DP 模式沒有「剛好 1 個敏感欄位」的概念——欄位設定清單裡每個啟用欄位都同等
+                    // 重要，不分型態。為了滿足後端 RiskConfig 仍要求「恰好 1 個 sensitive」的硬性
+                    // 限制，改用「輪流」策略：每個啟用欄位輪流當一次 sensitive、其餘啟用欄位當
+                    // quasi_identifier，各自呼叫一次風險評估 API，最終只取風險最高的一輪呈現。
+                    const dpRoundRobinCandidateFieldNamesList = (currentDpFieldsListArray || [])
+                        .filter((field: DpStoreField) => field.enabled)
+                        .map((field: DpStoreField) => field.fieldName);
 
-                    const riskResponse = await runRiskDp(safeDataFile, riskConfigFile);
-                    if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error('三攻擊風險評估（DP）API 請求未成功'));
-                    attackReportResult = riskResponse.report;
+                    if (dpRoundRobinCandidateFieldNamesList.length === 0) {
+                        throw new Error('風險評估要求至少 1 個已啟用的差分隱私欄位，請回到欄位設定啟用欄位後再重新運算。');
+                    }
+
+                    const resolveDpRiskColumnType = (fieldName: string): string => {
+                        const targetField = (currentDpFieldsListArray || []).find((field: DpStoreField) => field.fieldName === fieldName);
+                        const isNumeric = targetField?.fieldType === 'Numeric';
+                        const originalColType = String(currentColumnTypesMapDict?.[fieldName] || '').toLowerCase();
+                        const isDateTimeType =
+                            originalColType.includes('時間') ||
+                            originalColType.includes('date') ||
+                            originalColType.includes('time') ||
+                            /(date|time|生日|日期)/i.test(fieldName);
+                        if (isNumeric) return isDateTimeType ? 'temporal' : 'numeric';
+                        if (targetField?.fieldType === 'Categorical') return 'categorical';
+                        return 'string';
+                    };
+
+                    let bestOverallScore = -1;
+                    let bestAttackReport: AttackReport | null = null;
+                    let bestColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> | null = null;
+
+                    for (let roundIndex = 0; roundIndex < dpRoundRobinCandidateFieldNamesList.length; roundIndex++) {
+                        const candidateSensitiveFieldName = dpRoundRobinCandidateFieldNamesList[roundIndex];
+                        const roundColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
+                        dpRoundRobinCandidateFieldNamesList.forEach((fieldName: string) => {
+                            roundColumnsMap[fieldName] = {
+                                role: fieldName === candidateSensitiveFieldName ? 'sensitive' : 'quasi_identifier',
+                                type: resolveDpRiskColumnType(fieldName)
+                            };
+                        });
+
+                        setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] 🔁 候選敏感欄位 ${roundIndex + 1}/${dpRoundRobinCandidateFieldNamesList.length}（${candidateSensitiveFieldName}）風險評估中...`]);
+
+                        try {
+                            const riskConfigObject = {
+                                version: 'step4_risk_dp',
+                                dataset: currentDatasetFileNameString || 'dataset',
+                                risk_attacks: { enabled: true, columns: roundColumnsMap, ...RISK_ATTACK_DEFAULT_PARAMS },
+                                differential_privacy: (configObject as Record<string, unknown>).differential_privacy
+                            };
+                            const riskConfigBlob = new Blob([JSON.stringify(riskConfigObject)], { type: 'application/json;charset=utf-8' });
+                            const riskConfigFile = new File([riskConfigBlob], 'risk_config.json', { type: 'application/json' });
+
+                            const riskResponse = await runRiskDp(safeDataFile, riskConfigFile);
+                            if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error(`候選欄位「${candidateSensitiveFieldName}」風險評估 API 請求未成功`));
+
+                            const roundReport = riskResponse.report;
+                            const roundOverallScore = Math.max(roundReport.singling_out_risk, roundReport.linkability_risk, roundReport.inference_risk);
+                            if (roundOverallScore > bestOverallScore) {
+                                bestOverallScore = roundOverallScore;
+                                bestAttackReport = roundReport;
+                                bestColumnsMap = roundColumnsMap;
+                            }
+                        } catch (roundErrorPayload) {
+                            console.error(`候選欄位「${candidateSensitiveFieldName}」風險評估失敗:`, roundErrorPayload);
+                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ 候選欄位「${candidateSensitiveFieldName}」風險評估失敗，已略過此輪`]);
+                        }
+                    }
+
+                    if (!bestAttackReport || !bestColumnsMap) {
+                        throw new Error('所有候選敏感欄位的風險評估皆失敗，請檢查欄位設定或稍後再重新運算。');
+                    }
+
+                    attackReportResult = bestAttackReport;
+                    finalRiskColumnsMap = bestColumnsMap;
                 }
 
                 setAttackReportData(attackReportResult);
@@ -704,7 +767,7 @@ export default function Step4_Result(): React.ReactElement
                         const capConfigObject = {
                             version: 'step4_risk_cap',
                             dataset: currentDatasetFileNameString || 'dataset',
-                            risk_cap: { enabled: true, columns: riskColumnsMap }
+                            risk_cap: { enabled: true, columns: finalRiskColumnsMap }
                         };
                         const capConfigBlob = new Blob([JSON.stringify(capConfigObject)], { type: 'application/json;charset=utf-8' });
                         const capConfigFile = new File([capConfigBlob], 'cap_config.json', { type: 'application/json' });
