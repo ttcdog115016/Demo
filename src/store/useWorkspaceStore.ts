@@ -56,6 +56,7 @@ export interface DPField
     id: string;                                           // 欄位唯一識別碼 (如: 'col_0')
     fieldName: string;                                    // 欄位名稱
     enabled?: boolean;                                    // 是否啟用 DP 處理
+    isSensitive?: boolean;                                // 是否指定為風險評估之「敏感欄位」（僅能有 1 個）
     fieldType?: 'Numeric' | 'Categorical' | 'Text' | 'Unknown'; // 欄位資料型態
     epsilon?: number;                                     // 個人化 Epsilon 隱私預算 (ε)
     delta?: number;                                       // 個人化 Delta 鬆弛參數 (δ)
@@ -175,6 +176,7 @@ const createInitialDPFields = (datasetColumnsListArray: string[]): DPField[] =>
                 fieldName: columnNameString,
                 fieldType: calculatedDefaultTypeStr,
                 enabled: true,
+                isSensitive: false,
                 epsilon: DEFAULT_EPSILON_BUDGET,
                 delta: DEFAULT_DELTA_BUDGET,
                 lowerBound: calculatedDefaultTypeStr === 'Numeric' ? DEFAULT_NUMERIC_LOWER_BOUND : undefined,

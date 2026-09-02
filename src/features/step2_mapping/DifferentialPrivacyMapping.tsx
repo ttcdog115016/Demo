@@ -8,7 +8,7 @@
  */
 
 import React, { useEffect, useRef, useMemo } from 'react';
-import { Card, Table, Select, Button, Input, InputNumber, Switch, theme, Tabs, Space, Tooltip, Alert, App as AntdApp } from 'antd';
+import { Card, Table, Select, Button, Input, InputNumber, Switch, Radio, theme, Tabs, Space, Tooltip, Alert, App as AntdApp } from 'antd';
 import {
 	UploadOutlined, DeleteOutlined, PlusOutlined,
 	DatabaseOutlined, CodeOutlined, ThunderboltOutlined, InfoCircleOutlined, CopyOutlined
@@ -53,6 +53,7 @@ const createInitialDPFields = (columnNameList: string[]): DPField[] =>
 				fieldName: columnNameString,
 				fieldType: calculatedDefaultType,
 				enabled: true,
+				isSensitive: false,
 				epsilon: DEFAULT_EPSILON_BUDGET,
 				delta: 1e-5,
 				lowerBound: calculatedDefaultType === 'Numeric' ? DEFAULT_NUMERIC_LOWER_BOUND : (calculatedDefaultType === 'Categorical' ? 0 : undefined),
@@ -686,7 +687,11 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 								() => 
 								{
 									setDpFieldsAction(
-										currentDpFieldsList.map(fieldItemRecord => fieldItemRecord.id === rowRecordItem.id ? { ...fieldItemRecord, enabled: !fieldItemRecord.enabled } : fieldItemRecord)
+										currentDpFieldsList.map(fieldItemRecord => {
+											if (fieldItemRecord.id !== rowRecordItem.id) return fieldItemRecord;
+											const nextEnabledStatus = !fieldItemRecord.enabled;
+											return { ...fieldItemRecord, enabled: nextEnabledStatus, isSensitive: nextEnabledStatus ? fieldItemRecord.isSensitive : false };
+										})
 									);
 								}
 							}
@@ -701,6 +706,36 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 							</Tooltip>
 						)}
 					</Space>
+				);
+			},
+		},
+		{
+			title: (
+				<Tooltip title={translate('step2.dp_sensitive_col_tooltip', '風險評估時，此欄位將視為「敏感欄位」，其餘已啟用欄位視為「準識別欄位」；僅能指定 1 個已啟用欄位。')}>
+					<Space>{translate('step2.dp_sensitive_col', '敏感欄位')}<InfoCircleOutlined style={{ color: token.colorTextDescription }} /></Space>
+				</Tooltip>
+			),
+			key: 'isSensitive',
+			width: '10%',
+			render: (_: unknown, rowRecordItem: DPField) =>
+			{
+				const isSelectionDisabled = !rowRecordItem.enabled;
+
+				return (
+					<Tooltip title={isSelectionDisabled ? translate('step2.dp_sensitive_requires_enabled', '需先開啟「套用 DP」才能指定為敏感欄位') : ''}>
+						<Radio
+							checked={!!rowRecordItem.isSensitive}
+							disabled={isSelectionDisabled}
+							onChange={
+								() =>
+								{
+									setDpFieldsAction(
+										currentDpFieldsList.map(fieldItemRecord => ({ ...fieldItemRecord, isSensitive: fieldItemRecord.id === rowRecordItem.id }))
+									);
+								}
+							}
+						/>
+					</Tooltip>
 				);
 			},
 		},
@@ -835,6 +870,22 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					type="error" showIcon style={{ marginBottom: '16px', padding: '8px 16px', borderRadius: '8px' }}
 				/>
 			)}
+
+			{(() => {
+				const enabledDpFieldsListForSensitiveCheck = currentDpFieldsList.filter((fieldItemRecord) => fieldItemRecord.enabled);
+				const designatedSensitiveFieldsCount = enabledDpFieldsListForSensitiveCheck.filter((fieldItemRecord) => fieldItemRecord.isSensitive).length;
+				if (enabledDpFieldsListForSensitiveCheck.length > 0 && designatedSensitiveFieldsCount !== 1)
+				{
+					return (
+						<Alert
+							title={translate('step2.dp_sensitive_missing_title', '尚未指定敏感欄位')}
+							description={translate('step2.dp_sensitive_missing_desc', '請在下方欄位清單中，於已啟用之欄位裡指定「恰好 1 個」敏感欄位；其餘已啟用欄位將視為準識別欄位，供第四步風險評估使用。')}
+							type="warning" showIcon style={{ marginBottom: '16px', padding: '8px 16px', borderRadius: '8px' }}
+						/>
+					);
+				}
+				return null;
+			})()}
 
 			<Tabs 
 				defaultActiveKey="1" 

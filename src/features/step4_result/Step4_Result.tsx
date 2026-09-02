@@ -54,6 +54,7 @@ interface SimulationResult
 
 interface DpStoreField {
     enabled?: boolean;
+    isSensitive?: boolean;
     fieldName: string;
     fieldType?: string;
     epsilon?: number | string;
@@ -680,24 +681,26 @@ export default function Step4_Result(): React.ReactElement
                     if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error('三攻擊風險評估（K-匿名）API 請求未成功'));
                     attackReportResult = riskResponse.report;
                 } else if (currentPrivacyModeTypeStr === 'differential-privacy') {
-                    // DP 模式沒有「剛好 1 個敏感欄位」的概念——欄位設定清單裡每個啟用欄位都同等
-                    // 重要，不分型態。為了滿足後端 RiskConfig 仍要求「恰好 1 個 sensitive」的硬性
-                    // 限制，改用「輪流」策略：每個啟用欄位輪流當一次 sensitive、其餘啟用欄位當
-                    // quasi_identifier。
-                    //
-                    // 後端 uvicorn 未開多 worker，且 /risk/dp 端點是同步阻塞式運算，前端同時送出
-                    // 多個請求並不會真的平行加速，只會排隊處理。因此改採「兩階段」策略：先用
-                    // 較小的 n_iter／n_subset 對每個候選欄位快速掃描一次找出風險最高者，只有勝出
-                    // 的那個欄位才用官方範例完整參數 (n_iter=50, n_subset=500) 正式評估一次——
-                    // 畫面最終呈現的數字仍是官方完整精度算出來的，只是不必為每個候選欄位都付出
-                    // 完整運算成本，可大幅縮短總等待時間。
-                    const dpRoundRobinCandidateFieldNamesList = (currentDpFieldsListArray || [])
-                        .filter((field: DpStoreField) => field.enabled)
-                        .map((field: DpStoreField) => field.fieldName);
+                    // DP 模式的「敏感欄位」由使用者在 Step2 差分隱私欄位設定中手動指定（單選，
+                    // 恰好 1 個已啟用欄位），與官方 risk config 範例的設計一致——呼叫方本來就該
+                    // 在設定檔裡宣告好 columns 角色，而非由前端在 Step4 動態嘗試／臆測。
+                    // 其餘已啟用欄位一律視為 quasi_identifier。
+                    const enabledDpFieldsList = (currentDpFieldsListArray || []).filter((field: DpStoreField) => field.enabled);
 
-                    if (dpRoundRobinCandidateFieldNamesList.length === 0) {
-                        throw new Error('風險評估要求至少 1 個已啟用的差分隱私欄位，請回到欄位設定啟用欄位後再重新運算。');
+                    if (enabledDpFieldsList.length === 0) {
+                        throw new Error('風險評估要求至少 1 個已啟用的差分隱私欄位，請回到步驟二欄位設定啟用欄位後再重新運算。');
                     }
+
+                    const designatedSensitiveFieldsList = enabledDpFieldsList.filter((field: DpStoreField) => field.isSensitive);
+
+                    if (designatedSensitiveFieldsList.length === 0) {
+                        throw new Error('尚未指定「敏感欄位」，請回到步驟二差分隱私欄位設定，於已啟用欄位中指定恰好 1 個敏感欄位後再重新運算。');
+                    }
+                    if (designatedSensitiveFieldsList.length > 1) {
+                        throw new Error(`偵測到 ${designatedSensitiveFieldsList.length} 個敏感欄位設定，風險評估要求恰好 1 個，請回到步驟二欄位設定確認後再重新運算。`);
+                    }
+
+                    const designatedSensitiveFieldName = designatedSensitiveFieldsList[0].fieldName;
 
                     const resolveDpRiskColumnType = (fieldName: string): string => {
                         const targetField = (currentDpFieldsListArray || []).find((field: DpStoreField) => field.fieldName === fieldName);
@@ -713,83 +716,28 @@ export default function Step4_Result(): React.ReactElement
                         return 'string';
                     };
 
-                    const buildDpRoundColumnsMap = (candidateSensitiveFieldName: string): Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> => {
-                        const roundColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
-                        dpRoundRobinCandidateFieldNamesList.forEach((fieldName: string) => {
-                            roundColumnsMap[fieldName] = {
-                                role: fieldName === candidateSensitiveFieldName ? 'sensitive' : 'quasi_identifier',
-                                type: resolveDpRiskColumnType(fieldName)
-                            };
-                        });
-                        return roundColumnsMap;
-                    };
+                    const dpRiskColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
+                    enabledDpFieldsList.forEach((field: DpStoreField) => {
+                        dpRiskColumnsMap[field.fieldName] = {
+                            role: field.fieldName === designatedSensitiveFieldName ? 'sensitive' : 'quasi_identifier',
+                            type: resolveDpRiskColumnType(field.fieldName)
+                        };
+                    });
 
-                    // 第一階段：輕量掃描參數，僅用來排序候選欄位風險高低，不作為最終呈現數字
-                    const DP_SCAN_PARAMS = {
-                        n_iter: 10,
-                        ctrl_ratio: 0.2,
-                        seed: 42,
-                        n_subset: 100,
-                        n_repeats: 1,
-                        overlap_ratio: 0.0
-                    };
-
-                    let bestScanScore = -1;
-                    let bestScanFieldName: string | null = null;
-
-                    for (let roundIndex = 0; roundIndex < dpRoundRobinCandidateFieldNamesList.length; roundIndex++) {
-                        const candidateSensitiveFieldName = dpRoundRobinCandidateFieldNamesList[roundIndex];
-                        const scanColumnsMap = buildDpRoundColumnsMap(candidateSensitiveFieldName);
-
-                        setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] 🔁 候選欄位快速掃描 ${roundIndex + 1}/${dpRoundRobinCandidateFieldNamesList.length}（${candidateSensitiveFieldName}）...`]);
-
-                        try {
-                            const scanConfigObject = {
-                                version: 'step4_risk_dp_scan',
-                                dataset: currentDatasetFileNameString || 'dataset',
-                                risk_attacks: { enabled: true, columns: scanColumnsMap, ...DP_SCAN_PARAMS },
-                                differential_privacy: (configObject as Record<string, unknown>).differential_privacy
-                            };
-                            const scanConfigBlob = new Blob([JSON.stringify(scanConfigObject)], { type: 'application/json;charset=utf-8' });
-                            const scanConfigFile = new File([scanConfigBlob], 'risk_config.json', { type: 'application/json' });
-
-                            const scanResponse = await runRiskDp(safeDataFile, scanConfigFile);
-                            if (!scanResponse.success || !scanResponse.report) throw (scanResponse.error || new Error(`候選欄位「${candidateSensitiveFieldName}」快速掃描 API 請求未成功`));
-
-                            const scanReport = scanResponse.report;
-                            const scanScore = Math.max(scanReport.singling_out_risk, scanReport.linkability_risk, scanReport.inference_risk);
-                            if (scanScore > bestScanScore) {
-                                bestScanScore = scanScore;
-                                bestScanFieldName = candidateSensitiveFieldName;
-                            }
-                        } catch (scanErrorPayload) {
-                            console.error(`候選欄位「${candidateSensitiveFieldName}」快速掃描失敗:`, scanErrorPayload);
-                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ 候選欄位「${candidateSensitiveFieldName}」快速掃描失敗，已略過此輪`]);
-                        }
-                    }
-
-                    if (!bestScanFieldName) {
-                        throw new Error('所有候選敏感欄位的快速掃描皆失敗，請檢查欄位設定或稍後再重新運算。');
-                    }
-
-                    // 第二階段：只對掃描勝出的欄位，用官方範例完整參數正式評估一次
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] 🎯 掃描完成，鎖定候選欄位「${bestScanFieldName}」，以官方完整參數進行正式風險評估...`]);
-
-                    const winningColumnsMap = buildDpRoundColumnsMap(bestScanFieldName);
-                    const finalRiskConfigObject = {
+                    const riskConfigObject = {
                         version: 'step4_risk_dp',
                         dataset: currentDatasetFileNameString || 'dataset',
-                        risk_attacks: { enabled: true, columns: winningColumnsMap, ...RISK_ATTACK_DEFAULT_PARAMS },
+                        risk_attacks: { enabled: true, columns: dpRiskColumnsMap, ...RISK_ATTACK_DEFAULT_PARAMS },
                         differential_privacy: (configObject as Record<string, unknown>).differential_privacy
                     };
-                    const finalRiskConfigBlob = new Blob([JSON.stringify(finalRiskConfigObject)], { type: 'application/json;charset=utf-8' });
-                    const finalRiskConfigFile = new File([finalRiskConfigBlob], 'risk_config.json', { type: 'application/json' });
+                    const riskConfigBlob = new Blob([JSON.stringify(riskConfigObject)], { type: 'application/json;charset=utf-8' });
+                    const riskConfigFile = new File([riskConfigBlob], 'risk_config.json', { type: 'application/json' });
 
-                    const finalRiskResponse = await runRiskDp(safeDataFile, finalRiskConfigFile);
-                    if (!finalRiskResponse.success || !finalRiskResponse.report) throw (finalRiskResponse.error || new Error(`候選欄位「${bestScanFieldName}」正式風險評估 API 請求未成功`));
+                    const riskResponse = await runRiskDp(safeDataFile, riskConfigFile);
+                    if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error('三攻擊風險評估（DP）API 請求未成功'));
 
-                    attackReportResult = finalRiskResponse.report;
-                    finalRiskColumnsMap = winningColumnsMap;
+                    attackReportResult = riskResponse.report;
+                    finalRiskColumnsMap = dpRiskColumnsMap;
                 }
 
                 setAttackReportData(attackReportResult);
