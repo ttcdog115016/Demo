@@ -16,7 +16,7 @@ import {
     CheckCircleOutlined, CheckCircleFilled, DownloadOutlined,
     FileDoneOutlined, EyeOutlined, SafetyCertificateOutlined,
     ReloadOutlined, LoadingOutlined, LineChartOutlined, CloudUploadOutlined,
-    WarningFilled
+    WarningFilled, CloseCircleFilled
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import Papa from 'papaparse';
@@ -166,6 +166,10 @@ export default function Step4_Result(): React.ReactElement
     const [apiReport, setApiReport] = useState<KAnonymityQualityReport | DpQualityReport | null>(
         isAnalysisCacheValidStatus && step4AnalysisCacheData?.apiReport ? (step4AnalysisCacheData.apiReport as KAnonymityQualityReport | DpQualityReport) : null
     );
+
+    // 後端管線本次執行是否真正失敗（例如 422 抑制率超限），用來避免
+    // 在執行失敗時仍顯示「運算完成」的成功／警告橫幅
+    const [pipelineFailedMessage, setPipelineFailedMessage] = useState<string | null>(null);
 
     const [processedCsvBlob, setProcessedCsvBlob] = useState<Blob | null>(
         isAnalysisCacheValidStatus && step4AnalysisCacheData 
@@ -321,6 +325,7 @@ export default function Step4_Result(): React.ReactElement
             setApiReport(null);
             setProcessedCsvBlob(null);
             setRealMaskedDataRows([]); 
+            setPipelineFailedMessage(null);
             
             const currentExecutionDateTimeObj = new Date();
             const generatedNewAuditMetadataObj = {
@@ -823,6 +828,7 @@ export default function Step4_Result(): React.ReactElement
                 console.error("Pipeline 執行失敗:", error, responseData);
                 setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ❌ 處理失敗: ${errorMessage}`]);
                 messageApi.error(translate('step4.msg.api_failed', '後端 API 執行失敗，請檢查 Log 訊息'));
+                setPipelineFailedMessage(errorMessage);
             } finally {
                 setTimeout(() => setIsPipelineCalculatingStatus(false), SIMULATION_COMPLETION_DELAY_MS);
             }
@@ -950,20 +956,26 @@ export default function Step4_Result(): React.ReactElement
                     <Alert
                         title={
                             <Space>
-                                {isComplianceValidStatus
-                                    ? <CheckCircleFilled style={{ color: '#52c41a' }} />
-                                    : <WarningFilled style={{ color: '#faad14' }} />}
+                                {pipelineFailedMessage
+                                    ? <CloseCircleFilled style={{ color: '#ff4d4f' }} />
+                                    : isComplianceValidStatus
+                                        ? <CheckCircleFilled style={{ color: '#52c41a' }} />
+                                        : <WarningFilled style={{ color: '#faad14' }} />}
                                 <span style={{ fontWeight: 600 }}>
-                                    {isComplianceValidStatus
-                                        ? translate('step4.alert.title', '去識別化矩陣演算與風險審計完成')
-                                        : translate('step4.alert.title_failed', '去識別化矩陣演算完成，但未達合規標準')}
+                                    {pipelineFailedMessage
+                                        ? translate('step4.alert.title_error', '後端運算失敗，未產出結果')
+                                        : isComplianceValidStatus
+                                            ? translate('step4.alert.title', '去識別化矩陣演算與風險審計完成')
+                                            : translate('step4.alert.title_failed', '去識別化矩陣演算完成，但未達合規標準')}
                                 </span>
                             </Space>
                         }
-                        description={isComplianceValidStatus
-                            ? translate('step4.alert.desc', '系統已完成蒙地卡羅攻擊模擬評估，請檢視三大去識別化防禦指標並下載合規報告。')
-                            : translate('step4.alert.desc_failed', '後端報告顯示本次設定未通過品質檢測 (如抑制率超限、k／l／t 檢測未過，或差分隱私消耗預算超出門檻)，請調整參數後重新運算。')}
-                        type={isComplianceValidStatus ? 'success' : 'warning'}
+                        description={pipelineFailedMessage
+                            ? pipelineFailedMessage
+                            : isComplianceValidStatus
+                                ? translate('step4.alert.desc', '系統已完成蒙地卡羅攻擊模擬評估，請檢視三大去識別化防禦指標並下載合規報告。')
+                                : translate('step4.alert.desc_failed', '後端報告顯示本次設定未通過品質檢測 (如抑制率超限、k／l／t 檢測未過，或差分隱私消耗預算超出門檻)，請調整參數後重新運算。')}
+                        type={pipelineFailedMessage ? 'error' : (isComplianceValidStatus ? 'success' : 'warning')}
                         showIcon={false}
                         style={{ flex: 1, marginRight: '24px' }}
                     />
@@ -973,10 +985,10 @@ export default function Step4_Result(): React.ReactElement
                     <Button icon={<ReloadOutlined spin={isPipelineCalculatingStatus} />} onClick={() => runFullPipeline(true)} disabled={isPipelineCalculatingStatus} size="large">
                         {translate('step4.btn.recalculate', '重新發起後端運算')}
                     </Button>
-                    <Button type="default" icon={<FileDoneOutlined />} disabled={isPipelineCalculatingStatus} onClick={handleOpenReportModal} size="large">
+                    <Button type="default" icon={<FileDoneOutlined />} disabled={isPipelineCalculatingStatus || !!pipelineFailedMessage} onClick={handleOpenReportModal} size="large">
                         {translate('step4.btn.view_report', '檢視與匯出憑證')}
                     </Button>
-                    <Button type="primary" icon={<DownloadOutlined />} disabled={isPipelineCalculatingStatus} onClick={handleDownloadCSV} size="large" style={{ background: '#4F46E5', borderColor: '#4F46E5' }}>
+                    <Button type="primary" icon={<DownloadOutlined />} disabled={isPipelineCalculatingStatus || !!pipelineFailedMessage} onClick={handleDownloadCSV} size="large" style={{ background: '#4F46E5', borderColor: '#4F46E5' }}>
                         {translate('step4.btn.download_csv', '下載脫敏 CSV')}
                     </Button>
                 </Space>
