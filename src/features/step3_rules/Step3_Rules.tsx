@@ -16,6 +16,7 @@ import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
 
 import KAnonymityRules from './KAnonymityRules';
 import DifferentialPrivacyRules from './DifferentialPrivacyRules';
+import RiskSubgroupFilterPanel from './RiskSubgroupFilterPanel';
 
 /**
  * 函數名稱: Step3_Rules
@@ -110,6 +111,7 @@ export default function Step3_Rules(): React.ReactElement
 			field_attributes: currentWorkspaceStoreState.fieldAttributes,
 			masking_rules: currentWorkspaceStoreState.maskingRules,
 			generalization_rules: currentWorkspaceStoreState.generalizationRules,
+			generalization_hierarchies: currentWorkspaceStoreState.generalizationHierarchies,
 			categorical_hierarchies: currentWorkspaceStoreState.categoricalHierarchies,
 			numeric_bins: currentWorkspaceStoreState.numericBins,
 			temporal_hierarchies: currentWorkspaceStoreState.temporalHierarchies,
@@ -122,6 +124,7 @@ export default function Step3_Rules(): React.ReactElement
 					l_diversity_value: currentWorkspaceStoreState.lValue,           // 修正: 明確標示為 L-多樣性種類數值
 					t_closeness_threshold: currentWorkspaceStoreState.tValue,       // 修正: 明確標示為 T-趨近性機率門檻
 					suppression_method: currentWorkspaceStoreState.suppressionMethod,
+					cell_fill: currentWorkspaceStoreState.cellFillMethod,
 					suppression_limit_percent: currentWorkspaceStoreState.maxSuppression,
 					limit_exceeded_action: currentWorkspaceStoreState.limitExceededAction
 				} : { enabled: false },
@@ -218,6 +221,9 @@ export default function Step3_Rules(): React.ReactElement
 
 			{/* 依據模式載入條對應規則控制面板 */}
 			{currentPrivacyModeStatus === 'k-anonymity' ? <KAnonymityRules /> : <DifferentialPrivacyRules />}
+
+			{/* ★ 新增：風險評估「對象族群限定條件」設定面板，與 K-匿名／差分隱私模式無關，故共用渲染一份 */}
+			<RiskSubgroupFilterPanel />
 		</div>
 	);
 }
