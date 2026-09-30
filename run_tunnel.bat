@@ -1,2 +1,2 @@
 @echo off
-cloudflared.exe tunnel --url http://localhost:8080 >> C:\Users\TTCWEI\Desktop\Demo\cloudflared.log 2>&1
+cloudflared.exe tunnel --url http://localhost:5173 >> C:\Users\TTCWEI\Desktop\Demo\cloudflared.log 2>&1

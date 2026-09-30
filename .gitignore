@@ -25,3 +25,7 @@ dist-ssr
 
 .vercel
 .env*
+
+# 本機工具設定與待刪除暫存區
+.claude/
+_to_delete/
