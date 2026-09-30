@@ -15,12 +15,13 @@ import {
     CodeOutlined, ThunderboltOutlined, QuestionCircleOutlined, CopyOutlined,
     EyeOutlined, EyeInvisibleOutlined, CheckCircleOutlined, WarningOutlined, InfoCircleOutlined
 } from '@ant-design/icons';
-import CryptoJS from 'crypto-js';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
+import { applyPreprocessSteps } from '../../utils/preprocessSteps';
+import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, findNumericMinMax, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
 
 /**
@@ -29,7 +30,6 @@ import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceCon
  * ============================================================================
  */
 const DEFAULT_PREPROCESS_SYMBOL = '-';
-const HASH_PREVIEW_TRUNCATE_LENGTH = 16;
 const DEFAULT_MASK_KEEP_CHARS = 2;
 const DEFAULT_GENERALIZATION_PARAM = 10;
 const DEFAULT_MAX_GENERALIZATION_LEVEL = 2;
@@ -41,9 +41,6 @@ const DEFAULT_AUTO_BIN_COUNT = 5;
 const DEFAULT_AUTO_BIN_UNIT_WIDTH = 10;
 const MIN_AUTO_BIN_COUNT = 2;
 const MAX_AUTO_BIN_COUNT = 50;
-// 「最小單位」模式之安全上限：避免使用者輸入過小的單位寬度 (例如 0.001) 導致產生數千個
-// 區間列，拖垮畫面渲染效能，故超過此上限後即停止疊加、最後一格改為「不限」涵蓋剩餘範圍。
-const MAX_AUTO_GENERATED_BIN_COUNT = 200;
 // ★ 新增：使用者反映「套用系統推薦設定」一鍵按鈕會將數值型間接識別碼欄位固定設為「四捨五入 /
 // 最小單位設定」(rounding) 策略，此策略之捨入單位 (genParam) 先前完全不會自動帶入、需使用者自行
 // 猜測填寫。與使用者確認：保留 rounding 為預設策略，但改為依實際資料範圍自動計算一個合理的捨入
@@ -179,11 +176,6 @@ const normalizeMaskStrategyValue = (rawStrategyValue: string | undefined, privac
  * ============================================================================
  */
 
-interface CustomBin {
-    min: number | null;
-    max: number | null;
-    label: string;
-}
 
 // 泛化階層設定之聯集型別：數值型自訂區間 (bins)、時間型粒度階梯 (levels，可選搭配 time_periods 時段對照表)。
 // 三者依欄位型態擇一使用，共用同一個 Record 型別是為了讓 generalization_hierarchies／temporal_hierarchies
@@ -223,307 +215,10 @@ interface HierarchyTable
     [key: string]: unknown;
 }
 
-const FULLWIDTH_CHAR_CODE_OFFSET = 0xFEE0;
-const FULLWIDTH_SPACE_CHAR_CODE = 0x3000;
 
-/**
- * 函數名稱: roundToTwoDecimalPlaces
- * 函數功能: 將數值四捨五入至小數點後兩位，避免區間邊界因浮點數運算 (如 1/3 等除法) 產生過長的
- *          小數尾巴 (例如 33.333333333)，影響區間標籤與 InputNumber 顯示之可讀性。
- */
-const roundToTwoDecimalPlaces = (rawNumericValue: number): number => Math.round(rawNumericValue * 100) / 100;
 
-/**
- * 函數名稱: generateEvenlyDistributedBins
- * 函數功能: 「系統推薦設定」之「平均分配」模式核心運算——依實際資料最小/最大值，將數值範圍
- *          等寬切分為指定數量之區間，最後一個區間之上限固定為「不限」(null)，確保能涵蓋
- *          資料實際最大值 (區間定義為上限不含，若改用計算出之最大值仍為上限，會使剛好等於
- *          最大值的資料筆數落到範圍外)。
- *
- * 輸入參數 (Input): minValue (實際最小值), maxValue (實際最大值), targetBinCount (期望產生之區間數量)
- * 輸出參數 (Output): 無
- * 返回值 (Return): CustomBin[] —— 依序排列之區間陣列；輸入不合法時回傳空陣列
- */
-const generateEvenlyDistributedBins = (minValue: number, maxValue: number, targetBinCount: number): CustomBin[] => {
-    if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || maxValue <= minValue || !Number.isFinite(targetBinCount) || targetBinCount < 1) {
-        return [];
-    }
 
-    const singleBinWidthValue = (maxValue - minValue) / targetBinCount;
-    const generatedBinsResultArray: CustomBin[] = [];
 
-    for (let binSequenceIndexNumber = 0; binSequenceIndexNumber < targetBinCount; binSequenceIndexNumber++) {
-        const isLastBinInSequenceStatus = binSequenceIndexNumber === targetBinCount - 1;
-        const binLowerBoundValue = roundToTwoDecimalPlaces(minValue + binSequenceIndexNumber * singleBinWidthValue);
-        const binUpperBoundValue = isLastBinInSequenceStatus ? null : roundToTwoDecimalPlaces(minValue + (binSequenceIndexNumber + 1) * singleBinWidthValue);
-
-        generatedBinsResultArray.push({
-            min: binLowerBoundValue,
-            max: binUpperBoundValue,
-            label: binUpperBoundValue !== null ? `${binLowerBoundValue} - ${binUpperBoundValue}` : `${binLowerBoundValue} +`
-        });
-    }
-
-    return generatedBinsResultArray;
-};
-
-/**
- * 函數名稱: generateUnitWidthBins
- * 函數功能: 「系統推薦設定」之「最小單位」模式核心運算——使用者指定一個最小單位寬度 (例如 10)，
- *          自 0 起（資料含負數時自不大於最小值之整數倍起）以該寬度為固定級距依序疊加（0-10、10-20…），
- *          直到涵蓋實際最大值為止；最後一個區間
- *          之上限同樣固定為「不限」(null)，理由與 generateEvenlyDistributedBins 相同。
- *          另設有 MAX_AUTO_GENERATED_BIN_COUNT 安全上限，避免使用者誤填過小的單位寬度
- *          (例如 0.001) 導致無窮或大量迴圈拖垮畫面渲染效能。
- *
- * 輸入參數 (Input): minValue (實際最小值), maxValue (實際最大值), unitWidthValue (單位寬度)
- * 輸出參數 (Output): 無
- * 返回值 (Return): CustomBin[] —— 依序排列之區間陣列；輸入不合法時回傳空陣列
- */
-const generateUnitWidthBins = (minValue: number, maxValue: number, unitWidthValue: number): CustomBin[] => {
-    if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || maxValue <= minValue || !Number.isFinite(unitWidthValue) || unitWidthValue <= 0) {
-        return [];
-    }
-
-    const generatedBinsResultArray: CustomBin[] = [];
-    // ★ 使用者反映（2026-09-29）：「最小單位」改為以輸入值當固定級距、從 0 起算對齊整數倍
-    //   （寬度 10 → 0-10、10-20、20-30…），而非從實際最小值起算（先前會變成 18-28、28-38…）。
-    //   資料含負數時，起點取「不大於最小值的最大整數倍」（例如 -15、寬度 10 → -20），仍對齊級距。
-    //   未含資料的前段級距（例如年齡 0-10）保留，讓日後出現較小數值時仍有區間可歸。
-    let currentBinLowerBoundValue = minValue > 0 ? 0 : Math.floor(minValue / unitWidthValue) * unitWidthValue;
-
-    while (currentBinLowerBoundValue < maxValue && generatedBinsResultArray.length < MAX_AUTO_GENERATED_BIN_COUNT) {
-        const nextBinBoundaryValue = roundToTwoDecimalPlaces(currentBinLowerBoundValue + unitWidthValue);
-        const isLastBinInSequenceStatus = nextBinBoundaryValue >= maxValue || generatedBinsResultArray.length === MAX_AUTO_GENERATED_BIN_COUNT - 1;
-        const binLowerBoundValue = roundToTwoDecimalPlaces(currentBinLowerBoundValue);
-        const binUpperBoundValue = isLastBinInSequenceStatus ? null : roundToTwoDecimalPlaces(nextBinBoundaryValue);
-
-        generatedBinsResultArray.push({
-            min: binLowerBoundValue,
-            max: binUpperBoundValue,
-            label: binUpperBoundValue !== null ? `${binLowerBoundValue} - ${binUpperBoundValue}` : `${binLowerBoundValue} +`
-        });
-
-        currentBinLowerBoundValue = nextBinBoundaryValue;
-    }
-
-    return generatedBinsResultArray;
-};
-
-/**
- * 函數名稱: calculateNiceRoundingUnit
- * 函數功能: 依實際資料最小/最大值，自動計算一個「好讀」的四捨五入捨入單位 (genParam)——採用類似
- *          圖表座標軸刻度常用的「nice number」演算法：先以「大約切成 targetBucketCount 段」估算出
- *          粗略單位寬度，再將該寬度捨入到最接近的 1 / 2 / 5 × 10^n，確保算出來的捨入單位是使用者
- *          容易理解的整數倍數 (例如 5、10、20、50、100)，而非 37、82 這類不好讀的數字。
- *
- * 輸入參數 (Input): minValue (實際最小值), maxValue (實際最大值), targetBucketCount (估算目標段數)
- * 輸出參數 (Output): 無
- * 返回值 (Return): number | undefined —— 計算出之建議捨入單位；輸入不合法 (無範圍) 時回傳 undefined
- */
-const calculateNiceRoundingUnit = (minValue: number, maxValue: number, targetBucketCount: number): number | undefined => {
-    const valueRangeSpanValue = maxValue - minValue;
-
-    if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || valueRangeSpanValue <= 0 || !Number.isFinite(targetBucketCount) || targetBucketCount < 1) {
-        return undefined;
-    }
-
-    const roughBucketWidthValue = valueRangeSpanValue / targetBucketCount;
-    const magnitudeOfTenValue = Math.pow(10, Math.floor(Math.log10(roughBucketWidthValue)));
-    const normalizedWidthValue = roughBucketWidthValue / magnitudeOfTenValue; // 落在 [1, 10) 區間
-
-    let niceNormalizedWidthValue: number;
-    if (normalizedWidthValue < 1.5) niceNormalizedWidthValue = 1;
-    else if (normalizedWidthValue < 3) niceNormalizedWidthValue = 2;
-    else if (normalizedWidthValue < 7) niceNormalizedWidthValue = 5;
-    else niceNormalizedWidthValue = 10;
-
-    return roundToTwoDecimalPlaces(niceNormalizedWidthValue * magnitudeOfTenValue);
-};
-
-/**
- * 函數名稱: applyPreprocessStep
- * 函數功能: 依據選定之單一動作與參數集合，對字串執行對應之預處理轉換。與 Step2_Mapping.tsx 之同名函數
- *           邏輯一致，供本頁「欄位參數設定清單」展開列之即時預覽使用。
- */
-const applyPreprocessStep = (cellValueStr: string, stepItemRecord: PreprocessingRule): string =>
-{
-    const { action: actionTypeStr, params: actionParamsDict } = stepItemRecord;
-
-    switch (actionTypeStr)
-    {
-        case 'trim':
-        {
-            const trimModeStr = String(actionParamsDict.mode || 'edges');
-            return trimModeStr === 'all' ? cellValueStr.replace(/\s+/g, '') : cellValueStr.trim();
-        }
-
-        case 'slice':
-        {
-            const sliceDirectionStr = String(actionParamsDict.direction || 'left');
-            const sliceCountNum = Math.max(0, Number(actionParamsDict.count) || 0);
-
-            if (sliceCountNum === 0) return cellValueStr;
-
-            return sliceDirectionStr === 'left'
-                ? cellValueStr.slice(sliceCountNum)
-                : cellValueStr.slice(0, Math.max(0, cellValueStr.length - sliceCountNum));
-        }
-
-        case 'anchor_truncate':
-        {
-            const anchorCharStr = String(actionParamsDict.anchor || '');
-            const anchorDirectionStr = String(actionParamsDict.direction || 'front');
-            const keepCountNum = Math.max(0, Number(actionParamsDict.keepCount) || 0);
-
-            if (!anchorCharStr) return cellValueStr;
-
-            const anchorIndexNum = anchorDirectionStr === 'front' ? cellValueStr.indexOf(anchorCharStr) : cellValueStr.lastIndexOf(anchorCharStr);
-
-            if (anchorIndexNum === -1) return cellValueStr;
-
-            if (keepCountNum === 0) return '';
-
-            const extraKeepCountNum = keepCountNum - 1; // 總保留字數含錨點本身，鄰近字元數需扣除錨點的 1 個字
-
-            if (anchorDirectionStr === 'front')
-            {
-                const frontPartStr = cellValueStr.slice(Math.max(0, anchorIndexNum - extraKeepCountNum), anchorIndexNum);
-                return frontPartStr + anchorCharStr;
-            }
-
-            const backPartStr = cellValueStr.slice(anchorIndexNum + 1, Math.min(cellValueStr.length, anchorIndexNum + 1 + extraKeepCountNum));
-            return anchorCharStr + backPartStr;
-        }
-
-        case 'type_cast':
-        {
-            const targetTypeStr = String(actionParamsDict.targetType || 'integer');
-
-            if (targetTypeStr === 'boolean')
-            {
-                const normalizedValueStr = cellValueStr.trim().toLowerCase();
-                return ['true', '1', 'yes', 'y'].includes(normalizedValueStr) ? 'true' : 'false';
-            }
-
-            if (targetTypeStr === 'float')
-            {
-                const cleanedFloatStr = cellValueStr.replace(/[^0-9.-]/g, '');
-                const parsedFloatNum = parseFloat(cleanedFloatStr);
-                return Number.isNaN(parsedFloatNum) ? '0' : String(parsedFloatNum);
-            }
-
-            // ★ 修正: 原本以正則表達式移除所有非數字字元 (含小數點) 再轉整數，會將「27.8」誤判為
-            //   字串「278」再轉換，而非先解析為浮點數、四捨五入後才取整數，導致轉換結果嚴重失真
-            //   (例如 27.8 → 278，而非合理的 28)。改為先以浮點數解析，再四捨五入取最接近之整數。
-            const cleanedFloatForIntStr = cellValueStr.replace(/[^0-9.-]/g, '');
-            const parsedFloatForIntNum = parseFloat(cleanedFloatForIntStr);
-            const roundedIntNum = Math.round(parsedFloatForIntNum);
-            return Number.isNaN(roundedIntNum) ? '0' : String(roundedIntNum);
-        }
-
-        case 'normalize':
-        {
-            let normalizedResultStr = cellValueStr;
-
-            if (actionParamsDict.widthMode === 'full_to_half')
-            {
-                normalizedResultStr = normalizedResultStr
-                    .replace(/[！-～]/g, (fullWidthCharStr) => String.fromCharCode(fullWidthCharStr.charCodeAt(0) - FULLWIDTH_CHAR_CODE_OFFSET))
-                    .replace(new RegExp(String.fromCharCode(FULLWIDTH_SPACE_CHAR_CODE), 'g'), ' ');
-            }
-
-            if (actionParamsDict.caseMode === 'upper') normalizedResultStr = normalizedResultStr.toUpperCase();
-            else if (actionParamsDict.caseMode === 'lower') normalizedResultStr = normalizedResultStr.toLowerCase();
-
-            return normalizedResultStr;
-        }
-
-        case 'clamp':
-        {
-            const parsedNumericValue = parseFloat(cellValueStr);
-            if (Number.isNaN(parsedNumericValue)) return cellValueStr;
-
-            const lowerBoundNum = actionParamsDict.min !== undefined ? Number(actionParamsDict.min) : -Infinity;
-            const upperBoundNum = actionParamsDict.max !== undefined ? Number(actionParamsDict.max) : Infinity;
-
-            return String(Math.min(upperBoundNum, Math.max(lowerBoundNum, parsedNumericValue)));
-        }
-
-        case 'hash':
-        {
-            try
-            {
-                const algorithmStr = String(actionParamsDict.algorithm || 'SHA256');
-                const seedModeStr = String(actionParamsDict.seedMode || 'none');
-
-                let seedSuffixStr = '';
-                if (seedModeStr === 'fixed') seedSuffixStr = String(actionParamsDict.seedValue || '');
-                else if (seedModeStr === 'timestamp') seedSuffixStr = String(Date.now());
-
-                const hashInputStr = cellValueStr + seedSuffixStr;
-
-                let calculatedHashResult = '';
-                if (algorithmStr === 'md5') calculatedHashResult = CryptoJS.MD5(hashInputStr).toString();
-                else if (algorithmStr === 'SHA512') calculatedHashResult = CryptoJS.SHA512(hashInputStr).toString();
-                else calculatedHashResult = CryptoJS.SHA256(hashInputStr).toString();
-
-                return calculatedHashResult.substring(0, HASH_PREVIEW_TRUNCATE_LENGTH) + '...';
-            }
-            catch (hashingErrorExecution)
-            {
-                console.error('Hashing error:', hashingErrorExecution);
-                return 'Hash Error';
-            }
-        }
-
-        case 'regex_replace':
-        {
-            const regexPatternStr = String(actionParamsDict.pattern || '');
-            const placeholderStr = actionParamsDict.placeholder !== undefined ? String(actionParamsDict.placeholder) : '***';
-
-            if (!regexPatternStr) return cellValueStr;
-
-            try
-            {
-                const regexMatcherInstance = new RegExp(regexPatternStr, 'g');
-                return cellValueStr.replace(regexMatcherInstance, placeholderStr);
-            }
-            catch
-            {
-                return cellValueStr;
-            }
-        }
-
-        default:
-            return cellValueStr;
-    }
-};
-
-/**
- * 函數名稱: applyPreprocessSteps
- * 函數功能: 依序套用同一欄位之多道預處理策略 (由上而下)，上一步驟之輸出即為下一步驟之輸入。
- */
-const applyPreprocessSteps = (cellValueData: unknown, stepsArray: PreprocessingRule[]): string =>
-{
-    if (cellValueData == null || cellValueData === '')
-    {
-        return DEFAULT_PREPROCESS_SYMBOL;
-    }
-
-    // ★ 修正: 「雜湊」為不可逆之最終處理，一旦套用即視為處理鏈終點；即使因匯入設定檔等途徑，
-    //   使雜湊步驟之後仍存在其他步驟，此處亦不再繼續套用，避免對雜湊後之字串做無意義的二次轉換
-    //   (與 Step2_Mapping.tsx 之同名函數邏輯一致)。
-    let accumulatedResultString = String(cellValueData);
-
-    for (const stepItemRecord of stepsArray)
-    {
-        accumulatedResultString = applyPreprocessStep(accumulatedResultString, stepItemRecord);
-        if (stepItemRecord.action === 'hash') break;
-    }
-
-    return accumulatedResultString;
-};
 
 const buildExportJSON = (fieldsList: FieldDef[], hierarchiesList: HierarchyTable[]): Record<string, unknown> => {
     const currentWorkspaceStoreStateData = useWorkspaceStore.getState();
@@ -1821,13 +1516,8 @@ export default function KAnonymityMapping(): React.ReactElement
             return;
         }
 
-        // 逐一比較求最小／最大值：資料量大（例如 100 萬筆）時 Math.min(...陣列) 會因參數過多而 RangeError。
-        let realMinValue = Infinity;
-        let realMaxValue = -Infinity;
-        for (const numericValue of columnRealNumericValuesArray) {
-            if (numericValue < realMinValue) realMinValue = numericValue;
-            if (numericValue > realMaxValue) realMaxValue = numericValue;
-        }
+        // 逐一比較求最小／最大值（見 utils/binGeneration.ts findNumericMinMax）
+        const { min: realMinValue, max: realMaxValue } = findNumericMinMax(columnRealNumericValuesArray) ?? { min: 0, max: 0 };
 
         if (realMaxValue <= realMinValue) {
             messageApi.warning(
@@ -1840,7 +1530,7 @@ export default function KAnonymityMapping(): React.ReactElement
 
         // 「最小單位」自 0 起算後，若級距過細會在碰到實際資料前就用完區間數上限，先行提醒。
         if (currentFieldAutoFillSettings.mode !== 'even' && currentFieldAutoFillSettings.unitWidth > 0) {
-            const unitModeStartValue = realMinValue > 0 ? 0 : Math.floor(realMinValue / currentFieldAutoFillSettings.unitWidth) * currentFieldAutoFillSettings.unitWidth;
+            const unitModeStartValue = computeUnitModeStartValue(realMinValue, currentFieldAutoFillSettings.unitWidth);
             const requiredBinCountValue = Math.ceil((realMaxValue - unitModeStartValue) / currentFieldAutoFillSettings.unitWidth);
             if (requiredBinCountValue > MAX_AUTO_GENERATED_BIN_COUNT) {
                 messageApi.warning(
@@ -1852,27 +1542,14 @@ export default function KAnonymityMapping(): React.ReactElement
             }
         }
 
-        const generatedBinsResultArray = currentFieldAutoFillSettings.mode === 'even'
-            ? generateEvenlyDistributedBins(realMinValue, realMaxValue, currentFieldAutoFillSettings.binCount)
-            : generateUnitWidthBins(realMinValue, realMaxValue, currentFieldAutoFillSettings.unitWidth);
-
-        // ★ 使用者反映（2026-09-29）：自動產生的區間原本從「實際資料最小值」起算（例如年齡 18），
-        //   0 ～ 最小值之間沒有任何區間涵蓋；日後資料若出現比目前最小值更小的數值，會落在所有區間
-        //   之外而泛化失敗。最上方已有「不限」涵蓋大於最大值的情況，下限比照一律延伸到 0。
-        // ★ 使用者反映（2026-09-29，第二版）：先前是在最前面「另外補一格 0 ～ 最小值」，導致設定
-        //   「區間數量 5」實際卻產生 6 格。改為直接把第一格的下限往下延伸到 0（例如 18～32.2 →
-        //   0～32.2），區間數量維持使用者指定的數量；畫面上第一格旁另有註解說明已延伸（見下方
-        //   datasetColumnRealMinValueMap 的使用處）。資料本身含負數或 0（最小值 ≤ 0）時不延伸。
-        if (generatedBinsResultArray.length > 0 && realMinValue > 0) {
-            const firstGeneratedBinRecord = generatedBinsResultArray[0];
-            if (typeof firstGeneratedBinRecord.min === 'number' && firstGeneratedBinRecord.min > 0) {
-                generatedBinsResultArray[0] = {
-                    min: 0,
-                    max: firstGeneratedBinRecord.max,
-                    label: firstGeneratedBinRecord.max !== null ? `0 - ${firstGeneratedBinRecord.max}` : '0 +'
-                };
-            }
-        }
+        // 「平均分配」產生後第一格下限延伸至 0（說明見 utils/binGeneration.ts extendFirstBinLowerBoundToZero）；
+        // 「最小單位」本來就自 0 起算，延伸對它不會有作用。
+        const generatedBinsResultArray = extendFirstBinLowerBoundToZero(
+            currentFieldAutoFillSettings.mode === 'even'
+                ? generateEvenlyDistributedBins(realMinValue, realMaxValue, currentFieldAutoFillSettings.binCount)
+                : generateUnitWidthBins(realMinValue, realMaxValue, currentFieldAutoFillSettings.unitWidth),
+            realMinValue
+        );
 
         if (generatedBinsResultArray.length === 0) {
             messageApi.warning(

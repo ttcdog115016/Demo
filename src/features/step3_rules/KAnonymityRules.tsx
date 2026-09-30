@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
+import { findSmallestSensitiveColumnDistinct, computeEffectiveMaxLValue, isLValueExceedingSensitiveDistinct } from '../../utils/lDiversityLimits';
 
 /**
  * ============================================================================
@@ -156,33 +157,14 @@ export default function KAnonymityRules(): React.ReactElement
     // ★ 2026-09-30：相異值數改讀完整資料集的欄位統計快照（見 datasetProfileSnapshot），不再只看
     //   前 1000 筆預覽；相異值數被截斷（極高基數）時代表遠大於任何合理的 l，視同不限制。
     const rawColumnRolesMapForLUpper = useWorkspaceStore((state) => state.columnRoles);
-    const sensitiveColumnDistinctCountInfo = useMemo((): { columnName: string; distinctCount: number } | null => {
-        const columnPrivacyRolesMapDict = rawColumnRolesMapForLUpper || {};
-        const sensitiveColumnNamesList = Object.keys(columnPrivacyRolesMapDict).filter(
-            (columnNameKey) => columnPrivacyRolesMapDict[columnNameKey] === 'Sensitive'
-        );
-        if (sensitiveColumnNamesList.length === 0 || !datasetProfileSnapshot) return null;
-        let minimumInfo: { columnName: string; distinctCount: number } | null = null;
-        sensitiveColumnNamesList.forEach((sensitiveColumnName) => {
-            const cleanSensitiveName = sensitiveColumnName.replace(/^[\uFEFF\u200B]+/, '').trim();
-            const columnProfile = datasetProfileSnapshot.columns[cleanSensitiveName];
-            if (!columnProfile || columnProfile.isDistinctCountCapped) return;
-            if (!minimumInfo || columnProfile.distinctCount < minimumInfo.distinctCount) {
-                minimumInfo = { columnName: cleanSensitiveName, distinctCount: columnProfile.distinctCount };
-            }
-        });
-        return minimumInfo;
-    }, [rawColumnRolesMapForLUpper, datasetProfileSnapshot]);
-    const sensitiveDistinctUpperLValue = sensitiveColumnDistinctCountInfo
-        ? Math.max(MIN_L_VALUE, sensitiveColumnDistinctCountInfo.distinctCount)
-        : MAX_L_VALUE;
-    // l 值實際可選上限：不得超過敏感欄位相異值數，亦不得超過目前 k 值（K ≥ L 的數學限制）
-    const effectiveMaxLValue = Math.max(
-        MIN_L_VALUE,
-        Math.min(sensitiveDistinctUpperLValue, typeof currentKValue === 'number' && currentKValue >= MIN_L_VALUE ? currentKValue : sensitiveDistinctUpperLValue)
+    // 計算規則見 utils/lDiversityLimits.ts（已抽出並有單元測試）
+    const sensitiveColumnDistinctCountInfo = useMemo(
+        () => findSmallestSensitiveColumnDistinct(rawColumnRolesMapForLUpper, datasetProfileSnapshot),
+        [rawColumnRolesMapForLUpper, datasetProfileSnapshot]
     );
+    const effectiveMaxLValue = computeEffectiveMaxLValue(sensitiveColumnDistinctCountInfo, currentKValue, MIN_L_VALUE, MAX_L_VALUE);
     // 例如匯入的設定檔 l=8，但敏感欄位只有 5 種值：必定無法通過，需提示並擋下一步
-    const isLExceedsSensitiveDistinctStatus = isEnableLDiversityStatus && !!sensitiveColumnDistinctCountInfo && currentLValue > sensitiveColumnDistinctCountInfo.distinctCount;
+    const isLExceedsSensitiveDistinctStatus = isEnableLDiversityStatus && isLValueExceedingSensitiveDistinct(currentLValue, sensitiveColumnDistinctCountInfo);
 
     /**
      * ============================================================================
