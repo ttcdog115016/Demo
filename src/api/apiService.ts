@@ -24,6 +24,8 @@ export interface KAnonymityQualityReport {
   t_passed: boolean;
   suppression_rate_percent: number;
   suppression_unit: 'row' | 'cell';
+  suppressed_count?: number;          // 被抑制的列數（row）或格數（cell）
+  suppression_total_count?: number;   // 抑制率分母：總列數（row）或總格數（cell）
   message: string;
   recommendations: unknown[];
   applied_defaults: unknown[];

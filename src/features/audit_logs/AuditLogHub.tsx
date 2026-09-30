@@ -14,8 +14,8 @@ import {
 } from 'antd';
 import { 
 	SearchOutlined, FileTextOutlined, 
-	CheckCircleOutlined, SafetyCertificateOutlined,
-	ExperimentOutlined, FilterOutlined, DownloadOutlined
+	 SafetyCertificateOutlined,
+	 FilterOutlined, DownloadOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -348,27 +348,6 @@ export default function AuditLogHub(): React.ReactElement
 					</Card>
 				</Col>
 
-				<Col span={8}>
-					<Card variant="borderless" style={{ background: token.colorBgContainer }}>
-						<Statistic 
-							title={translate('audit.stats_passed', '審計合規通過率')} 
-							value={auditDashboardStatistics.passedRatePercent} 
-							prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />} 
-							suffix="%"
-						/>
-					</Card>
-				</Col>
-
-				<Col span={8}>
-					<Card variant="borderless" style={{ background: token.colorBgContainer }}>
-						<Statistic 
-							title={translate('audit.stats_avg_risk', '當前全域殘餘風險平均值')} 
-							value="10.8" 
-							prefix={<ExperimentOutlined style={{ color: '#faad14' }} />} 
-							suffix="%"
-						/>
-					</Card>
-				</Col>
 			</Row>
 
 			<Card variant="borderless" style={{ background: token.colorBgContainer }}>
@@ -501,6 +480,16 @@ export default function AuditLogHub(): React.ReactElement
 										{selectedAuditLog.overallRisk}
 									</span>
 								</Col>
+								{typeof selectedAuditLog.inputRowCount === 'number' && (
+									<Col span={24}>
+										<b style={{ color: '#000000' }}>{translate('audit.report_row_stats', '資料筆數（輸入/刪除/輸出）:')}</b>
+										<div style={{ display: 'flex', flexWrap: 'wrap', columnGap: '16px', marginTop: '4px' }}>
+											<span>{translate('audit.report_row_stats_input', '輸入 {{num}}', { num: selectedAuditLog.inputRowCount.toLocaleString() })}</span>
+											<span style={{ color: '#cf1322' }}>{translate('audit.report_row_stats_deleted', '刪除 {{num}}', { num: selectedAuditLog.deletedRowCount.toLocaleString() })}</span>
+											<span style={{ color: '#389e0d', fontWeight: 'bold' }}>{translate('audit.report_row_stats_output', '輸出 {{num}}', { num: selectedAuditLog.outputRowCount.toLocaleString() })}</span>
+										</div>
+									</Col>
+								)}
 							</Row>
 						</div>
 
@@ -667,7 +656,7 @@ export default function AuditLogHub(): React.ReactElement
 						  * ============================================================================
 						  */}
 						<div className="pdf-page-break avoid-break" style={{ textAlign: 'right', marginTop: '24px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: '12px', color: '#888888', pageBreakInside: 'avoid' }}>
-							{translate('audit.report_sha', '數位防篡改指核 (SHA-256):')} 8f3c7e9a0b12d3e4f56789a0b12c3d4e56789a0b<br/>
+							{translate('audit.report_SHA', '數位防篡改指核 (SHA-256):')} 8f3c7e9a0b12d3e4f56789a0b12c3d4e56789a0b<br/>
 							{translate('audit.report_signature', '系統數位簽章：PRIVACY-APP-AUDIT-ENGINE-V2.0-PASSED')}
 						</div>
 					</div>
