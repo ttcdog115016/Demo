@@ -20,24 +20,17 @@ import {
     WarningFilled, CloseCircleFilled, QuestionCircleOutlined
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
-import Papa from 'papaparse';
 import { useTranslation } from 'react-i18next';
 
-import { useAuthStore } from '../../store/useAuthStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-import { useAuditStore } from '../../store/useAuditStore';
-import { buildBackendSubgroupPayload } from '../../utils/riskSubgroupHelpers';
-import { ensureDatasetProfile } from '../../utils/datasetProfile';
-import { applySensitiveBinningToCsvText } from '../../utils/sensitiveBinning'; // ★ 新增：風險評估「對象族群限定條件」轉換為後端格式
-import { extractCapRequestFailureReasonText, buildCapUnavailableReceipt, countCsvDataRowsForStats } from '../../utils/riskResultHelpers';
-import { resolveKAnonymityRiskColumns, selectKAnonymitySensitiveCandidates, describeKAnonymityHighCardinalityHandling, buildKAnonymityRiskColumnsForCandidate, buildKAnonymityConfigBlockForRisk, selectDifferentialPrivacySensitiveCandidates, describeDifferentialPrivacyHighCardinalityHandling, buildDifferentialPrivacyRiskColumnsForCandidate, buildRiskAttackConfigObject, buildCapConfigObject, createJsonConfigFile, runWorstCaseAttackRounds, runWorstCaseCapRounds, RISK_ATTACK_DEFAULT_PARAMS, type RiskColumnsMap, type HighCardinalitySensitiveInfo } from '../../utils/riskAssessment';
-import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, buildKAnonymityApiOptions, buildDifferentialPrivacyApiOptions, computeDpTotalBudgets, type DpStoreField, type KAnonymityPipelineSettings, type DifferentialPrivacyConfigInput } from '../../utils/pipelineConfig';
+import { RISK_ATTACK_DEFAULT_PARAMS } from '../../utils/riskAssessment';
+import type { DpStoreField } from '../../utils/pipelineConfig';
+import type { KAnonymityQualityReport, DpQualityReport } from '../../api/apiService';
 
-// 引入 API 服務
-import { BACKEND_ERROR_CODE_CATEGORY_MAP, GENERIC_HTTP_STATUS_FALLBACK_MESSAGE, DEBUG_ERRORS_LOCAL_STORAGE_KEY, buildFriendlyErrorDisplayNode, DEBUG_PANEL_ERROR_CODE_OPTIONS } from './backendErrorCatalog';
-import { runKAnonymity, runDifferentialPrivacy, runRiskKAnonymity, runRiskDp, runRiskCap, isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
+import { usePipelineRunner } from './usePipelineRunner';
+import { evaluateComplianceValidity } from './pipeline/pipelineResults';
+import { BACKEND_ERROR_CODE_CATEGORY_MAP, DEBUG_ERRORS_LOCAL_STORAGE_KEY, buildFriendlyErrorDisplayNode, DEBUG_PANEL_ERROR_CODE_OPTIONS } from './backendErrorCatalog';
 
-const SIMULATION_COMPLETION_DELAY_MS = 600;
 const PDF_COMPILATION_DELAY_MS = 400;
 
 
@@ -53,45 +46,8 @@ interface WindowWithHtml2Pdf extends Window
     html2pdf: () => Html2Pdf;
 }
 
-interface SimulationResult 
-{
-    singling: { ori: number; ctrl: number; base: number; risk: number };
-    linkability: { ori: number; ctrl: number; base: number; risk: number };
-    inference: { ori: number; ctrl: number; base: number; risk: number };
-    overallRiskPercent: string;
-}
 
-type PipelinePhase = 'uploading' | 'processing' | 'auditing' | 'completed';
 
-/**
- * 函數名稱: evaluateComplianceValidity
- * 函數功能: 依據後端回傳之品質／預算報告，判斷本次去識別化處理是否真正達到合規標準，
- *           而非不論結果一律顯示「已通過」。K-匿名化採後端回傳之 is_valid (涵蓋抑制率與 k/l/t 檢測)；
- *           差分隱私因預算報告本身無 pass/fail 欄位，改以消耗之 ε 是否超出使用者設定之預算上限判斷。
- *
- * 輸入參數 (Input):
- *   - privacyModeTypeStr (string | null | undefined): 當前隱私保護模式
- *   - reportData (KAnonymityQualityReport | DpQualityReport | null): 後端回傳之報告物件
- *   - budgetLimitEpsilonValue (number): 使用者設定之累積隱私預算門檻上限
- * 返回值 (Return): boolean，true 表示達到合規標準
- */
-const evaluateComplianceValidity = (
-    privacyModeTypeStr: string | null | undefined,
-    reportData: KAnonymityQualityReport | DpQualityReport | null,
-    budgetLimitEpsilonValue: number
-): boolean => {
-    if (!reportData) return true;
-
-    if (privacyModeTypeStr === 'k-anonymity') {
-        return (reportData as KAnonymityQualityReport).is_valid;
-    }
-
-    if (privacyModeTypeStr === 'differential-privacy') {
-        return (reportData as DpQualityReport).consumed_epsilon <= budgetLimitEpsilonValue;
-    }
-
-    return true;
-};
 
 export default function Step4_Result(): React.ReactElement
 {
@@ -100,10 +56,7 @@ export default function Step4_Result(): React.ReactElement
     const { t: translate } = useTranslation();
     const { message: messageApi } = AntdApp.useApp();
 
-    const currentUserSession = useAuthStore((state) => state.user);
-    const addAuditLogAction = useAuditStore((state) => state.addAuditLog);
 
-    const dataFile = useWorkspaceStore((state: unknown) => (state as { dataFile: File | null }).dataFile);
     const datasetColumnsListArray = useWorkspaceStore((state) => state.columns);
     const previewDataRowsListArray = useWorkspaceStore((state) => state.previewData);
 
@@ -132,18 +85,10 @@ export default function Step4_Result(): React.ReactElement
 
     const currentDpFieldsListArray = useWorkspaceStore((state) => state.dpFields);
     const columnPrivacyRolesMapDict = useWorkspaceStore((state) => state.columnRoles);
-    const riskSubgroupFiltersMapDict = useWorkspaceStore((state) => state.riskSubgroupFilters); // ★ 新增：風險評估「對象族群限定條件」
     
-    const rawColumnTypesMapDict = useWorkspaceStore((state) => state.columnTypes);
-    const currentColumnTypesMapDict = useMemo(() => rawColumnTypesMapDict || {}, [rawColumnTypesMapDict]);
 
-    const currentPreprocessingRulesMapDict = useWorkspaceStore((state) => state.preprocessingRules);
     const currentDatasetFileNameString = useWorkspaceStore((state) => state.fileName);
-    const simulatedQueryCountValue = useWorkspaceStore((state) => state.queryCount);
 
-    const step4AnalysisCacheData = useWorkspaceStore((state) => state.step4Cache);
-    const lastRunParametersHashString = useWorkspaceStore((state) => state.lastRunParamsHash);
-    const setStep4CacheAction = useWorkspaceStore((state) => state.setStep4Cache);
 
     const rawKAnonymityFields = useWorkspaceStore((state: unknown) => (state as { kAnonymityFields?: Record<string, unknown>[] }).kAnonymityFields);
     const kAnonymityFieldsList = useMemo(() => rawKAnonymityFields || [], [rawKAnonymityFields]);
@@ -151,156 +96,18 @@ export default function Step4_Result(): React.ReactElement
     const rawKAnonymityHierarchies = useWorkspaceStore((state: unknown) => (state as { kAnonymityHierarchies?: Record<string, unknown>[] }).kAnonymityHierarchies);
     const kAnonymityHierarchiesList = useMemo(() => rawKAnonymityHierarchies || [], [rawKAnonymityHierarchies]);
 
-    const currentParametersHashString = useMemo(
-        () => JSON.stringify({
-            privacyMode: currentPrivacyModeTypeStr, 
-            kValue: currentKValueNumber,
-            lValue: currentLValueNumber,
-            tValue: currentTValueNumber,
-            enableLDiversity: isEnableLDiversityStatus,
-            enableTCloseness: isEnableTClosenessStatus,
-            maxSuppression: currentMaxSuppressionNumber,
-            suppressionMethod: currentSuppressionMethodStr,
-            limitExceededAction: currentLimitExceededActionStr,
-            queryCount: simulatedQueryCountValue,
-            dpFields: currentDpFieldsListArray,
-            columnRoles: columnPrivacyRolesMapDict,
-            columnTypes: currentColumnTypesMapDict,
-            preprocessingRules: currentPreprocessingRulesMapDict,
-            kAnonymityFields: kAnonymityFieldsList,
-            kAnonymityHierarchies: kAnonymityHierarchiesList
-        }),
-        [
-            currentPrivacyModeTypeStr, currentKValueNumber, currentLValueNumber, currentTValueNumber,
-            isEnableLDiversityStatus, isEnableTClosenessStatus, currentMaxSuppressionNumber,
-            currentSuppressionMethodStr, currentLimitExceededActionStr, simulatedQueryCountValue,
-            currentDpFieldsListArray, columnPrivacyRolesMapDict, currentColumnTypesMapDict, currentPreprocessingRulesMapDict,
-            kAnonymityFieldsList, kAnonymityHierarchiesList
-        ]
-    );
 
-    const isAnalysisCacheValidStatus = useMemo(
-        () => step4AnalysisCacheData !== null && lastRunParametersHashString === currentParametersHashString, 
-        [step4AnalysisCacheData, lastRunParametersHashString, currentParametersHashString]
-    );
     
-    const [apiReport, setApiReport] = useState<KAnonymityQualityReport | DpQualityReport | null>(
-        isAnalysisCacheValidStatus && step4AnalysisCacheData?.apiReport ? (step4AnalysisCacheData.apiReport as KAnonymityQualityReport | DpQualityReport) : null
-    );
-
-    // 後端管線本次執行是否真正失敗（例如 422 抑制率超限），用來避免
-    // 在執行失敗時仍顯示「運算完成」的成功／警告橫幅
-    const [pipelineFailedMessage, setPipelineFailedMessage] = useState<ReactNode | null>(null);
-
+    // 畫面專用 state（錯誤卡片測試面板、預覽檢視切換、報告視窗、PDF 匯出）
     // ★ 新增：錯誤卡片測試面板下拉選單目前選擇的錯誤碼，預設選第一個。
     const [debugSelectedErrorCodeStr, setDebugSelectedErrorCodeStr] = useState<string>(DEBUG_PANEL_ERROR_CODE_OPTIONS[0].code);
-
-    const [processedCsvBlob, setProcessedCsvBlob] = useState<Blob | null>(
-        isAnalysisCacheValidStatus && step4AnalysisCacheData 
-            ? ((step4AnalysisCacheData as unknown as Record<string, unknown>).processedCsvBlob as Blob | null) || null 
-            : null
-    );
-
-    // 風險評估（三攻擊 + CAP）真實 API 回傳結果
-    const [attackReportData, setAttackReportData] = useState<AttackReport | null>(null);
-    // ★ CAP 前後對比現在是安全性評估卡片的主要顯示內容，若不隨快照還原，重新整理／切回本頁
-    // 時（命中快取）畫面上會整個看不到，故比照 attackSimulationMetricsData 一併存讀快照。
-    const [capReportData, setCapReportData] = useState<CapReport | null>(
-        isAnalysisCacheValidStatus && step4AnalysisCacheData
-            ? ((step4AnalysisCacheData as unknown as Record<string, unknown>).capReport as CapReport | null) || null
-            : null
-    );
-    // ★ 新增：輸入／刪除／輸出筆數統計快照，同樣需要隨命中快取還原，避免重新整理後消失。
-    const [datasetRowStatsData, setDatasetRowStatsData] = useState<{ input: number; deleted: number; output: number } | null>(
-        isAnalysisCacheValidStatus && step4AnalysisCacheData
-            ? ((step4AnalysisCacheData as unknown as Record<string, unknown>).datasetRowStats as { input: number; deleted: number; output: number } | null) || null
-            : null
-    );
-
-    // ★ 使用者反映（2026-09-22）：K-匿名模式同時把「薪資」(數值型) 與「疾病」(字串型) 都設為
-    //   敏感欄位、輪流執行三攻擊／CAP 時，後端服務直接當機。使用者提供的後端終端機訊息顯示
-    //   sklearn 印出「the number of unique classes is greater than 50% of the number of
-    //   samples...」警告後容器隨即結束——代表三攻擊／CAP 底層引擎把「敏感欄位」的實際值
-    //   直接丟給 sklearn 分類器當 y 標籤，該欄位的值若幾乎每筆都不同（不論數值型連續數字，
-    //   或字串型自由文字，使用者兩者皆已實測會觸發），會讓 sklearn 內部（很可能是分層抽樣
-    //   要求每類別至少 2 筆樣本）丟出未接住的例外，直接讓後端容器當掉。這是後端引擎本身的
-    //   限制、不是前端設定檔問題，故無法從前端修正根本原因；改為在送出請求前，依「實際資料
-    //   的唯一值佔比」（而非欄位型別，因為型別無法可靠預測是否會觸發）偵測每個候選敏感欄位，
-    //   偵測到高風險欄位時預設略過（僅顯示警告，不影響去識別化結果本身），並提供下方「仍要
-    //   強制執行」勾選框，讓使用者在明確知情風險的前提下自行選擇是否仍要送出。
-    // ★ 修正：MainLayout 以 currentStepIndexValue 當 key，切到其他步驟再切回 Step4 會讓本
-    //   元件整個重新掛載；命中快取（isAnalysisCacheValidStatus）時 runFullPipeline 會直接
-    //   略過整段風險評估（含這裡的高唯一值比例偵測），若這兩個 state 不比照 capReportData／
-    //   datasetRowStatsData 一併從快照還原，重新掛載後風險數字雖然正確恢復，解釋「為什麼略過
-    //   ／為什麼被強制執行」的警告與勾選狀態卻會憑空消失，讓使用者誤以為是完整評估結果。
-    const [highCardinalitySensitiveWarningInfo, setHighCardinalitySensitiveWarningInfo] = useState<{ columnName: string; uniqueRatioPercent: number; handling?: 'binned' | 'skipped' | 'forced'; binWidth?: number; binCount?: number }[]>(
-        isAnalysisCacheValidStatus && step4AnalysisCacheData
-            ? ((step4AnalysisCacheData as unknown as Record<string, unknown>).highCardinalitySensitiveWarningInfo as { columnName: string; uniqueRatioPercent: number; handling?: 'binned' | 'skipped' | 'forced'; binWidth?: number; binCount?: number }[] | undefined) || []
-            : []
-    );
-    const [forceRunHighCardinalitySensitiveFieldsStatus, setForceRunHighCardinalitySensitiveFieldsStatus] = useState<boolean>(
-        isAnalysisCacheValidStatus && step4AnalysisCacheData
-            ? Boolean((step4AnalysisCacheData as unknown as Record<string, unknown>).forceRunHighCardinalitySensitiveFields)
-            : false
-    );
-    // ★ 後端工程師回覆（2026-09-29）：sklearn 警告只來自三攻擊中的「推斷性攻擊」——它以準識別欄位為
-    //   特徵、敏感欄位為目標建立「分類」模型，並以預測值與真實值完全相等判定攻擊成功，故敏感欄位
-    //   必須是可列舉的類別型欄位。薪資這類連續數值的相異值數接近資料筆數，等於每個數值各自一類，
-    //   結果不具評估意義，運算量也隨相異值數暴增而跑不完。後端建議把連續數值先分組為級距（例如
-    //   每 5 萬一級）再當敏感欄位。故前端改為：高唯一值比例且「幾乎全為數值」的敏感欄位，送風險
-    //   評估前自動轉換為級距標籤（僅套用在送給 /risk/* 的資料副本，去識別化結果本身不受影響）；
-    //   級距寬度預設自動取整（約分 10 級），使用者可在警告區塊逐欄自訂，此 state 存自訂值。
-    const [sensitiveBinWidthOverridesMap, setSensitiveBinWidthOverridesMap] = useState<Record<string, number>>(
-        isAnalysisCacheValidStatus && step4AnalysisCacheData
-            ? ((step4AnalysisCacheData as unknown as Record<string, unknown>).sensitiveBinWidthOverrides as Record<string, number> | undefined) || {}
-            : {}
-    );
-
-    const [realMaskedDataRows, setRealMaskedDataRows] = useState<Record<string, unknown>[]>([]);
-    // ★ 使用者反映：曾出現「安全性評估／效用評估」已有真實數字，但下方「結果預覽對照」
-    //   卻顯示「無此資料」的不一致畫面。經追查，本檔案內有另一個 useEffect（下方
-    //   「debounce 觸發」邏輯）會在 runFullPipeline 這個 useCallback 參考值改變時
-    //   自動重新呼叫一次；而 runFullPipeline 的相依陣列包含 isAnalysisCacheValidStatus，
-    //   該值會在本次執行「快完成」時（setStep4CacheAction 寫入快取後）翻轉，導致
-    //   runFullPipeline 參考值改變、觸發效果重新執行。雖然目前程式碼在快取生效後
-    //   會擋下「再次真正發送 API 請求」，但為避免萬一其他相依值也在執行期間意外
-    //   改變參考值而造成同一輪管線被重複觸發（例如 CSV 解析中途又被另一輪重置
-    //   清空），這裡加一個「執行中旗標」，確保同一時間只會有一輪 runFullPipeline
-    //   在真正執行，杜絕任何重疊執行造成的狀態互相覆蓋。
-    const isPipelineRunInProgressRef = useRef(false);
-    // ★ 2026-09-30：API 請求可取消、可看上傳進度。每一輪 runFullPipeline 建立一個 AbortController，
-    //   畫面上的「取消運算」按鈕呼叫 abort()，這一輪之後所有進行中的請求都會立即中斷。
-    const pipelineAbortControllerRef = useRef<AbortController | null>(null);
-    const [uploadProgressText, setUploadProgressText] = useState<string | null>(null);
-    const [isPipelineCanceledStatus, setIsPipelineCanceledStatus] = useState<boolean>(false);
-    const handleCancelPipeline = useCallback(() => {
-        pipelineAbortControllerRef.current?.abort();
-    }, []);
-    // ★ 新增：若 processedCsvBlob 明明有內容（bytes > 0），但解析出來的資料列數卻是 0，
-    //   代表後端回傳的 CSV 內容本身可能有非預期格式（例如編碼、分隔符號等問題）。
-    //   過去這種情況畫面上只會安靜地顯示「無此資料」，使用者與工程師都無從得知
-    //   原因。這裡記錄下診斷資訊，若真的發生就直接顯示在畫面上，不用再另外開
-    //   F12 開發者工具才找得到。
-    const [previewParseDiagnosticText, setPreviewParseDiagnosticText] = useState<string | null>(null);
-
     const [previewViewMode, setPreviewViewMode] = useState<'masked' | 'original'>('masked');
     const [isReportModalVisibleStatus, setIsReportModalVisibleStatus] = useState<boolean>(false);
     const [isExportingPdfStatus, setIsExportingPdfStatus] = useState<boolean>(false);
 
     const pdfReportContainerRef = useRef<HTMLDivElement>(null);
     const simulationLogsEndRef = useRef<HTMLDivElement>(null);
-    
-    const [isPipelineCalculatingStatus, setIsPipelineCalculatingStatus] = useState<boolean>(!isAnalysisCacheValidStatus);
-    const [currentPipelinePhaseType, setCurrentPipelinePhaseType] = useState<PipelinePhase>(isAnalysisCacheValidStatus ? 'completed' : 'uploading');
-    const [calculationProgressValue, setCalculationProgressValue] = useState<number>(isAnalysisCacheValidStatus ? 100 : 0);
-    const [systemSimulationLogsList, setSystemSimulationLogsList] = useState<string[]>([]);
-    const [attackSimulationMetricsData, setAttackSimulationMetricsData] = useState<SimulationResult | null>(isAnalysisCacheValidStatus ? step4AnalysisCacheData!.metrics : null);
-    const [auditMetadataObject, setAuditMetadataObject] = useState(
-        () => ({
-            certificateId: isAnalysisCacheValidStatus ? step4AnalysisCacheData!.certificateId : `PAC-${Date.now()}`,
-            auditTime: isAnalysisCacheValidStatus ? step4AnalysisCacheData!.auditTime : new Date().toLocaleString()
-        })
-    );
+
 
     const actualProcessedColumnsList = useMemo(
         () => {
@@ -322,79 +129,7 @@ export default function Step4_Result(): React.ReactElement
         [previewDataRowsListArray]
     );
 
-    // ★ 修正：使用者對照瀏覽器開發者工具的實際後端回應後發現，「脫敏結果預覽對照」在
-    //   「K-匿名化後資料／差分隱私加噪後資料」檢視下，表格欄位（姓名、身分證號、生日等
-    //   Identifier 角色欄位）與後端實際回傳的 CSV 完全對不上——後端對 Identifier 欄位是直接
-    //   「整欄移除」而非留空，但先前這裡的欄位清單一律用 actualProcessedColumnsList（即
-    //   Step1 上傳時的「原始資料集全部欄位」），導致畫面上多顯示出 3 個後端根本沒回傳、
-    //   徹頭徹尾是空白的假欄位，容易誤以為是資料遺失或程式出錯。正確做法：「遮罩後」檢視應
-    //   改以實際解析到的 realMaskedDataRows（即後端回傳的 processedCsvBlob 解析結果）之
-    //   欄位鍵值為準，畫面上有幾欄就是後端真的回傳幾欄；「原始明文資料」檢視則維持顯示
-    //   Step1 上傳時的全部原始欄位（該檢視本來就應完整呈現原始資料，兩者用途不同、不可
-    //   混用同一份欄位清單）。
-    const maskedPreviewColumnNamesList = useMemo(
-        () => realMaskedDataRows.length > 0 ? Object.keys(realMaskedDataRows[0]) : actualProcessedColumnsList,
-        [realMaskedDataRows, actualProcessedColumnsList]
-    );
 
-    useEffect(() => {
-        let isMounted = true;
-
-        if (processedCsvBlob) {
-            const processedBlobByteSizeValue = processedCsvBlob.size;
-
-            // ★ 2026-09-30：預覽只需要前 10 筆，改為直接以串流方式解析 Blob（preview: 10 讀到就停），
-            //   不再先把整份去識別化結果（100 萬筆時近 100 MB）整個讀成字串。欄位名稱開頭的
-            //   UTF-8 BOM／零寬字元以 transformHeader 去除，與上傳原始檔時的清理方式一致，
-            //   避免第一個欄位標頭對不上 actualProcessedColumnsList。
-            // 包成 File（不複製內容）才符合 PapaParse 的串流讀檔型別
-            Papa.parse<Record<string, unknown>>(new File([processedCsvBlob], 'processed_preview.csv', { type: 'text/csv' }), {
-                header: true,
-                skipEmptyLines: true,
-                preview: 10,
-                transformHeader: (rawHeaderName: string) => rawHeaderName.replace(/^[\uFEFF\u200B]+/, ''),
-                complete: (results) => {
-                    if (!isMounted) return;
-
-                    setRealMaskedDataRows(results.data as Record<string, unknown>[]);
-
-                    // ★ 診斷：後端明明回傳了有內容的檔案（bytes > 0），但解析出來的資料列數卻是 0，
-                    //   代表 CSV 內容本身可能有非預期格式（例如編碼、分隔符號問題），而不是「後端真的
-                    //   沒有輸出資料」。只在這種情況才讀取檔案開頭一小段內容供診斷顯示。
-                    if (results.data.length === 0 && processedBlobByteSizeValue > 0) {
-                        processedCsvBlob.slice(0, 4096).text().then((headSnippetText) => {
-                            if (!isMounted) return;
-                            const cleanedHeadSnippetText = headSnippetText.replace(/^[\uFEFF\u200B]+/, '');
-                            if (cleanedHeadSnippetText.trim().length === 0) { setPreviewParseDiagnosticText(null); return; }
-                            const diagnosticDetailText =
-                                `後端回傳檔案大小：${processedBlobByteSizeValue} bytes；` +
-                                `解析錯誤數：${results.errors.length}` +
-                                (results.errors.length > 0 ? `（第一筆：${JSON.stringify(results.errors[0])}）` : '') +
-                                `；內容開頭前 200 字：${cleanedHeadSnippetText.slice(0, 200)}`;
-                            console.error('⚠️ 結果預覽對照：後端有回傳資料，但解析後資料列數為 0。', diagnosticDetailText);
-                            setPreviewParseDiagnosticText(diagnosticDetailText);
-                        }).catch(() => undefined);
-                    } else {
-                        setPreviewParseDiagnosticText(null);
-                    }
-                },
-                error: (error: Error) => {
-                    console.error('Error parsing processed CSV blob:', error);
-                    if (isMounted) {
-                        setPreviewParseDiagnosticText(`CSV 解析發生例外：${error.message}`);
-                    }
-                }
-            });
-        }
-        // ★ processedCsvBlob 變成 null 時（例如下一輪 runFullPipeline 剛重置狀態）
-        //   不在這裡同步呼叫 setState 清空診斷訊息，避免在 Effect 內串連觸發額外
-        //   重新渲染；改為和 setRealMaskedDataRows([]) 一起，於 runFullPipeline
-        //   重置階段（一般函式呼叫情境，非 Effect 內）就地清空即可。
-
-        return () => {
-            isMounted = false;
-        };
-    }, [processedCsvBlob]);
 
     const getCalculatedRole = useCallback(
         (targetColumnNameString: string) =>
@@ -573,679 +308,51 @@ export default function Step4_Result(): React.ReactElement
         [actualProcessedColumnsList, currentDpFieldsListArray, currentPrivacyModeTypeStr, isColumnActuallyDeidentifiedFn]
     );
 
-    const runFullPipeline = useCallback(
-        async (isForceRunTriggered: boolean = false) => 
-        {
-            if (!isForceRunTriggered && isAnalysisCacheValidStatus) return;
-
-            // ★ 防止同一輪管線被重複觸發（例如下方 debounce 觸發用的 useEffect，
-            //   在 isAnalysisCacheValidStatus 於執行「快完成」時翻轉，導致
-            //   runFullPipeline 參考值改變而又被呼叫一次）：若已有一輪正在執行，
-            //   直接忽略這次呼叫，避免兩輪執行同時寫入 processedCsvBlob／
-            //   realMaskedDataRows 等狀態，造成畫面上「部分區塊有資料、部分沒有」
-            //   的不一致結果。
-            if (isPipelineRunInProgressRef.current) {
-                console.warn('⚠️ runFullPipeline 偵測到已有一輪執行中，略過本次重複呼叫。');
-                return;
-            }
-            isPipelineRunInProgressRef.current = true;
-
-            if (!dataFile) {
-                messageApi.error(translate('step4.msg.no_file', '找不到原始資料集，請先回到 Step 1 上傳檔案！'));
-                isPipelineRunInProgressRef.current = false;
-                return;
-            }
-
-            setIsPipelineCalculatingStatus(true);
-            setCalculationProgressValue(0);
-            setCurrentPipelinePhaseType('uploading');
-
-            const pipelineAbortController = new AbortController();
-            pipelineAbortControllerRef.current = pipelineAbortController;
-            setUploadProgressText(null);
-            setIsPipelineCanceledStatus(false);
-            // 上傳進度每變化 1% 才更新一次畫面，避免大檔案上傳時觸發大量重新渲染
-            let lastReportedUploadPercentNumber = -1;
-            const pipelineRequestOptions: ApiRequestOptions = {
-                signal: pipelineAbortController.signal,
-                onUploadProgress: (loadedBytes, totalBytes) => {
-                    const toMegabytesText = (byteCount: number) => (byteCount / 1024 / 1024).toFixed(1);
-                    if (!totalBytes) { setUploadProgressText(`已上傳 ${toMegabytesText(loadedBytes)} MB`); return; }
-                    const uploadPercentNumber = Math.floor((loadedBytes / totalBytes) * 100);
-                    if (uploadPercentNumber === lastReportedUploadPercentNumber) return;
-                    lastReportedUploadPercentNumber = uploadPercentNumber;
-                    setUploadProgressText(uploadPercentNumber >= 100
-                        ? `已上傳 ${toMegabytesText(totalBytes)} MB，等待後端回應…`
-                        : `上傳中 ${toMegabytesText(loadedBytes)} / ${toMegabytesText(totalBytes)} MB（${uploadPercentNumber}%）`);
-                }
-            };
-            setApiReport(null);
-            setProcessedCsvBlob(null);
-            setRealMaskedDataRows([]);
-            setPreviewParseDiagnosticText(null);
-            setPipelineFailedMessage(null);
-            // ★ 修正：高唯一值比例敏感欄位警告只會在下方 K-匿名分支重新計算並寫入；若使用者從
-            //   「K-匿名（曾觸發警告）」切到差分隱私模式再執行，DP 分支不會呼叫
-            //   setHighCardinalitySensitiveWarningInfo，state 會殘留上一輪 K-匿名的舊警告，讓
-            //   畫面在 DP 模式下顯示不相關的欄位警告。每次開始新的一輪執行時先清空，K-匿名分支
-            //   若偵測到高風險欄位會再重新設定為本次結果。
-            setHighCardinalitySensitiveWarningInfo([]);
-
-            const currentExecutionDateTimeObj = new Date();
-            const generatedNewAuditMetadataObj = {
-                certificateId: `PAC-${currentExecutionDateTimeObj.getTime()}`,
-                auditTime: currentExecutionDateTimeObj.toLocaleString(),
-                auditTimestamp: currentExecutionDateTimeObj.getTime()
-            };
-            setAuditMetadataObject(generatedNewAuditMetadataObj);
-            const formatCurrentTimeForLogString = () => new Date().toLocaleTimeString();
-
-            setSystemSimulationLogsList([
-                translate('step4.log.connect', '[{{time}}] 建立與後端 API 伺服器之連線...', { time: formatCurrentTimeForLogString() }),
-                translate('step4.log.bind', '[{{time}}] 準備動態組裝設定檔與參數', { time: formatCurrentTimeForLogString() })
-            ]);
-
-            try {
-                await new Promise(resolve => setTimeout(resolve, 800));
-                setCalculationProgressValue(30);
-                setCurrentPipelinePhaseType('processing');
-                setSystemSimulationLogsList(prev => [...prev, translate('step4.log.generate_config', '[{{time}}] ⚙️ 產生 JSON 設定檔 (Config) 並請求 Docker 後端...', { time: formatCurrentTimeForLogString() })]);
-
-                let configObject: Record<string, unknown> = {};
-                // K-匿名與差分隱私的設定檔／表單參數組裝邏輯見 utils/pipelineConfig.ts
-                const kAnonymityPipelineSettings: KAnonymityPipelineSettings = {
-                    kValue: currentKValueNumber,
-                    lValue: currentLValueNumber,
-                    tValue: currentTValueNumber,
-                    enableLDiversity: isEnableLDiversityStatus,
-                    enableTCloseness: isEnableTClosenessStatus,
-                    maxSuppression: currentMaxSuppressionNumber,
-                    suppressionMethod: currentSuppressionMethodStr,
-                    cellFillMethod: currentCellFillMethodStr,
-                    limitExceededAction: currentLimitExceededActionStr
-                };
-                const dpPipelineConfigInput: DifferentialPrivacyConfigInput = {
-                    dpFields: currentDpFieldsListArray,
-                    columnTypes: currentColumnTypesMapDict,
-                    accumulatedEpsilon: dpAccumulatedEpsilonValue,
-                    accumulatedDelta: dpAccumulatedDeltaValue,
-                    targetDelta: globalTargetDeltaValue
-                };
-                let finalApiReportData: KAnonymityQualityReport | DpQualityReport | null = null; 
-                let finalCsvBlobData: Blob | null = null; 
-
-                if (currentPrivacyModeTypeStr === 'k-anonymity') {
-                    configObject = buildKAnonymityConfig({
-                        ...kAnonymityPipelineSettings,
-                        processedColumnNames: actualProcessedColumnsList,
-                        kAnonymityFields: kAnonymityFieldsList,
-                        kAnonymityHierarchies: kAnonymityHierarchiesList,
-                        resolveFallbackUiRole: (cleanColumnName) => getCalculatedRole(cleanColumnName).role
-                    });
-                } else if (currentPrivacyModeTypeStr === 'differential-privacy') {
-                    configObject = buildDifferentialPrivacyConfig(dpPipelineConfigInput);
-                }
-
-                console.log(`🔥 傳給後端 (${currentPrivacyModeTypeStr}) 的 JSON Config:`, configObject);
-
-                const jsonString = JSON.stringify(configObject);
-                const configBlob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
-                const configFile = new File([configBlob], 'config.json', { type: 'application/json' });
-
-                const originalFile = dataFile as File;
-                const rawCsvText = await originalFile.text();
-                const cleanedCsvText = rawCsvText.replace(/^[\uFEFF\u200B]+/, '');
-
-                const safeDataFile = new File(
-                    [cleanedCsvText],
-                    'input_dataset.csv',
-                    { type: 'text/csv;charset=utf-8' }
-                );
-                // 去識別化結果（可達上百 MB）的文字內容只讀一次，CAP 分級距與輸出筆數統計共用
-                let processedCsvTextPromise: Promise<string> | null = null;
-                const readProcessedCsvTextOnce = (): Promise<string> => {
-                    if (!processedCsvTextPromise) processedCsvTextPromise = finalCsvBlobData ? finalCsvBlobData.text() : Promise.resolve('');
-                    return processedCsvTextPromise;
-                };
-
-                // ★ 2026-09-30：不再把整份原始 CSV 另外 Papa.parse 成列物件陣列（100 萬筆時非常吃記憶體），
-                //   改用 utils/datasetProfile.ts 整份資料集只掃描一次的欄位統計快照（Step2／Step3 通常已掃描過，
-                //   這裡直接取用）。相異值數被截斷的極高基數欄位，佔比一律視為 1（保守判定為高唯一值）。
-                const datasetProfileForRisk = await ensureDatasetProfile(originalFile);
-
-                // ★ 後端工程師回覆（2026-09-29）：連續數值型敏感欄位改為先分級距再送風險評估（完整說明見上方
-                //   sensitiveBinWidthOverridesMap 狀態宣告處）。級距一律以 0 為原點切齊
-                //   （floor(值 ÷ 寬度) × 寬度），確保原始資料與去識別化資料（CAP 需兩份）用同一套切點。
-                //   非數值的儲存格（空值、抑制後的「*」等）原樣保留不轉換。
-                // 本次實際套用級距的欄位 → 寬度；以及送風險評估用的原始資料副本（未分級距時即 safeDataFile 本身）。
-                const riskEvaluationBinWidthMap: Record<string, number> = {};
-                let riskOriginalDataFile: File = safeDataFile;
-
-                if (currentPrivacyModeTypeStr === 'k-anonymity') {
-                    const apiOptions = buildKAnonymityApiOptions(kAnonymityPipelineSettings);
-					
-					// 👇 加這行！讓它印在 Console 裡！
-					console.log(`🚀 傳給後端 (k-anonymity) 的 Step 3 參數:`, apiOptions);
-
-                    const response = await runKAnonymity(safeDataFile, configFile, apiOptions, pipelineRequestOptions);
-                    
-                    if (!response.success) throw (response.error || new Error('API 請求未成功'));
-                    
-                    const finalReport = response.report || {
-                        is_valid: true, k_passed: true, l_passed: true, t_passed: true, suppression_rate_percent: 0, suppression_unit: 'row' as const, message: '成功完成去識別化處理', recommendations: [], applied_defaults: []
-                    };
-                    setApiReport(finalReport);
-                    finalApiReportData = finalReport; 
-                    
-                    const rawResponse = response as unknown as Record<string, unknown>;
-                    if (rawResponse.blob) finalCsvBlobData = rawResponse.blob as Blob;
-                    else if (rawResponse.data) finalCsvBlobData = new Blob([rawResponse.data as BlobPart], { type: 'text/csv;charset=utf-8;' });
-                    else if (rawResponse.csv) finalCsvBlobData = new Blob([rawResponse.csv as BlobPart], { type: 'text/csv;charset=utf-8;' });
-                    
-                    setProcessedCsvBlob(finalCsvBlobData);
-
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ✅ K-Anonymity API 處理成功！`]);
-                } 
-                else if (currentPrivacyModeTypeStr === 'differential-privacy') {
-                    // ★ 規範對照: 依 Open-PETs API 3-1 節，逐欄 epsilon／delta 一律於 config 設定檔 (column_budgets) 指定，
-                    //   表單參數僅用於跨批次累計 (accumulated_epsilon／accumulated_delta／default_delta)。
-                    // ★ 使用者反映：先前每次執行皆固定以 0 作為累計基準值，等同從未真正累計；現在改為送出
-                    //   dpAccumulatedEpsilonValue／dpAccumulatedDeltaValue（上次執行後留存之累計值），
-                    //   執行成功後再依本次消耗更新累計值，讓多次執行之間的隱私預算真正累加。
-                    const { totalEpsilonBudget, totalDeltaBudget } = computeDpTotalBudgets(currentDpFieldsListArray);
-
-                    const dpApiOptions = buildDifferentialPrivacyApiOptions(dpPipelineConfigInput);
-
-                    const response = await runDifferentialPrivacy(safeDataFile, configFile, dpApiOptions, pipelineRequestOptions);
-
-                    if (!response.success) throw (response.error || new Error('DP API 請求未成功'));
-
-                    const defaultReport = {
-                        consumed_epsilon: totalEpsilonBudget,
-                        consumed_delta: totalDeltaBudget,
-                        accumulated_epsilon: (dpAccumulatedEpsilonValue ?? 0) + totalEpsilonBudget,
-                        accumulated_delta: (dpAccumulatedDeltaValue ?? 0) + totalDeltaBudget,
-                        message: '成功完成差分隱私處理',
-                        per_column: []
-                    };
-
-                    const finalReport = response.report || defaultReport;
-
-                    // ★ 後端若有回傳累計值即以後端計算結果為準 (由後端負責跨批次組合定理運算)；
-                    //   否則 (如尚未串接真實後端時的預設報告) 退回本地以「累計基準 + 本次消耗」推算。
-                    const updatedDpAccumulatedEpsilonValue = finalReport.accumulated_epsilon ?? ((dpAccumulatedEpsilonValue ?? 0) + totalEpsilonBudget);
-                    const updatedDpAccumulatedDeltaValue = finalReport.accumulated_delta ?? ((dpAccumulatedDeltaValue ?? 0) + totalDeltaBudget);
-                    useWorkspaceStore.setState({
-                        dpAccumulatedEpsilon: updatedDpAccumulatedEpsilonValue,
-                        dpAccumulatedDelta: updatedDpAccumulatedDeltaValue
-                    });
-
-                    // ★ 使用者反映（2026-09-23）：官方風險評估報告（後端簽發 PDF）裡的「已累計 ε／已累計 δ」
-                    //   一直顯示 0，即使這次執行明明已經消耗了隱私預算。根因是下方三攻擊／CAP 風險評估呼叫
-                    //   /api/v1/risk/dp 時，直接重用最上面建立 configObject 時寫入的 differential_privacy 區塊
-                    //   （見下方 differential_privacy: (configObject as Record<string, unknown>).differential_privacy），
-                    //   但那個區塊裡的 accumulated_epsilon／accumulated_delta 是「本次執行前」的舊累計基準值
-                    //   （原本只是要送給實際去識別化 API 用），執行成功後從未同步更新——風險評估／官方報告
-                    //   拿到的因此永遠是「跑之前」的累計值，而不是「這次跑完、實際產出這份去識別化資料集」
-                    //   之後的最新累計值。這裡把剛算好、也同步寫回 Zustand store 的同一組最新累計值，順便寫回
-                    //   configObject.differential_privacy，讓下方重用它的風險評估／官方報告 API 呼叫都能拿到
-                    //   跑完這次之後的正確累計值。
-                    const dpConfigBlockForRiskReuse = (configObject as Record<string, unknown>).differential_privacy;
-                    if (dpConfigBlockForRiskReuse && typeof dpConfigBlockForRiskReuse === 'object') {
-                        (dpConfigBlockForRiskReuse as Record<string, unknown>).accumulated_epsilon = updatedDpAccumulatedEpsilonValue;
-                        (dpConfigBlockForRiskReuse as Record<string, unknown>).accumulated_delta = updatedDpAccumulatedDeltaValue;
-                    }
-
-                    setApiReport(finalReport);
-                    finalApiReportData = finalReport;
-
-                    const rawResponse = response as unknown as Record<string, unknown>;
-                    if (rawResponse.blob) finalCsvBlobData = rawResponse.blob as Blob;
-                    else if (rawResponse.data) finalCsvBlobData = new Blob([rawResponse.data as BlobPart], { type: 'text/csv;charset=utf-8;' });
-                    else if (rawResponse.csv) finalCsvBlobData = new Blob([rawResponse.csv as BlobPart], { type: 'text/csv;charset=utf-8;' });
-
-                    setProcessedCsvBlob(finalCsvBlobData);
-
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ✅ DP API 處理成功！噪聲已注入。`]);
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] 📊 消耗隱私預算 (Epsilon): ${finalReport.consumed_epsilon}`]);
-                }
-
-                setCalculationProgressValue(65);
-                setCurrentPipelinePhaseType('auditing');
-                setSystemSimulationLogsList(prev => [...prev, translate('step4.log.start_risk', '[{{time}}] 🚀 脫敏完成，啟動真實風險評估（三大攻擊模擬）', { time: formatCurrentTimeForLogString() })]);
-
-                // 候選欄位挑選、設定檔組裝與逐輪取最大值見 utils/riskAssessment.ts（含三攻擊固定參數 RISK_ATTACK_DEFAULT_PARAMS）。
-                // 風險評估「對象族群限定條件」（《設定檔結構與參數說明.pdf》4-3 節）：未設定時為 undefined，設定檔即省略 subgroup。
-                const resolvedRiskSubgroupPayload = buildBackendSubgroupPayload(riskSubgroupFiltersMapDict);
-                const riskDatasetNameText = currentDatasetFileNameString || 'dataset';
-                const appendPipelineLog = (messageText: string) => setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ${messageText}`]);
-
-                let attackReportResult: AttackReport | null = null;
-                let capReportResult: CapReport | null = null;
-                let finalRiskColumnsMap: RiskColumnsMap = {};
-                // 三攻擊與 CAP 都對同一組候選敏感欄位逐一跑一輪、各自取最大值（某欄位三攻擊風險最高，不代表 CAP 也最高）
-                let capCandidateColumnNamesList: string[] = [];
-                let buildCapRiskColumnsMapForCandidateFn: ((candidateSensitiveFieldName: string) => RiskColumnsMap) | null = null;
-                // setState 不會同步更新本次閉包內的 state 變數，寫入 Step4Cache 快照時改讀這個區域變數
-                let finalHighCardinalitySensitiveWarningInfo: HighCardinalitySensitiveInfo[] = [];
-
-                if (currentPrivacyModeTypeStr === 'k-anonymity') {
-                    const { riskColumnsMap, roleResolutionDiagnostics } = resolveKAnonymityRiskColumns({
-                        processedColumnNames: actualProcessedColumnsList,
-                        kAnonymityFields: kAnonymityFieldsList,
-                        resolveFallbackUiRole: (cleanColumnName) => getCalculatedRole(cleanColumnName).role
-                    });
-                    // 敏感欄位 = 0：只警告並略過三攻擊與 CAP；≥ 2：在這幾欄之間輪流當敏感欄位、取最大值
-                    const sensitiveCandidateColumnNamesList = Object.keys(riskColumnsMap).filter(
-                        (colName) => riskColumnsMap[colName].role === 'sensitive'
-                    );
-                    const kAnonCandidateSelection = selectKAnonymitySensitiveCandidates({
-                        candidateColumnNames: sensitiveCandidateColumnNamesList,
-                        datasetProfile: datasetProfileForRisk,
-                        binWidthOverrides: sensitiveBinWidthOverridesMap,
-                        forceRunHighCardinality: forceRunHighCardinalitySensitiveFieldsStatus
-                    });
-                    Object.assign(riskEvaluationBinWidthMap, kAnonCandidateSelection.binWidthMap);
-                    if (Object.keys(riskEvaluationBinWidthMap).length > 0) {
-                        riskOriginalDataFile = new File(
-                            [applySensitiveBinningToCsvText(cleanedCsvText, riskEvaluationBinWidthMap)],
-                            'input_dataset.csv',
-                            { type: 'text/csv;charset=utf-8' }
-                        );
-                    }
-                    setHighCardinalitySensitiveWarningInfo(kAnonCandidateSelection.highCardinalityInfo);
-                    finalHighCardinalitySensitiveWarningInfo = kAnonCandidateSelection.highCardinalityInfo;
-                    describeKAnonymityHighCardinalityHandling(kAnonCandidateSelection.highCardinalityInfo).forEach(appendPipelineLog);
-
-                    const effectiveSensitiveCandidateColumnNamesList = kAnonCandidateSelection.effectiveCandidateColumnNames;
-                    const buildKAnonRiskColumnsMapForCandidate = (candidateSensitiveFieldName: string) =>
-                        buildKAnonymityRiskColumnsForCandidate(riskColumnsMap, riskEvaluationBinWidthMap, candidateSensitiveFieldName);
-                    capCandidateColumnNamesList = effectiveSensitiveCandidateColumnNamesList;
-                    buildCapRiskColumnsMapForCandidateFn = buildKAnonRiskColumnsMapForCandidate;
-
-                    if (effectiveSensitiveCandidateColumnNamesList.length === 0) {
-                        if (sensitiveCandidateColumnNamesList.length === 0) {
-                            // 主控台印出逐欄比對快照，F12 → Console 可直接看出為何沒有敏感欄位
-                            console.warn(
-                                '[風險評估／敏感欄位] 目前未偵測到任何「敏感」欄位，本次跳過三攻擊與 CAP 風險評估' +
-                                '（不影響去識別化資料本身的產生與品質分數）。逐欄比對快照：',
-                                roleResolutionDiagnostics,
-                                '目前 kAnonymityFieldsList 原始內容：',
-                                kAnonymityFieldsList
-                            );
-                            appendPipelineLog('⚠️ 未設定「敏感」欄位，已略過三攻擊與 CAP 風險評估（去識別化結果與品質分數不受影響）。');
-                        }
-                        // 全部候選都被判定為高唯一值時，上方已記錄對應訊息，這裡不再重複
-                        finalRiskColumnsMap = riskColumnsMap;
-                    } else {
-                        const kAnonConfigBlockForRisk = buildKAnonymityConfigBlockForRisk((configObject as Record<string, unknown>).k_anonymity, riskEvaluationBinWidthMap);
-                        const kAnonAttackRoundsResult = await runWorstCaseAttackRounds({
-                            candidateColumnNames: effectiveSensitiveCandidateColumnNamesList,
-                            buildColumnsForCandidate: buildKAnonRiskColumnsMapForCandidate,
-                            onRoundStart: (roundIndex, roundCount) => appendPipelineLog(`⏳ 三攻擊風險評估運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`),
-                            runRound: async (columnsForThisRound, candidateSensitiveFieldName) => {
-                                const riskConfigFile = createJsonConfigFile(buildRiskAttackConfigObject({
-                                    version: 'step4_risk_k_anonymity', dataset: riskDatasetNameText, columns: columnsForThisRound,
-                                    subgroup: resolvedRiskSubgroupPayload, privacyBlock: { k_anonymity: kAnonConfigBlockForRisk }
-                                }), 'risk_config.json');
-                                const riskResponse = await runRiskKAnonymity(riskOriginalDataFile, riskConfigFile, pipelineRequestOptions);
-                                if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error(`三攻擊風險評估（K-匿名，以「${candidateSensitiveFieldName}」為敏感欄位）API 請求未成功`));
-                                return riskResponse.report;
-                            }
-                        });
-                        appendPipelineLog('✅ K-匿名三攻擊風險評估運算完成');
-                        attackReportResult = kAnonAttackRoundsResult.worstCaseReport;
-                        finalRiskColumnsMap = kAnonAttackRoundsResult.worstCaseColumns;
-                    }
-                } else if (currentPrivacyModeTypeStr === 'differential-privacy') {
-                    // 輪流把每個候選類別型欄位當敏感欄位（其餘已啟用欄位為間接識別），輪次數 = 候選欄位數
-                    const dpCandidateSelection = selectDifferentialPrivacySensitiveCandidates({
-                        dpFields: currentDpFieldsListArray,
-                        datasetProfile: datasetProfileForRisk,
-                        forceRunHighCardinality: forceRunHighCardinalitySensitiveFieldsStatus
-                    });
-                    if (dpCandidateSelection.highCardinalityInfo.length > 0) {
-                        setHighCardinalitySensitiveWarningInfo(dpCandidateSelection.highCardinalityInfo);
-                        finalHighCardinalitySensitiveWarningInfo = dpCandidateSelection.highCardinalityInfo;
-                        describeDifferentialPrivacyHighCardinalityHandling(dpCandidateSelection.highCardinalityInfo, forceRunHighCardinalitySensitiveFieldsStatus).forEach(appendPipelineLog);
-                    }
-
-                    const buildDpRiskColumnsMapForCandidate = (candidateSensitiveFieldName: string) => buildDifferentialPrivacyRiskColumnsForCandidate(
-                        { enabledFields: dpCandidateSelection.enabledFields, dpFields: currentDpFieldsListArray, columnTypes: currentColumnTypesMapDict },
-                        candidateSensitiveFieldName
-                    );
-                    capCandidateColumnNamesList = dpCandidateSelection.effectiveCandidateColumnNames;
-                    buildCapRiskColumnsMapForCandidateFn = buildDpRiskColumnsMapForCandidate;
-
-                    // 候選被篩到 0 個時迴圈不執行、attackReportResult 維持 null，等同略過三攻擊／CAP
-                    const dpAttackRoundsResult = await runWorstCaseAttackRounds({
-                        candidateColumnNames: dpCandidateSelection.effectiveCandidateColumnNames,
-                        buildColumnsForCandidate: buildDpRiskColumnsMapForCandidate,
-                        onRoundStart: (roundIndex, roundCount) => appendPipelineLog(`⏳ 三攻擊風險評估運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`),
-                        runRound: async (columnsForThisRound, candidateSensitiveFieldName) => {
-                            const riskConfigFile = createJsonConfigFile(buildRiskAttackConfigObject({
-                                version: 'step4_risk_dp', dataset: riskDatasetNameText, columns: columnsForThisRound,
-                                subgroup: resolvedRiskSubgroupPayload, privacyBlock: { differential_privacy: (configObject as Record<string, unknown>).differential_privacy }
-                            }), 'risk_config.json');
-                            const riskResponse = await runRiskDp(safeDataFile, riskConfigFile, pipelineRequestOptions);
-                            if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error(`三攻擊風險評估（DP，以「${candidateSensitiveFieldName}」為敏感欄位）API 請求未成功`));
-                            return riskResponse.report;
-                        }
-                    });
-                    appendPipelineLog('✅ DP 三攻擊風險評估運算完成');
-                    attackReportResult = dpAttackRoundsResult.worstCaseReport;
-                    finalRiskColumnsMap = dpAttackRoundsResult.worstCaseColumns;
-                }
-
-                setAttackReportData(attackReportResult);
-                if (attackReportResult) {
-                    appendPipelineLog(`✅ 三攻擊風險評估完成（指認性 ${(attackReportResult.singling_out_risk * 100).toFixed(1)}%／連結性 ${(attackReportResult.linkability_risk * 100).toFixed(1)}%／推斷性 ${(attackReportResult.inference_risk * 100).toFixed(1)}%）`);
-                }
-
-                // 沒有任何候選敏感欄位時整段 CAP 跳過，不送一次注定被後端擋掉的請求
-                const isRiskCandidateListEmptyStatus =
-                    (currentPrivacyModeTypeStr === 'k-anonymity' || currentPrivacyModeTypeStr === 'differential-privacy') &&
-                    capCandidateColumnNamesList.length === 0;
-
-                if (finalCsvBlobData && !isRiskCandidateListEmptyStatus) {
-                    try {
-                        // 有敏感欄位自動分級距時，CAP 的原始與去識別化兩份資料都要用同一套級距轉換
-                        const processedFileForCap = Object.keys(riskEvaluationBinWidthMap).length > 0
-                            ? new File([applySensitiveBinningToCsvText(await readProcessedCsvTextOnce(), riskEvaluationBinWidthMap)], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' })
-                            : new File([finalCsvBlobData], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' });
-                        const runCapRequest = (capColumnsMap: RiskColumnsMap) => runRiskCap(
-                            riskOriginalDataFile, processedFileForCap,
-                            createJsonConfigFile(buildCapConfigObject({ dataset: riskDatasetNameText, columns: capColumnsMap, subgroup: resolvedRiskSubgroupPayload }), 'cap_config.json'),
-                            pipelineRequestOptions
-                        );
-
-                        if (buildCapRiskColumnsMapForCandidateFn && capCandidateColumnNamesList.length > 0) {
-                            // 逐輪容錯：單一候選欄位失敗只略過該輪；全部失敗時產生「無法評估」收據並顯示真正原因
-                            capReportResult = await runWorstCaseCapRounds({
-                                candidateColumnNames: capCandidateColumnNamesList,
-                                buildColumnsForCandidate: buildCapRiskColumnsMapForCandidateFn,
-                                onRoundStart: (roundIndex, roundCount) => appendPipelineLog(`⏳ CAP 前後對比運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`),
-                                runRound: (capColumnsMap) => runCapRequest(capColumnsMap),
-                                onRoundFailed: (roundIndex, candidateSensitiveFieldName, reasonText, errorPayload) => {
-                                    console.error(`CAP 前後對比（以「${candidateSensitiveFieldName}」為敏感欄位）失敗:`, errorPayload);
-                                    appendPipelineLog(`⚠️ CAP 第 ${roundIndex + 1} 輪（敏感欄位「${candidateSensitiveFieldName}」）失敗，已略過該輪：${reasonText}`);
-                                }
-                            });
-                        } else {
-                            const capResponse = await runCapRequest(finalRiskColumnsMap);
-                            if (!capResponse.success || !capResponse.report) throw (capResponse.error || new Error('CAP 前後對比 API 請求未成功'));
-                            capReportResult = capResponse.report;
-                        }
-
-                        setCapReportData(capReportResult);
-                        // 印出 /api/v1/risk/cap 的完整回應，不必跟 DevTools Network 分頁的快取逐出賽跑
-                        console.log('📩 /api/v1/risk/cap 原始回應內容:', capReportResult);
-                        if (capReportResult && capReportResult.cap_before >= 0 && capReportResult.cap_after >= 0) {
-                            appendPipelineLog(`✅ CAP 前後對比完成（處理前 ${(capReportResult.cap_before * 100).toFixed(1)}% → 處理後 ${(capReportResult.cap_after * 100).toFixed(1)}%）`);
-                        } else if (capReportResult) {
-                            appendPipelineLog(`⚠️ CAP 前後對比未能評估：${capReportResult.message}`);
-                        }
-                    } catch (capErrorPayload) {
-                        if (isApiRequestCanceled(capErrorPayload)) throw capErrorPayload;
-                        console.error('CAP 前後對比失敗:', capErrorPayload);
-                        const capFailureReasonText = extractCapRequestFailureReasonText(capErrorPayload);
-                        capReportResult = buildCapUnavailableReceipt(capFailureReasonText);
-                        setCapReportData(capReportResult);
-                        appendPipelineLog(`⚠️ CAP 前後對比失敗，已略過（不影響風險評估結果）：${capFailureReasonText}`);
-                    }
-                } else if (!finalCsvBlobData) {
-                    appendPipelineLog('⚠️ 未取得脫敏後資料集，略過 CAP 前後對比');
-                }
-
-                // ★ 新增：輸入／刪除／輸出筆數統計——直接數原始上傳 CSV 與後端回傳的去識別化 CSV
-                //   各自的資料列數（扣除表頭），不依賴各報表裡可能經過抽樣、口徑未必一致的統計欄位，
-                //   如此使用者才能直接看到「這次總共刪掉了幾筆」。
-
-                const inputRowCountValue = countCsvDataRowsForStats(cleanedCsvText);
-                let outputRowCountValue = inputRowCountValue;
-                if (finalCsvBlobData) {
-                    try {
-                        const processedCsvTextForRowCount = await readProcessedCsvTextOnce();
-                        outputRowCountValue = countCsvDataRowsForStats(processedCsvTextForRowCount);
-                    } catch (rowCountErrorPayload) {
-                        console.error('計算輸出資料筆數失敗:', rowCountErrorPayload);
-                    }
-                }
-                const deletedRowCountValue = Math.max(0, inputRowCountValue - outputRowCountValue);
-                const generatedDatasetRowStatsObject = { input: inputRowCountValue, deleted: deletedRowCountValue, output: outputRowCountValue };
-                setDatasetRowStatsData(generatedDatasetRowStatsObject);
-
-                setCalculationProgressValue(100);
-                setCurrentPipelinePhaseType('completed');
-
-                const finalSinglingRiskValue = attackReportResult?.singling_out_risk ?? 0;
-                const finalLinkabilityRiskValue = attackReportResult?.linkability_risk ?? 0;
-                const finalInferenceRiskValue = attackReportResult?.inference_risk ?? 0;
-
-                // ★ 依使用者指定之風險量化公式（主要攻擊分數 S_ori／控制攻擊分數 S_ctrl／
-                //   基準攻擊分數 S_base 三者正規化）：
-                //     最終風險分數 = max(0, (S_ori − max(S_ctrl, S_base)) / (1 − max(S_ctrl, S_base)))
-                //   S_ori：後端 /risk/k-anonymity、/risk/dp 回傳之三攻擊成功率（singling_out_risk 等）。
-                //   S_ctrl：控制攻擊分數——後端目前完全沒有回傳「在對照組樣本上跑同一攻擊」的
-                //   成功率，故暫以 0 表示（不可憑空捏造數字），待後端提供對應欄位後再串接真實值。
-                //   S_base：基準攻擊分數——採業界常見之隨機猜測基準 1/樣本數，以後端回傳的
-                //   sample_size 計算；樣本數不明或為 0 時視為無基準可比，直接退回原始值。
-                const CONTROL_ATTACK_RISK_PLACEHOLDER = 0;
-                const naiveBaselineRiskValue = (attackReportResult?.sample_size && attackReportResult.sample_size > 0)
-                    ? 1 / attackReportResult.sample_size
-                    : 0;
-                const riskReferenceFloorValue = Math.max(CONTROL_ATTACK_RISK_PLACEHOLDER, naiveBaselineRiskValue);
-                const normalizeAttackRiskScore = (mainAttackRiskValue: number): number => {
-                    if (riskReferenceFloorValue >= 1) return 0;
-                    return Math.max(0, (mainAttackRiskValue - riskReferenceFloorValue) / (1 - riskReferenceFloorValue));
-                };
-
-                const normalizedSinglingRiskValue = normalizeAttackRiskScore(finalSinglingRiskValue);
-                const normalizedLinkabilityRiskValue = normalizeAttackRiskScore(finalLinkabilityRiskValue);
-                const normalizedInferenceRiskValue = normalizeAttackRiskScore(finalInferenceRiskValue);
-                const calculatedOverallMaxRiskScoreValue = Math.max(normalizedSinglingRiskValue, normalizedLinkabilityRiskValue, normalizedInferenceRiskValue);
-
-                const generatedSimulationMetricsObject: SimulationResult = {
-                    singling: { ori: finalSinglingRiskValue, ctrl: CONTROL_ATTACK_RISK_PLACEHOLDER, base: naiveBaselineRiskValue, risk: normalizedSinglingRiskValue },
-                    linkability: { ori: finalLinkabilityRiskValue, ctrl: CONTROL_ATTACK_RISK_PLACEHOLDER, base: naiveBaselineRiskValue, risk: normalizedLinkabilityRiskValue },
-                    inference: { ori: finalInferenceRiskValue, ctrl: CONTROL_ATTACK_RISK_PLACEHOLDER, base: naiveBaselineRiskValue, risk: normalizedInferenceRiskValue },
-                    overallRiskPercent: (calculatedOverallMaxRiskScoreValue * 100).toFixed(1)
-                };
-
-                // ★ 使用者反映（2026-09-22）：K-匿名「敏感欄位 = 0」時三攻擊整段跳過（attackReportResult
-                //   維持 null），若這裡不論有沒有實際評估都無條件 setAttackSimulationMetricsData 一個
-                //   全部指標為 0 的物件，畫面上「安全性評估」卡片（由 attackSimulationMetricsData 是否
-                //   非 null 控制顯示）反而會照樣顯示「指認/連結/推斷風險皆為 0%」——這跟 CAP 卡片「未評估」
-                //   的處理方式不一致，且會讓使用者誤以為「已經評估過、結果是完全沒風險」，而不是「根本
-                //   沒有評估」。故只在真的有 attackReportResult 時才寫入 state，沒評估時維持 null，
-                //   讓卡片跟著隱藏（與 CAP 目前跳過時的呈現方式一致）。
-                setAttackSimulationMetricsData(attackReportResult ? generatedSimulationMetricsObject : null);
-
-                // ★ 依後端實際回傳之報告判斷是否真正達到合規標準，而非不論結果一律標示為「已通過」
-                const pipelineComplianceValidStatus = evaluateComplianceValidity(currentPrivacyModeTypeStr, finalApiReportData, budgetLimitEpsilonValue);
-
-                setStep4CacheAction(
-                    {
-                        metrics: attackReportResult ? generatedSimulationMetricsObject : null,
-                        certificateId: generatedNewAuditMetadataObj.certificateId,
-                        auditTime: generatedNewAuditMetadataObj.auditTime,
-                        apiReport: finalApiReportData,
-                        processedCsvBlob: finalCsvBlobData,
-                        capReport: capReportResult,
-                        datasetRowStats: generatedDatasetRowStatsObject,
-                        // ★ 一併存讀高唯一值比例敏感欄位警告快照，避免切換步驟重新掛載後消失
-                        // （見上方 highCardinalitySensitiveWarningInfo state 宣告處的完整說明）。
-                        // 這裡讀取的是本次執行過程中賦值的 finalHighCardinalitySensitiveWarningInfo
-                        // 一般變數，而非 state 本身（state 在同一次 render 閉包內不會同步更新）。
-                        highCardinalitySensitiveWarningInfo: finalHighCardinalitySensitiveWarningInfo,
-                        forceRunHighCardinalitySensitiveFields: forceRunHighCardinalitySensitiveFieldsStatus,
-                        sensitiveBinWidthOverrides: sensitiveBinWidthOverridesMap
-                    } as unknown as NonNullable<typeof step4AnalysisCacheData>,
-                    currentParametersHashString
-                );
-
-                const columnRoleSnapshotDict = actualProcessedColumnsList.reduce((accumulatorDict, columnNameString) => {
-                    accumulatorDict[columnNameString] = getCalculatedRole(columnNameString).role;
-                    return accumulatorDict;
-                }, {} as Record<string, string>);
-
-                const identifierMaskStrategySnapshotDict = actualProcessedColumnsList.reduce((accumulatorDict, columnNameString) => {
-                    const { maskStrategy: resolvedMaskStrategyString } = getCalculatedRole(columnNameString);
-                    if (resolvedMaskStrategyString) accumulatorDict[columnNameString] = resolvedMaskStrategyString;
-                    return accumulatorDict;
-                }, {} as Record<string, string>);
-
-                const dpEnabledFieldNamesSnapshotList = (currentDpFieldsListArray || [])
-                    .filter((field: DpStoreField) => field.enabled)
-                    .map((field: DpStoreField) => field.fieldName);
-
-                addAuditLogAction({
-                    certificateId: generatedNewAuditMetadataObj.certificateId,
-                    fileName: currentDatasetFileNameString || 'dataset.csv',
-                    privacyMode: currentPrivacyModeTypeStr || 'k-anonymity',
-                    operator: currentUserSession?.name || 'Admin.Test',
-                    operatorRole: currentUserSession?.role || 'admin',
-                    auditTime: generatedNewAuditMetadataObj.auditTime,
-                    auditTimestamp: generatedNewAuditMetadataObj.auditTimestamp,
-                    parameters: currentPrivacyModeTypeStr === 'k-anonymity' ? `K = ${currentKValueNumber}` : `發布次數 M = ${simulatedQueryCountValue}`,
-                    // ★ 與畫面上實際顯示的「指認/連結/推斷風險」保持一致，改為記錄正規化後的
-                    //   最終風險分數（.risk），而非未扣除基準攻擊分數的原始成功率（.ori）。
-                    // ★ 使用者反映（2026-09-22）：K-匿名「敏感欄位 = 0」時三攻擊整段跳過，此時
-                    //   generatedSimulationMetricsObject 只是用 0 補出來的佔位值，不是真的評估
-                    //   結果，稽核紀錄不應該記成「風險 0%」（看起來像評估過且完全無風險），改記
-                    //   「未評估」文字，才不會誤導事後查閱稽核紀錄的人。
-                    singlingRisk: attackReportResult ? `${(generatedSimulationMetricsObject.singling.risk * 100).toFixed(1)}%` : '未評估',
-                    linkabilityRisk: attackReportResult ? `${(generatedSimulationMetricsObject.linkability.risk * 100).toFixed(1)}%` : '未評估',
-                    inferenceRisk: attackReportResult ? `${(generatedSimulationMetricsObject.inference.risk * 100).toFixed(1)}%` : '未評估',
-                    overallRisk: attackReportResult ? `${generatedSimulationMetricsObject.overallRiskPercent}%` : '未評估',
-                    // ★ 新增：同步輸入／刪除／輸出筆數至審計歷史紀錄，供「稽核紀錄」頁面回溯查閱
-                    inputRowCount: generatedDatasetRowStatsObject.input,
-                    deletedRowCount: generatedDatasetRowStatsObject.deleted,
-                    outputRowCount: generatedDatasetRowStatsObject.output,
-                    status: pipelineComplianceValidStatus ? 'passed' : 'failed',
-                    columnsSnapshot: actualProcessedColumnsList,
-                    columnRoleSnapshot: columnRoleSnapshotDict,
-                    identifierMaskStrategySnapshot: identifierMaskStrategySnapshotDict,
-                    dpEnabledFieldNamesSnapshot: dpEnabledFieldNamesSnapshotList
-                });
-
-                setSystemSimulationLogsList(prev => [...prev, translate('step4.log.finished', '[{{time}}] 🎉 後端管線運算完畢，合規憑證生成完成！', { time: formatCurrentTimeForLogString() })]);
-
-            } catch (error: unknown) {
-                // ★ 2026-09-30：使用者按「取消運算」→ 不是錯誤，不組錯誤卡片、不寫稽核紀錄
-                if (isApiRequestCanceled(error)) {
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏹ 已取消運算`]);
-                    messageApi.info(translate('step4.msg.canceled', '已取消運算'));
-                    setIsPipelineCanceledStatus(true);
-                    setPipelineFailedMessage(translate('step4.msg.canceled_detail', '已取消運算。可調整設定後按「重新運算」再執行一次。'));
-                    return;
-                }
-                // 逾時：請求超過 DEFAULT_API_TIMEOUT_MS 仍未完成
-                if (isApiRequestTimeout(error)) {
-                    const timeoutMinutesNumber = Math.round(DEFAULT_API_TIMEOUT_MS / 60000);
-                    const timeoutMessageText = translate('step4.msg.timeout_detail', '後端超過 {{minutes}} 分鐘沒有回應，已停止等待。可能是資料量太大、後端服務異常，或透過 cloudflared 等通道連線時被中斷；建議改用 localhost 開啟或縮小資料量後重新運算。', { minutes: timeoutMinutesNumber });
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏱ 請求逾時（${timeoutMinutesNumber} 分鐘）`]);
-                    messageApi.error(translate('step4.msg.timeout', '後端回應逾時'));
-                    setPipelineFailedMessage(timeoutMessageText);
-                    return;
-                }
-                let errorMessage = error instanceof Error ? error.message : '請確認 Docker 服務是否正常啟動';
-
-                const anyError = error as Record<string, unknown>;
-                const responseObj = anyError.response as Record<string, unknown> | undefined;
-                let responseData = responseObj?.data as Record<string, unknown> | undefined;
-                const responseHttpStatus = typeof responseObj?.status === 'number' ? responseObj.status as number : undefined;
-
-                // ★ K-匿名化／差分隱私呼叫的 axios responseType 設為 'blob'（成功時要接住輸出檔案），
-                //   代表發生錯誤時 axios 不會自動解析後端回傳的 JSON 錯誤內容——error.response.data
-                //   收到的是尚未讀取的 Blob，底下讀 error_code／message／detail 全部讀不到值，
-                //   導致無論後端實際回傳哪一種錯誤碼，畫面永遠只會顯示最保底的通用訊息
-                //   （實測發現：新增的錯誤碼對照表因此形同虛設）。這裡先把 Blob 讀成文字並嘗試解析成
-                //   JSON，讀不出來就維持原樣、走下面的通用回退訊息。
-                if (typeof Blob !== 'undefined' && responseData instanceof Blob) {
-                    try {
-                        const blobText = await (responseData as unknown as Blob).text();
-                        responseData = JSON.parse(blobText) as Record<string, unknown>;
-                    } catch (blobParseError) {
-                        console.warn('解析錯誤回應的 Blob 內容失敗:', blobParseError);
-                    }
-                }
-
-                const responseErrorCode = typeof responseData?.error_code === 'string' ? responseData.error_code as string : undefined;
-                const responseRecommendationsList = Array.isArray(responseData?.recommendations)
-                    ? (responseData!.recommendations as unknown[]).filter((item): item is string => typeof item === 'string')
-                    : [];
-                // ★ 使用者反映：即使有錯誤代碼對照表，畫面上仍看不到「後端實際回傳的錯誤訊息」，
-                //   每次都得另外開 F12 才查得到。這裡把後端原始 message 獨立取出一份，
-                //   供下面組白話版錯誤卡片時，於錯誤代碼旁一併顯示，不必再開發者工具查看。
-                const backendRawMessageText = typeof responseData?.message === 'string' ? responseData.message : '';
-
-                if (responseErrorCode) {
-                    // ★ 後端一律以 { error_code, message, recommendations? } 回傳業務錯誤（見
-                    //   app/api/errors.py），先前完全沒有讀取 error_code，只能靠 detail／message
-                    //   這兩個較不穩定的欄位猜錯誤內容。這裡依錯誤碼標示類別與狀態碼，
-                    //   讓使用者一眼判斷是設定檔問題、請求問題還是系統問題，而非只看到一句
-                    //   「後端 API 執行失敗，請檢查 Log 訊息」。
-                    const errorCodeInfo = BACKEND_ERROR_CODE_CATEGORY_MAP[responseErrorCode];
-                    const displayStatus = errorCodeInfo?.status ?? responseHttpStatus;
-                    const displayCategory = errorCodeInfo?.category
-                        ?? (displayStatus ? GENERIC_HTTP_STATUS_FALLBACK_MESSAGE[displayStatus] : undefined)
-                        ?? '請求失敗';
-                    const recommendationSuffix = responseRecommendationsList.length > 0
-                        ? `；建議：${responseRecommendationsList.join('、')}`
-                        : '';
-                    errorMessage = `[${responseErrorCode}${displayStatus ? ` · HTTP ${displayStatus}` : ''}] ${displayCategory}`
-                        + (backendRawMessageText ? `：${backendRawMessageText}` : '')
-                        + recommendationSuffix;
-                } else if (responseData?.detail) {
-                    const detail = responseData.detail;
-                    if (Array.isArray(detail)) {
-                        errorMessage = '參數驗證失敗: ' + detail.map((err: Record<string, unknown>) => {
-                            const loc = Array.isArray(err.loc) ? err.loc.join('.') : '';
-                            return `[${loc}] ${err.msg}`;
-                        }).join(' | ');
-                    } else if (typeof detail === 'string') {
-                        errorMessage = `API 錯誤: ${detail}`;
-                    }
-                } else if (responseData?.message) {
-                    errorMessage = String(responseData.message);
-                } else if (responseHttpStatus && GENERIC_HTTP_STATUS_FALLBACK_MESSAGE[responseHttpStatus]) {
-                    // 連 error_code 都沒有（例如反向代理／閘道層直接擋下的錯誤），
-                    // 至少依 HTTP 狀態碼給出通用說明，而不是原始的英文例外訊息。
-                    errorMessage = `[HTTP ${responseHttpStatus}] ${GENERIC_HTTP_STATUS_FALLBACK_MESSAGE[responseHttpStatus]}`;
-                }
-
-                // ★ 上面的 errorMessage（含錯誤代碼／HTTP 狀態碼／後端原始技術訊息）是給工程師
-                //   排查用的，寫進 console 與下方系統紀錄即可。畫面上真正顯示給使用者看的卡片
-                //   （本工具的使用者多半沒有相關技術背景）改用共用函數 buildFriendlyErrorDisplayNode
-                //   組出的「白話版」：只講「發生了什麼」跟「接下來怎麼做」，錯誤代碼收在最下面
-                //   一行小字，僅供需要回報給系統管理員時參考，不干擾主要閱讀內容。抽成共用函數
-                //   是為了讓下方「錯誤卡片測試面板」(?debugErrors=1) 能重現一模一樣的畫面。
-                const friendlyDisplayNode: ReactNode = (responseErrorCode || responseHttpStatus || backendRawMessageText)
-                    ? buildFriendlyErrorDisplayNode({
-                        responseErrorCode,
-                        responseHttpStatus,
-                        backendRawMessageText,
-                        responseRecommendationsList
-                    })
-                    : errorMessage;
-
-                console.error("Pipeline 執行失敗:", error, responseData);
-                setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ❌ 處理失敗: ${errorMessage}`]);
-                messageApi.error(translate('step4.msg.api_failed', '後端 API 執行失敗，請檢查 Log 訊息'));
-                setPipelineFailedMessage(friendlyDisplayNode);
-            } finally {
-                isPipelineRunInProgressRef.current = false;
-                pipelineAbortControllerRef.current = null;
-                setUploadProgressText(null);
-                setTimeout(() => setIsPipelineCalculatingStatus(false), SIMULATION_COMPLETION_DELAY_MS);
-            }
-
-        },
-        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, currentDatasetFileNameString, currentKValueNumber, currentLValueNumber, currentTValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentParametersHashString, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentUserSession, dataFile, getCalculatedRole, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, messageApi, setStep4CacheAction, simulatedQueryCountValue, translate, currentDpFieldsListArray, currentColumnTypesMapDict, kAnonymityHierarchiesList, dpAccumulatedEpsilonValue, dpAccumulatedDeltaValue, globalTargetDeltaValue, riskSubgroupFiltersMapDict, forceRunHighCardinalitySensitiveFieldsStatus, sensitiveBinWidthOverridesMap, currentCellFillMethodStr]
+    // 去識別化／風險評估的執行流程與結果 state 見 usePipelineRunner.ts
+    const {
+        apiReport,
+        processedCsvBlob,
+        realMaskedDataRows,
+        previewParseDiagnosticText,
+        attackReportData,
+        capReportData,
+        datasetRowStatsData,
+        attackSimulationMetricsData,
+        auditMetadataObject,
+        highCardinalitySensitiveWarningInfo,
+        forceRunHighCardinalitySensitiveFieldsStatus,
+        setForceRunHighCardinalitySensitiveFieldsStatus,
+        setSensitiveBinWidthOverridesMap,
+        sensitiveBinWidthOverridesMap,
+        pipelineFailedMessage,
+        setPipelineFailedMessage,
+        isPipelineCalculatingStatus,
+        currentPipelinePhaseType,
+        calculationProgressValue,
+        systemSimulationLogsList,
+        uploadProgressText,
+        isPipelineCanceledStatus,
+        runFullPipeline,
+        handleCancelPipeline
+    } = usePipelineRunner({ actualProcessedColumnsList, getCalculatedRole });
+
+    // ★ 修正：使用者對照瀏覽器開發者工具的實際後端回應後發現，「脫敏結果預覽對照」在
+    //   「K-匿名化後資料／差分隱私加噪後資料」檢視下，表格欄位（姓名、身分證號、生日等
+    //   Identifier 角色欄位）與後端實際回傳的 CSV 完全對不上——後端對 Identifier 欄位是直接
+    //   「整欄移除」而非留空，但先前這裡的欄位清單一律用 actualProcessedColumnsList（即
+    //   Step1 上傳時的「原始資料集全部欄位」），導致畫面上多顯示出 3 個後端根本沒回傳、
+    //   徹頭徹尾是空白的假欄位，容易誤以為是資料遺失或程式出錯。正確做法：「遮罩後」檢視應
+    //   改以實際解析到的 realMaskedDataRows（即後端回傳的 processedCsvBlob 解析結果）之
+    //   欄位鍵值為準，畫面上有幾欄就是後端真的回傳幾欄；「原始明文資料」檢視則維持顯示
+    //   Step1 上傳時的全部原始欄位（該檢視本來就應完整呈現原始資料，兩者用途不同、不可
+    //   混用同一份欄位清單）。
+    const maskedPreviewColumnNamesList = useMemo(
+        () => realMaskedDataRows.length > 0 ? Object.keys(realMaskedDataRows[0]) : actualProcessedColumnsList,
+        [realMaskedDataRows, actualProcessedColumnsList]
     );
 
-    useEffect(() => { if (!isAnalysisCacheValidStatus) { const tId = setTimeout(() => runFullPipeline(false), 0); return () => clearTimeout(tId); } }, [isAnalysisCacheValidStatus, runFullPipeline]);
+
+
     useEffect(() => { if (simulationLogsEndRef.current) simulationLogsEndRef.current.scrollIntoView({ behavior: 'smooth' }); }, [systemSimulationLogsList]);
 
     const kReport = currentPrivacyModeTypeStr === 'k-anonymity' ? (apiReport as KAnonymityQualityReport) : null;

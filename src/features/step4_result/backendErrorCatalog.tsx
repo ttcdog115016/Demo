@@ -222,3 +222,93 @@ export const DEBUG_PANEL_ERROR_CODE_OPTIONS: { code: string; sampleMessage: stri
     },
     { code: 'ERR_INTERNAL', sampleMessage: 'Internal Server Error' }
 ];
+
+/**
+ * 把管線執行失敗的錯誤轉成兩種訊息：errorMessage（含錯誤代碼／HTTP 狀態碼／後端原始訊息，給 console 與系統紀錄）、
+ * displayNode（給畫面上錯誤卡片的白話版）。去識別化 API 以 responseType 'blob' 呼叫，失敗時 response.data 是
+ * 尚未讀取的 Blob，這裡會先讀成文字並嘗試解析成 JSON。2026-09-30 自 Step4_Result.tsx 的 catch 區塊抽出，行為不變。
+ */
+export const describePipelineError = async (error: unknown): Promise<{ errorMessage: string; displayNode: ReactNode; responseData: Record<string, unknown> | undefined }> => {
+    let errorMessage = error instanceof Error ? error.message : '請確認 Docker 服務是否正常啟動';
+
+    const anyError = error as Record<string, unknown>;
+    const responseObj = anyError.response as Record<string, unknown> | undefined;
+    let responseData = responseObj?.data as Record<string, unknown> | undefined;
+    const responseHttpStatus = typeof responseObj?.status === 'number' ? responseObj.status as number : undefined;
+
+    // ★ K-匿名化／差分隱私呼叫的 axios responseType 設為 'blob'（成功時要接住輸出檔案），
+    //   代表發生錯誤時 axios 不會自動解析後端回傳的 JSON 錯誤內容——error.response.data
+    //   收到的是尚未讀取的 Blob，底下讀 error_code／message／detail 全部讀不到值，
+    //   導致無論後端實際回傳哪一種錯誤碼，畫面永遠只會顯示最保底的通用訊息
+    //   （實測發現：新增的錯誤碼對照表因此形同虛設）。這裡先把 Blob 讀成文字並嘗試解析成
+    //   JSON，讀不出來就維持原樣、走下面的通用回退訊息。
+    if (typeof Blob !== 'undefined' && responseData instanceof Blob) {
+        try {
+            const blobText = await (responseData as unknown as Blob).text();
+            responseData = JSON.parse(blobText) as Record<string, unknown>;
+        } catch (blobParseError) {
+            console.warn('解析錯誤回應的 Blob 內容失敗:', blobParseError);
+        }
+    }
+
+    const responseErrorCode = typeof responseData?.error_code === 'string' ? responseData.error_code as string : undefined;
+    const responseRecommendationsList = Array.isArray(responseData?.recommendations)
+        ? (responseData!.recommendations as unknown[]).filter((item): item is string => typeof item === 'string')
+        : [];
+    // ★ 使用者反映：即使有錯誤代碼對照表，畫面上仍看不到「後端實際回傳的錯誤訊息」，
+    //   每次都得另外開 F12 才查得到。這裡把後端原始 message 獨立取出一份，
+    //   供下面組白話版錯誤卡片時，於錯誤代碼旁一併顯示，不必再開發者工具查看。
+    const backendRawMessageText = typeof responseData?.message === 'string' ? responseData.message : '';
+
+    if (responseErrorCode) {
+        // ★ 後端一律以 { error_code, message, recommendations? } 回傳業務錯誤（見
+        //   app/api/errors.py），先前完全沒有讀取 error_code，只能靠 detail／message
+        //   這兩個較不穩定的欄位猜錯誤內容。這裡依錯誤碼標示類別與狀態碼，
+        //   讓使用者一眼判斷是設定檔問題、請求問題還是系統問題，而非只看到一句
+        //   「後端 API 執行失敗，請檢查 Log 訊息」。
+        const errorCodeInfo = BACKEND_ERROR_CODE_CATEGORY_MAP[responseErrorCode];
+        const displayStatus = errorCodeInfo?.status ?? responseHttpStatus;
+        const displayCategory = errorCodeInfo?.category
+            ?? (displayStatus ? GENERIC_HTTP_STATUS_FALLBACK_MESSAGE[displayStatus] : undefined)
+            ?? '請求失敗';
+        const recommendationSuffix = responseRecommendationsList.length > 0
+            ? `；建議：${responseRecommendationsList.join('、')}`
+            : '';
+        errorMessage = `[${responseErrorCode}${displayStatus ? ` · HTTP ${displayStatus}` : ''}] ${displayCategory}`
+            + (backendRawMessageText ? `：${backendRawMessageText}` : '')
+            + recommendationSuffix;
+    } else if (responseData?.detail) {
+        const detail = responseData.detail;
+        if (Array.isArray(detail)) {
+            errorMessage = '參數驗證失敗: ' + detail.map((err: Record<string, unknown>) => {
+                const loc = Array.isArray(err.loc) ? err.loc.join('.') : '';
+                return `[${loc}] ${err.msg}`;
+            }).join(' | ');
+        } else if (typeof detail === 'string') {
+            errorMessage = `API 錯誤: ${detail}`;
+        }
+    } else if (responseData?.message) {
+        errorMessage = String(responseData.message);
+    } else if (responseHttpStatus && GENERIC_HTTP_STATUS_FALLBACK_MESSAGE[responseHttpStatus]) {
+        // 連 error_code 都沒有（例如反向代理／閘道層直接擋下的錯誤），
+        // 至少依 HTTP 狀態碼給出通用說明，而不是原始的英文例外訊息。
+        errorMessage = `[HTTP ${responseHttpStatus}] ${GENERIC_HTTP_STATUS_FALLBACK_MESSAGE[responseHttpStatus]}`;
+    }
+
+    // ★ 上面的 errorMessage（含錯誤代碼／HTTP 狀態碼／後端原始技術訊息）是給工程師
+    //   排查用的，寫進 console 與下方系統紀錄即可。畫面上真正顯示給使用者看的卡片
+    //   （本工具的使用者多半沒有相關技術背景）改用共用函數 buildFriendlyErrorDisplayNode
+    //   組出的「白話版」：只講「發生了什麼」跟「接下來怎麼做」，錯誤代碼收在最下面
+    //   一行小字，僅供需要回報給系統管理員時參考，不干擾主要閱讀內容。抽成共用函數
+    //   是為了讓下方「錯誤卡片測試面板」(?debugErrors=1) 能重現一模一樣的畫面。
+    const friendlyDisplayNode: ReactNode = (responseErrorCode || responseHttpStatus || backendRawMessageText)
+        ? buildFriendlyErrorDisplayNode({
+            responseErrorCode,
+            responseHttpStatus,
+            backendRawMessageText,
+            responseRecommendationsList
+        })
+        : errorMessage;
+
+    return { errorMessage, displayNode: friendlyDisplayNode, responseData };
+};
