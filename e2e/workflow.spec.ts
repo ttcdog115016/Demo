@@ -37,7 +37,7 @@ test.describe('Privacy Toolkit 全流程端到端測試 (E2E Workflow Test)', ()
     await toStep2Btn.click();
 
     // ------------------------------------------------------------------
-    // Step 4: 完成 Step 2 屬性設定 (確保有「準識別碼」)
+    // Step 4: 完成 Step 2 屬性設定 (確保有「間接識別碼」)
     // ------------------------------------------------------------------
     // 1. 優先點擊套用系統推薦設定
     const applyBtn = page.getByRole('button', { name: /套用系統推薦設定/i });
@@ -46,12 +46,12 @@ test.describe('Privacy Toolkit 全流程端到端測試 (E2E Workflow Test)', ()
       await page.waitForTimeout(500);
     }
 
-    // 2. 若有警示提示，點擊第一個下拉選單設定為「準識別碼」
+    // 2. 若有警示提示，點擊第一個下拉選單設定為「間接識別碼」
     try {
       const firstRowSelect = page.locator('.ant-table-row').first().locator('.ant-select').first();
       if (await firstRowSelect.isVisible()) {
         await firstRowSelect.click();
-        const option = page.locator('.ant-select-item-option-content').filter({ hasText: '準識別碼' }).first();
+        const option = page.locator('.ant-select-item-option-content').filter({ hasText: '間接識別碼' }).first();
         await option.waitFor({ state: 'visible', timeout: 2000 });
         await option.click();
       }
