@@ -7,15 +7,20 @@
  * ============================================================================
  */
 
-import React, { useEffect, useRef, useMemo } from 'react';
-import { Card, Table, Select, Button, Input, InputNumber, Switch, Radio, theme, Tabs, Space, Tooltip, Alert, App as AntdApp } from 'antd';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Card, Table, Select, Button, Input, InputNumber, Switch, theme, Tabs, Space, Tooltip, Alert, DatePicker, App as AntdApp } from 'antd';
 import {
 	UploadOutlined, DeleteOutlined, PlusOutlined,
-	DatabaseOutlined, CodeOutlined, ThunderboltOutlined, InfoCircleOutlined, CopyOutlined
+	DatabaseOutlined, CodeOutlined, ThunderboltOutlined, InfoCircleOutlined, CopyOutlined,
+	EyeOutlined, EyeInvisibleOutlined, QuestionCircleOutlined
 } from '@ant-design/icons';
-import { useTranslation } from 'react-i18next'; 
+import { useTranslation } from 'react-i18next';
+import Papa from 'papaparse';
+import dayjs from 'dayjs';
 
 import { useWorkspaceStore, type DPField, type PreprocessingRule } from '../../store/useWorkspaceStore';
+import { DP_COLUMN_BUDGETS_REFERENCE } from '../../config/recommendationReferenceConfig';
+import { isDateTimeDpField, mapOutOfBoundsStrategyToBackend, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
 
 /**
  * 預設隱私參數常數宣告
@@ -24,12 +29,13 @@ const DEFAULT_EPSILON_BUDGET = 1.0;
 const DEFAULT_DELTA_BUDGET = 0.0001;
 const DEFAULT_NUMERIC_LOWER_BOUND = 0;
 const DEFAULT_NUMERIC_UPPER_BOUND = 100;
+const DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY = 'dp-recommend-minmax-parse';
 const BASE_DEFAULT_K_ANONYMITY_VALUE = 5;
 const BASE_DEFAULT_L_DIVERSITY_VALUE = 2;
 const BASE_DEFAULT_T_CLOSENESS_VALUE = 0.15;
 const BASE_DEFAULT_SUPPRESSION_LIMIT = 10;
 const BASE_DEFAULT_SIMULATE_QUERY_COUNT = 1;
-const BASE_DEFAULT_BUDGET_LIMIT = 10;
+const BASE_DEFAULT_BUDGET_LIMIT = 20;
 
 const createInitialDPFields = (columnNameList: string[]): DPField[] => 
 {
@@ -48,17 +54,22 @@ const createInitialDPFields = (columnNameList: string[]): DPField[] =>
 				calculatedDefaultType = 'Categorical';
 			}
 
+			const isDateTimeFieldStatus = calculatedDefaultType === 'Numeric' && isDateTimeDpField(columnNameString);
+
 			return {
 				id: `${columnNameString}-${columnIndex}`,
 				fieldName: columnNameString,
 				fieldType: calculatedDefaultType,
 				enabled: true,
-				isSensitive: false,
 				epsilon: DEFAULT_EPSILON_BUDGET,
 				delta: 1e-5,
-				lowerBound: calculatedDefaultType === 'Numeric' ? DEFAULT_NUMERIC_LOWER_BOUND : (calculatedDefaultType === 'Categorical' ? 0 : undefined),
-				upperBound: calculatedDefaultType === 'Numeric' ? DEFAULT_NUMERIC_UPPER_BOUND : (calculatedDefaultType === 'Categorical' ? 1 : undefined),
-				allowedCategories: calculatedDefaultType === 'Categorical' ? 'auto_extracted' : ''
+				// ★ 日期時間型欄位（如生日）之邊界應為日期字串而非單純數字，故與一般數值型欄位分開給預設值。
+				lowerBound: isDateTimeFieldStatus ? DEFAULT_DATETIME_LOWER_BOUND_DATE : (calculatedDefaultType === 'Numeric' ? DEFAULT_NUMERIC_LOWER_BOUND : (calculatedDefaultType === 'Categorical' ? 0 : undefined)),
+				upperBound: isDateTimeFieldStatus ? new Date().toISOString().slice(0, 10) : (calculatedDefaultType === 'Numeric' ? DEFAULT_NUMERIC_UPPER_BOUND : (calculatedDefaultType === 'Categorical' ? 1 : undefined)),
+				allowedCategories: calculatedDefaultType === 'Categorical' ? 'auto_extracted' : '',
+				outOfBoundsStrategy: 'clip',
+				minimumUnit: (calculatedDefaultType === 'Numeric' && !isDateTimeFieldStatus) ? 1 : undefined,
+				noiseStep: isDateTimeFieldStatus ? 7 : undefined
 			};
 		}
 	);
@@ -71,11 +82,18 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 	const { message: messageApi } = AntdApp.useApp();
 	const { t: translate } = useTranslation(); 
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const [isJsonPreviewVisibleStatus, setIsJsonPreviewVisibleStatus] = useState<boolean>(false);
 
 	const { 
 		columns: datasetColumnsList,
 		dpFields: currentDpFieldsList,
-		setDpFields: setDpFieldsAction
+		setDpFields: setDpFieldsAction,
+		dataFile: uploadedDataFileObj,
+		// ★ 新增: 「每個欄位之實際數值資料陣列」快取，改存放於全域 Store (而非元件內部 state)，
+		//   使 validateProgression.ts 的跨步驟導航門閥亦能讀取到此快取，據以實際阻擋「下一步」
+		//   (詳見下方 datasetColumnNumericValuesMap 之 useEffect 與 boundRangeCoverageInfoMap)。
+		datasetColumnNumericValuesMap,
+		setDatasetColumnNumericValuesMap: setDatasetColumnNumericValuesMapAction
 	} = useWorkspaceStore();
 	
 	const updateFieldLocal = <AttributeKey extends keyof DPField>(targetFieldIdStr: string, attributeKeyName: AttributeKey, newAttributeValueData: DPField[AttributeKey]): void => 
@@ -104,6 +122,108 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		[datasetColumnsList, currentDpFieldsList, setDpFieldsAction]
 	);
 
+	// ★ 新增: 依「資料型態為數值型的邊界防呆檢查」需求，重新完整解析原始上傳檔案 (不受 Step1 上傳時
+	//   1000 筆預覽上限限制)，快取每個欄位之實際有效數值陣列，供下方 boundRangeCoverageInfoMap 計算
+	//   使用者設定的邊界是否涵蓋實際資料範圍、以及超出範圍之筆數/百分比。
+	useEffect(
+		() => 
+		{
+			if (!uploadedDataFileObj) 
+			{
+				setDatasetColumnNumericValuesMapAction({});
+				return;
+			}
+
+			let isEffectCancelledFlag = false;
+
+			Papa.parse(
+				uploadedDataFileObj,
+				{
+					header: true,
+					skipEmptyLines: true,
+					worker: false,
+					complete: (parseResultsObj) => 
+					{
+						if (isEffectCancelledFlag) return;
+
+						const allParsedDataRowsArray = parseResultsObj.data as Record<string, string>[];
+						const parsedColumnNamesArray = parseResultsObj.meta.fields || [];
+						const numericValuesMapResult: Record<string, number[]> = {};
+
+						parsedColumnNamesArray.forEach(
+							(columnNameString) => 
+							{
+								const numericValuesForColumnArray: number[] = [];
+
+								allParsedDataRowsArray.forEach(
+									(dataRowRecord) => 
+									{
+										const rawCellValueStr = dataRowRecord[columnNameString];
+										if (rawCellValueStr === undefined || rawCellValueStr === null || String(rawCellValueStr).trim() === '') return;
+
+										const parsedNumericValue = Number(rawCellValueStr);
+										if (!Number.isFinite(parsedNumericValue)) return;
+
+										numericValuesForColumnArray.push(parsedNumericValue);
+									}
+								);
+
+								if (numericValuesForColumnArray.length > 0) numericValuesMapResult[columnNameString] = numericValuesForColumnArray;
+							}
+						);
+
+						if (!isEffectCancelledFlag) setDatasetColumnNumericValuesMapAction(numericValuesMapResult);
+					},
+					error: () => 
+					{
+						if (!isEffectCancelledFlag) setDatasetColumnNumericValuesMapAction({});
+					}
+				}
+			);
+
+			return () => { isEffectCancelledFlag = true; };
+		}, 
+		[uploadedDataFileObj, setDatasetColumnNumericValuesMapAction]
+	);
+
+	// ★ 新增: 「數值型欄位邊界防呆」——比對使用者設定的邊界 (lowerBound/upperBound) 是否涵蓋實際資料的
+	//   最大/最小值；若有資料落在邊界範圍之外，記錄超出筆數/總筆數/百分比，供下方驗證與表格提示使用。
+	//   已由「下限須嚴格小於上限」檢查涵蓋之欄位 (lowerBound >= upperBound) 不重複判斷，避免混淆。
+	const boundRangeCoverageInfoMap = useMemo(
+		(): Record<string, { outOfRangeCount: number; totalValidValueCount: number; percentText: string }> => 
+		{
+			const infoMap: Record<string, { outOfRangeCount: number; totalValidValueCount: number; percentText: string }> = {};
+
+			currentDpFieldsList.forEach(
+				(fieldItemRecord) => 
+				{
+					if (!fieldItemRecord.enabled || fieldItemRecord.fieldType !== 'Numeric') return;
+					if (fieldItemRecord.lowerBound === undefined || fieldItemRecord.lowerBound === null || fieldItemRecord.upperBound === undefined || fieldItemRecord.upperBound === null) return;
+
+					const lowerBoundNumValue = Number(fieldItemRecord.lowerBound);
+					const upperBoundNumValue = Number(fieldItemRecord.upperBound);
+					if (lowerBoundNumValue >= upperBoundNumValue) return;
+
+					const columnRealValuesArray = datasetColumnNumericValuesMap[fieldItemRecord.fieldName];
+					if (!columnRealValuesArray || columnRealValuesArray.length === 0) return;
+
+					const outOfRangeValuesCount = columnRealValuesArray.filter((numericValue) => numericValue < lowerBoundNumValue || numericValue > upperBoundNumValue).length;
+					if (outOfRangeValuesCount === 0) return;
+
+					const outOfRangePercentNumValue = (outOfRangeValuesCount / columnRealValuesArray.length) * 100;
+					infoMap[fieldItemRecord.id] = {
+						outOfRangeCount: outOfRangeValuesCount,
+						totalValidValueCount: columnRealValuesArray.length,
+						percentText: `${outOfRangePercentNumValue.toFixed(1)}%`
+					};
+				}
+			);
+
+			return infoMap;
+		}, 
+		[currentDpFieldsList, datasetColumnNumericValuesMap]
+	);
+
 	const validationStatusResult = useMemo(
 		() => 
 		{
@@ -125,17 +245,34 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					{
 						currentFieldHasErrorStatus = true;
 					} 
-					else if (fieldItemRecord.fieldType === 'Numeric') 
+					else if (fieldItemRecord.fieldType === 'Numeric')
 					{
-						if (fieldItemRecord.lowerBound === undefined || fieldItemRecord.upperBound === undefined || fieldItemRecord.lowerBound === null || fieldItemRecord.upperBound === null) 
+						if (fieldItemRecord.lowerBound === undefined || fieldItemRecord.upperBound === undefined || fieldItemRecord.lowerBound === null || fieldItemRecord.upperBound === null)
 						{
 							currentFieldHasErrorStatus = true;
-						} 
-						else if (Number(fieldItemRecord.lowerBound) >= Number(fieldItemRecord.upperBound)) 
-						{
-							currentFieldHasErrorStatus = true; 
 						}
-					} 
+						// ★ 日期時間型欄位（如生日）之邊界為日期字串，Number() 轉換會得到 NaN，NaN 比較一律為 false，
+						//   若沿用下方數值比較會讓「下限必須早於上限」的檢查失效；改以日期解析後之時間戳比較。
+						else if (isDateTimeDpField(fieldItemRecord.fieldName))
+						{
+							const lowerDateTimestamp = Date.parse(String(fieldItemRecord.lowerBound));
+							const upperDateTimestamp = Date.parse(String(fieldItemRecord.upperBound));
+							if (Number.isNaN(lowerDateTimestamp) || Number.isNaN(upperDateTimestamp) || lowerDateTimestamp >= upperDateTimestamp)
+							{
+								currentFieldHasErrorStatus = true;
+							}
+						}
+						else if (Number(fieldItemRecord.lowerBound) >= Number(fieldItemRecord.upperBound))
+						{
+							currentFieldHasErrorStatus = true;
+						}
+						// ★ 新增: 邊界範圍未涵蓋實際資料最大/最小值 (例如年齡設 0~1，但實際資料為 20~80)，
+						//   視為與「下限須小於上限」同等級之硬性錯誤，阻擋進入下一步，避免加噪後產生無意義的異常數值。
+						else if (boundRangeCoverageInfoMap[fieldItemRecord.id])
+						{
+							currentFieldHasErrorStatus = true;
+						}
+					}
 					else if (fieldItemRecord.fieldType === 'Text') 
 					{
 						if (!fieldItemRecord.maxLength || Number(fieldItemRecord.maxLength) <= 0) 
@@ -154,7 +291,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 
 			return { isValid: isAllFieldsValidStatus, errorCount: totalErrorFieldsCount };
 		}, 
-		[currentDpFieldsList]
+		[currentDpFieldsList, boundRangeCoverageInfoMap]
 	);
 
 	const generateExportJSON = (): Record<string, unknown> => 
@@ -191,11 +328,13 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			}
 		);
 
-		// ★ 規範對照: 依 Open-PETs API 交付文件 4-2 節之設定檔結構——
-		//   column_budgets 逐欄指定 type／epsilon／delta／sensitivity，未列入的欄位不加噪、原樣保留；
-		//   categorical 採 k-RR 機制，不需 sensitivity。此為後端 /api/v1/dp 實際讀取之設定檔格式，
-		//   與上方 differential_privacy_rules (本工具內部編輯狀態格式) 為互補而非互斥。
-		const generatedColumnBudgetsMap: Record<string, { type: string; epsilon: number; delta: number; sensitivity?: number }> = {};
+		// ★ 規範對照: 依 Open-PETs API 交付文件 4-2 節之設定檔結構（docs/manual_test/config_dp.json）——
+		//   column_budgets 逐欄指定 type／epsilon_budget／delta_budget／sensitivity／clipping_bounds／
+		//   out_of_bounds_strategy／minimum_unit（日期時間型則對應 time_clipping_bounds／
+		//   time_out_of_bounds_strategy／noise_step），未列入的欄位不加噪、原樣保留；categorical 採
+		//   k-RR 機制，不需 sensitivity。此為後端 /api/v1/dp 實際讀取之設定檔格式，須與 Step4 實際送出
+		//   之 column_budgets (Step4_Result.tsx) 保持一致，避免「即時設定檔預覽」與實際送出內容不符。
+		const generatedColumnBudgetsMap: Record<string, Record<string, unknown>> = {};
 
 		currentDpFieldsList.forEach(
 			(fieldItemRecord) => {
@@ -204,17 +343,30 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				if (!fieldItemRecord.fieldName) return;
 
 				const isNumericFieldType = fieldItemRecord.fieldType === 'Numeric';
+				const isDateTimeFieldType = isNumericFieldType && isDateTimeDpField(fieldItemRecord.fieldName);
 				const hasValidNumericBounds = fieldItemRecord.lowerBound !== undefined && fieldItemRecord.lowerBound !== null
 					&& fieldItemRecord.upperBound !== undefined && fieldItemRecord.upperBound !== null;
 
-				generatedColumnBudgetsMap[fieldItemRecord.fieldName] = {
-					type: isNumericFieldType ? 'continuous' : 'categorical',
-					epsilon: fieldItemRecord.epsilon || DEFAULT_EPSILON_BUDGET,
-					delta: fieldItemRecord.delta || 0,
-					...(isNumericFieldType && hasValidNumericBounds
-						? { sensitivity: Number(fieldItemRecord.upperBound) - Number(fieldItemRecord.lowerBound) }
-						: {})
+				const columnBudgetItem: Record<string, unknown> = {
+					type: isNumericFieldType ? (isDateTimeFieldType ? 'datetime' : 'continuous') : 'categorical',
+					epsilon_budget: fieldItemRecord.epsilon || DEFAULT_EPSILON_BUDGET,
+					delta_budget: fieldItemRecord.delta || 0,
 				};
+
+				if (isDateTimeFieldType && hasValidNumericBounds) {
+					columnBudgetItem.sensitivity = Math.round((Date.parse(String(fieldItemRecord.upperBound)) - Date.parse(String(fieldItemRecord.lowerBound))) / 86400000);
+					columnBudgetItem.noise_unit = 'day';
+					if (fieldItemRecord.noiseStep !== undefined) columnBudgetItem.noise_step = fieldItemRecord.noiseStep;
+					columnBudgetItem.time_clipping_bounds = [fieldItemRecord.lowerBound, fieldItemRecord.upperBound];
+					columnBudgetItem.time_out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(fieldItemRecord.outOfBoundsStrategy);
+				} else if (isNumericFieldType && hasValidNumericBounds) {
+					columnBudgetItem.sensitivity = Number(fieldItemRecord.upperBound) - Number(fieldItemRecord.lowerBound);
+					columnBudgetItem.minimum_unit = fieldItemRecord.minimumUnit ?? 1;
+					columnBudgetItem.clipping_bounds = [Number(fieldItemRecord.lowerBound), Number(fieldItemRecord.upperBound)];
+					columnBudgetItem.out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(fieldItemRecord.outOfBoundsStrategy);
+				}
+
+				generatedColumnBudgetsMap[fieldItemRecord.fieldName] = columnBudgetItem;
 			}
 		);
 
@@ -234,9 +386,10 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					k: currentWorkspaceStoreState.kValue ?? BASE_DEFAULT_K_ANONYMITY_VALUE, 
 					l: currentWorkspaceStoreState.lValue ?? BASE_DEFAULT_L_DIVERSITY_VALUE,
 					t: currentWorkspaceStoreState.tValue ?? BASE_DEFAULT_T_CLOSENESS_VALUE,
-					suppression_method: currentWorkspaceStoreState.suppressionMethod ?? "row_suppression", 
-					suppression_limit_percent: currentWorkspaceStoreState.maxSuppression ?? BASE_DEFAULT_SUPPRESSION_LIMIT, 
-					limit_exceeded_action: currentWorkspaceStoreState.limitExceededAction ?? "stop_and_error" 
+					suppression_method: currentWorkspaceStoreState.suppressionMethod ?? "row_suppression",
+					cell_fill: currentWorkspaceStoreState.cellFillMethod ?? "star",
+					suppression_limit_percent: currentWorkspaceStoreState.maxSuppression ?? BASE_DEFAULT_SUPPRESSION_LIMIT,
+					limit_exceeded_action: currentWorkspaceStoreState.limitExceededAction ?? "stop_and_error"
 				},
 				differential_privacy: { 
 					enabled: currentWorkspaceStoreState.privacyMode === 'differential-privacy', 
@@ -252,19 +405,30 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 
 	/**
 	 * 函數名稱: buildSpecCompliantPreviewJSON
-	 * 函數功能: 從 generateExportJSON() 之完整內部狀態結果中，萃取版本／資料集／保護模式等識別性
-	 *           中繼資料，並僅保留符合 Open-PETs API 交付文件 config_dp.json 結構之 column_budgets
-	 *           欄位，供「即時設定檔預覽」呈現，避免混入 field_attributes／differential_privacy_rules
-	 *           等本工具內部專用、後端 /api/v1/dp 並不需要的欄位，造成預覽格式與實際上傳設定檔不一致。
+	 * 函數功能: 從 generateExportJSON() 之完整內部狀態結果中，萃取版本／資料集等識別性中繼資料，
+	 *           並依 Open-PETs API 交付文件 config_dp.json 結構，將 column_budgets 與
+	 *           accumulated_epsilon／accumulated_delta／default_delta 一併包在 differential_privacy
+	 *           區塊底下呈現，供「即時設定檔預覽」使用，避免混入 field_attributes／
+	 *           differential_privacy_rules 等本工具內部專用、後端 /api/v1/dp 並不需要的欄位，
+	 *           造成預覽格式與實際上傳設定檔（Step4_Result.tsx 送出之 config.json）不一致。
+	 *           ★ 使用者反映：預覽先前看不到 accumulated_epsilon／accumulated_delta／default_delta，
+	 *           且 accumulated_epsilon／accumulated_delta 應為「跨批次累計」而非每次固定為 0，此處
+	 *           改為讀取 Step4 每次執行後更新之 dpAccumulatedEpsilon／dpAccumulatedDelta 累計值。
 	 */
 	const buildSpecCompliantPreviewJSON = (): Record<string, unknown> => {
 		const fullExportDataObject = generateExportJSON();
+		const currentWorkspaceStoreState = useWorkspaceStore.getState();
 
 		return {
 			version: fullExportDataObject.version,
 			dataset: fullExportDataObject.dataset,
-			privacy_mode: fullExportDataObject.privacy_mode,
-			column_budgets: fullExportDataObject.column_budgets
+			differential_privacy: {
+				enabled: true,
+				accumulated_epsilon: currentWorkspaceStoreState.dpAccumulatedEpsilon ?? 0,
+				accumulated_delta: currentWorkspaceStoreState.dpAccumulatedDelta ?? 0,
+				default_delta: currentWorkspaceStoreState.targetDelta ?? DEFAULT_DELTA_BUDGET,
+				column_budgets: fullExportDataObject.column_budgets
+			}
 		};
 	};
 
@@ -306,16 +470,33 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					columnIndexMappingDict.set(columnNameStr, indexPositionNumber);
 				});
 
-				if (parsedJsonContentData.column_budgets) 
+				// ★ 相容 Open-PETs API v1.2.0「大包」格式：交付包 config_dp.json 把 column_budgets
+				//   包在 differential_privacy 區塊底下（而非頂層），且每欄用的是 epsilon_budget／
+				//   delta_budget（非本工具早期匯出格式的 epsilon／delta）。先前只認頂層 column_budgets
+				//   且只讀 epsilon／delta，導致交付包設定檔完全匯不進來（連 column_budgets 都找不到），
+				//   即使把路徑對上，各欄預算也會因為欄位名稱對不上而全部退回預設值。
+				const importedDifferentialPrivacyBlock = parsedJsonContentData.differential_privacy;
+				const rawColumnBudgetsSource = importedDifferentialPrivacyBlock?.column_budgets || parsedJsonContentData.column_budgets;
+
+				if (rawColumnBudgetsSource)
 				{
-					const columnBudgetsMap = parsedJsonContentData.column_budgets as Record<string, { type?: string, epsilon?: number, delta?: number, sensitivity?: number, allowed_categories?: string }>;
+					const columnBudgetsMap = rawColumnBudgetsSource as Record<string, {
+						type?: string, epsilon?: number, delta?: number, epsilon_budget?: number, delta_budget?: number,
+						sensitivity?: number, allowed_categories?: string, clipping_bounds?: [number, number],
+						minimum_unit?: number, out_of_bounds_strategy?: string,
+						time_clipping_bounds?: [string, string], time_out_of_bounds_strategy?: string, noise_step?: number
+					}>;
 					const extractedNewFieldsArray: DPField[] = [];
 					const importedColumnNamesList = Object.keys(columnBudgetsMap);
 
 					importedColumnNamesList.forEach((columnName, index) => {
 						const budgetItem = columnBudgetsMap[columnName];
 						const rawType = String(budgetItem.type || '').toLowerCase();
-						
+						// v1.2.0 欄位名稱為 epsilon_budget／delta_budget；仍相容本工具早期匯出格式的 epsilon／delta。
+						const resolvedEpsilonValue = budgetItem.epsilon_budget ?? budgetItem.epsilon;
+						const resolvedDeltaValue = budgetItem.delta_budget ?? budgetItem.delta;
+						const isImportedDateTimeType = rawType === 'datetime';
+
 						let mappedFieldTypeValue: DPField['fieldType'] = 'Unknown';
 						if (['continuous', 'numeric', 'datetime'].includes(rawType)) {
 							mappedFieldTypeValue = 'Numeric';
@@ -325,16 +506,40 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 							mappedFieldTypeValue = 'Text';
 						}
 
-						let calcLowerBound: number | undefined = undefined;
-						let calcUpperBound: number | undefined = undefined;
+						let calcLowerBound: number | string | undefined = undefined;
+						let calcUpperBound: number | string | undefined = undefined;
+						let calcMinimumUnit: number | undefined = undefined;
+						let calcNoiseStep: number | undefined = undefined;
+						let calcOutOfBoundsStrategy: DPField['outOfBoundsStrategy'] = undefined;
 
-						if (mappedFieldTypeValue === 'Numeric') {
-							calcLowerBound = 0;
-							if (budgetItem.sensitivity !== undefined) {
-								calcUpperBound = calcLowerBound + budgetItem.sensitivity;
+						if (mappedFieldTypeValue === 'Numeric' && isImportedDateTimeType) {
+							// ★ config_dp.json v1.2.0 日期時間型欄位之邊界存放於 time_clipping_bounds（ISO 日期字串陣列），
+							//   與連續值欄位的 clipping_bounds（數值陣列）分屬不同欄位名稱，須分開解析。
+							if (Array.isArray(budgetItem.time_clipping_bounds) && budgetItem.time_clipping_bounds.length === 2) {
+								calcLowerBound = budgetItem.time_clipping_bounds[0];
+								calcUpperBound = budgetItem.time_clipping_bounds[1];
 							} else {
-								calcUpperBound = DEFAULT_NUMERIC_UPPER_BOUND;
+								calcLowerBound = DEFAULT_DATETIME_LOWER_BOUND_DATE;
+								calcUpperBound = new Date().toISOString().slice(0, 10);
 							}
+							calcNoiseStep = budgetItem.noise_step;
+							calcOutOfBoundsStrategy = mapOutOfBoundsStrategyFromBackend(budgetItem.time_out_of_bounds_strategy);
+						} else if (mappedFieldTypeValue === 'Numeric') {
+							// ★ config_dp.json v1.2.0 每欄實際上限/下限存放於 clipping_bounds: [下限, 上限]；
+							//   優先直接讀取，避免誤用 sensitivity 推算出與設定檔不符的邊界。
+							if (Array.isArray(budgetItem.clipping_bounds) && budgetItem.clipping_bounds.length === 2) {
+								calcLowerBound = budgetItem.clipping_bounds[0];
+								calcUpperBound = budgetItem.clipping_bounds[1];
+							} else {
+								calcLowerBound = 0;
+								if (budgetItem.sensitivity !== undefined) {
+									calcUpperBound = calcLowerBound + budgetItem.sensitivity;
+								} else {
+									calcUpperBound = DEFAULT_NUMERIC_UPPER_BOUND;
+								}
+							}
+							calcMinimumUnit = budgetItem.minimum_unit ?? 1;
+							calcOutOfBoundsStrategy = mapOutOfBoundsStrategyFromBackend(budgetItem.out_of_bounds_strategy);
 						} else if (mappedFieldTypeValue === 'Categorical') {
 							calcLowerBound = 0;
 							calcUpperBound = 1;
@@ -344,13 +549,16 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 							id: `import_budget_${index}_${Math.random().toString(36).substring(2, 9)}`,
 							fieldName: columnName,
 							fieldType: mappedFieldTypeValue,
-							enabled: mappedFieldTypeValue !== 'Text', 
-							mode: (budgetItem.delta && budgetItem.delta > 0) ? 'epsilon-delta' : 'epsilon',
-							epsilon: budgetItem.epsilon ?? DEFAULT_EPSILON_BUDGET,
-							delta: budgetItem.delta ?? DEFAULT_DELTA_BUDGET,
+							enabled: mappedFieldTypeValue !== 'Text',
+							mode: (resolvedDeltaValue && resolvedDeltaValue > 0) ? 'epsilon-delta' : 'epsilon',
+							epsilon: resolvedEpsilonValue ?? DEFAULT_EPSILON_BUDGET,
+							delta: resolvedDeltaValue ?? DEFAULT_DELTA_BUDGET,
 							lowerBound: calcLowerBound,
 							upperBound: calcUpperBound,
-							allowedCategories: mappedFieldTypeValue === 'Categorical' ? 'auto_extracted' : ''
+							allowedCategories: mappedFieldTypeValue === 'Categorical' ? 'auto_extracted' : '',
+							minimumUnit: calcMinimumUnit,
+							noiseStep: calcNoiseStep,
+							outOfBoundsStrategy: calcOutOfBoundsStrategy
 						});
 					});
 
@@ -525,53 +733,300 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		jsonFileReaderInstance.readAsText(targetUploadedFile);
 	};
 
-	const handleApplyRecommendations = (): void => 
+	// ★ 使用者反映：「自動智慧推薦」按鈕是整份重新推薦，會連帶把其他已經設定好的欄位一併
+	//   改掉，但使用者常常只是想針對「這一個」欄位（例如重複欄名之一、或邊界防呆警示的那一
+	//   欄）重新套用建議設定，不想波及其他已調整過的欄位。原本這段逐欄判斷邏輯是寫在
+	//   handleApplyRecommendations 的 .map() 內、無法單獨對一個欄位呼叫，故抽出成獨立函式，
+	//   供下方 handleApplyRecommendations（套用到全部欄位）與新增的
+	//   handleApplyRecommendationToSingleField（只套用到單一欄位）共用同一份判斷邏輯，
+	//   避免兩處各自維護一份、日後改一邊忘了改另一邊。
+	const computeRecommendedFieldSettings = (fieldItemRecord: DPField): { updatedField: DPField; isUnmatched: boolean } =>
 	{
-		const recommendedUpdatedFieldsArray = currentDpFieldsList.map(
-			(fieldItemRecord) => 
+		const lowerCaseFieldNameStr = fieldItemRecord.fieldName.toLowerCase();
+
+		let recommendedIsEnabledStatus = fieldItemRecord.enabled;
+		let recommendedFieldTypeVal = fieldItemRecord.fieldType;
+		let recommendedLowerBoundVal = fieldItemRecord.lowerBound;
+		let recommendedUpperBoundVal = fieldItemRecord.upperBound;
+		let recommendedEpsilonVal = fieldItemRecord.epsilon;
+		let recommendedDeltaVal = fieldItemRecord.delta;
+		const recommendedOutOfBoundsStrategyVal = fieldItemRecord.outOfBoundsStrategy ?? 'clip';
+		let recommendedMinimumUnitVal = fieldItemRecord.minimumUnit;
+		let recommendedNoiseStepVal = fieldItemRecord.noiseStep;
+		let isFieldUnmatchedStatus = false;
+
+		// ★ 新增: 欄位名稱若與「套用系統推薦設定」參考設定檔 (config_dp.json) 之欄位名稱完全相符，
+		//   優先套用該參考設定所指定之資料型態／Epsilon／Delta／敏感度等參數（使用者已確認採「精確欄位
+		//   名稱優先，其餘用關鍵字判斷」之套用方式），不再套用下方關鍵字判斷。
+		const matchedDpReferenceItem = DP_COLUMN_BUDGETS_REFERENCE[fieldItemRecord.fieldName.trim()];
+
+		if (matchedDpReferenceItem)
+		{
+			// ★ 沿用「匯入配置」JSON 解析既有慣例：continuous／numeric／datetime 一律歸類為數值型，
+			//   並以 sensitivity 推算裁剪上限 (下限固定為 0)；categorical 歸類為類別型；其餘歸類為文字型。
+			const normalizedReferenceTypeStr = String(matchedDpReferenceItem.type || '').toLowerCase();
+			const isReferenceDateTimeType = normalizedReferenceTypeStr === 'datetime';
+
+			if (['continuous', 'numeric', 'datetime'].includes(normalizedReferenceTypeStr))
 			{
-				const lowerCaseFieldNameStr = fieldItemRecord.fieldName.toLowerCase();
+				recommendedFieldTypeVal = 'Numeric';
 
-				let recommendedIsEnabledStatus = fieldItemRecord.enabled;
-				let recommendedFieldTypeVal = fieldItemRecord.fieldType;
-				let recommendedLowerBoundVal = fieldItemRecord.lowerBound;
-				let recommendedUpperBoundVal = fieldItemRecord.upperBound;
-
-				if (/(salary|income|fare|credit|amount|ratio|score|age|mins|count|duration)/.test(lowerCaseFieldNameStr)) 
+				// ★ 日期時間型欄位（如生日）之邊界應為日期字串，不可沿用「0 + sensitivity」的數值推算方式，
+				//   否則會產生 1970-01-01 起算的無意義日期。
+				if (isReferenceDateTimeType)
 				{
-					recommendedIsEnabledStatus = true; 
-					recommendedFieldTypeVal = 'Numeric';
-
-					if (recommendedLowerBoundVal === undefined) recommendedLowerBoundVal = DEFAULT_NUMERIC_LOWER_BOUND;
-					if (recommendedUpperBoundVal === undefined) recommendedUpperBoundVal = DEFAULT_NUMERIC_UPPER_BOUND;
-				} 
-				else if (/(disease|gender|zipcode|station|city|region|type|category)/.test(lowerCaseFieldNameStr)) 
-				{
-					recommendedIsEnabledStatus = true; 
-					recommendedFieldTypeVal = 'Categorical';
-
-					if (recommendedLowerBoundVal === undefined) recommendedLowerBoundVal = 0;
-					if (recommendedUpperBoundVal === undefined) recommendedUpperBoundVal = 1;
-				} 
-				else if (/(id|name|phone|email)/.test(lowerCaseFieldNameStr)) 
-				{
-					recommendedIsEnabledStatus = false; 
-					recommendedFieldTypeVal = 'Text';
+					recommendedLowerBoundVal = DEFAULT_DATETIME_LOWER_BOUND_DATE;
+					recommendedUpperBoundVal = new Date().toISOString().slice(0, 10);
+					recommendedNoiseStepVal = 7;
+					recommendedMinimumUnitVal = undefined;
 				}
+				else
+				{
+					recommendedLowerBoundVal = 0;
+					recommendedUpperBoundVal = matchedDpReferenceItem.sensitivity !== undefined ? recommendedLowerBoundVal + matchedDpReferenceItem.sensitivity : DEFAULT_NUMERIC_UPPER_BOUND;
+					recommendedMinimumUnitVal = 1;
+					recommendedNoiseStepVal = undefined;
+				}
+			}
+			else if (normalizedReferenceTypeStr === 'categorical')
+			{
+				recommendedFieldTypeVal = 'Categorical';
+				recommendedLowerBoundVal = 0;
+				recommendedUpperBoundVal = 1;
+			}
+			else
+			{
+				recommendedFieldTypeVal = 'Text';
+			}
 
-				return { 
-					...fieldItemRecord, 
-					enabled: recommendedIsEnabledStatus, 
-					fieldType: recommendedFieldTypeVal !== 'Unknown' ? recommendedFieldTypeVal : fieldItemRecord.fieldType,
-					lowerBound: recommendedLowerBoundVal,
-					upperBound: recommendedUpperBoundVal,
-					allowedCategories: recommendedFieldTypeVal === 'Categorical' ? 'auto_extracted' : fieldItemRecord.allowedCategories
-				};
+			recommendedIsEnabledStatus = recommendedFieldTypeVal !== 'Text';
+			recommendedEpsilonVal = matchedDpReferenceItem.epsilon;
+			recommendedDeltaVal = matchedDpReferenceItem.delta ?? recommendedDeltaVal;
+		}
+		// ★ 修正: 原本只比對英文關鍵字，中文命名的欄位（如「薪資」「年齡」）完全比對不到，導致這些欄位點擊後仍維持未設定；此處加入常見中文關鍵字以涵蓋中文命名的資料集。
+		// ★ 修正: 使用者更正——生日應歸類為數值型，故將 birthday/生日 等關鍵字移至此數值判斷區間，
+		//   不再與姓名／電話等身分類欄位放在一起。
+		else if (/(salary|income|fare|credit|amount|ratio|score|age|mins|count|duration|birthday|birth_date|dob|薪資|收入|所得|金額|費用|分數|年齡|次數|時長|比率|信用|價格|生日|出生日期)/.test(lowerCaseFieldNameStr))
+		{
+			recommendedIsEnabledStatus = true;
+			recommendedFieldTypeVal = 'Numeric';
+
+			if (isDateTimeDpField(fieldItemRecord.fieldName))
+			{
+				if (recommendedLowerBoundVal === undefined) recommendedLowerBoundVal = DEFAULT_DATETIME_LOWER_BOUND_DATE;
+				if (recommendedUpperBoundVal === undefined) recommendedUpperBoundVal = new Date().toISOString().slice(0, 10);
+				if (recommendedNoiseStepVal === undefined) recommendedNoiseStepVal = 7;
+				recommendedMinimumUnitVal = undefined;
+			}
+			else
+			{
+				if (recommendedLowerBoundVal === undefined) recommendedLowerBoundVal = DEFAULT_NUMERIC_LOWER_BOUND;
+				if (recommendedUpperBoundVal === undefined) recommendedUpperBoundVal = DEFAULT_NUMERIC_UPPER_BOUND;
+				if (recommendedMinimumUnitVal === undefined) recommendedMinimumUnitVal = 1;
+				recommendedNoiseStepVal = undefined;
+			}
+		}
+		else if (/(disease|gender|zipcode|station|city|region|type|category|job|occupation|marital|marriage|疾病|性別|郵遞區號|地區|城市|縣市|國家|類型|類別|職業|婚姻狀況|婚姻)/.test(lowerCaseFieldNameStr))
+		{
+			recommendedIsEnabledStatus = true;
+			recommendedFieldTypeVal = 'Categorical';
+
+			if (recommendedLowerBoundVal === undefined) recommendedLowerBoundVal = 0;
+			if (recommendedUpperBoundVal === undefined) recommendedUpperBoundVal = 1;
+		}
+		else if (/(id|name|phone|email|姓名|電話|手機|信箱|電子郵件|身分證|統一編號|地址)/.test(lowerCaseFieldNameStr))
+		{
+			recommendedIsEnabledStatus = false;
+			recommendedFieldTypeVal = 'Text';
+		}
+		else if (recommendedFieldTypeVal === 'Unknown' || recommendedFieldTypeVal === undefined)
+		{
+			// ★ 新增: 完全比對不到任何關鍵字的欄位記錄下來，供後面決定提示訊息使用。
+			isFieldUnmatchedStatus = true;
+		}
+
+		return {
+			updatedField: {
+				...fieldItemRecord,
+				enabled: recommendedIsEnabledStatus,
+				fieldType: recommendedFieldTypeVal !== 'Unknown' ? recommendedFieldTypeVal : fieldItemRecord.fieldType,
+				epsilon: recommendedEpsilonVal,
+				delta: recommendedDeltaVal,
+				lowerBound: recommendedLowerBoundVal,
+				upperBound: recommendedUpperBoundVal,
+				allowedCategories: recommendedFieldTypeVal === 'Categorical' ? 'auto_extracted' : fieldItemRecord.allowedCategories,
+				outOfBoundsStrategy: recommendedOutOfBoundsStrategyVal,
+				minimumUnit: recommendedMinimumUnitVal,
+				noiseStep: recommendedNoiseStepVal
+			},
+			isUnmatched: isFieldUnmatchedStatus
+		};
+	};
+
+	// ★ 新增：只把「已快取的實際資料範圍」(datasetColumnNumericValuesMap，見上方 useEffect)
+	//   套用到單一數值型欄位，跟「切換資料型態」下拉選單時已採用的做法一致（見下方欄位表格
+	//   fieldType 欄 onChange），不需要重新解析整份檔案，也不會動到其他欄位。日期時間型欄位
+	//   因邊界是日期字串、不會出現在這份數值快取裡，下方判斷會自然跳過、維持原本算出的日期邊界。
+	const applyRealDataBoundsToSingleNumericField = (fieldItemRecord: DPField): DPField =>
+	{
+		if (fieldItemRecord.fieldType !== 'Numeric') return fieldItemRecord;
+
+		const realColumnValuesArray = datasetColumnNumericValuesMap[fieldItemRecord.fieldName];
+		if (!realColumnValuesArray || realColumnValuesArray.length === 0) return fieldItemRecord;
+
+		let computedRealMinValue = realColumnValuesArray[0];
+		let computedRealMaxValue = realColumnValuesArray[0];
+		for (let valueIndexNumber = 1; valueIndexNumber < realColumnValuesArray.length; valueIndexNumber++)
+		{
+			const currentRealValue = realColumnValuesArray[valueIndexNumber];
+			if (currentRealValue < computedRealMinValue) computedRealMinValue = currentRealValue;
+			if (currentRealValue > computedRealMaxValue) computedRealMaxValue = currentRealValue;
+		}
+
+		return { ...fieldItemRecord, lowerBound: Math.floor(computedRealMinValue), upperBound: Math.ceil(computedRealMaxValue) };
+	};
+
+	// ★ 新增：只針對「這一個」欄位重新套用推薦設定（型態／Epsilon／Delta／邊界），完全不
+	//   會動到其他欄位目前的設定，解決使用者反映「只想修好其中一欄，卻得整份重推、把其他
+	//   已經調好的欄位也一起改掉」的問題。
+	const handleApplyRecommendationToSingleField = (targetFieldIdStr: string): void =>
+	{
+		const targetFieldItemRecord = currentDpFieldsList.find(fieldItemRecord => fieldItemRecord.id === targetFieldIdStr);
+		if (!targetFieldItemRecord) return;
+
+		const { updatedField, isUnmatched } = computeRecommendedFieldSettings(targetFieldItemRecord);
+		const finalUpdatedFieldRecord = applyRealDataBoundsToSingleNumericField(updatedField);
+
+		setDpFieldsAction(
+			currentDpFieldsList.map(fieldItemRecord => fieldItemRecord.id === targetFieldIdStr ? finalUpdatedFieldRecord : fieldItemRecord)
+		);
+
+		if (isUnmatched)
+		{
+			messageApi.warning(`系統無法自動判斷「${targetFieldItemRecord.fieldName || '此欄位'}」的資料類型，請手動設定。`);
+		}
+		else
+		{
+			messageApi.success(`已為「${targetFieldItemRecord.fieldName || '此欄位'}」套用建議設定，其他欄位設定不受影響。`);
+		}
+	};
+
+	const handleApplyRecommendations = (): void =>
+	{
+		// ★ 修正: 欄位設定清單為空（例如使用者已刪除所有欄位）時沒有任何可套用推薦設定的對象，
+		//   若仍照原本邏輯繼續往下跑，map() 對空陣列自然毫無變化，但最終仍會顯示籠統的「已成功套用」
+		//   訊息，讓使用者誤以為套用了什麼設定；因此提前判斷並改為提示使用者先新增欄位。
+		if (currentDpFieldsList.length === 0)
+		{
+			messageApi.warning('目前沒有任何欄位可套用推薦設定，請先新增欄位。');
+			return;
+		}
+
+		// ★ 修正: 記錄仍無法自動判斷類型的欄位（例如欄位名稱不在下方關鍵字範圍內），以便提示使用者手動設定，而不是像修正前那樣、畫面毫無變化卻仍顯示「已套用」。
+		const unmatchedFieldNameList: string[] = [];
+
+		const recommendedUpdatedFieldsArray = currentDpFieldsList.map(
+			(fieldItemRecord) =>
+			{
+				const { updatedField, isUnmatched } = computeRecommendedFieldSettings(fieldItemRecord);
+				if (isUnmatched) unmatchedFieldNameList.push(fieldItemRecord.fieldName);
+				return updatedField;
 			}
 		);
-		
-		setDpFieldsAction(recommendedUpdatedFieldsArray);
-		messageApi.success(translate('message.apply_recommend_dp_success', '已成功套用智慧推薦設定！'));
+
+		// ★ DP 模式不再有「敏感欄位」概念（先前假設 DP 風險評估也要求指定敏感欄位，經確認
+		//   為錯誤設定，已移除），故套用推薦設定時直接沿用比對後的欄位陣列，不另作標記。
+		const finalDpFieldsArray = recommendedUpdatedFieldsArray;
+
+		// ★ 修正: 原本不論實際上是否有欄位被變更，都固定顯示「已為所有欄位套用...」的成功訊息；若欄位名稱比對不到任何關鍵字（例如非常見命名用詞），畫面其實毫無變化卻仍顯示成功訊息，會讓使用者誤以為按鈕沒作用。改為依實際比對結果顯示對應訊息。
+		const finalizeAndApplyRecommendedFields = (fieldsArrayToApply: DPField[]): void => 
+		{
+			setDpFieldsAction(fieldsArrayToApply);
+
+			if (unmatchedFieldNameList.length === 0) 
+			{
+				messageApi.success(translate('message.apply_recommend_dp_success', '已成功套用智慧推薦設定！'));
+			} 
+			else if (unmatchedFieldNameList.length === recommendedUpdatedFieldsArray.length) 
+			{
+				messageApi.warning('系統無法自動判斷任何欄位的資料類型，請手動選擇各欄位的「資料型態」。');
+			} 
+			else 
+			{
+				messageApi.warning(`已為部分欄位套用推薦設定，以下欄位無法自動判斷，請手動設定：${unmatchedFieldNameList.join('、')}`);
+			}
+		};
+
+		// ★ 新增: 使用者要求「數值型欄位的邊界／敏感度」預設值一律改為讀取實際資料集的最大／最小值，
+		//   取代先前依關鍵字或參考設定檔 sensitivity 推算、或固定 0~100 之預設值。使用者已確認：
+		//   (1) 不分是否已被參考設定檔比對到，所有數值型欄位皆比照辦理；(2) 為求準確，重新以 Papa.parse
+		//   完整解析整份原始檔案 (不套用 Step1 上傳時的 1000 筆預覽上限 `preview` 參數)，逐欄計算實際最小/
+		//   最大值；解析為非同步過程，故先以載入提示訊息告知使用者，待解析完成後才寫入 Store 並顯示結果訊息。
+		const rawUploadedDataFileObj = useWorkspaceStore.getState().dataFile;
+		const numericFieldNamesNeedingRealBoundsList = finalDpFieldsArray.filter((fieldItemRecord) => fieldItemRecord.fieldType === 'Numeric').map((fieldItemRecord) => fieldItemRecord.fieldName);
+
+		if (!rawUploadedDataFileObj || numericFieldNamesNeedingRealBoundsList.length === 0) 
+		{
+			// 無原始檔案可供重新解析 (理論上不應發生)，或無任何數值型欄位需要計算邊界，則直接套用既有邊界值。
+			finalizeAndApplyRecommendedFields(finalDpFieldsArray);
+			return;
+		}
+
+		messageApi.loading({ content: '正在讀取資料集，計算數值型欄位的實際邊界範圍...', key: DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY, duration: 0 });
+
+		Papa.parse(
+			rawUploadedDataFileObj,
+			{
+				header: true,
+				skipEmptyLines: true,
+				worker: false,
+				complete: (parseResultsObj) =>
+				{
+					messageApi.destroy(DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY);
+
+					const allParsedDataRowsArray = parseResultsObj.data as Record<string, string>[];
+
+					const fieldsWithDataDrivenBoundsArray = finalDpFieldsArray.map(
+						(fieldItemRecord) =>
+						{
+							if (fieldItemRecord.fieldType !== 'Numeric' || !numericFieldNamesNeedingRealBoundsList.includes(fieldItemRecord.fieldName)) return fieldItemRecord;
+
+							let computedMinValue = Number.POSITIVE_INFINITY;
+							let computedMaxValue = Number.NEGATIVE_INFINITY;
+							let validNumericValueFoundCount = 0;
+
+							allParsedDataRowsArray.forEach(
+								(dataRowRecord) =>
+								{
+									const rawCellValueStr = dataRowRecord[fieldItemRecord.fieldName];
+									if (rawCellValueStr === undefined || rawCellValueStr === null || String(rawCellValueStr).trim() === '') return;
+
+									const parsedNumericValue = Number(rawCellValueStr);
+									if (!Number.isFinite(parsedNumericValue)) return;
+
+									if (parsedNumericValue < computedMinValue) computedMinValue = parsedNumericValue;
+									if (parsedNumericValue > computedMaxValue) computedMaxValue = parsedNumericValue;
+									validNumericValueFoundCount++;
+								}
+							);
+
+							// ★ 若整欄找不到任何有效數值 (例如欄位實際為空或格式異常)，則保留原本 (關鍵字/參考設定檔) 算出之邊界，避免寫入無意義的 ±Infinity。
+							if (validNumericValueFoundCount === 0) return fieldItemRecord;
+
+							return { ...fieldItemRecord, lowerBound: Math.floor(computedMinValue), upperBound: Math.ceil(computedMaxValue) };
+						}
+					);
+
+					finalizeAndApplyRecommendedFields(fieldsWithDataDrivenBoundsArray);
+				},
+				error: () =>
+				{
+					messageApi.destroy(DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY);
+					messageApi.warning('讀取資料集計算數值範圍失敗，已套用預設邊界值，請手動確認。');
+					finalizeAndApplyRecommendedFields(finalDpFieldsArray);
+				}
+			}
+		);
 	};
 
 	const addField = (): void => 
@@ -599,7 +1054,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			title: translate('step2.col_name', '欄位名稱'),
 			dataIndex: 'fieldName',
 			key: 'fieldName',
-			width: '16%',
+			width: 140,
 			render: (fieldNameTextValue: string, rowRecordItem: DPField) => (
 				<Tooltip title={fieldNameTextValue} placement="topLeft" mouseEnterDelay={0.3}>
 					<Input 
@@ -616,7 +1071,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			title: translate('step2.data_type', '資料型態'),
 			dataIndex: 'fieldType',
 			key: 'fieldType',
-			width: '14%',
+			width: 200,
 			render: (fieldTypeTextValue: string, rowRecordItem: DPField) => (
 				<Select
 					style={{ width: '100%' }}
@@ -640,8 +1095,33 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 												newUpper = newUpper ?? 1;
 												newAllowed = 'auto_extracted';
 											} else if (newSelectedTypeStr === 'Numeric') {
-												newLower = newLower ?? DEFAULT_NUMERIC_LOWER_BOUND;
-												newUpper = newUpper ?? DEFAULT_NUMERIC_UPPER_BOUND;
+												// ★ 使用者反映：手動把單一欄位型態切成「數值」時，邊界只會帶入寫死的
+												//   預設值 (DEFAULT_NUMERIC_LOWER_BOUND ~ UPPER_BOUND)，還得再按上方
+												//   「套用系統推薦設定」才會抓到實際資料範圍，但那顆按鈕是「整份重新
+												//   推薦」，會連帶把其他已經設定好的欄位一併改掉，使用者不希望這個
+												//   副作用波及其他欄位。這裡改為直接讀取本頁載入資料集時就已經逐欄
+												//   掃描好的 datasetColumnNumericValuesMap（見上方 useEffect，與下方
+												//   boundRangeCoverageInfoMap 邊界防呆共用同一份快取），只計算「這一個」
+												//   欄位的實際最小/最大值並帶入，不觸碰其他欄位、也不需要再按任何按鈕。
+												//   刻意不用 Math.min(...array) 展開陣列，避免欄位實際數值筆數很多
+												//   （百萬筆等級）時因引數過多而堆疊溢位，改用逐筆比較，與本檔案其他
+												//   處理大量資料的寫法一致。掃描不到有效數值時 (例如欄位選錯、整欄皆
+												//   空白) 才退回原本寫死的預設值。
+												const realColumnValuesArray = datasetColumnNumericValuesMap[fieldItemRecord.fieldName];
+												if (realColumnValuesArray && realColumnValuesArray.length > 0) {
+													let computedRealMinValue = realColumnValuesArray[0];
+													let computedRealMaxValue = realColumnValuesArray[0];
+													for (let valueIndexNumber = 1; valueIndexNumber < realColumnValuesArray.length; valueIndexNumber++) {
+														const currentRealValue = realColumnValuesArray[valueIndexNumber];
+														if (currentRealValue < computedRealMinValue) computedRealMinValue = currentRealValue;
+														if (currentRealValue > computedRealMaxValue) computedRealMaxValue = currentRealValue;
+													}
+													newLower = Math.floor(computedRealMinValue);
+													newUpper = Math.ceil(computedRealMaxValue);
+												} else {
+													newLower = newLower ?? DEFAULT_NUMERIC_LOWER_BOUND;
+													newUpper = newUpper ?? DEFAULT_NUMERIC_UPPER_BOUND;
+												}
 											}
 
 											return { 
@@ -674,7 +1154,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		{
 			title: translate('step2.apply_dp', '套用 DP'),
 			key: 'enabled',
-			width: '10%',
+			width: 110,
 			render: (_: unknown, rowRecordItem: DPField) => 
 			{
 				const isCurrentFieldTextFieldType = rowRecordItem.fieldType === 'Text';
@@ -690,7 +1170,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 										currentDpFieldsList.map(fieldItemRecord => {
 											if (fieldItemRecord.id !== rowRecordItem.id) return fieldItemRecord;
 											const nextEnabledStatus = !fieldItemRecord.enabled;
-											return { ...fieldItemRecord, enabled: nextEnabledStatus, isSensitive: nextEnabledStatus ? fieldItemRecord.isSensitive : false };
+											return { ...fieldItemRecord, enabled: nextEnabledStatus };
 										})
 									);
 								}
@@ -711,45 +1191,15 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		},
 		{
 			title: (
-				<Tooltip title={translate('step2.dp_sensitive_col_tooltip', '風險評估時，此欄位將視為「敏感欄位」，其餘已啟用欄位視為「準識別欄位」；僅能指定 1 個已啟用欄位。')}>
-					<Space>{translate('step2.dp_sensitive_col', '敏感欄位')}<InfoCircleOutlined style={{ color: token.colorTextDescription }} /></Space>
-				</Tooltip>
-			),
-			key: 'isSensitive',
-			width: '10%',
-			render: (_: unknown, rowRecordItem: DPField) =>
-			{
-				const isSelectionDisabled = !rowRecordItem.enabled;
-
-				return (
-					<Tooltip title={isSelectionDisabled ? translate('step2.dp_sensitive_requires_enabled', '需先開啟「套用 DP」才能指定為敏感欄位') : ''}>
-						<Radio
-							checked={!!rowRecordItem.isSensitive}
-							disabled={isSelectionDisabled}
-							onChange={
-								() =>
-								{
-									setDpFieldsAction(
-										currentDpFieldsList.map(fieldItemRecord => ({ ...fieldItemRecord, isSensitive: fieldItemRecord.id === rowRecordItem.id }))
-									);
-								}
-							}
-						/>
-					</Tooltip>
-				);
-			},
-		},
-		{
-			title: (
 				<Space>
 					{translate('step2.dp_param_settings', '邊界與規則設定')}
-					<Tooltip title={translate('step2.dp_param_tooltip', '數值型請填寫上下限；類別型系統會自動推演。')}>
-						<InfoCircleOutlined style={{ color: token.colorTextDescription }} />
+					<Tooltip title={translate('step2.dp_param_tooltip', '數值型欄位請填寫可能出現的最小值與最大值，例如年齡 0～120。範圍越大，系統判定的「敏感度」越高、需加入的雜訊也越多，資料會更模糊但保護力更強；範圍設太窄則可能讓超出範圍的真實值被裁剪。日期時間型欄位（如生日）請改選日期。加噪刻度與邊界溢出處理方式請至 Step3 差分隱私規則頁面設定。類別型欄位由系統自動判斷類別數量，不需手動設定。')}>
+						<QuestionCircleOutlined style={{ color: token.colorTextDescription, cursor: 'help' }} />
 					</Tooltip>
 				</Space>
 			),
 			key: 'bounds',
-			width: '55%',
+			width: 260,
 			render: (_: unknown, rowRecordItem: DPField) => 
 			{
 				if (!rowRecordItem.enabled) 
@@ -757,25 +1207,69 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					return <span style={{ color: token.colorTextDescription }}>-</span>;
 				}
 				
-				if (rowRecordItem.fieldType === 'Numeric') 
+				if (rowRecordItem.fieldType === 'Numeric')
 				{
+					const isDateTimeFieldStatus = isDateTimeDpField(rowRecordItem.fieldName);
 					const currentLowerBoundValue = rowRecordItem.lowerBound;
 					const currentUpperBoundValue = rowRecordItem.upperBound;
-					
+
+					// ★ 使用者反映：加噪刻度 (minimum_unit／noise_step) 與邊界溢出處理策略 (out_of_bounds_strategy)
+					//   屬於「隱私規則參數」而非「欄位邊界對應」，已移至 Step3 差分隱私規則頁面與 ε/δ 一併設定，
+					//   此處僅保留欄位型態對應與邊界 (lowerBound／upperBound) 設定。
+					// ★ 日期時間型欄位（如生日）：邊界為實際日期，後端 config_dp.json 對應 time_clipping_bounds
+					//   （ISO 日期字串），故改用 DatePicker 而非數值輸入框，避免使用者誤輸入無意義的數字邊界。
+					if (isDateTimeFieldStatus)
+					{
+						const lowerDateValue = typeof currentLowerBoundValue === 'string' && currentLowerBoundValue ? dayjs(currentLowerBoundValue) : undefined;
+						const upperDateValue = typeof currentUpperBoundValue === 'string' && currentUpperBoundValue ? dayjs(currentUpperBoundValue) : undefined;
+						const isDateBoundOrderInvalidStatus = !!lowerDateValue && !!upperDateValue && !lowerDateValue.isBefore(upperDateValue);
+
+						return (
+							<Tooltip title={isDateBoundOrderInvalidStatus ? '下限日期必須早於上限日期！' : undefined} open={isDateBoundOrderInvalidStatus} color="volcano">
+								<Space.Compact style={{ width: '100%' }}>
+									<DatePicker
+										placeholder={translate('step2.ph_lower_bound_date', '下限日期')}
+										value={lowerDateValue}
+										onChange={(pickedDateValue) => updateFieldLocal(rowRecordItem.id, 'lowerBound', pickedDateValue ? pickedDateValue.format('YYYY-MM-DD') : undefined)}
+										style={{ width: '50%' }}
+										status={!lowerDateValue || isDateBoundOrderInvalidStatus ? 'error' : ''}
+									/>
+									<DatePicker
+										placeholder={translate('step2.ph_upper_bound_date', '上限日期')}
+										value={upperDateValue}
+										onChange={(pickedDateValue) => updateFieldLocal(rowRecordItem.id, 'upperBound', pickedDateValue ? pickedDateValue.format('YYYY-MM-DD') : undefined)}
+										style={{ width: '50%' }}
+										status={!upperDateValue || isDateBoundOrderInvalidStatus ? 'error' : ''}
+									/>
+								</Space.Compact>
+							</Tooltip>
+						);
+					}
+
 					const isLowerBoundMissingStatus = currentLowerBoundValue === undefined || currentLowerBoundValue === null || currentLowerBoundValue === '';
 					const isUpperBoundMissingStatus = currentUpperBoundValue === undefined || currentUpperBoundValue === null || currentUpperBoundValue === '';
 					const isBoundOrderInvalidStatus = !isLowerBoundMissingStatus && !isUpperBoundMissingStatus && Number(currentLowerBoundValue) >= Number(currentUpperBoundValue);
 
-					const isLowerBoundErrorStatus = isLowerBoundMissingStatus || isBoundOrderInvalidStatus;
-					const isUpperBoundErrorStatus = isUpperBoundMissingStatus || isBoundOrderInvalidStatus;
+					// ★ 新增: 邊界範圍防呆——比對是否有實際資料值落在使用者設定的邊界之外。
+					const boundRangeCoverageIssueInfo = boundRangeCoverageInfoMap[rowRecordItem.id];
+					const isBoundRangeCoverageInvalidStatus = !isBoundOrderInvalidStatus && !!boundRangeCoverageIssueInfo;
+
+					const isLowerBoundErrorStatus = isLowerBoundMissingStatus || isBoundOrderInvalidStatus || isBoundRangeCoverageInvalidStatus;
+					const isUpperBoundErrorStatus = isUpperBoundMissingStatus || isBoundOrderInvalidStatus || isBoundRangeCoverageInvalidStatus;
+
+					const boundRangeTooltipTitleText = isBoundOrderInvalidStatus
+						? "下限值必須嚴格小於上限值！"
+						: isBoundRangeCoverageInvalidStatus
+							? `此邊界範圍未涵蓋實際資料範圍：有 ${boundRangeCoverageIssueInfo.outOfRangeCount} 筆／共 ${boundRangeCoverageIssueInfo.totalValidValueCount} 筆 (${boundRangeCoverageIssueInfo.percentText}) 資料超出此範圍，加噪後可能產生無意義的異常數值，請擴大邊界範圍或確認資料。`
+							: undefined;
 
 					return (
-						<Tooltip title={isBoundOrderInvalidStatus ? "下限值必須嚴格小於上限值！" : undefined} open={isBoundOrderInvalidStatus} color="volcano">
+						<Tooltip title={boundRangeTooltipTitleText} open={isBoundOrderInvalidStatus || isBoundRangeCoverageInvalidStatus} color="volcano">
 							<Space.Compact style={{ width: '100%' }}>
 								<InputNumber
 									placeholder={translate('step2.ph_lower_bound', '下限 (Lower Bound)')}
 									value={rowRecordItem.lowerBound as number}
-									step="any"
+									step={resolveInputNumberStepByDecimals(rowRecordItem.lowerBound)}
 									onChange={(inputNumberValue) => updateFieldLocal(rowRecordItem.id, 'lowerBound', inputNumberValue === null ? undefined : inputNumberValue)}
 									style={{ width: '50%', background: 'transparent' }}
 									status={isLowerBoundErrorStatus ? 'error' : ''}
@@ -783,7 +1277,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 								<InputNumber
 									placeholder={translate('step2.ph_upper_bound', '上限 (Upper Bound)')}
 									value={rowRecordItem.upperBound as number}
-									step="any"
+									step={resolveInputNumberStepByDecimals(rowRecordItem.upperBound)}
 									onChange={(inputNumberValue) => updateFieldLocal(rowRecordItem.id, 'upperBound', inputNumberValue === null ? undefined : inputNumberValue)}
 									style={{ width: '50%', background: 'transparent' }}
 									status={isUpperBoundErrorStatus ? 'error' : ''}
@@ -825,10 +1319,19 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		{
 			title: translate('step2.action', '操作'),
 			key: 'action',
-			width: '5%',
+			width: 96,
 			align: 'center' as const,
 			render: (_: unknown, rowRecordItem: DPField) => (
-				<Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeField(rowRecordItem.id)} />
+				<Space size={4}>
+					<Tooltip title={translate('step2.btn_apply_recommend_single', '只套用系統建議設定到此欄位，不影響其他欄位')}>
+						<Button
+							type="text"
+							icon={<ThunderboltOutlined style={{ color: '#4F46E5' }} />}
+							onClick={() => handleApplyRecommendationToSingleField(rowRecordItem.id)}
+						/>
+					</Tooltip>
+					<Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeField(rowRecordItem.id)} />
+				</Space>
 			),
 		}
 	];
@@ -856,8 +1359,6 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 	};
 
 	return (
-		<div className="dp-split-layout">
-		<div className="dp-split-form-column">
 		<Card variant="borderless" style={{ background: 'transparent', padding: 0 }}>
 			{!validationStatusResult.isValid && (
 				<Alert
@@ -871,23 +1372,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				/>
 			)}
 
-			{(() => {
-				const enabledDpFieldsListForSensitiveCheck = currentDpFieldsList.filter((fieldItemRecord) => fieldItemRecord.enabled);
-				const designatedSensitiveFieldsCount = enabledDpFieldsListForSensitiveCheck.filter((fieldItemRecord) => fieldItemRecord.isSensitive).length;
-				if (enabledDpFieldsListForSensitiveCheck.length > 0 && designatedSensitiveFieldsCount !== 1)
-				{
-					return (
-						<Alert
-							title={translate('step2.dp_sensitive_missing_title', '尚未指定敏感欄位')}
-							description={translate('step2.dp_sensitive_missing_desc', '請在下方欄位清單中，於已啟用之欄位裡指定「恰好 1 個」敏感欄位；其餘已啟用欄位將視為準識別欄位，供第四步風險評估使用。')}
-							type="warning" showIcon style={{ marginBottom: '16px', padding: '8px 16px', borderRadius: '8px' }}
-						/>
-					);
-				}
-				return null;
-			})()}
-
-			<Tabs 
+			<Tabs
 				defaultActiveKey="1" 
 				tabBarExtraContent={
 					<Space style={{ paddingBottom: '8px' }}>
@@ -902,13 +1387,58 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 							<div style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: '8px', padding: '16px 20px', background: isDarkModeActive ? '#141414' : '#fafafa' }}>
 								<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
 									<div style={{ fontWeight: 600, color: token.colorText }}>{translate('step2.col_settings_list', '欄位參數設定清單')}</div>
-									<Button type="primary" icon={<ThunderboltOutlined />} onClick={handleApplyRecommendations} style={{ background: '#4F46E5', border: 'none', borderRadius: '6px' }}>{translate('step2.btn_apply_recommend', '自動智慧推薦')}</Button>
+									<Space size={8}>
+										{isJsonPreviewVisibleStatus ? (
+											<Button size="small" icon={<EyeInvisibleOutlined />} onClick={() => setIsJsonPreviewVisibleStatus(false)}>{translate('step2.json_preview_hide', '隱藏預覽')}</Button>
+										) : (
+											<Button size="small" icon={<EyeOutlined />} onClick={() => setIsJsonPreviewVisibleStatus(true)}>{translate('step2.json_preview_show', '顯示預覽')}</Button>
+										)}
+										<Button type="primary" icon={<ThunderboltOutlined />} onClick={handleApplyRecommendations} style={{ background: '#4F46E5', border: 'none', borderRadius: '6px' }}>{translate('step2.btn_apply_recommend', '自動智慧推薦')}</Button>
+									</Space>
 								</div>
 								
 								<div style={{ background: isDarkModeActive ? '#1d1d1d' : '#ffffff', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${token.colorBorderSecondary}` }}>
-									<Table dataSource={currentDpFieldsList} columns={dpDataTableColumnsConfig} rowKey="id" pagination={false} size="small" bordered={false} className="attribute-table" scroll={{ y: 400 }} />
+									<Table dataSource={currentDpFieldsList} columns={dpDataTableColumnsConfig} rowKey="id" pagination={false} size="small" bordered={false} className="attribute-table" scroll={{ x: 900, y: 400 }} />
 								</div>
-								
+
+								{isJsonPreviewVisibleStatus && (
+									<Card
+										size="small"
+										style={{ marginTop: '16px', background: isDarkModeActive ? '#141414' : '#fafafa', border: `1px solid ${token.colorBorderSecondary}` }}
+										styles={{ body: { padding: 0 }, header: { borderBottom: `1px solid ${token.colorBorderSecondary}` } }}
+										title={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><CodeOutlined style={{ color: token.colorPrimary }} />{translate('step2.json_preview', '即時設定檔預覽 (JSON Preview)')}</span>}
+										extra={<Button size="small" icon={<CopyOutlined />} onClick={handleCopyJsonPreviewToClipboard}>{translate('step2.json_preview_copy', '複製')}</Button>}
+									>
+										<div
+											style={{
+												background: isDarkModeActive ? '#141414' : '#f8fafc',
+												borderRadius: '0 0 8px 8px',
+												padding: '16px 12px',
+												overflow: 'auto',
+												maxHeight: '360px',
+												fontSize: '13px',
+												fontFamily: 'Consolas, Menlo, Monaco, "Courier New", monospace',
+												color: isDarkModeActive ? '#a6accd' : '#333',
+												// ★ 修正：使用者反映 JSON 預覽程式碼呈置中對齊。根因為全域 index.css 之
+												// #root { text-align: center; } (Vite 範本殘留設定)，此處內容未明確指定
+												// text-align，故被向下繼承套用置中，導致每一行較短的 JSON 內容 (span
+												// 為 flex 項目、寬度撐滿整行) 在該寬度內置中顯示，而非緊靠左側。
+												// 明確指定 'left' 覆寫繼承值，程式碼預覽風格本就應一律靠左對齊。
+												textAlign: 'left'
+											}}
+										>
+											{liveJsonPreviewLineArray.map(
+												(jsonPreviewLineTextString, jsonPreviewLineIndexNumber) => (
+													<div className="dp-json-preview-line" key={jsonPreviewLineIndexNumber}>
+														<span className="dp-json-preview-line-number">{jsonPreviewLineIndexNumber + 1}</span>
+														<span className="dp-json-preview-line-content">{jsonPreviewLineTextString}</span>
+													</div>
+												)
+											)}
+										</div>
+									</Card>
+								)}
+
 								<Button type="dashed" block icon={<PlusOutlined />} onClick={addField} style={{ marginTop: '16px' }}>{translate('step2.btn_add_field', '新增自訂欄位')}</Button>
 							</div>
 						)
@@ -920,32 +1450,6 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				.attribute-table .ant-table-thead > tr > th { background: ${isDarkModeActive ? '#262626' : '#fafafa'} !important; border-bottom: 1px solid ${token.colorBorderSecondary} !important; color: ${token.colorTextSecondary} !important; font-weight: 500; white-space: nowrap; padding: 8px 8px !important; }
 				.attribute-table .ant-table-tbody > tr > td { border-bottom: 1px solid ${token.colorBorderSecondary} !important; padding: 8px 8px !important; }
 				.attribute-table .ant-table-expanded-row > td { padding: 0 !important; }
-				.dp-split-layout {
-					display: flex;
-					align-items: flex-start;
-					gap: 24px;
-				}
-				.dp-split-form-column {
-					flex: 2 1 0%;
-					min-width: 0;
-				}
-				.dp-split-preview-column {
-					flex: 1 1 0%;
-					min-width: 320px;
-					position: sticky;
-					top: 24px;
-				}
-				@media (max-width: 1200px) {
-					.dp-split-layout {
-						flex-direction: column;
-					}
-					.dp-split-preview-column {
-						flex: 1 1 auto;
-						width: 100%;
-						min-width: 0;
-						position: static;
-					}
-				}
 				.dp-json-preview-line {
 					display: flex;
 				}
@@ -963,43 +1467,5 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				}
 			`}</style>
 		</Card>
-		</div>
-
-		<div className="dp-split-preview-column">
-			<Card
-				variant="borderless"
-				title={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><CodeOutlined style={{ color: token.colorPrimary }} />{translate('step2.json_preview', '即時設定檔預覽 (JSON Preview)')}</span>}
-				extra={<Button size="small" icon={<CopyOutlined />} onClick={handleCopyJsonPreviewToClipboard}>{translate('step2.json_preview_copy', '複製')}</Button>}
-				style={{
-					background: isDarkModeActive ? '#141414' : '#fafafa',
-					border: `1px solid ${token.colorBorderSecondary}`,
-					boxShadow: isDarkModeActive ? 'none' : '0 2px 8px rgba(0,0,0,0.04)'
-				}}
-				styles={{ body: { padding: 0 }, header: { borderBottom: `1px solid ${token.colorBorderSecondary}` } }}
-			>
-				<div
-					style={{
-						background: isDarkModeActive ? '#141414' : '#f8fafc',
-						borderRadius: '0 0 8px 8px',
-						padding: '16px 12px',
-						overflow: 'auto',
-						maxHeight: 'calc(100vh - 160px)',
-						fontSize: '13px',
-						fontFamily: 'Consolas, Menlo, Monaco, "Courier New", monospace',
-						color: isDarkModeActive ? '#a6accd' : '#333'
-					}}
-				>
-					{liveJsonPreviewLineArray.map(
-						(jsonPreviewLineTextString, jsonPreviewLineIndexNumber) => (
-							<div className="dp-json-preview-line" key={jsonPreviewLineIndexNumber}>
-								<span className="dp-json-preview-line-number">{jsonPreviewLineIndexNumber + 1}</span>
-								<span className="dp-json-preview-line-content">{jsonPreviewLineTextString}</span>
-							</div>
-						)
-					)}
-				</div>
-			</Card>
-		</div>
-		</div>
 	);
 }

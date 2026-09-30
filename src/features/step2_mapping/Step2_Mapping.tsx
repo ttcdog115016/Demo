@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { Card, Table, Select, Input, InputNumber, Button, Typography, theme, Space, Alert, Tooltip } from 'antd';
-import { ToolOutlined, SafetyOutlined, ArrowRightOutlined, LockOutlined, PlusCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { ToolOutlined, SafetyOutlined, ArrowRightOutlined, LockOutlined, PlusCircleOutlined, MinusCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import CryptoJS from 'crypto-js';
 
@@ -33,6 +33,53 @@ const DEFAULT_CLAMP_LOWER_BOUND = 0;
 const DEFAULT_CLAMP_UPPER_BOUND = 100;
 const DEFAULT_SLICE_COUNT = 1;
 const DEFAULT_ANCHOR_KEEP_COUNT = 0;
+
+/**
+ * 下拉選單彈出方向固定設定 (僅允許向下展開)
+ * 規範對照: 修正「缺失值處理」與「Cleansing Strategy」欄位下拉選單因預設向上翻轉 (flip)
+ *           而與表格標題列重疊、造成跑版之顯示問題。adjustX 保留為 true 以允許水平微調，
+ *           adjustY 設為 false 以停用向上翻轉，確保選單固定往下展開。
+ */
+const SELECT_DROPDOWN_DOWNWARD_ONLY_PLACEMENTS = {
+    bottomLeft: {
+        points: ['tl', 'bl'],
+        offset: [0, 4],
+        overflow: { adjustX: true, adjustY: false }
+    }
+};
+
+/**
+ * 函數名稱: resolveTableScrollAreaAsPopupContainer
+ * 函數功能: 讓下拉選單改為掛載於表格自身可捲動的內容區塊 (`.ant-table-body`) 內，
+ *           而非預設掛載於 document.body，並確保該容器具備正確的定位基準。
+ * 規範對照: 修正「資料預先處理」表格因設定 `scroll={{ y: 250 }}` 產生內部捲動區後，
+ *           使用滑鼠滾輪捲動表格內容時，下拉選單會浮貼在畫面上、蓋住表格自身固定
+ *           標題列 (甚至頁面標題)，造成跑版的問題。
+ *           第一次修正僅將掛載容器改為 `.ant-table-body`，但該容器預設 position: static，
+ *           導致掛載其中的選單因找不到已定位祖先而相對於更外層定位，位置嚴重偏移，
+ *           問題依然存在；本次額外於此明確賦予該容器 position: relative 才徹底修正。
+ *           找不到該容器時 (理論上不會發生) 則退回 document.body。
+ */
+const resolveTableScrollAreaAsPopupContainer = (triggerDomNode: HTMLElement): HTMLElement =>
+{
+    const tableScrollAreaElement = triggerDomNode.closest('.ant-table-body') as HTMLElement | null;
+    if (!tableScrollAreaElement)
+    {
+        return document.body;
+    }
+
+    // 關鍵修正: AntD 表格內部捲動容器 (.ant-table-body) 本身預設為 position: static，
+    // 並非已定位 (positioned) 的祖先元素。若不處理，掛載於其內部、以 position: absolute
+    // 呈現的下拉選單，會因找不到最近的已定位祖先，而相對於更外層 (甚至整個頁面) 定位，
+    // 導致選單顯示位置嚴重偏移、飄到畫面上方蓋住標題列 (即使已改掛載於此容器內)。
+    // 因此在此明確賦予該容器 position: relative，建立正確的定位基準。
+    if (window.getComputedStyle(tableScrollAreaElement).position === 'static')
+    {
+        tableScrollAreaElement.style.position = 'relative';
+    }
+
+    return tableScrollAreaElement;
+};
 
 /**
  * 預處理表格對應紀錄資料結構
@@ -134,9 +181,13 @@ const applyPreprocessStep = (cellValueStr: string, stepItemRecord: Preprocessing
                 return Number.isNaN(parsedFloatNum) ? '0' : String(parsedFloatNum);
             }
 
-            const cleanedIntStr = cellValueStr.replace(/[^0-9-]/g, '');
-            const parsedIntNum = parseInt(cleanedIntStr, 10);
-            return Number.isNaN(parsedIntNum) ? '0' : String(parsedIntNum);
+            // ★ 修正: 原本以正則表達式移除所有非數字字元 (含小數點) 再轉整數，會將「27.8」誤判為
+            //   字串「278」再轉換，而非先解析為浮點數、四捨五入後才取整數，導致轉換結果嚴重失真
+            //   (例如 27.8 → 278，而非合理的 28)。改為先以浮點數解析，再四捨五入取最接近之整數。
+            const cleanedFloatForIntStr = cellValueStr.replace(/[^0-9.-]/g, '');
+            const parsedFloatForIntNum = parseFloat(cleanedFloatForIntStr);
+            const roundedIntNum = Math.round(parsedFloatForIntNum);
+            return Number.isNaN(roundedIntNum) ? '0' : String(roundedIntNum);
         }
 
         case 'normalize':
@@ -171,7 +222,7 @@ const applyPreprocessStep = (cellValueStr: string, stepItemRecord: Preprocessing
         {
             try
             {
-                const algorithmStr = String(actionParamsDict.algorithm || 'sha256');
+                const algorithmStr = String(actionParamsDict.algorithm || 'SHA3-256');
                 const seedModeStr = String(actionParamsDict.seedMode || 'none');
 
                 let seedSuffixStr = '';
@@ -181,8 +232,7 @@ const applyPreprocessStep = (cellValueStr: string, stepItemRecord: Preprocessing
                 const hashInputStr = cellValueStr + seedSuffixStr;
 
                 let calculatedHashResult = '';
-                if (algorithmStr === 'md5') calculatedHashResult = CryptoJS.MD5(hashInputStr).toString();
-                else if (algorithmStr === 'sha512') calculatedHashResult = CryptoJS.SHA512(hashInputStr).toString();
+                if (algorithmStr === 'SHA3-512') calculatedHashResult = CryptoJS.SHA512(hashInputStr).toString();
                 else calculatedHashResult = CryptoJS.SHA256(hashInputStr).toString();
 
                 // 為了 UI 預覽美觀，擷取前 16 碼並加上刪節號
@@ -237,10 +287,18 @@ const applyPreprocessSteps = (cellValueData: unknown, stepsArray: PreprocessingR
         return DEFAULT_PREVIEW_SYMBOL;
     }
 
-    return stepsArray.reduce(
-        (accumulatedResultString, stepItemRecord) => applyPreprocessStep(accumulatedResultString, stepItemRecord),
-        String(cellValueData)
-    );
+    // ★ 修正: 「雜湊」為不可逆之最終處理，一旦套用即視為處理鏈終點；即使因匯入設定檔等途徑，
+    //   使雜湊步驟之後仍存在其他步驟，此處亦不再繼續套用，避免對雜湊後之字串做無意義的二次轉換
+    //   (對應下方 UI 已限制使用者無法於雜湊之後再新增/變更步驟，此處為運算層面的防禦性保護)。
+    let accumulatedResultString = String(cellValueData);
+
+    for (const stepItemRecord of stepsArray)
+    {
+        accumulatedResultString = applyPreprocessStep(accumulatedResultString, stepItemRecord);
+        if (stepItemRecord.action === 'hash') break;
+    }
+
+    return accumulatedResultString;
 };
 
 /**
@@ -324,7 +382,7 @@ export default function Step2_Mapping(): React.ReactElement
      * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
      */
     type PreprocessParamFieldDef =
-        | { key: string; type: 'select'; label: string; defaultValue: string; options: { value: string; label: string }[]; visibleWhen?: (paramsDict: Record<string, string | number>) => boolean; required?: boolean }
+        | { key: string; type: 'select'; label: string; defaultValue: string; options: { value: string; label: string }[]; visibleWhen?: (paramsDict: Record<string, string | number>) => boolean; required?: boolean; optionHintMap?: Record<string, string> }
         | { key: string; type: 'number'; label: string; defaultValue: number; min?: number; visibleWhen?: (paramsDict: Record<string, string | number>) => boolean; required?: boolean }
         | { key: string; type: 'text'; label: string; defaultValue: string; maxLength?: number; visibleWhen?: (paramsDict: Record<string, string | number>) => boolean; required?: boolean };
 
@@ -428,20 +486,24 @@ export default function Step2_Mapping(): React.ReactElement
             label: translate('step2.action_hash', '雜湊 (Hash)'),
             paramFields: [
                 {
-                    key: 'algorithm', type: 'select', label: translate('step2.param_hash_algorithm', '演算法'), defaultValue: 'sha256',
+                    key: 'algorithm', type: 'select', label: translate('step2.param_hash_algorithm', '演算法'), defaultValue: 'SHA256',
                     options: [
-                        { value: 'sha256', label: 'SHA-256' },
-                        { value: 'md5', label: 'MD5' },
-                        { value: 'sha512', label: 'SHA-512' }
+                        { value: 'SHA256', label: 'SHA3-256' },
+                        { value: 'SHA512', label: 'SHA3-512' }
                     ]
                 },
                 {
                     key: 'seedMode', type: 'select', label: translate('step2.param_hash_seed_mode', '隨機種子'), defaultValue: 'none',
                     options: [
-                        { value: 'none', label: translate('step2.hash_seed_none', '不使用') },
+                        { value: 'none', label: translate('step2.hash_seed_none', '不添加鹽值') },
                         { value: 'fixed', label: translate('step2.hash_seed_fixed', '固定種子') },
                         { value: 'timestamp', label: translate('step2.hash_seed_timestamp', '目前時間戳') }
-                    ]
+                    ],
+                    optionHintMap: {
+                        none: translate('step2.hint_hash_seed_none', '效果：直接對原始值雜湊，同一個值永遠得到相同結果。適用情境：需跨批次比對同一個值（如流水號、代碼）時使用；但對手機、身分證字號等值域較小的欄位，仍有被查表反推的風險。'),
+                        fixed: translate('step2.hint_hash_seed_fixed', '效果：雜湊前加上一組固定字串（種子），同一種子下同一個值仍會得到相同結果。適用情境：需兼顧「跨批次比對」與「防止查表反推」時使用；種子須自行妥善保管，一旦外流即失去防護效果。'),
+                        timestamp: translate('step2.hint_hash_seed_timestamp', '效果：每次執行都以當下時間混入雜湊，同一個值每次執行結果都不同。適用情境：只需遮蔽當次結果、不需要跨批次比對時使用，安全性最高但無法比對追蹤同一筆資料。')
+                    }
                 },
                 { key: 'seedValue', type: 'text', label: translate('step2.param_hash_seed_value', '種子值'), defaultValue: '', visibleWhen: (paramsDict) => paramsDict.seedMode === 'fixed', required: true }
             ]
@@ -471,6 +533,52 @@ export default function Step2_Mapping(): React.ReactElement
         { value: 'mean', label: translate('step2.fill_mean', '平均值') }
     ];
 
+    // 各下拉選項對應之「效果／適用情境」白話說明 (符合規範 e，供選項旁 ? 圖示懸浮顯示使用)
+    const missingValueStrategyHintMap: Record<string, string> = {
+        none: translate('step2.hint_missing_none', '效果：保留缺失值不做任何調整，欄位仍會顯示空值。適用情境：資料完整度已足夠、或缺失值本身具有分析意義時使用。'),
+        drop: translate('step2.hint_missing_drop', '效果：只要該欄位缺失，整筆資料（該列）就會被移除。適用情境：缺失比例低、且不希望用推估值影響分析結果時使用；缺失比例高時請謹慎使用，避免流失過多資料。'),
+        constant: translate('step2.hint_missing_constant', '效果：將缺失值統一替換為您指定的固定值（例如「未知」或 0）。適用情境：想明確標記缺失、且該欄位有合理預設值時使用。'),
+        fill: translate('step2.hint_missing_fill', '效果：依您選擇的統計方法（前值／後值／內插／平均值）自動計算並填入缺失值。適用情境：想保留資料筆數、且欄位為連續數值或具時間序列關聯時使用。')
+    };
+
+    const fillMethodHintMap: Record<string, string> = {
+        forward: translate('step2.hint_fill_forward', '效果：用同一欄位「前一筆」資料的數值填補缺失。適用情境：資料具時間先後順序、且數值變化不大時（如感測器讀數）使用。'),
+        backward: translate('step2.hint_fill_backward', '效果：用「後一筆」資料的數值回填缺失值。適用情境：時間序列資料、且後續數值可代表當下狀態時使用。'),
+        interpolate: translate('step2.hint_fill_interpolate', '效果：依前後兩筆數值，以線性方式推算出中間的缺失值。適用情境：數值呈連續變化趨勢（如溫度、股價）時使用。'),
+        mean: translate('step2.hint_fill_mean', '效果：以該欄位所有已知數值的平均值填補缺失。適用情境：數值分布集中、無明顯時間關聯，且想避免極端值影響整體分析時使用。')
+    };
+
+    const preprocessActionHintMap: Record<string, string> = {
+        none: translate('step2.hint_action_none', '效果：欄位資料維持原樣，不做任何清洗。適用情境：欄位內容已符合分析需求時使用。'),
+        trim: translate('step2.hint_action_trim', '效果：移除文字前後（或全部）多餘的空白字元。適用情境：欄位常因人工輸入或匯入夾帶多餘空白，導致比對或分組失準時使用。'),
+        slice: translate('step2.hint_action_slice', '效果：從欄位開頭或結尾刪除指定數量的字元。適用情境：欄位含固定格式的前綴或後綴（如流水號開頭）需要去除時使用。'),
+        anchor_truncate: translate('step2.hint_action_anchor_truncate', '效果：以指定字元為基準，向前或向後只保留固定字數，其餘截斷。適用情境：需以特定符號（如「-」）為分界，僅保留其中一段固定長度資料時使用（例如身分證字號部分遮蔽）。'),
+        type_cast: translate('step2.hint_action_type_cast', '效果：將欄位資料轉換為指定的資料型態（整數、浮點數或布林值）。適用情境：欄位型態與實際用途不符（如數字被存成文字）時使用。'),
+        normalize: translate('step2.hint_action_normalize', '效果：統一文字的大小寫及全形／半形格式。適用情境：同一欄位存在格式不一致（如英數字全形與半形混用）需要統一比對基準時使用。'),
+        clamp: translate('step2.hint_action_clamp', '效果：將數值限制在指定的上下限範圍內，超出範圍者會被調整為邊界值。適用情境：欄位存在明顯異常值（如年齡出現負數或超過合理上限）需要修正時使用。'),
+        hash: translate('step2.hint_action_hash', '效果：以指定演算法將原始值轉換為不可逆的雜湊字串，無法還原回原始內容。適用情境：需完全隱藏原始值、但仍需保留可比對的唯一性（如識別碼）時使用。'),
+        regex_replace: translate('step2.hint_action_regex_replace', '效果：以正則表達式比對特定樣式的文字並替換為指定內容。適用情境：需遮蔽或移除特定格式的敏感字串（如電話號碼、Email）時使用。')
+    };
+
+    /**
+     * 函數名稱: renderSelectOptionWithHint
+     * 函數功能: 於下拉選單各選項右側附加 ? 圖示，滑鼠移過去即懸浮顯示該選項之白話說明 (效果／適用情境)，
+     *           點擊圖示本身不觸發選項選取 (stopPropagation)。
+     */
+    const renderSelectOptionWithHint = (optionLabelNode: React.ReactNode, hintTextString?: string): React.ReactNode => (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span>{optionLabelNode}</span>
+            {hintTextString && (
+                <Tooltip title={hintTextString} placement="right">
+                    <QuestionCircleOutlined
+                        style={{ color: token.colorTextDescription, flexShrink: 0 }}
+                        onClick={(mouseClickEvent) => mouseClickEvent.stopPropagation()}
+                    />
+                </Tooltip>
+            )}
+        </div>
+    );
+
     /**
      * 函數名稱: handleStepActionChange
      * 函數功能: 變更指定欄位、指定步驟之預處理動作，並將該動作之所有參數重設為預設值。
@@ -484,7 +592,17 @@ export default function Step2_Mapping(): React.ReactElement
         matchedActionDef?.paramFields.forEach((paramFieldDefItem) => { defaultParamsDict[paramFieldDefItem.key] = paramFieldDefItem.defaultValue; });
 
         const updatedStepsArray = getFieldPreprocessSteps(targetColumnNameStr).map(
-            (stepItemRecord, stepIndexNumber) => stepIndexNumber === targetStepIndexNumber ? { action: newActionValueStr, params: defaultParamsDict } : stepItemRecord
+            (stepItemRecord, stepIndexNumber) =>
+            {
+                if (stepIndexNumber === targetStepIndexNumber) return { action: newActionValueStr, params: defaultParamsDict };
+
+                // ★ 新增: 「雜湊」為不可逆之最終處理，若本次變更後之步驟為雜湊，其後方所有既存步驟一律
+                //   強制重設為「不處理」，避免留下「畫面鎖定顯示不處理、但實際儲存值仍為舊策略」的
+                //   不一致狀態 (對應下方下拉選單鎖定邏輯與新增按鈕停用邏輯)。
+                if (newActionValueStr === 'hash' && stepIndexNumber > targetStepIndexNumber) return { action: 'none', params: {} };
+
+                return stepItemRecord;
+            }
         );
 
         setPreprocessingRulesAction({ ...preprocessingRulesMap, [targetColumnNameStr]: updatedStepsArray });
@@ -516,9 +634,18 @@ export default function Step2_Mapping(): React.ReactElement
             return;
         }
 
+        const currentStepsForColumnArray = getFieldPreprocessSteps(targetColumnNameStr);
+
+        // ★ 新增: 「雜湊」為不可逆之最終處理，欄位之策略鏈中若已包含「雜湊」步驟 (不論位於哪一步)，
+        //   不允許再新增後續步驟 (對應 UI 端新增按鈕之停用與提示)。
+        if (currentStepsForColumnArray.some((stepItemRecord) => stepItemRecord.action === 'hash'))
+        {
+            return;
+        }
+
         setPreprocessingRulesAction({
             ...preprocessingRulesMap,
-            [targetColumnNameStr]: [...getFieldPreprocessSteps(targetColumnNameStr), { action: 'none', params: {} }]
+            [targetColumnNameStr]: [...currentStepsForColumnArray, { action: 'none', params: {} }]
         });
     };
 
@@ -608,6 +735,14 @@ export default function Step2_Mapping(): React.ReactElement
                     placeholder={paramFieldDefItem.label}
                     style={{ width: '100%' }}
                     options={paramFieldDefItem.options}
+                    optionRender={
+                        paramFieldDefItem.optionHintMap
+                            ? (optionItem) => renderSelectOptionWithHint(optionItem.label, paramFieldDefItem.optionHintMap?.[String(optionItem.data.value)])
+                            : undefined
+                    }
+                    placement="bottomLeft"
+                    builtinPlacements={SELECT_DROPDOWN_DOWNWARD_ONLY_PLACEMENTS}
+                    getPopupContainer={resolveTableScrollAreaAsPopupContainer}
                 />
             );
         }
@@ -644,6 +779,38 @@ export default function Step2_Mapping(): React.ReactElement
         );
     };
 
+    /**
+     * 函數名稱: getVisibleParamFieldListForStep
+     * 函數功能: 依據單一策略步驟目前選擇的動作與參數，計算該步驟實際需顯示之參數欄位清單
+     *           (套用 visibleWhen 過濾)。「策略」欄與「參數設定」欄的高度對齊計算皆須以同一份
+     *           清單為準，故抽成共用函數，避免兩處各自實作、日後修改其中一處卻忘記同步另一處。
+     */
+    const getVisibleParamFieldListForStep = (stepItemRecord: PreprocessingRule): PreprocessParamFieldDef[] =>
+    {
+        const matchedActionDef = preprocessActionDefList.find((actionDefItem) => actionDefItem.value === stepItemRecord.action);
+        return (matchedActionDef?.paramFields ?? []).filter((paramFieldDefItem) => !paramFieldDefItem.visibleWhen || paramFieldDefItem.visibleWhen(stepItemRecord.params));
+    };
+
+    /**
+     * 「策略」欄與「參數設定」欄之列高對齊常數與計算函數
+     * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
+     *
+     * ★ 修正：先前「參數設定」欄使用 <Space wrap> 讓多個參數欄位依容器實際寬度自動換行，
+     *   換行後的行數並非固定值，而「策略」欄每一步驟卻固定僅佔一行高度；當某一步驟的參數
+     *   因換行而變成兩行以上時，「參數設定」欄從該步驟起的後續內容就會比「策略」欄多出額外
+     *   高度，導致兩欄位「同一個步驟」的方塊不再對齊在同一條水平線上。
+     *   修正做法：參數欄位一律「垂直堆疊」顯示 (不再依寬度自動換行)，使每個步驟所需之行數
+     *   固定等於「該步驟可見參數欄位數」，屬可預先精確計算之數值；並將此計算結果同步套用為
+     *   「策略」欄與「參數設定」欄「同一步驟」列高之下限，兩欄從此才會逐步對齊。
+     */
+    const PARAM_CONTROL_SINGLE_LINE_HEIGHT_PX = 24; // Ant Design size="small" 控制項預設高度
+    const PARAM_FIELD_VERTICAL_GAP_PX = 4;          // 同一步驟內，垂直堆疊之參數欄位間距
+    const computeStepRowMinHeightPx = (visibleParamFieldCount: number): number =>
+    {
+        const effectiveLineCount = Math.max(1, visibleParamFieldCount);
+        return effectiveLineCount * PARAM_CONTROL_SINGLE_LINE_HEIGHT_PX + (effectiveLineCount - 1) * PARAM_FIELD_VERTICAL_GAP_PX;
+    };
+
     // 第一階段預處理表格欄位定義 (符合規範 g, h)
     const preprocessTableColumnsConfig = [
         {
@@ -665,6 +832,10 @@ export default function Step2_Mapping(): React.ReactElement
                         disabled={!isUserAllowedToEditRulesStatus}
                         style={{ width: '100%' }}
                         options={missingValueStrategyOptionList}
+                        optionRender={(optionItem) => renderSelectOptionWithHint(optionItem.label, missingValueStrategyHintMap[String(optionItem.data.value)])}
+                        placement="bottomLeft"
+                        builtinPlacements={SELECT_DROPDOWN_DOWNWARD_ONLY_PLACEMENTS}
+                        getPopupContainer={resolveTableScrollAreaAsPopupContainer}
                     />
 
                     {rowRecordItem.missingValueRule.strategy === 'constant' && (
@@ -686,6 +857,10 @@ export default function Step2_Mapping(): React.ReactElement
                             disabled={!isUserAllowedToEditRulesStatus}
                             style={{ width: '100%' }}
                             options={fillMethodOptionList}
+                            optionRender={(optionItem) => renderSelectOptionWithHint(optionItem.label, fillMethodHintMap[String(optionItem.data.value)])}
+                            placement="bottomLeft"
+                            builtinPlacements={SELECT_DROPDOWN_DOWNWARD_ONLY_PLACEMENTS}
+                            getPopupContainer={resolveTableScrollAreaAsPopupContainer}
                         />
                     )}
                 </div>
@@ -698,29 +873,50 @@ export default function Step2_Mapping(): React.ReactElement
             render: (_: unknown, rowRecordItem: MappingRecord) => (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {rowRecordItem.steps.map(
-                        (stepItemRecord, stepIndexNumber) => (
-                            <div key={stepIndexNumber} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <Select
-                                    value={stepItemRecord.action}
-                                    onChange={(selectedDropdownAction) => handleStepActionChange(rowRecordItem.name, stepIndexNumber, selectedDropdownAction)}
-                                    disabled={!isUserAllowedToEditRulesStatus}
-                                    style={{ flex: 1, minWidth: 0 }}
-                                    options={preprocessActionDefList.map((actionDefItem) => ({ value: actionDefItem.value, label: actionDefItem.label }))}
-                                />
+                        (stepItemRecord, stepIndexNumber) =>
+                        {
+                            // ★ 新增: 「雜湊」為不可逆之最終處理，若此步驟前方已存在雜湊步驟，此步驟鎖定為僅能
+                            //   選擇「不處理」且無法變更；欄位策略鏈中只要含有雜湊步驟 (不論位置)，即不允許
+                            //   再新增後續步驟。
+                            const isStepLockedByPriorHashStatus = rowRecordItem.steps.slice(0, stepIndexNumber).some((priorStepItemRecord) => priorStepItemRecord.action === 'hash');
+                            const hasHashStepInChainStatus = rowRecordItem.steps.some((stepItemRecordForCheck) => stepItemRecordForCheck.action === 'hash');
+                            // ★ 修正：與「參數設定」欄採用同一份可見參數欄位清單計算列高下限，確保同一步驟
+                            //   在兩欄位中對齊於同一條水平線 (詳見 computeStepRowMinHeightPx 說明)。
+                            const stepRowMinHeightPx = computeStepRowMinHeightPx(getVisibleParamFieldListForStep(stepItemRecord).length);
 
-                                {isUserAllowedToEditRulesStatus && stepIndexNumber === rowRecordItem.steps.length - 1 && (
-                                    <Tooltip title={translate('step2.add_strategy_step', '新增策略 (依序執行)')}>
-                                        <Button type="text" size="small" icon={<PlusCircleOutlined />} onClick={() => handleAddPreprocessStep(rowRecordItem.name)} />
+                            return (
+                                <div key={stepIndexNumber} style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: stepRowMinHeightPx }}>
+                                    <Tooltip title={isStepLockedByPriorHashStatus ? translate('step2.strategy_locked_by_hash', '此步驟前方已套用「雜湊」，雜湊為不可逆之最終處理，其後不可再串接其他策略。') : ''}>
+                                        <Select
+                                            value={stepItemRecord.action}
+                                            onChange={(selectedDropdownAction) => handleStepActionChange(rowRecordItem.name, stepIndexNumber, selectedDropdownAction)}
+                                            disabled={!isUserAllowedToEditRulesStatus || isStepLockedByPriorHashStatus}
+                                            style={{ flex: 1, minWidth: 0 }}
+                                            options={
+                                                (isStepLockedByPriorHashStatus ? preprocessActionDefList.filter((actionDefItem) => actionDefItem.value === 'none') : preprocessActionDefList)
+                                                    .map((actionDefItem) => ({ value: actionDefItem.value, label: actionDefItem.label }))
+                                            }
+                                            optionRender={(optionItem) => renderSelectOptionWithHint(optionItem.label, preprocessActionHintMap[String(optionItem.data.value)])}
+                                            placement="bottomLeft"
+                                            builtinPlacements={SELECT_DROPDOWN_DOWNWARD_ONLY_PLACEMENTS}
+                                            getPopupContainer={resolveTableScrollAreaAsPopupContainer}
+                                        />
                                     </Tooltip>
-                                )}
 
-                                {isUserAllowedToEditRulesStatus && rowRecordItem.steps.length > 1 && (
-                                    <Tooltip title={translate('step2.remove_strategy_step', '移除此策略')}>
-                                        <Button type="text" size="small" danger icon={<MinusCircleOutlined />} onClick={() => handleRemovePreprocessStep(rowRecordItem.name, stepIndexNumber)} />
-                                    </Tooltip>
-                                )}
-                            </div>
-                        )
+                                    {isUserAllowedToEditRulesStatus && stepIndexNumber === rowRecordItem.steps.length - 1 && (
+                                        <Tooltip title={hasHashStepInChainStatus ? translate('step2.add_strategy_step_disabled_hash', '「雜湊」為不可逆之最終處理，其後不可再新增策略。') : translate('step2.add_strategy_step', '新增策略 (依序執行)')}>
+                                            <Button type="text" size="small" icon={<PlusCircleOutlined />} onClick={() => handleAddPreprocessStep(rowRecordItem.name)} disabled={hasHashStepInChainStatus} />
+                                        </Tooltip>
+                                    )}
+
+                                    {isUserAllowedToEditRulesStatus && rowRecordItem.steps.length > 1 && (
+                                        <Tooltip title={translate('step2.remove_strategy_step', '移除此策略')}>
+                                            <Button type="text" size="small" danger icon={<MinusCircleOutlined />} onClick={() => handleRemovePreprocessStep(rowRecordItem.name, stepIndexNumber)} />
+                                        </Tooltip>
+                                    )}
+                                </div>
+                            );
+                        }
                     )}
                 </div>
             )
@@ -734,19 +930,24 @@ export default function Step2_Mapping(): React.ReactElement
                     {rowRecordItem.steps.map(
                         (stepItemRecord, stepIndexNumber) =>
                         {
-                            const matchedActionDef = preprocessActionDefList.find((actionDefItem) => actionDefItem.value === stepItemRecord.action);
-                            const visibleParamFieldList = (matchedActionDef?.paramFields ?? []).filter((paramFieldDefItem) => !paramFieldDefItem.visibleWhen || paramFieldDefItem.visibleWhen(stepItemRecord.params));
+                            const visibleParamFieldList = getVisibleParamFieldListForStep(stepItemRecord);
+                            // ★ 修正：與「策略」欄採用同一份可見參數欄位清單計算列高下限，確保同一步驟在兩欄位
+                            //   中對齊於同一條水平線 (詳見 computeStepRowMinHeightPx 說明)。
+                            const stepRowMinHeightPx = computeStepRowMinHeightPx(visibleParamFieldList.length);
 
                             if (visibleParamFieldList.length === 0)
                             {
-                                return <div key={stepIndexNumber} style={{ height: 24, display: 'flex', alignItems: 'center', color: token.colorTextDescription }}>{DEFAULT_PREVIEW_SYMBOL}</div>;
+                                return <div key={stepIndexNumber} style={{ minHeight: stepRowMinHeightPx, display: 'flex', alignItems: 'center', color: token.colorTextDescription }}>{DEFAULT_PREVIEW_SYMBOL}</div>;
                             }
 
                             return (
-                                <Space key={stepIndexNumber} size={4} wrap style={{ width: '100%' }}>
+                                // ★ 修正：原本使用 <Space wrap> 依容器實際寬度自動換行，換行後行數不固定，
+                                //   會導致此欄與「策略」欄的列高計算失準而跑版；改為一律垂直堆疊各參數欄位，
+                                //   使所需行數 (=可見參數欄位數) 成為可預先精確計算之固定值。
+                                <div key={stepIndexNumber} style={{ display: 'flex', flexDirection: 'column', gap: PARAM_FIELD_VERTICAL_GAP_PX, minHeight: stepRowMinHeightPx, justifyContent: 'center' }}>
                                     {visibleParamFieldList.map(
                                         (paramFieldDefItem) => (
-                                            <div key={paramFieldDefItem.key} style={{ width: 110 }}>
+                                            <div key={paramFieldDefItem.key} style={{ width: '100%', maxWidth: 200 }}>
                                                 {renderPreprocessParamControl(
                                                     paramFieldDefItem,
                                                     stepItemRecord.params,
@@ -755,7 +956,7 @@ export default function Step2_Mapping(): React.ReactElement
                                             </div>
                                         )
                                     )}
-                                </Space>
+                                </div>
                             );
                         }
                     )}
