@@ -527,8 +527,8 @@ const translationResourcesDictionary = {
 					identifier: "直接識別",
 					quasi_identifier: "間接識別碼",
 					sensitive: "敏感欄位",
-					dp_sensitive: "差分隱私敏感欄位",
-					retained: "保留欄位",
+					dp_sensitive: "加噪",
+					retained: "保留（未處理）",
 					non_sensitive: "非敏感欄位"
 				},
 				log: {
@@ -1360,8 +1360,8 @@ const translationResourcesDictionary = {
 					identifier: "Identifier",
 					quasi_identifier: "Quasi-identifier",
 					sensitive: "Sensitive",
-					dp_sensitive: "DP Sensitive",
-					retained: "Retained",
+					dp_sensitive: "Noised",
+					retained: "Retained (unprocessed)",
 					non_sensitive: "Non-sensitive"
 				},
 				log: {
