@@ -34,6 +34,9 @@ const STEP_INDEX_MAPPING = 1;
 const STEP_INDEX_RULES = 2;
 const STEP_INDEX_RESULT = 3;
 
+// ★ QA 回饋：跨步驟驗證失敗的提示訊息 (notification) 顯示秒數，取代 message 預設的 3 秒過短問題
+const STEP_VALIDATION_NOTIFICATION_AUTO_CLOSE_SECONDS = 8;
+
 /**
  * 函數名稱: MainLayout
  * 函數功能: 渲染步驟導航精靈主版面，包含 Steps 標題進度條、內部對應分頁組件渲染，以及下一步/上一步按鈕之狀態驗證與門閥控管。
@@ -73,8 +76,12 @@ export default function MainLayout(): React.ReactElement
         (state) => state.resetWorkspace
     );
 
-    const { message: globalMessageApi } = AntdApp.useApp(); 
-    
+    // ★ QA 回饋：跨步驟驗證失敗的提示訊息內容較長（例如敏感欄位數量、自訂區間設定等說明），
+    //   若使用 message（頂部小提示條）預設僅顯示 3 秒且無法手動關閉，使用者常常來不及看完
+    //   就自動消失。改用 notification（右下角通知卡片）：本身內建可手動關閉的 X 按鈕，
+    //   並將顯示時間拉長，兩者一併解決「顯示時間太短」與「無法手動關閉」兩項回饋。
+    const { notification: globalNotificationApi } = AntdApp.useApp();
+
     // 取得當前主題之 Token，並判定是否處於深色模式 (符合規範 g)
     const isDarkModeActiveStatus = theme.useToken().token.colorBgContainer !== '#ffffff';
 
@@ -99,9 +106,14 @@ export default function MainLayout(): React.ReactElement
             const progressionValidationErrorMessageString = validateProgression(targetStepIndexValue, currentStepIndexValue, currentWorkspaceStoreStateSnapshot, translate);
 
             // 若驗證不通過，彈出警告並重導向回合法之最高步驟
-            if (progressionValidationErrorMessageString) 
+            if (progressionValidationErrorMessageString)
             {
-                globalMessageApi.warning(progressionValidationErrorMessageString);
+                globalNotificationApi.warning({
+                    message: translate('workspace.step_jump_blocked_title', '無法跳至該步驟'),
+                    description: progressionValidationErrorMessageString,
+                    duration: STEP_VALIDATION_NOTIFICATION_AUTO_CLOSE_SECONDS,
+                    placement: 'bottomRight',
+                });
 
                 // 強制覆寫網址列之 query parameter 以對齊真實狀態
                 executeNavigationAction(`/workspace?step=${currentStepIndexValue + 1}`, { replace: true });
@@ -130,11 +142,16 @@ export default function MainLayout(): React.ReactElement
         const progressionValidationErrorMessageString = validateProgression(expectedNextTargetStepIndexValue, currentStepIndexValue, currentWorkspaceStoreStateSnapshot, translate);
 
         // 遇到阻擋條件時彈出錯誤，中斷前進流程
-        if (progressionValidationErrorMessageString) 
+        if (progressionValidationErrorMessageString)
         {
-            globalMessageApi.error(progressionValidationErrorMessageString);
+            globalNotificationApi.error({
+                message: translate('workspace.step_next_blocked_title', '無法前往下一步'),
+                description: progressionValidationErrorMessageString,
+                duration: STEP_VALIDATION_NOTIFICATION_AUTO_CLOSE_SECONDS,
+                placement: 'bottomRight',
+            });
 
-            return; 
+            return;
         }
         
         // 呼叫全域 Store 之內建 Action 更新 currentStep

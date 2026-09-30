@@ -28,6 +28,9 @@ export interface AuditLogItem
 	linkabilityRisk: string; // 連結性攻擊殘餘風險百分比字串 (如: '18.2%')
 	inferenceRisk: string;   // 推斷性攻擊殘餘風險百分比字串 (如: '15.0%')
 	overallRisk: string;     // 綜合殘餘風險百分比字串 (如: '18.2%')
+	inputRowCount: number;   // 輸入資料筆數（原始上傳 CSV 實際資料列數，扣除表頭）
+	deletedRowCount: number; // 刪除資料筆數（輸入筆數 - 輸出筆數，抑制／去識別化過程中被移除之列數）
+	outputRowCount: number;  // 輸出資料筆數（後端回傳之去識別化 CSV 實際資料列數，扣除表頭）
 	status: 'passed' | 'failed'; // 審計驗證結果狀態 ('passed' | 'failed')
 	columnsSnapshot: string[];                        // 簽發當下資料集之欄位名稱陣列快照 (不隨後續 WorkspaceStore 變動而改變)
 	columnRoleSnapshot: Record<string, string>;       // 簽發當下各欄位最終隱私角色快照 (如 Identifier/Quasi-identifier/DP Sensitive/Retained/Non-sensitive)

@@ -36,7 +36,7 @@ type WorkspaceState = ReturnType<typeof useWorkspaceStore.getState>;
 
 /**
  * 函數名稱: validateProgression
- * 函數功能: 驗證使用者跳轉至目標步驟 (targetStepIndexValue) 時前置條件是否已完全符合，防範未上傳檔案、未標記準識別碼或 DP 參數不完整即跨步跳轉。
+ * 函數功能: 驗證使用者跳轉至目標步驟 (targetStepIndexValue) 時前置條件是否已完全符合，防範未上傳檔案、未標記間接識別碼或 DP 參數不完整即跨步跳轉。
  * 
  * 輸入參數 (Input):
  *   - targetStepIndexValue (number): 使用者欲跳轉之目標步驟索引 (0 ~ 3)
@@ -109,14 +109,25 @@ export const validateProgression = (
 			// 針對 K-Anonymity 模式：提取所有欄位目前被分配的角色清單
 			const assignedPrivacyRolesListArray = Object.values(columnPrivacyRolesMapDict || {});
 
-			// 檢查是否至少標記了一個「準識別碼 (Quasi-identifier)」
+			// 檢查是否至少標記了一個「間接識別碼 (Quasi-identifier)」
 			const hasQuasiIdentifierMarkedStatus = assignedPrivacyRolesListArray.some(
 				(roleNameString) => roleNameString === 'Quasi-identifier'
 			);
 			
 			if (!hasQuasiIdentifierMarkedStatus) 
 			{
-				return translateFunction('message.require_qi', '請至少將一個欄位標記為「準識別碼」才能進入隱私設定！');
+				return translateFunction('message.require_qi', '請至少將一個欄位標記為「間接識別碼」才能進入隱私設定！');
+			}
+
+			// ★ 新增: 「屬性對應」頁面 (KAnonymityMapping.tsx) 本身已會計算欄位層級的細部防呆 (例如
+			//   Quasi-identifier 選擇「階層樹 (Tree)」泛化策略卻未於「泛化階層映射」設定任何有效對應、
+			//   Identifier 選擇「保留部分字元」卻未填寫保留字數、泛化參數 <= 0、預處理步驟參數缺漏等)，
+			//   並透過 setStepValidation 寫入全域 isStepValid/stepErrorMessage；但先前本門閥並未讀取
+			//   該旗標，導致上述任一設定不完整時使用者仍可點擊「下一步」跳過，傳至後端執行時才出錯。
+			//   此處補上檢查，確保離開「屬性對應」頁面時，該頁面自身認定之驗證狀態亦須合法。
+			if (!currentWorkspaceStoreStateData.isStepValid && currentStepIndexValue === STEP_INDEX_MAPPING_REQUIREMENT) 
+			{
+				return currentWorkspaceStoreStateData.stepErrorMessage || translateFunction('message.complete_current_step', '請完成當前步驟的必填設定');
 			}
 		} 
 		else 
@@ -173,10 +184,14 @@ export const validateProgression = (
 				}
 			);
 
-			if (hasIncompleteDPFieldSettingStatus) 
+			if (hasIncompleteDPFieldSettingStatus)
 			{
 				return translateFunction('message.dp_incomplete', '設定不完整：請先完成所有紅框標示的參數設定，才能進入下一步！');
 			}
+
+			// ★ 邊界範圍是否涵蓋實際資料數值 (例如年齡邊界設為 0~1，但真實資料介於 20~80)，
+			// 改回僅在 DifferentialPrivacyMapping.tsx 頁面內顯示橘色警告提示，不在此處阻擋跳轉——
+			// 加噪前仍會依邊界裁剪，使用者可自行評估是否要擴大邊界範圍或維持現狀，不視為硬性錯誤。
 		}
 	}
 
