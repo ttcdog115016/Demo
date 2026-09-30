@@ -84,9 +84,9 @@ describe('K-匿名 config.json 組裝', () => {
     it('欄位名稱去除 BOM／零寬空白；舊的 drop 轉為 remove；未設定欄位改用畫面角色', () => {
         const config = buildKAnonymityConfig({
             ...baseSettings,
-            processedColumnNames: ['﻿姓名', '​地區', '備註'],
-            kAnonymityFields: [{ name: '姓名', role: 'Identifier', type: 'string', maskStrategy: 'drop' }, { name: '﻿地區', role: 'Quasi-identifier', type: 'categorical', genMaxLevel: 1 }],
-            kAnonymityHierarchies: [{ fieldName: '​地區', mappings: [['大安區', '臺北市']] }],
+            processedColumnNames: ['\uFEFF姓名', '\u200B地區', '備註'],
+            kAnonymityFields: [{ name: '姓名', role: 'Identifier', type: 'string', maskStrategy: 'drop' }, { name: '\uFEFF地區', role: 'Quasi-identifier', type: 'categorical', genMaxLevel: 1 }],
+            kAnonymityHierarchies: [{ fieldName: '\u200B地區', mappings: [['大安區', '臺北市']] }],
             resolveFallbackUiRole: (columnName) => (columnName === '備註' ? 'Sensitive' : 'Non-sensitive')
         }).k_anonymity as Record<string, Record<string, unknown>>;
         expect(config.columns).toEqual({

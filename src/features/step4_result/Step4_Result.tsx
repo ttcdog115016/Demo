@@ -26,11 +26,11 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuditStore } from '../../store/useAuditStore';
-import { isDateTimeDpField } from '../../utils/dpFieldHelpers';
 import { buildBackendSubgroupPayload } from '../../utils/riskSubgroupHelpers';
-import { ensureDatasetProfile, getColumnUniqueValueRatio } from '../../utils/datasetProfile';
-import { analyzeNumericColumnRange, computeBinnedColumnStats as computeBinnedColumnStatsFromProfile, computeAutoNiceBinWidth, applySensitiveBinningToCsvText } from '../../utils/sensitiveBinning'; // ★ 新增：風險評估「對象族群限定條件」轉換為後端格式
+import { ensureDatasetProfile } from '../../utils/datasetProfile';
+import { applySensitiveBinningToCsvText } from '../../utils/sensitiveBinning'; // ★ 新增：風險評估「對象族群限定條件」轉換為後端格式
 import { extractCapRequestFailureReasonText, buildCapUnavailableReceipt, countCsvDataRowsForStats } from '../../utils/riskResultHelpers';
+import { resolveKAnonymityRiskColumns, selectKAnonymitySensitiveCandidates, describeKAnonymityHighCardinalityHandling, buildKAnonymityRiskColumnsForCandidate, buildKAnonymityConfigBlockForRisk, selectDifferentialPrivacySensitiveCandidates, describeDifferentialPrivacyHighCardinalityHandling, buildDifferentialPrivacyRiskColumnsForCandidate, buildRiskAttackConfigObject, buildCapConfigObject, createJsonConfigFile, runWorstCaseAttackRounds, runWorstCaseCapRounds, RISK_ATTACK_DEFAULT_PARAMS, type RiskColumnsMap, type HighCardinalitySensitiveInfo } from '../../utils/riskAssessment';
 import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, buildKAnonymityApiOptions, buildDifferentialPrivacyApiOptions, computeDpTotalBudgets, type DpStoreField, type KAnonymityPipelineSettings, type DifferentialPrivacyConfigInput } from '../../utils/pipelineConfig';
 
 // 引入 API 服務
@@ -708,27 +708,15 @@ export default function Step4_Result(): React.ReactElement
                     return processedCsvTextPromise;
                 };
 
-                // ★ 使用者反映（2026-09-22）：高唯一值比例（近乎每筆都不同值）敏感欄位偵測，原本只
-                //   寫在下方 K-匿名分支內，但差分隱私模式的候選敏感欄位（categoricalCandidateFieldsList）
-                //   目前只用「型別＝類別型」這種較粗略的方式篩選，一個類別型欄位本身若類別數仍然很多
-                //   （例如「地區」有數百種不同城市），一樣可能觸發後端 sklearn 分類器當機（詳見上方
-                //   deidentifiedColumnsCountValue／highCardinalitySensitiveWarningInfo 狀態宣告處的完整
-                //   說明）。故把這段偵測邏輯提升到兩個模式共用的位置，只依「實際資料的唯一值佔比」
-                //   判斷（而非欄位型別），K-匿名與差分隱私分支都能重複使用同一份 computeColumnUniqueValueRatio。
-                const HIGH_CARDINALITY_SENSITIVE_RATIO_THRESHOLD = 0.5;
                 // ★ 2026-09-30：不再把整份原始 CSV 另外 Papa.parse 成列物件陣列（100 萬筆時非常吃記憶體），
                 //   改用 utils/datasetProfile.ts 整份資料集只掃描一次的欄位統計快照（Step2／Step3 通常已掃描過，
                 //   這裡直接取用）。相異值數被截斷的極高基數欄位，佔比一律視為 1（保守判定為高唯一值）。
                 const datasetProfileForRisk = await ensureDatasetProfile(originalFile);
-                const computeColumnUniqueValueRatio = (targetColumnName: string): number => getColumnUniqueValueRatio(datasetProfileForRisk, targetColumnName);
 
                 // ★ 後端工程師回覆（2026-09-29）：連續數值型敏感欄位改為先分級距再送風險評估（完整說明見上方
                 //   sensitiveBinWidthOverridesMap 狀態宣告處）。級距一律以 0 為原點切齊
                 //   （floor(值 ÷ 寬度) × 寬度），確保原始資料與去識別化資料（CAP 需兩份）用同一套切點。
                 //   非數值的儲存格（空值、抑制後的「*」等）原樣保留不轉換。
-                // 分級距運算已抽出至 utils/sensitiveBinning.ts（有單元測試）；這裡綁定本次的欄位統計快照
-                const analyzeNumericColumnRangeForBinning = (targetColumnName: string) => analyzeNumericColumnRange(datasetProfileForRisk, targetColumnName);
-                const computeBinnedColumnStats = (targetColumnName: string, binWidthValue: number) => computeBinnedColumnStatsFromProfile(datasetProfileForRisk, targetColumnName, binWidthValue);
                 // 本次實際套用級距的欄位 → 寬度；以及送風險評估用的原始資料副本（未分級距時即 safeDataFile 本身）。
                 const riskEvaluationBinWidthMap: Record<string, number> = {};
                 let riskOriginalDataFile: File = safeDataFile;
@@ -826,162 +814,38 @@ export default function Step4_Result(): React.ReactElement
                 setCurrentPipelinePhaseType('auditing');
                 setSystemSimulationLogsList(prev => [...prev, translate('step4.log.start_risk', '[{{time}}] 🚀 脫敏完成，啟動真實風險評估（三大攻擊模擬）', { time: formatCurrentTimeForLogString() })]);
 
-                // 風險評估官方範例參數（docs/manual_test/config_risk_*.json 及 report_request.json 的
-                // risk_params 預設值），目前畫面未開放調整，一律採用官方預設
-                const RISK_ATTACK_DEFAULT_PARAMS = {
-                    n_iter: 50,
-                    ctrl_ratio: 0.2,
-                    seed: 42,
-                    n_subset: 500,
-                    n_repeats: 1, // raised from 1: DP noise inside produce_syn() is unseeded, so a single repeat is one noisy sample; averaging over repeats stabilizes the reported risk %
-                    overlap_ratio: 0.0
-                };
-
-                // ★ 新增：風險評估「對象族群限定條件」(見交付文件《設定檔結構與參數說明.pdf》4-3 節)。
-                // 使用者於「隱私設定」步驟 (RiskSubgroupFilterPanel.tsx) 設定之限定條件，轉換為後端
-                // 三個風險評估端點皆能接受之 subgroup 格式；未設定任何條件時回傳 undefined，讓下方
-                // 三處組設定檔時直接省略 subgroup 這個鍵，對應後端「未填即評估全體」之預設行為。
+                // 候選欄位挑選、設定檔組裝與逐輪取最大值見 utils/riskAssessment.ts（含三攻擊固定參數 RISK_ATTACK_DEFAULT_PARAMS）。
+                // 風險評估「對象族群限定條件」（《設定檔結構與參數說明.pdf》4-3 節）：未設定時為 undefined，設定檔即省略 subgroup。
                 const resolvedRiskSubgroupPayload = buildBackendSubgroupPayload(riskSubgroupFiltersMapDict);
+                const riskDatasetNameText = currentDatasetFileNameString || 'dataset';
+                const appendPipelineLog = (messageText: string) => setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ${messageText}`]);
 
                 let attackReportResult: AttackReport | null = null;
                 let capReportResult: CapReport | null = null;
-                let finalRiskColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
-
-                // ★ 使用者反映（2026-09-22）：K-匿名模式下「敏感欄位」的處理方式改版，詳見下方
-                //   K-匿名分支內的完整說明。以下兩個變數把該分支算出的「候選敏感欄位清單」與
-                //   「依候選欄位組出風險評估 columns 設定」的函式提升到外層，讓後面 K-匿名／DP
-                //   共用的 CAP 區塊也能存取，藉此讓 CAP 前後對比在 K-匿名模式下比照三攻擊，對每個
-                //   候選敏感欄位各自呼叫一次、取最大值，而不是只沿用三攻擊選出的單一輪設定。
-                let kAnonSensitiveCandidateColumnNamesList: string[] = [];
-                let buildKAnonRiskColumnsMapForCandidateFn:
-                    ((candidateSensitiveFieldName: string) => Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }>) | null = null;
-                // ★ 使用者反映（2026-09-23）：差分隱私模式的 CAP 先前一直沒有比照三攻擊「對每個候選
-                //   敏感欄位各自跑一輪、取最大值」，而是直接沿用三攻擊迴圈裡「三項指標最高的那一輪」
-                //   欄位設定去跑單一次 CAP——但某欄位的三攻擊風險最高，不代表同一欄位的 CAP 風險
-                //   （cap_after）也最高，會安靜地漏掉「CAP 風險其實在另一個候選欄位上更高」的情況。
-                //   比照上面 K-匿名的兩個變數，把 DP 分支算出的候選清單與 columns 設定組裝函式同樣
-                //   提升到外層，讓下方共用的 CAP 區塊可以對 DP 模式也逐一候選欄位跑一輪、取最大值。
-                let dpSensitiveCandidateColumnNamesList: string[] = [];
-                let buildDpRiskColumnsMapForCandidateFn:
-                    ((candidateSensitiveFieldName: string) => Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }>) | null = null;
-                // ★ 修正：setHighCardinalitySensitiveWarningInfo(highCardinalityCandidateInfoList)
-                //   雖然在下方 K-匿名分支呼叫，但 React 的 setState 不會同步更新這次 render 當下
-                //   閉包裡的 highCardinalitySensitiveWarningInfo（state 變數）本身——若下方寫入
-                //   Step4Cache 時直接讀取 state 變數，讀到的會是「上一輪」的舊值，而非本次剛算出
-                //   的結果，導致快照與畫面顯示的警告不一致。改用這個函式作用域內的一般變數承接本次
-                //   真正算出的清單，寫入快照時讀這個變數，而非 state。
-                let finalHighCardinalitySensitiveWarningInfo: { columnName: string; uniqueRatioPercent: number; handling?: 'binned' | 'skipped' | 'forced'; binWidth?: number; binCount?: number }[] = [];
+                let finalRiskColumnsMap: RiskColumnsMap = {};
+                // 三攻擊與 CAP 都對同一組候選敏感欄位逐一跑一輪、各自取最大值（某欄位三攻擊風險最高，不代表 CAP 也最高）
+                let capCandidateColumnNamesList: string[] = [];
+                let buildCapRiskColumnsMapForCandidateFn: ((candidateSensitiveFieldName: string) => RiskColumnsMap) | null = null;
+                // setState 不會同步更新本次閉包內的 state 變數，寫入 Step4Cache 快照時改讀這個區域變數
+                let finalHighCardinalitySensitiveWarningInfo: HighCardinalitySensitiveInfo[] = [];
 
                 if (currentPrivacyModeTypeStr === 'k-anonymity') {
-                    // K-匿名模式：欄位角色（identifier／quasi_identifier／sensitive／non_sensitive）
-                    // 已在 Step2「屬性分類」寫入 columnRoles／kAnonymityFields。
-                    const riskColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
-
-                    // ★ 新增：使用者反映「Step2 畫面上明明已設定 1 個敏感欄位，Step4 執行卻偵測到 0 個」，
-                    //   純靠讀程式碼無法百分之百重現當下的資料狀態。這裡逐欄記錄「比對過程」快照
-                    //   （是否在 kAnonymityFieldsList 找到對應欄位、原始 role 字串為何、最終解析出的
-                    //   後端角色），發生「敏感欄位數不等於 1」時一併印在主控台，供下次重現時直接看出
-                    //   實際原因（例如欄位名稱比對不到、或 role 字串非預期值），而不必用猜的。
-                    const roleResolutionDiagnosticsList: { column: string; matchedInFieldsList: boolean; rawRole: unknown; resolvedBackendRole: string }[] = [];
-
-                    actualProcessedColumnsList.forEach((colName) => {
-                        const cleanName = colName.replace(/^[\uFEFF\u200B]+/, '').trim();
-                        const matchedField = kAnonymityFieldsList.find(
-                            (item: unknown) => {
-                                const record = item as Record<string, unknown>;
-                                return record && typeof record.name === 'string' && record.name.replace(/^[\uFEFF\u200B]+/, '').trim() === cleanName;
-                            }
-                        ) as Record<string, unknown> | undefined;
-
-                        let backendRole = 'non_sensitive';
-                        let colType = 'string';
-
-                        if (matchedField) {
-                            const privacyRoleMappingDict: Record<string, string> = {
-                                'Identifier': 'identifier',
-                                'Quasi-identifier': 'quasi_identifier',
-                                'Sensitive': 'sensitive',
-                                'Non-sensitive': 'non_sensitive'
-                            };
-                            backendRole = privacyRoleMappingDict[String(matchedField.role)] || 'non_sensitive';
-                            colType = String(matchedField.type) || 'string';
-                        } else {
-                            const { role: uiRole } = getCalculatedRole(cleanName);
-                            if (uiRole === 'Identifier') backendRole = 'identifier';
-                            if (uiRole === 'Quasi-identifier') backendRole = 'quasi_identifier';
-                            if (uiRole === 'Sensitive') backendRole = 'sensitive';
-                        }
-
-                        roleResolutionDiagnosticsList.push({
-                            column: cleanName,
-                            matchedInFieldsList: Boolean(matchedField),
-                            rawRole: matchedField ? matchedField.role : '(未於 kAnonymityFieldsList 中找到，改用 getCalculatedRole 推斷)',
-                            resolvedBackendRole: backendRole
-                        });
-
-                        if (backendRole === 'quasi_identifier' || backendRole === 'sensitive') {
-                            riskColumnsMap[cleanName] = { role: backendRole as 'quasi_identifier' | 'sensitive', type: colType };
-                        }
+                    const { riskColumnsMap, roleResolutionDiagnostics } = resolveKAnonymityRiskColumns({
+                        processedColumnNames: actualProcessedColumnsList,
+                        kAnonymityFields: kAnonymityFieldsList,
+                        resolveFallbackUiRole: (cleanColumnName) => getCalculatedRole(cleanColumnName).role
                     });
-
-                    // ★ 使用者反映（2026-09-22）：先前「敏感欄位數 ≠ 1 就整個 throw」的做法，會連同一輪
-                    //   已經算好的 K-匿名去識別化資料、品質分數，把整個 Step4 結果都一併擋下顯示失敗——
-                    //   但敏感欄位設定純粹是「風險評估」這一步驟要用的，不該連去識別化本身的結果都看不到。
-                    //   改版後兩種情況都不再 throw：
-                    //   ① 敏感欄位 = 0：僅顯示警告、三攻擊與 CAP 這整段風險評估直接跳過（不呼叫 API），
-                    //      因為後端 RiskConfig 規則對「三攻擊」與「CAP」都要求剛好 1 個敏感欄位，0 個的話
-                    //      兩者其實都會被後端擋掉，並非只有 CAP 需要跳過；其餘結果（去識別化資料、品質
-                    //      分數等）照常顯示。
-                    //   ② 敏感欄位 ≥ 2（使用者同時標記多個欄位為「敏感」）：不再視為錯誤，而是比照下方
-                    //      差分隱私模式「輪流把其中一欄當敏感欄位」的做法——只在使用者實際標成「敏感」
-                    //      角色的這幾欄之間輪流（其餘欄位維持原本角色，不會被拿來當候選），對每個候選
-                    //      各自呼叫一次三攻擊，三項指標各自在所有輪次中取最大值（保守／worst-case）；
-                    //      CAP 前後對比也採同樣的候選清單各自呼叫一次、取最大值（見下方共用 CAP 區塊），
-                    //      而非只沿用三攻擊選出的單一輪設定，因為讓某欄位的三攻擊風險最高不代表同一欄位
-                    //      的 CAP 風險也最高。敏感欄位 = 1 時等同迴圈跑一輪，結果與先前版本一致。
+                    // 敏感欄位 = 0：只警告並略過三攻擊與 CAP；≥ 2：在這幾欄之間輪流當敏感欄位、取最大值
                     const sensitiveCandidateColumnNamesList = Object.keys(riskColumnsMap).filter(
                         (colName) => riskColumnsMap[colName].role === 'sensitive'
                     );
-
-                    // ★ 高唯一值比例（近乎每筆都不同值）候選敏感欄位偵測：見上方
-                    //   highCardinalitySensitiveWarningInfo／forceRunHighCardinalitySensitiveFieldsStatus
-                    //   狀態宣告處，以及本函式稍早（cleanedCsvText 定義後）computeColumnUniqueValueRatio
-                    //   共用函式處的完整說明。逐一計算每個候選敏感欄位「非空值中的相異值數 ÷ 非空值
-                    //   總數」，超過門檻（採 sklearn 警告訊息本身引用的 50%）者視為高風險。
-                    const highCardinalityCandidateInfoList: { columnName: string; uniqueRatioPercent: number; handling?: 'binned' | 'skipped' | 'forced'; binWidth?: number; binCount?: number }[] = [];
-                    const effectiveSensitiveCandidateColumnNamesList = sensitiveCandidateColumnNamesList.filter((candidateColumnName) => {
-                        const uniqueRatioValue = computeColumnUniqueValueRatio(candidateColumnName);
-                        if (uniqueRatioValue > HIGH_CARDINALITY_SENSITIVE_RATIO_THRESHOLD) {
-                            const uniqueRatioPercent = Math.round(uniqueRatioValue * 1000) / 10;
-                            // 勾選「仍要強制執行」：一律以原始值照常送出（不分級距），但仍會警告。
-                            if (forceRunHighCardinalitySensitiveFieldsStatus) {
-                                highCardinalityCandidateInfoList.push({ columnName: candidateColumnName, uniqueRatioPercent, handling: 'forced' });
-                                return true;
-                            }
-                            // ★ 2026-09-29：幾乎全為數值的欄位（如薪資）依後端建議自動分級距後保留為候選；
-                            //   分級距後唯一值佔比仍超過門檻（通常是資料筆數太少或級距設太細）才略過。
-                            const numericRangeInfo = analyzeNumericColumnRangeForBinning(candidateColumnName);
-                            if (numericRangeInfo) {
-                                const overrideBinWidthValue = sensitiveBinWidthOverridesMap[candidateColumnName];
-                                const binWidthValue = overrideBinWidthValue && overrideBinWidthValue > 0
-                                    ? overrideBinWidthValue
-                                    : computeAutoNiceBinWidth(numericRangeInfo.min, numericRangeInfo.max);
-                                const binnedStats = computeBinnedColumnStats(candidateColumnName, binWidthValue);
-                                const isBinningSufficientStatus = binnedStats.uniqueRatio <= HIGH_CARDINALITY_SENSITIVE_RATIO_THRESHOLD;
-                                highCardinalityCandidateInfoList.push({
-                                    columnName: candidateColumnName, uniqueRatioPercent,
-                                    handling: isBinningSufficientStatus ? 'binned' : 'skipped',
-                                    binWidth: binWidthValue, binCount: binnedStats.distinctCount
-                                });
-                                if (isBinningSufficientStatus) riskEvaluationBinWidthMap[candidateColumnName] = binWidthValue;
-                                return isBinningSufficientStatus;
-                            }
-                            // 文字型（如自由填寫的疾病描述）無法自動分級距，維持略過。
-                            highCardinalityCandidateInfoList.push({ columnName: candidateColumnName, uniqueRatioPercent, handling: 'skipped' });
-                            return false;
-                        }
-                        return true;
+                    const kAnonCandidateSelection = selectKAnonymitySensitiveCandidates({
+                        candidateColumnNames: sensitiveCandidateColumnNamesList,
+                        datasetProfile: datasetProfileForRisk,
+                        binWidthOverrides: sensitiveBinWidthOverridesMap,
+                        forceRunHighCardinality: forceRunHighCardinalitySensitiveFieldsStatus
                     });
+                    Object.assign(riskEvaluationBinWidthMap, kAnonCandidateSelection.binWidthMap);
                     if (Object.keys(riskEvaluationBinWidthMap).length > 0) {
                         riskOriginalDataFile = new File(
                             [applySensitiveBinningToCsvText(cleanedCsvText, riskEvaluationBinWidthMap)],
@@ -989,410 +853,137 @@ export default function Step4_Result(): React.ReactElement
                             { type: 'text/csv;charset=utf-8' }
                         );
                     }
-                    setHighCardinalitySensitiveWarningInfo(highCardinalityCandidateInfoList);
-                    finalHighCardinalitySensitiveWarningInfo = highCardinalityCandidateInfoList;
-                    if (highCardinalityCandidateInfoList.length > 0) {
-                        const describeColumnsText = (itemsList: typeof highCardinalityCandidateInfoList): string => itemsList
-                            .map((item) => `「${item.columnName}」(唯一值佔比 ${item.uniqueRatioPercent}%)`)
-                            .join('、');
-                        const forcedItemsList = highCardinalityCandidateInfoList.filter((item) => item.handling === 'forced');
-                        const binnedItemsList = highCardinalityCandidateInfoList.filter((item) => item.handling === 'binned');
-                        const skippedItemsList = highCardinalityCandidateInfoList.filter((item) => item.handling === 'skipped');
-                        if (forcedItemsList.length > 0) {
-                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ 已依設定以原始值強制對 ${describeColumnsText(forcedItemsList)} 執行三攻擊／CAP。推斷性攻擊需以可列舉類別為預測目標，此類欄位結果不具評估意義且可能跑不完，如遇執行失敗或無回應請取消勾選「仍要強制執行」。`]);
-                        }
-                        binnedItemsList.forEach((item) => {
-                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ℹ️ 「${item.columnName}」為連續數值（唯一值佔比 ${item.uniqueRatioPercent}%），已自動以每 ${item.binWidth!.toLocaleString()} 為一級距（共 ${item.binCount} 級）轉換後再執行三攻擊／CAP（僅用於風險評估，不影響去識別化結果本身）。`]);
-                        });
-                        if (skippedItemsList.length > 0) {
-                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ ${describeColumnsText(skippedItemsList)} 的值幾乎每筆都不同，推斷性攻擊無法對其建立有效的分類模型，已略過該欄位的三攻擊／CAP 風險評估（不影響去識別化結果本身）。數值欄位可在下方調大級距寬度；文字欄位請先自行歸併為類別後重新上傳。`]);
-                        }
-                    }
+                    setHighCardinalitySensitiveWarningInfo(kAnonCandidateSelection.highCardinalityInfo);
+                    finalHighCardinalitySensitiveWarningInfo = kAnonCandidateSelection.highCardinalityInfo;
+                    describeKAnonymityHighCardinalityHandling(kAnonCandidateSelection.highCardinalityInfo).forEach(appendPipelineLog);
 
-                    kAnonSensitiveCandidateColumnNamesList = effectiveSensitiveCandidateColumnNamesList;
-
-                    const buildKAnonRiskColumnsMapForCandidate = (candidateSensitiveFieldName: string): Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> => {
-                        const columnsMapResult: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
-                        Object.entries(riskColumnsMap).forEach(([colName, colInfo]) => {
-                            columnsMapResult[colName] = {
-                                role: colName === candidateSensitiveFieldName ? 'sensitive' : 'quasi_identifier',
-                                // 已分級距的欄位在送出的資料副本中已是級距標籤，型別一併改宣告為類別型。
-                                type: riskEvaluationBinWidthMap[colName] ? 'categorical' : colInfo.type
-                            };
-                        });
-                        return columnsMapResult;
-                    };
-                    buildKAnonRiskColumnsMapForCandidateFn = buildKAnonRiskColumnsMapForCandidate;
-
-                    // 送風險評估的 k_anonymity 區塊：已分級距欄位的 columns.type 同步改為 categorical，
-                    // 與資料副本內容一致；未分級距時原封沿用去識別化時的設定。
-                    const buildKAnonConfigBlockForRisk = (): unknown => {
-                        const originalKAnonBlock = (configObject as Record<string, unknown>).k_anonymity as Record<string, unknown> | undefined;
-                        const binnedColumnNamesList = Object.keys(riskEvaluationBinWidthMap);
-                        if (!originalKAnonBlock || binnedColumnNamesList.length === 0) return originalKAnonBlock;
-                        const originalColumnsMap = (originalKAnonBlock.columns || {}) as Record<string, Record<string, unknown>>;
-                        const overriddenColumnsMap: Record<string, Record<string, unknown>> = { ...originalColumnsMap };
-                        binnedColumnNamesList.forEach((colName) => {
-                            if (overriddenColumnsMap[colName]) overriddenColumnsMap[colName] = { ...overriddenColumnsMap[colName], type: 'categorical' };
-                        });
-                        return { ...originalKAnonBlock, columns: overriddenColumnsMap };
-                    };
+                    const effectiveSensitiveCandidateColumnNamesList = kAnonCandidateSelection.effectiveCandidateColumnNames;
+                    const buildKAnonRiskColumnsMapForCandidate = (candidateSensitiveFieldName: string) =>
+                        buildKAnonymityRiskColumnsForCandidate(riskColumnsMap, riskEvaluationBinWidthMap, candidateSensitiveFieldName);
+                    capCandidateColumnNamesList = effectiveSensitiveCandidateColumnNamesList;
+                    buildCapRiskColumnsMapForCandidateFn = buildKAnonRiskColumnsMapForCandidate;
 
                     if (effectiveSensitiveCandidateColumnNamesList.length === 0) {
                         if (sensitiveCandidateColumnNamesList.length === 0) {
-                            // ★ 主控台印出完整逐欄比對快照（含原始 kAnonymityFieldsList 內容），供以瀏覽器
-                            //   開發者工具 (F12 → Console) 直接查看實際比對到的資料，不需再靠猜測。
+                            // 主控台印出逐欄比對快照，F12 → Console 可直接看出為何沒有敏感欄位
                             console.warn(
                                 '[風險評估／敏感欄位] 目前未偵測到任何「敏感」欄位，本次跳過三攻擊與 CAP 風險評估' +
                                 '（不影響去識別化資料本身的產生與品質分數）。逐欄比對快照：',
-                                roleResolutionDiagnosticsList,
+                                roleResolutionDiagnostics,
                                 '目前 kAnonymityFieldsList 原始內容：',
                                 kAnonymityFieldsList
                             );
-                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ 未設定「敏感」欄位，已略過三攻擊與 CAP 風險評估（去識別化結果與品質分數不受影響）。`]);
+                            appendPipelineLog('⚠️ 未設定「敏感」欄位，已略過三攻擊與 CAP 風險評估（去識別化結果與品質分數不受影響）。');
                         }
-                        // ★ 另一種情況（sensitiveCandidateColumnNamesList.length > 0 但全部被判定為高唯一值
-                        //   比例欄位）已在上方 highCardinalityCandidateInfoList 區塊記錄對應警告訊息，
-                        //   此處不再重複顯示，避免同一次執行出現兩則語意衝突的訊息。
+                        // 全部候選都被判定為高唯一值時，上方已記錄對應訊息，這裡不再重複
                         finalRiskColumnsMap = riskColumnsMap;
                     } else {
-                        let worstCaseAttackReport: AttackReport | null = null;
-                        let worstCaseKAnonRiskColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
-
-                        for (let roundIndexNumber = 0; roundIndexNumber < effectiveSensitiveCandidateColumnNamesList.length; roundIndexNumber++) {
-                            const candidateSensitiveFieldName = effectiveSensitiveCandidateColumnNamesList[roundIndexNumber];
-                            const kAnonRiskColumnsMapForThisRound = buildKAnonRiskColumnsMapForCandidate(candidateSensitiveFieldName);
-
-                            const riskConfigObject = {
-                                version: 'step4_risk_k_anonymity',
-                                dataset: currentDatasetFileNameString || 'dataset',
-                                risk_attacks: {
-                                    enabled: true,
-                                    columns: kAnonRiskColumnsMapForThisRound,
-                                    ...(resolvedRiskSubgroupPayload ? { subgroup: resolvedRiskSubgroupPayload } : {}),
-                                    ...RISK_ATTACK_DEFAULT_PARAMS
-                                },
-                                k_anonymity: buildKAnonConfigBlockForRisk()
-                            };
-                            const riskConfigBlob = new Blob([JSON.stringify(riskConfigObject)], { type: 'application/json;charset=utf-8' });
-                            const riskConfigFile = new File([riskConfigBlob], 'risk_config.json', { type: 'application/json' });
-
-                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏳ 三攻擊風險評估運算中（第 ${roundIndexNumber + 1}/${effectiveSensitiveCandidateColumnNamesList.length} 輪）...`]);
-
-                            const riskResponse = await runRiskKAnonymity(riskOriginalDataFile, riskConfigFile, pipelineRequestOptions);
-                            if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error(`三攻擊風險評估（K-匿名，以「${candidateSensitiveFieldName}」為敏感欄位）API 請求未成功`));
-
-                            const thisRoundReport = riskResponse.report;
-                            const isThisRoundNewWorstCase: boolean =
-                                !worstCaseAttackReport ||
-                                Math.max(thisRoundReport.singling_out_risk, thisRoundReport.linkability_risk, thisRoundReport.inference_risk) >
-                                Math.max(worstCaseAttackReport.singling_out_risk, worstCaseAttackReport.linkability_risk, worstCaseAttackReport.inference_risk);
-
-                            const aggregatedSinglingOutRisk = Math.max(worstCaseAttackReport?.singling_out_risk ?? -Infinity, thisRoundReport.singling_out_risk);
-                            const aggregatedLinkabilityRisk = Math.max(worstCaseAttackReport?.linkability_risk ?? -Infinity, thisRoundReport.linkability_risk);
-                            const aggregatedInferenceRisk = Math.max(worstCaseAttackReport?.inference_risk ?? -Infinity, thisRoundReport.inference_risk);
-
-                            if (isThisRoundNewWorstCase) {
-                                worstCaseKAnonRiskColumnsMap = kAnonRiskColumnsMapForThisRound;
+                        const kAnonConfigBlockForRisk = buildKAnonymityConfigBlockForRisk((configObject as Record<string, unknown>).k_anonymity, riskEvaluationBinWidthMap);
+                        const kAnonAttackRoundsResult = await runWorstCaseAttackRounds({
+                            candidateColumnNames: effectiveSensitiveCandidateColumnNamesList,
+                            buildColumnsForCandidate: buildKAnonRiskColumnsMapForCandidate,
+                            onRoundStart: (roundIndex, roundCount) => appendPipelineLog(`⏳ 三攻擊風險評估運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`),
+                            runRound: async (columnsForThisRound, candidateSensitiveFieldName) => {
+                                const riskConfigFile = createJsonConfigFile(buildRiskAttackConfigObject({
+                                    version: 'step4_risk_k_anonymity', dataset: riskDatasetNameText, columns: columnsForThisRound,
+                                    subgroup: resolvedRiskSubgroupPayload, privacyBlock: { k_anonymity: kAnonConfigBlockForRisk }
+                                }), 'risk_config.json');
+                                const riskResponse = await runRiskKAnonymity(riskOriginalDataFile, riskConfigFile, pipelineRequestOptions);
+                                if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error(`三攻擊風險評估（K-匿名，以「${candidateSensitiveFieldName}」為敏感欄位）API 請求未成功`));
+                                return riskResponse.report;
                             }
-
-                            worstCaseAttackReport = {
-                                ...(isThisRoundNewWorstCase ? thisRoundReport : worstCaseAttackReport!),
-                                singling_out_risk: aggregatedSinglingOutRisk,
-                                linkability_risk: aggregatedLinkabilityRisk,
-                                inference_risk: aggregatedInferenceRisk,
-                            };
-                        }
-
-                        setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ✅ K-匿名三攻擊風險評估運算完成`]);
-
-                        attackReportResult = worstCaseAttackReport;
-                        finalRiskColumnsMap = worstCaseKAnonRiskColumnsMap;
+                        });
+                        appendPipelineLog('✅ K-匿名三攻擊風險評估運算完成');
+                        attackReportResult = kAnonAttackRoundsResult.worstCaseReport;
+                        finalRiskColumnsMap = kAnonAttackRoundsResult.worstCaseColumns;
                     }
                 } else if (currentPrivacyModeTypeStr === 'differential-privacy') {
-                    // ★ DP 模式輪流把「每一個已啟用欄位」各自當作敏感欄位跑一次三攻擊風險評估
-                    // （其餘已啟用欄位固定視為 quasi_identifier），指認性／連結性／推斷性三項
-                    // 指標各自取所有輪次中的最大值，作為保守（worst-case）的最終風險分數——
-                    // 不同輪次的「敏感欄位」不同，QI 組成也隨之不同，故三項指標本來就可能分別
-                    // 在不同輪次達到最大值，改為每項指標各自取最大值，而非固定採用單一輪次的結果。
-                    // 注意：輪次數等於已啟用欄位數，會等比例增加對後端 /api/v1/risk/dp 的呼叫次數。
-                    const enabledDpFieldsList = (currentDpFieldsListArray || []).filter((field: DpStoreField) => field.enabled);
-
-                    if (enabledDpFieldsList.length === 0) {
-                        throw new Error('風險評估要求至少 1 個已啟用的差分隱私欄位，請回到步驟二欄位設定啟用欄位後再重新運算。');
-                    }
-
-                    // ★ 候選「敏感欄位」只從已啟用的類別型（Categorical）欄位中挑選，連續數值型
-                    // （Numeric，如薪資／年齡／生日）欄位不列入候選：後端的推斷性攻擊底層是用
-                    // sklearn 分類器（classifier）對「敏感欄位」的值做分類預測，若把幾乎每筆都
-                    // 不同值的連續數值欄位當成分類目標，會觸發 sklearn 的
-                    // 「unique classes 超過樣本數 50%，這比較像迴歸問題而非分類問題」警告，
-                    // 大量重複記錄、運算量暴增，正是先前造成後端掛掉、去識別化執行失敗的原因。
-                    // 連續數值型欄位仍會在每一輪的 columns 中以 quasi_identifier 身分送出，
-                    // 只是不會被輪流指派為 sensitive。
-                    const categoricalCandidateFieldsList = enabledDpFieldsList.filter(
-                        (field: DpStoreField) => field.fieldType === 'Categorical'
-                    );
-
-                    if (categoricalCandidateFieldsList.length === 0) {
-                        throw new Error('風險評估的敏感欄位僅能從已啟用的「類別型」欄位中挑選，目前沒有已啟用的類別型欄位，請回到步驟二欄位設定啟用至少 1 個類別型欄位後再重新運算。');
-                    }
-
-                    // ★ 使用者反映（2026-09-23）：上面「只挑類別型欄位」的篩選比較粗略——一個類別型
-                    //   欄位本身若類別數仍然很多（例如「地區」有數百種不同城市），一樣可能讓後端
-                    //   sklearn 分類器當掉（機制詳見本函式稍早 computeColumnUniqueValueRatio 共用
-                    //   函式處的完整說明）。這裡再依「實際資料的唯一值佔比」對類別型候選欄位做第二層
-                    //   篩選，判斷邏輯與下面 K-匿名分支完全一致，共用同一個 highCardinalitySensitiveWarningInfo
-                    //   ／forceRunHighCardinalitySensitiveFieldsStatus 狀態與勾選框。若篩選後一個候選
-                    //   都不剩，下方迴圈自然執行 0 次、attackReportResult 維持 null，等同「本次略過
-                    //   三攻擊／CAP」，不會因此讓整個差分隱私管線失敗（去識別化結果與品質分數不受影響）。
-                    const dpHighCardinalityCandidateInfoList: { columnName: string; uniqueRatioPercent: number; handling?: 'binned' | 'skipped' | 'forced'; binWidth?: number; binCount?: number }[] = [];
-                    const effectiveCategoricalCandidateFieldsList = categoricalCandidateFieldsList.filter((field: DpStoreField) => {
-                        const uniqueRatioValue = computeColumnUniqueValueRatio(field.fieldName);
-                        if (uniqueRatioValue > HIGH_CARDINALITY_SENSITIVE_RATIO_THRESHOLD) {
-                            dpHighCardinalityCandidateInfoList.push({ columnName: field.fieldName, uniqueRatioPercent: Math.round(uniqueRatioValue * 1000) / 10, handling: forceRunHighCardinalitySensitiveFieldsStatus ? 'forced' : 'skipped' });
-                            return forceRunHighCardinalitySensitiveFieldsStatus;
-                        }
-                        return true;
+                    // 輪流把每個候選類別型欄位當敏感欄位（其餘已啟用欄位為間接識別），輪次數 = 候選欄位數
+                    const dpCandidateSelection = selectDifferentialPrivacySensitiveCandidates({
+                        dpFields: currentDpFieldsListArray,
+                        datasetProfile: datasetProfileForRisk,
+                        forceRunHighCardinality: forceRunHighCardinalitySensitiveFieldsStatus
                     });
-                    if (dpHighCardinalityCandidateInfoList.length > 0) {
-                        setHighCardinalitySensitiveWarningInfo(dpHighCardinalityCandidateInfoList);
-                        finalHighCardinalitySensitiveWarningInfo = dpHighCardinalityCandidateInfoList;
-                        const flaggedColumnsDescriptionText = dpHighCardinalityCandidateInfoList
-                            .map((item) => `「${item.columnName}」(唯一值佔比 ${item.uniqueRatioPercent}%)`)
-                            .join('、');
-                        if (forceRunHighCardinalitySensitiveFieldsStatus) {
-                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ 已依設定強制對 ${flaggedColumnsDescriptionText} 執行三攻擊／CAP，此類欄位過去曾造成後端服務當機，如遇執行失敗或無回應請取消勾選「仍要強制執行」。`]);
-                        } else {
-                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ ${flaggedColumnsDescriptionText} 的值幾乎每筆都不同，已略過該欄位的三攻擊／CAP 風險評估以避免觸發後端服務當機（不影響去識別化結果本身）；如仍要嘗試，請於下方勾選「仍要強制執行」。`]);
-                        }
+                    if (dpCandidateSelection.highCardinalityInfo.length > 0) {
+                        setHighCardinalitySensitiveWarningInfo(dpCandidateSelection.highCardinalityInfo);
+                        finalHighCardinalitySensitiveWarningInfo = dpCandidateSelection.highCardinalityInfo;
+                        describeDifferentialPrivacyHighCardinalityHandling(dpCandidateSelection.highCardinalityInfo, forceRunHighCardinalitySensitiveFieldsStatus).forEach(appendPipelineLog);
                     }
 
-                    const resolveDpRiskColumnType = (fieldName: string): string => {
-                        const targetField = (currentDpFieldsListArray || []).find((field: DpStoreField) => field.fieldName === fieldName);
-                        const isNumeric = targetField?.fieldType === 'Numeric';
-                        const originalColType = String(currentColumnTypesMapDict?.[fieldName] || '').toLowerCase();
-                        // ★ 與上方 differential-privacy 分支同理，改用共用的 isDateTimeDpField，避免關鍵字判斷分歧。
-                        const isDateTimeType = isDateTimeDpField(fieldName, originalColType);
-                        if (isNumeric) return isDateTimeType ? 'temporal' : 'numeric';
-                        if (targetField?.fieldType === 'Categorical') return 'categorical';
-                        return 'string';
-                    };
+                    const buildDpRiskColumnsMapForCandidate = (candidateSensitiveFieldName: string) => buildDifferentialPrivacyRiskColumnsForCandidate(
+                        { enabledFields: dpCandidateSelection.enabledFields, dpFields: currentDpFieldsListArray, columnTypes: currentColumnTypesMapDict },
+                        candidateSensitiveFieldName
+                    );
+                    capCandidateColumnNamesList = dpCandidateSelection.effectiveCandidateColumnNames;
+                    buildCapRiskColumnsMapForCandidateFn = buildDpRiskColumnsMapForCandidate;
 
-                    const buildDpRiskColumnsMapForCandidate = (candidateSensitiveFieldName: string): Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> => {
-                        const columnsMapResult: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
-                        enabledDpFieldsList.forEach((field: DpStoreField) => {
-                            columnsMapResult[field.fieldName] = {
-                                role: field.fieldName === candidateSensitiveFieldName ? 'sensitive' : 'quasi_identifier',
-                                type: resolveDpRiskColumnType(field.fieldName)
-                            };
-                        });
-                        return columnsMapResult;
-                    };
-                    // ★ 提升到外層供下方共用的 CAP 區塊使用，讓 CAP 前後對比也能對 DP 模式的每個候選
-                    // 敏感欄位各自跑一輪、取最大值（見上方 dpSensitiveCandidateColumnNamesList／
-                    // buildDpRiskColumnsMapForCandidateFn 宣告處的完整說明）。
-                    dpSensitiveCandidateColumnNamesList = effectiveCategoricalCandidateFieldsList.map((field: DpStoreField) => field.fieldName);
-                    buildDpRiskColumnsMapForCandidateFn = buildDpRiskColumnsMapForCandidate;
-
-                    let worstCaseAttackReport: AttackReport | null = null;
-                    let worstCaseDpRiskColumnsMap: Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }> = {};
-
-                    for (let roundIndexNumber = 0; roundIndexNumber < effectiveCategoricalCandidateFieldsList.length; roundIndexNumber++) {
-                        const candidateSensitiveFieldName = effectiveCategoricalCandidateFieldsList[roundIndexNumber].fieldName;
-                        const dpRiskColumnsMapForThisRound = buildDpRiskColumnsMapForCandidate(candidateSensitiveFieldName);
-
-                        const riskConfigObject = {
-                            version: 'step4_risk_dp',
-                            dataset: currentDatasetFileNameString || 'dataset',
-                            risk_attacks: {
-                                enabled: true,
-                                columns: dpRiskColumnsMapForThisRound,
-                                ...(resolvedRiskSubgroupPayload ? { subgroup: resolvedRiskSubgroupPayload } : {}),
-                                ...RISK_ATTACK_DEFAULT_PARAMS
-                            },
-                            differential_privacy: (configObject as Record<string, unknown>).differential_privacy
-                        };
-                        const riskConfigBlob = new Blob([JSON.stringify(riskConfigObject)], { type: 'application/json;charset=utf-8' });
-                        const riskConfigFile = new File([riskConfigBlob], 'risk_config.json', { type: 'application/json' });
-
-                        // ★ 修正: 使用者反映 DP 模式下 CAP 比較（含前置的三攻擊風險評估輪詢）不需要在畫面上
-                        //   逐輪顯示實際測試中的候選敏感欄位名稱，只要讓使用者看到「運算中」的進度即可。
-                        setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏳ 三攻擊風險評估運算中（第 ${roundIndexNumber + 1}/${effectiveCategoricalCandidateFieldsList.length} 輪）...`]);
-
-                        const riskResponse = await runRiskDp(safeDataFile, riskConfigFile, pipelineRequestOptions);
-                        if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error(`三攻擊風險評估（DP，以「${candidateSensitiveFieldName}」為敏感欄位）API 請求未成功`));
-
-                        const thisRoundReport = riskResponse.report;
-                        const isThisRoundNewWorstCase: boolean =
-                            !worstCaseAttackReport ||
-                            Math.max(thisRoundReport.singling_out_risk, thisRoundReport.linkability_risk, thisRoundReport.inference_risk) >
-                            Math.max(worstCaseAttackReport.singling_out_risk, worstCaseAttackReport.linkability_risk, worstCaseAttackReport.inference_risk);
-
-                        const aggregatedSinglingOutRisk = Math.max(worstCaseAttackReport?.singling_out_risk ?? -Infinity, thisRoundReport.singling_out_risk);
-                        const aggregatedLinkabilityRisk = Math.max(worstCaseAttackReport?.linkability_risk ?? -Infinity, thisRoundReport.linkability_risk);
-                        const aggregatedInferenceRisk = Math.max(worstCaseAttackReport?.inference_risk ?? -Infinity, thisRoundReport.inference_risk);
-
-                        // 其餘中繼資料（sample_size／processing_config…）取「本輪三項指標中最大值最高」的那一輪，
-                        // 供 CAP 步驟沿用同一份敏感欄位設定。
-                        if (isThisRoundNewWorstCase) {
-                            worstCaseDpRiskColumnsMap = dpRiskColumnsMapForThisRound;
+                    // 候選被篩到 0 個時迴圈不執行、attackReportResult 維持 null，等同略過三攻擊／CAP
+                    const dpAttackRoundsResult = await runWorstCaseAttackRounds({
+                        candidateColumnNames: dpCandidateSelection.effectiveCandidateColumnNames,
+                        buildColumnsForCandidate: buildDpRiskColumnsMapForCandidate,
+                        onRoundStart: (roundIndex, roundCount) => appendPipelineLog(`⏳ 三攻擊風險評估運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`),
+                        runRound: async (columnsForThisRound, candidateSensitiveFieldName) => {
+                            const riskConfigFile = createJsonConfigFile(buildRiskAttackConfigObject({
+                                version: 'step4_risk_dp', dataset: riskDatasetNameText, columns: columnsForThisRound,
+                                subgroup: resolvedRiskSubgroupPayload, privacyBlock: { differential_privacy: (configObject as Record<string, unknown>).differential_privacy }
+                            }), 'risk_config.json');
+                            const riskResponse = await runRiskDp(safeDataFile, riskConfigFile, pipelineRequestOptions);
+                            if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error(`三攻擊風險評估（DP，以「${candidateSensitiveFieldName}」為敏感欄位）API 請求未成功`));
+                            return riskResponse.report;
                         }
-
-                        worstCaseAttackReport = {
-                            ...(isThisRoundNewWorstCase ? thisRoundReport : worstCaseAttackReport!),
-                            singling_out_risk: aggregatedSinglingOutRisk,
-                            linkability_risk: aggregatedLinkabilityRisk,
-                            inference_risk: aggregatedInferenceRisk,
-                        };
-                    }
-
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ✅ DP 三攻擊風險評估運算完成`]);
-
-                    attackReportResult = worstCaseAttackReport;
-                    finalRiskColumnsMap = worstCaseDpRiskColumnsMap;
+                    });
+                    appendPipelineLog('✅ DP 三攻擊風險評估運算完成');
+                    attackReportResult = dpAttackRoundsResult.worstCaseReport;
+                    finalRiskColumnsMap = dpAttackRoundsResult.worstCaseColumns;
                 }
 
                 setAttackReportData(attackReportResult);
                 if (attackReportResult) {
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ✅ 三攻擊風險評估完成（指認性 ${(attackReportResult!.singling_out_risk * 100).toFixed(1)}%／連結性 ${(attackReportResult!.linkability_risk * 100).toFixed(1)}%／推斷性 ${(attackReportResult!.inference_risk * 100).toFixed(1)}%）`]);
+                    appendPipelineLog(`✅ 三攻擊風險評估完成（指認性 ${(attackReportResult.singling_out_risk * 100).toFixed(1)}%／連結性 ${(attackReportResult.linkability_risk * 100).toFixed(1)}%／推斷性 ${(attackReportResult.inference_risk * 100).toFixed(1)}%）`);
                 }
 
-                // ★ 使用者反映（2026-09-22）：K-匿名模式下，若目前沒有任何候選敏感欄位（見上方
-                //   kAnonSensitiveCandidateColumnNamesList），代表這次已判定「敏感欄位 = 0」、
-                //   整段風險評估（含 CAP）都要跳過——CAP 也不例外，不應該落到下方 else 分支去
-                //   用「0 個敏感欄位」的 finalRiskColumnsMap 硬送一次注定會被後端擋掉的 CAP 請求。
-                // ★ 使用者反映（2026-09-23）：差分隱私模式比照辦理——若候選敏感欄位（可能因為
-                //   dpSensitiveCandidateColumnNamesList 被高唯一值比例篩選到剩 0 個）同樣為空，
-                //   也不應落到下方 else 分支硬送一次沒有任何 sensitive 角色的 CAP 請求（一樣注定
-                //   被後端擋掉）。
+                // 沒有任何候選敏感欄位時整段 CAP 跳過，不送一次注定被後端擋掉的請求
                 const isRiskCandidateListEmptyStatus =
-                    (currentPrivacyModeTypeStr === 'k-anonymity' && kAnonSensitiveCandidateColumnNamesList.length === 0) ||
-                    (currentPrivacyModeTypeStr === 'differential-privacy' && dpSensitiveCandidateColumnNamesList.length === 0);
-
-                // ★ 使用者反映（2026-09-23）：差分隱私模式的 CAP 先前一直沒有比照三攻擊「對每個候選
-                //   敏感欄位各自跑一輪、取最大值」，而是直接沿用三攻擊迴圈裡「三項指標最高的那一輪」
-                //   欄位設定去跑單一次 CAP——但某欄位的三攻擊風險最高，不代表同一欄位的 CAP 風險
-                //   （cap_after）也最高，會安靜地漏掉「CAP 風險其實在另一個候選欄位上更高」的情況。
-                //   下面把原本只給 K-匿名用的「候選清單＋columns 設定組裝函式」改成依目前模式挑選對應
-                //   的那一組（K-匿名或 DP），共用同一段迴圈邏輯，讓兩種模式的 CAP 都對各自的候選敏感
-                //   欄位逐一跑一輪、取最大值。
-                const capCandidateColumnNamesList = currentPrivacyModeTypeStr === 'k-anonymity'
-                    ? kAnonSensitiveCandidateColumnNamesList
-                    : dpSensitiveCandidateColumnNamesList;
-                const buildCapRiskColumnsMapForCandidateFn = currentPrivacyModeTypeStr === 'k-anonymity'
-                    ? buildKAnonRiskColumnsMapForCandidateFn
-                    : buildDpRiskColumnsMapForCandidateFn;
-
-                // ★ 使用者反映（2026-09-29）：DP 模式套用系統推薦設定後，三攻擊正常完成，CAP 卻顯示「未評估」
-                //   且沒有任何原因。追查為：CAP 迴圈任何一輪 /risk/cap 請求失敗（HTTP 錯誤、逾時、網路中斷等）
-                //   都會 throw 到外層 catch，連同其他已成功的輪次一起丟棄、capReportResult 維持 null，畫面只能
-                //   顯示寫死的猜測文字，看不出真正原因。改為：①逐輪容錯——單一候選欄位失敗只略過該輪，其餘
-                //   成功輪次照常取最大值；②全部失敗時，產生一份 cap_before／cap_after = -1 的「無法評估」收據
-                //   （與後端降級收據同格式），把後端回傳的錯誤碼／訊息寫進 message，直接顯示在 CAP 卡片上。
-                // extractCapRequestFailureReasonText／buildCapUnavailableReceipt 已抽出至 utils/riskResultHelpers.ts
+                    (currentPrivacyModeTypeStr === 'k-anonymity' || currentPrivacyModeTypeStr === 'differential-privacy') &&
+                    capCandidateColumnNamesList.length === 0;
 
                 if (finalCsvBlobData && !isRiskCandidateListEmptyStatus) {
                     try {
-                        // ★ 2026-09-29：若本次有敏感欄位自動分級距，CAP 的「原始」與「去識別化」兩份資料都要用
-                        //   同一套級距轉換，前後對比才有意義（見 riskEvaluationBinWidthMap 宣告處）。
+                        // 有敏感欄位自動分級距時，CAP 的原始與去識別化兩份資料都要用同一套級距轉換
                         const processedFileForCap = Object.keys(riskEvaluationBinWidthMap).length > 0
                             ? new File([applySensitiveBinningToCsvText(await readProcessedCsvTextOnce(), riskEvaluationBinWidthMap)], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' })
                             : new File([finalCsvBlobData], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' });
+                        const runCapRequest = (capColumnsMap: RiskColumnsMap) => runRiskCap(
+                            riskOriginalDataFile, processedFileForCap,
+                            createJsonConfigFile(buildCapConfigObject({ dataset: riskDatasetNameText, columns: capColumnsMap, subgroup: resolvedRiskSubgroupPayload }), 'cap_config.json'),
+                            pipelineRequestOptions
+                        );
 
                         if (buildCapRiskColumnsMapForCandidateFn && capCandidateColumnNamesList.length > 0) {
-                            // ★ 使用者反映（2026-09-22）：K-匿名（及現在的差分隱私）同時有多個候選敏感
-                            //   欄位時，CAP 前後對比也比照上方三攻擊迴圈，對每個候選敏感欄位各自呼叫
-                            //   一次 /risk/cap，cap_before／cap_after 兩項指標各自在所有輪次中取最大值
-                            //   （保守估計），而不是沿用三攻擊迴圈選出的「單一一輪」欄位設定去跑一次
-                            //   CAP——因為讓某個候選欄位的三攻擊風險最高，不代表同一欄位的 CAP 風險也
-                            //   最高，兩種指標評估的面向不同，各自跑迴圈才不會漏掉「CAP 風險其實在另一個
-                            //   候選欄位上更高」的情況。候選敏感欄位只有 1 個時，等同迴圈跑一輪，結果與
-                            //   先前版本一致。
-                            let worstCaseCapReport: CapReport | null = null;
-                            const failedCapRoundsList: { columnName: string; reasonText: string }[] = [];
-
-                            for (let roundIndexNumber = 0; roundIndexNumber < capCandidateColumnNamesList.length; roundIndexNumber++) {
-                                const candidateSensitiveFieldName = capCandidateColumnNamesList[roundIndexNumber];
-                                const capColumnsMapForThisRound = buildCapRiskColumnsMapForCandidateFn(candidateSensitiveFieldName);
-
-                                const capConfigObject = {
-                                    version: 'step4_risk_cap',
-                                    dataset: currentDatasetFileNameString || 'dataset',
-                                    risk_cap: {
-                                        enabled: true,
-                                        columns: capColumnsMapForThisRound,
-                                        ...(resolvedRiskSubgroupPayload ? { subgroup: resolvedRiskSubgroupPayload } : {})
-                                    }
-                                };
-                                const capConfigBlob = new Blob([JSON.stringify(capConfigObject)], { type: 'application/json;charset=utf-8' });
-                                const capConfigFile = new File([capConfigBlob], 'cap_config.json', { type: 'application/json' });
-
-                                setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏳ CAP 前後對比運算中（第 ${roundIndexNumber + 1}/${capCandidateColumnNamesList.length} 輪）...`]);
-
-                                const capResponse = await runRiskCap(riskOriginalDataFile, processedFileForCap, capConfigFile, pipelineRequestOptions);
-                                if (!capResponse.success || !capResponse.report) {
-                                    // 使用者取消：不當成單輪失敗略過，整個流程直接中止
-                                    if (isApiRequestCanceled(capResponse.error)) throw capResponse.error;
-                                    const roundFailureReasonText = extractCapRequestFailureReasonText(capResponse.error || new Error('API 請求未成功'));
-                                    console.error(`CAP 前後對比（以「${candidateSensitiveFieldName}」為敏感欄位）失敗:`, capResponse.error);
-                                    failedCapRoundsList.push({ columnName: candidateSensitiveFieldName, reasonText: roundFailureReasonText });
-                                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ CAP 第 ${roundIndexNumber + 1} 輪（敏感欄位「${candidateSensitiveFieldName}」）失敗，已略過該輪：${roundFailureReasonText}`]);
-                                    continue;
+                            // 逐輪容錯：單一候選欄位失敗只略過該輪；全部失敗時產生「無法評估」收據並顯示真正原因
+                            capReportResult = await runWorstCaseCapRounds({
+                                candidateColumnNames: capCandidateColumnNamesList,
+                                buildColumnsForCandidate: buildCapRiskColumnsMapForCandidateFn,
+                                onRoundStart: (roundIndex, roundCount) => appendPipelineLog(`⏳ CAP 前後對比運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`),
+                                runRound: (capColumnsMap) => runCapRequest(capColumnsMap),
+                                onRoundFailed: (roundIndex, candidateSensitiveFieldName, reasonText, errorPayload) => {
+                                    console.error(`CAP 前後對比（以「${candidateSensitiveFieldName}」為敏感欄位）失敗:`, errorPayload);
+                                    appendPipelineLog(`⚠️ CAP 第 ${roundIndex + 1} 輪（敏感欄位「${candidateSensitiveFieldName}」）失敗，已略過該輪：${reasonText}`);
                                 }
-
-                                const thisRoundCapReport = capResponse.report;
-                                const isThisRoundNewWorstCapCase: boolean =
-                                    !worstCaseCapReport || thisRoundCapReport.cap_after > worstCaseCapReport.cap_after;
-
-                                const aggregatedCapBefore = Math.max(worstCaseCapReport?.cap_before ?? -Infinity, thisRoundCapReport.cap_before);
-                                const aggregatedCapAfter = Math.max(worstCaseCapReport?.cap_after ?? -Infinity, thisRoundCapReport.cap_after);
-
-                                worstCaseCapReport = {
-                                    ...(isThisRoundNewWorstCapCase ? thisRoundCapReport : worstCaseCapReport!),
-                                    cap_before: aggregatedCapBefore,
-                                    cap_after: aggregatedCapAfter,
-                                };
-                            }
-
-                            if (!worstCaseCapReport && failedCapRoundsList.length > 0) {
-                                // 全部輪次都失敗：以「無法評估」收據呈現真正原因（同一原因只列一次）。
-                                const distinctReasonsText = Array.from(new Set(failedCapRoundsList.map((item) => item.reasonText))).join('；');
-                                worstCaseCapReport = buildCapUnavailableReceipt(distinctReasonsText);
-                            } else if (worstCaseCapReport && failedCapRoundsList.length > 0) {
-                                const failedColumnsText = failedCapRoundsList.map((item) => `「${item.columnName}」（${item.reasonText}）`).join('、');
-                                worstCaseCapReport = {
-                                    ...worstCaseCapReport,
-                                    message: `${worstCaseCapReport.message || ''} 另有 ${failedCapRoundsList.length} 個候選敏感欄位的 CAP 請求失敗、未納入最大值：${failedColumnsText}`.trim()
-                                };
-                            }
-                            capReportResult = worstCaseCapReport;
+                            });
                         } else {
-                            const capConfigObject = {
-                                version: 'step4_risk_cap',
-                                dataset: currentDatasetFileNameString || 'dataset',
-                                risk_cap: {
-                                    enabled: true,
-                                    columns: finalRiskColumnsMap,
-                                    ...(resolvedRiskSubgroupPayload ? { subgroup: resolvedRiskSubgroupPayload } : {})
-                                }
-                            };
-                            const capConfigBlob = new Blob([JSON.stringify(capConfigObject)], { type: 'application/json;charset=utf-8' });
-                            const capConfigFile = new File([capConfigBlob], 'cap_config.json', { type: 'application/json' });
-
-                            const capResponse = await runRiskCap(riskOriginalDataFile, processedFileForCap, capConfigFile, pipelineRequestOptions);
+                            const capResponse = await runCapRequest(finalRiskColumnsMap);
                             if (!capResponse.success || !capResponse.report) throw (capResponse.error || new Error('CAP 前後對比 API 請求未成功'));
                             capReportResult = capResponse.report;
                         }
 
                         setCapReportData(capReportResult);
-                        // 👇 印出後端 /api/v1/risk/cap 回傳的完整原始 JSON，方便直接在 Console 分頁檢查，
-                        // 不需要跟 DevTools Network 分頁「Response 內容已被逐出快取」的限制賽跑。
+                        // 印出 /api/v1/risk/cap 的完整回應，不必跟 DevTools Network 分頁的快取逐出賽跑
                         console.log('📩 /api/v1/risk/cap 原始回應內容:', capReportResult);
                         if (capReportResult && capReportResult.cap_before >= 0 && capReportResult.cap_after >= 0) {
-                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ✅ CAP 前後對比完成（處理前 ${(capReportResult!.cap_before * 100).toFixed(1)}% → 處理後 ${(capReportResult!.cap_after * 100).toFixed(1)}%）`]);
+                            appendPipelineLog(`✅ CAP 前後對比完成（處理前 ${(capReportResult.cap_before * 100).toFixed(1)}% → 處理後 ${(capReportResult.cap_after * 100).toFixed(1)}%）`);
                         } else if (capReportResult) {
-                            setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ CAP 前後對比未能評估：${capReportResult!.message}`]);
+                            appendPipelineLog(`⚠️ CAP 前後對比未能評估：${capReportResult.message}`);
                         }
                     } catch (capErrorPayload) {
                         if (isApiRequestCanceled(capErrorPayload)) throw capErrorPayload;
@@ -1400,10 +991,10 @@ export default function Step4_Result(): React.ReactElement
                         const capFailureReasonText = extractCapRequestFailureReasonText(capErrorPayload);
                         capReportResult = buildCapUnavailableReceipt(capFailureReasonText);
                         setCapReportData(capReportResult);
-                        setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ CAP 前後對比失敗，已略過（不影響風險評估結果）：${capFailureReasonText}`]);
+                        appendPipelineLog(`⚠️ CAP 前後對比失敗，已略過（不影響風險評估結果）：${capFailureReasonText}`);
                     }
                 } else if (!finalCsvBlobData) {
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ 未取得脫敏後資料集，略過 CAP 前後對比`]);
+                    appendPipelineLog('⚠️ 未取得脫敏後資料集，略過 CAP 前後對比');
                 }
 
                 // ★ 新增：輸入／刪除／輸出筆數統計——直接數原始上傳 CSV 與後端回傳的去識別化 CSV
@@ -1695,14 +1286,7 @@ export default function Step4_Result(): React.ReactElement
     //   runFullPipeline 這個 useCallback 內部，屬於該函式的區域變數，這裡的報告 Modal 讀不到，
     //   故另外宣告這份「僅供顯示」的複本；未來若調整 runFullPipeline 內的預設值，記得這裡也要
     //   同步更新，否則報告顯示的參數會跟實際送給後端的不一致。
-    const RISK_ATTACK_REPORT_DISPLAY_PARAMS = {
-        n_iter: 50,
-        ctrl_ratio: 0.2,
-        seed: 42,
-        n_subset: 500,
-        n_repeats: 1,
-        overlap_ratio: 0.0
-    };
+    const RISK_ATTACK_REPORT_DISPLAY_PARAMS = RISK_ATTACK_DEFAULT_PARAMS;
 
     const handleOpenReportModal = () => setIsReportModalVisibleStatus(true);
 
