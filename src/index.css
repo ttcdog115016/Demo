@@ -117,7 +117,14 @@
     width: 100%;
     max-width: 100%;
     margin: 0 auto;
-    text-align: center;
+    /* ★ 修正：原為 text-align: center (Vite 範本殘留設定，App.css 內對應的 .hero／#next-steps／
+       #docs／.ticks／#spacer 等範本樣式在目前程式碼庫中已無任何 .tsx 檔案引用，證實為死碼)。
+       此設定會被整個 App 內所有「沒有自行指定 text-align」的文字元素繼承，曾實際造成至少兩起
+       版面錯誤：Step2 JSON 即時預覽的程式碼呈現置中、Step3 K-匿名頁面的警示訊息文字置中——
+       這類「置中」都不是刻意設計，而是繼承此設定所致。改為 left 從根本修正，避免同類問題持續
+       在未來新增的元件上重演；App 內真正需要置中的元素 (登入頁、Step1 上傳提示等) 皆已各自
+       明確指定 textAlign: 'center'，不依賴此處繼承，故此處改動不影響既有版面。 */
+    text-align: left;
     border-inline: 1px solid var(--border-primary-color);
     min-height: 100svh; /* 確保至少撐滿整個動態可視高度 (包含手機瀏覽器網址列縮放) */
     display: flex;
