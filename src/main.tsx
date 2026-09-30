@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 檔案名稱 (File): main.tsx
- * 模組功能 (Description): 前端 React 應用程式掛載進入點 (初始化 StrictMode、載入全域 CSS 與 i18n 多國語系配置、渲染 App 主視圖與 Vercel 工具列)
+ * 模組功能 (Description): 前端 React 應用程式掛載進入點 (初始化 StrictMode、載入全域 CSS 與 i18n 多國語系配置、渲染 App 主視圖)
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術字串與含義不明之變數) 以及變數撰寫參考 a) ~ h)
  * ============================================================================
@@ -16,9 +16,16 @@ import './index.css';
 // 確保在 App 元件載入前完成 i18n 多國語系套件初始化 (符合規範 g)
 import './i18n'; 
 
-// 引入主應用程式與工具列組件
+// 引入主應用程式組件
+// ★ 2026-09-30：移除 Vercel Toolbar——本專案部署於 Docker／nginx 與 cloudflared，不在 Vercel 上，
+//   該工具列原本被強制掛載（連正式環境也載入外部元件並輸出 console 訊息），已連同套件一併移除。
 import App from './App.tsx';
-import { VercelToolbar } from './VercelToolbar.tsx';
+
+// ★ 新增：全域 API 錯誤診斷攔截器。必須在任何 API 呼叫發生前掛載，故於進入點最早期
+// (App 掛載渲染前) 就執行註冊，確保之後全站任何一支 axios 呼叫失敗時都會被記錄下來，
+// 供測試人員一鍵匯出診斷紀錄回報 (見 apiErrorInterceptor.ts／apiErrorLogger.ts)。
+import { registerGlobalApiErrorInterceptor } from './api/apiErrorInterceptor';
+registerGlobalApiErrorInterceptor();
 
 /**
  * ============================================================================
@@ -46,9 +53,6 @@ if (rootContainerHtmlElement)
 		<StrictMode>
 			{/* 全域主應用程式組件：負責掛載路由、主題與狀態管理 */}
 			<App />
-			
-			{/* Vercel 效能與審航除錯工具列：協助捕捉效能瓶頸 (僅於 Vercel 環境作動) */}
-			<VercelToolbar />
 		</StrictMode>
 	);
 }

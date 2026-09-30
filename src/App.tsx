@@ -19,10 +19,10 @@ import zhTW from 'antd/locale/zh_TW';
 import enUS from 'antd/locale/en_US';
 import type { MenuProps } from 'antd';
 import { 
-    SafetyCertificateOutlined, 
-    FileTextOutlined, 
-    SettingOutlined, 
-    PieChartOutlined, 
+    SafetyCertificateOutlined,
+    FileTextOutlined,
+    SettingOutlined,
+    PieChartOutlined,
     DownloadOutlined,
     UserOutlined,
     BellOutlined,
@@ -34,6 +34,11 @@ import {
 import { useAuthStore, type UserRole } from './store/useAuthStore';
 import { useUIStore, type FontSizeLevel } from './store/useUIStore';
 import { useWorkspaceStore } from './store/useWorkspaceStore';
+
+// ★ 修正：使用者反映不希望外部測試人員在畫面上看到任何 API 錯誤提示或匯出按鈕。原本
+// 這裡掛載的 <ApiErrorWatcher /> 彈出提示元件與 Header 上的匯出按鈕已移除；診斷紀錄
+// 現在改為在 apiErrorLogger.ts 寫入當下，直接背景靜默送到 Google 表單通知開發團隊
+// (見 utils/googleFormReporter.ts)，全程不影響畫面。
 
 import Login from './features/login/Login';
 import ForgotPassword from './features/login/ForgotPassword';
@@ -69,8 +74,46 @@ const FONT_SIZE_LEVEL_PX_MAP: Record<FontSizeLevel, number> = {
     extraLarge: 28,
 };
 
+// ★ QA 回饋：跨步驟驗證失敗的提示訊息內容較長，若沿用 message（頂部小提示條）預設僅 3 秒
+// 且無法手動關閉，使用者常常來不及看完就自動消失。改用 notification（右下角通知卡片，
+// 本身內建可手動關閉的 X 按鈕）並拉長顯示秒數，一併解決「顯示時間太短」與
+// 「無法手動關閉」兩項回饋。
+const STEP_VALIDATION_NOTIFICATION_AUTO_CLOSE_SECONDS = 8;
+
+// ★ QA 回饋：同一份回饋也適用於全站其他 message.error()/warning()/success() 提示 (登入、
+// 上傳、匯入 JSON 等)，這些並非本次新增，但同樣預設只顯示 antd 內建的 3 秒。message 元件
+// 本身不支援手動關閉按鈕 (與 notification 不同)，故這裡改用全域設定拉長顯示秒數，並開啟
+// pauseOnHover：使用者將滑鼠移到提示上時會暫停倒數計時，等於間接讓使用者能「按自己需要
+// 的時間閱讀完」，作為 message 元件沒有關閉按鈕時的替代方案。
+const GLOBAL_MESSAGE_TOAST_AUTO_CLOSE_SECONDS = 6;
+
+// ★ 修正：內部錯誤卡片測試面板 (見 Step4_Result.tsx) 原本只靠網址列的 ?debugErrors=1
+// 判斷是否顯示。但本頁使用 React Router，切換步驟／頁面時 (見下方 InnerApp 內多處
+// executeNavigationAction(`/workspace?step=${...}`)) 一律會把網址參數整串換成只剩
+// ?step=N，把使用者自己加上去的 debugErrors=1 沖掉；加上「步驟三」規定一次只能往前跳
+// 一步 (見 validateProgression.ts 的 MAX_ALLOWED_STEP_JUMP_COUNT)，也不可能直接把網址
+// 改成 /workspace?step=4 就跳過去，一定得先照順序切換到第四步，中途至少會經過一次上述
+// 的網址覆寫。於是使用者依照原本的說明操作，網址參數必定在抵達第四步前就已經消失。
+// 修正方式：改用瀏覽器 localStorage 記住這個旗標，不受網址切換影響——只要曾經在網址列
+// 加上 ?debugErrors=1 並重新整理過一次頁面(讓這段程式碼執行到)，之後不論怎麼切換頁面，
+// 旗標都會持續有效，直到使用者改用 ?debugErrors=0 重新整理、或在測試面板按下關閉為止。
+// 這段程式碼寫在模組最外層 (而非 useEffect 內)，確保在瀏覽器真正載入這個網址、
+// React Router 尚未接手改寫網址前，就已經讀到使用者實際輸入的完整網址參數。
+export const DEBUG_ERRORS_LOCAL_STORAGE_KEY = 'ppt_debug_errors_enabled';
+try {
+    const initialPageLoadUrlSearchParams = new URLSearchParams(window.location.search);
+    const debugErrorsUrlParamValue = initialPageLoadUrlSearchParams.get('debugErrors');
+    if (debugErrorsUrlParamValue === '1') {
+        window.localStorage.setItem(DEBUG_ERRORS_LOCAL_STORAGE_KEY, '1');
+    } else if (debugErrorsUrlParamValue === '0') {
+        window.localStorage.removeItem(DEBUG_ERRORS_LOCAL_STORAGE_KEY);
+    }
+} catch (debugFlagLocalStorageErrorPayload) {
+    console.warn('讀取/寫入錯誤卡片測試面板旗標失敗:', debugFlagLocalStorageErrorPayload);
+}
+
 interface RequireAuthProps {
-    children: React.ReactNode; 
+    children: React.ReactNode;
 }
 
 const RequireAuth = ({ children: childComponentsNode }: RequireAuthProps): React.ReactElement => {
@@ -119,7 +162,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
     const { t: translate } = useTranslation(); 
     const executeNavigationAction = useNavigate();
     const currentLocationData = useLocation();
-    const { message: globalMessageApi, modal: globalModalApi } = AntdApp.useApp();
+    const { message: globalMessageApi, modal: globalModalApi, notification: globalNotificationApi } = AntdApp.useApp();
 
     const currentUserSessionData = useAuthStore((state) => state.user);
     const executeSetUserRoleAction = useAuthStore((state) => state.setUserRole);
@@ -187,8 +230,13 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                     if (parsedUrlTargetStepIndexValue > storeCurrentStepIndexValue) {
                         const validationErrorMessageString = validateProgression(parsedUrlTargetStepIndexValue, storeCurrentStepIndexValue, currentWorkspaceStoreStateSnapshot, translate);
                         if (validationErrorMessageString) {
-                            globalMessageApi.error(validationErrorMessageString); 
-                            executeNavigationAction(`/workspace?step=${storeCurrentStepIndexValue + 1}`, { replace: true }); 
+                            globalNotificationApi.error({
+                                message: translate('workspace.step_jump_blocked_title', '無法跳至該步驟'),
+                                description: validationErrorMessageString,
+                                duration: STEP_VALIDATION_NOTIFICATION_AUTO_CLOSE_SECONDS,
+                                placement: 'bottomRight',
+                            });
+                            executeNavigationAction(`/workspace?step=${storeCurrentStepIndexValue + 1}`, { replace: true });
                             return;
                         }
                     }
@@ -200,7 +248,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                 executeNavigationAction(`/workspace?step=${useWorkspaceStore.getState().currentStep + 1}`, { replace: true });
             }
         }
-    }, [stepQueryParameterString, currentLocationData.pathname, executeNavigationAction, globalMessageApi, translate]);
+    }, [stepQueryParameterString, currentLocationData.pathname, executeNavigationAction, globalNotificationApi, translate]);
 
     const [isSidebarCollapsedStatus, setIsSidebarCollapsedStatus] = useState<boolean>(true);
     const [readNotificationIdsListArray, setReadNotificationIdsListArray] = useState<string[]>([]);
@@ -298,6 +346,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
         }
     };
 
+
     const userDropdownMenuConfiguration: MenuProps = {
         selectedKeys: [`role_${currentUserRoleNameString}`],
         items: [
@@ -345,7 +394,12 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
             const progressionValidationErrorMessageString = validateProgression(targetSidebarStepIndexValue, currentWorkspaceStepIndexValue, currentWorkspaceStoreStateSnapshot, translate);
 
             if (progressionValidationErrorMessageString) {
-                globalMessageApi.warning(progressionValidationErrorMessageString);
+                globalNotificationApi.warning({
+                    message: translate('workspace.step_jump_blocked_title', '無法跳至該步驟'),
+                    description: progressionValidationErrorMessageString,
+                    duration: STEP_VALIDATION_NOTIFICATION_AUTO_CLOSE_SECONDS,
+                    placement: 'bottomRight',
+                });
                 executeNavigationAction(`/workspace?step=${currentWorkspaceStepIndexValue + 1}`, { replace: true });
                 return;
             }
@@ -409,7 +463,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                 .v-card-style {
                     background: ${themeDynamicColorsConfiguration.bgCard} !important;
                     border: ${isDarkMode ? 'none' : `1px solid ${themeDynamicColorsConfiguration.border}`} !important;
-                    box-shadow: ${isDarkMode ? '0 4px 20px 0 rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.06)'} !important;
+                    box-Shadow: ${isDarkMode ? '0 4px 20px 0 rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.06)'} !important;
                 }
                 .ant-menu-dark {
                     background: transparent !important;
@@ -503,7 +557,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                                     <BellOutlined style={{ fontSize: '18px', color: themeDynamicColorsConfiguration.textMuted, cursor: 'pointer' }} />
                                 </Badge>
                             </Dropdown>
-                            
+
                             <Dropdown menu={userDropdownMenuConfiguration} placement="bottomRight" trigger={['click']}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '4px 8px', borderRadius: '8px' }} className="user-profile-hover">
                                     <Avatar size="small" icon={<UserOutlined />} style={{ backgroundColor: '#3f51b5' }} />
@@ -578,7 +632,10 @@ export default function App(): React.ReactElement {
                 }
             }}
         >
-            <AntdApp style={{ background: 'transparent', width: '100%' }}>
+            <AntdApp
+                style={{ background: 'transparent', width: '100%' }}
+                message={{ duration: GLOBAL_MESSAGE_TOAST_AUTO_CLOSE_SECONDS, pauseOnHover: true }}
+            >
                 <BrowserRouter>
                     <Routes>
                         <Route path="/login" element={<Login />} />
