@@ -1,4 +1,39 @@
-import axios from 'axios';
+import axios, { type AxiosProgressEvent } from 'axios';
+
+// ============================================================================
+// 共用請求選項：逾時、取消、上傳進度
+// ============================================================================
+// ★ 2026-09-30：先前所有 API 呼叫都沒有逾時、也不能取消；後端或 cloudflared 通道卡住時，
+//   畫面只能一直轉圈，使用者只能重新整理頁面。以下每支 run* 函式都多收一個選填的
+//   requestOptions：signal（搭配 AbortController 讓使用者按「取消運算」）、timeoutMs（逾時）、
+//   onUploadProgress（顯示已上傳多少 MB）。不傳時行為與原本相同，只多了預設逾時。
+
+/** 單一請求預設逾時：15 分鐘（100 萬筆在本機後端約 20 秒內完成，留足餘裕給較慢的環境與風險評估） */
+export const DEFAULT_API_TIMEOUT_MS = 15 * 60 * 1000;
+
+export interface ApiRequestOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  onUploadProgress?: (loadedBytes: number, totalBytes: number | undefined) => void;
+}
+
+const buildAxiosRequestConfig = (requestOptions?: ApiRequestOptions) => ({
+  signal: requestOptions?.signal,
+  timeout: requestOptions?.timeoutMs ?? DEFAULT_API_TIMEOUT_MS,
+  onUploadProgress: requestOptions?.onUploadProgress
+    ? (progressEvent: AxiosProgressEvent) => requestOptions.onUploadProgress!(progressEvent.loaded, progressEvent.total)
+    : undefined,
+});
+
+/** 是否為使用者按下「取消運算」（AbortController.abort）造成的中斷 */
+export const isApiRequestCanceled = (error: unknown): boolean =>
+  axios.isCancel(error) || (error as { name?: string } | null)?.name === 'CanceledError';
+
+/** 是否為超過 timeout 仍未完成而中斷 */
+export const isApiRequestTimeout = (error: unknown): boolean => {
+  const errorCode = (error as { code?: string } | null)?.code;
+  return errorCode === 'ECONNABORTED' || errorCode === 'ETIMEDOUT';
+};
 
 // ============================================================================
 // K-Anonymity (K-匿名化) 相關介面宣告
@@ -92,7 +127,8 @@ export interface DpResponse {
 export const runKAnonymity = async (
   dataFile: File,
   configFile: File,
-  options: KAnonymityOptions = {}
+  options: KAnonymityOptions = {},
+  requestOptions?: ApiRequestOptions
 ): Promise<KAnonymityResponse> => {
   try {
     const formData = new FormData();
@@ -120,7 +156,7 @@ export const runKAnonymity = async (
     const response = await axios.post(
       '/api/v1/k-anonymity',
       formData,
-      { responseType: 'blob' }
+      { responseType: 'blob', ...buildAxiosRequestConfig(requestOptions) }
     );
 
     // 讀取 Header 中的報告數據
@@ -175,7 +211,8 @@ export const runKAnonymity = async (
 export const runDifferentialPrivacy = async (
   dataFile: File,
   configFile: File,
-  options: DifferentialPrivacyOptions = {}
+  options: DifferentialPrivacyOptions = {},
+  requestOptions?: ApiRequestOptions
 ): Promise<DpResponse> => {
   try {
     const formData = new FormData();
@@ -189,7 +226,7 @@ export const runDifferentialPrivacy = async (
     const response = await axios.post(
       '/api/v1/dp',
       formData,
-      { responseType: 'blob' }
+      { responseType: 'blob', ...buildAxiosRequestConfig(requestOptions) }
     );
 
     // 讀取 Header 中的預算報告數據 (規範對照: Open-PETs API 3-2 節，DP 回應標頭為 X-Budget-Report，非 X-Quality-Report)
@@ -314,7 +351,8 @@ export interface ReportResponse {
  */
 export const runRiskKAnonymity = async (
   originalFile: File,
-  configFile: File
+  configFile: File,
+  requestOptions?: ApiRequestOptions
 ): Promise<RiskAttackResponse> => {
   try {
     const formData = new FormData();
@@ -324,7 +362,8 @@ export const runRiskKAnonymity = async (
 
     const response = await axios.post<AttackReport>(
       '/api/v1/risk/k-anonymity',
-      formData
+      formData,
+      buildAxiosRequestConfig(requestOptions)
     );
 
     return { success: true, report: response.data };
@@ -344,7 +383,8 @@ export const runRiskKAnonymity = async (
  */
 export const runRiskDp = async (
   originalFile: File,
-  configFile: File
+  configFile: File,
+  requestOptions?: ApiRequestOptions
 ): Promise<RiskAttackResponse> => {
   try {
     const formData = new FormData();
@@ -353,7 +393,8 @@ export const runRiskDp = async (
 
     const response = await axios.post<AttackReport>(
       '/api/v1/risk/dp',
-      formData
+      formData,
+      buildAxiosRequestConfig(requestOptions)
     );
 
     return { success: true, report: response.data };
@@ -375,7 +416,8 @@ export const runRiskDp = async (
 export const runRiskCap = async (
   originalFile: File,
   processedFile: File,
-  configFile: File
+  configFile: File,
+  requestOptions?: ApiRequestOptions
 ): Promise<RiskCapResponse> => {
   try {
     const formData = new FormData();
@@ -385,7 +427,8 @@ export const runRiskCap = async (
 
     const response = await axios.post<CapReport>(
       '/api/v1/risk/cap',
-      formData
+      formData,
+      buildAxiosRequestConfig(requestOptions)
     );
 
     return { success: true, report: response.data };
@@ -403,11 +446,13 @@ export const runRiskCap = async (
  *                  docs/manual_test/report_request.json
  */
 export const runReport = async (
-  payload: ReportRequestPayload
+  payload: ReportRequestPayload,
+  requestOptions?: ApiRequestOptions
 ): Promise<ReportResponse> => {
   try {
     const response = await axios.post('/api/v1/report', payload, {
       responseType: 'blob',
+      ...buildAxiosRequestConfig(requestOptions),
     });
 
     const disposition =

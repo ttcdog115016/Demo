@@ -119,6 +119,8 @@ export const registerGlobalApiErrorInterceptor = (): void => {
     axios.interceptors.response.use(
         (successResponseObj) => successResponseObj,
         async (errorObj: AxiosError) => {
+            // ★ 2026-09-30：使用者按「取消運算」主動中斷的請求不是錯誤，不寫入診斷紀錄、不回報
+            if (axios.isCancel(errorObj)) return Promise.reject(errorObj);
             try {
                 const requestConfigObj = errorObj.config;
                 const responseObj = errorObj.response;

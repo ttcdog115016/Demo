@@ -31,7 +31,7 @@ import { buildBackendSubgroupPayload } from '../../utils/riskSubgroupHelpers';
 import { ensureDatasetProfile, getColumnUniqueValueRatio } from '../../utils/datasetProfile'; // ★ 新增：風險評估「對象族群限定條件」轉換為後端格式
 
 // 引入 API 服務
-import { runKAnonymity, runDifferentialPrivacy, runRiskKAnonymity, runRiskDp, runRiskCap, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
+import { runKAnonymity, runDifferentialPrivacy, runRiskKAnonymity, runRiskDp, runRiskCap, isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
 
 const SIMULATION_COMPLETION_DELAY_MS = 600;
 const PDF_COMPILATION_DELAY_MS = 400;
@@ -493,6 +493,14 @@ export default function Step4_Result(): React.ReactElement
     //   清空），這裡加一個「執行中旗標」，確保同一時間只會有一輪 runFullPipeline
     //   在真正執行，杜絕任何重疊執行造成的狀態互相覆蓋。
     const isPipelineRunInProgressRef = useRef(false);
+    // ★ 2026-09-30：API 請求可取消、可看上傳進度。每一輪 runFullPipeline 建立一個 AbortController，
+    //   畫面上的「取消運算」按鈕呼叫 abort()，這一輪之後所有進行中的請求都會立即中斷。
+    const pipelineAbortControllerRef = useRef<AbortController | null>(null);
+    const [uploadProgressText, setUploadProgressText] = useState<string | null>(null);
+    const [isPipelineCanceledStatus, setIsPipelineCanceledStatus] = useState<boolean>(false);
+    const handleCancelPipeline = useCallback(() => {
+        pipelineAbortControllerRef.current?.abort();
+    }, []);
     // ★ 新增：若 processedCsvBlob 明明有內容（bytes > 0），但解析出來的資料列數卻是 0，
     //   代表後端回傳的 CSV 內容本身可能有非預期格式（例如編碼、分隔符號等問題）。
     //   過去這種情況畫面上只會安靜地顯示「無此資料」，使用者與工程師都無從得知
@@ -816,6 +824,26 @@ export default function Step4_Result(): React.ReactElement
             setIsPipelineCalculatingStatus(true);
             setCalculationProgressValue(0);
             setCurrentPipelinePhaseType('uploading');
+
+            const pipelineAbortController = new AbortController();
+            pipelineAbortControllerRef.current = pipelineAbortController;
+            setUploadProgressText(null);
+            setIsPipelineCanceledStatus(false);
+            // 上傳進度每變化 1% 才更新一次畫面，避免大檔案上傳時觸發大量重新渲染
+            let lastReportedUploadPercentNumber = -1;
+            const pipelineRequestOptions: ApiRequestOptions = {
+                signal: pipelineAbortController.signal,
+                onUploadProgress: (loadedBytes, totalBytes) => {
+                    const toMegabytesText = (byteCount: number) => (byteCount / 1024 / 1024).toFixed(1);
+                    if (!totalBytes) { setUploadProgressText(`已上傳 ${toMegabytesText(loadedBytes)} MB`); return; }
+                    const uploadPercentNumber = Math.floor((loadedBytes / totalBytes) * 100);
+                    if (uploadPercentNumber === lastReportedUploadPercentNumber) return;
+                    lastReportedUploadPercentNumber = uploadPercentNumber;
+                    setUploadProgressText(uploadPercentNumber >= 100
+                        ? `已上傳 ${toMegabytesText(totalBytes)} MB，等待後端回應…`
+                        : `上傳中 ${toMegabytesText(loadedBytes)} / ${toMegabytesText(totalBytes)} MB（${uploadPercentNumber}%）`);
+                }
+            };
             setApiReport(null);
             setProcessedCsvBlob(null);
             setRealMaskedDataRows([]);
@@ -1323,7 +1351,7 @@ export default function Step4_Result(): React.ReactElement
 					// 👇 加這行！讓它印在 Console 裡！
 					console.log(`🚀 傳給後端 (k-anonymity) 的 Step 3 參數:`, apiOptions);
 
-                    const response = await runKAnonymity(safeDataFile, configFile, apiOptions);
+                    const response = await runKAnonymity(safeDataFile, configFile, apiOptions, pipelineRequestOptions);
                     
                     if (!response.success) throw (response.error || new Error('API 請求未成功'));
                     
@@ -1357,7 +1385,7 @@ export default function Step4_Result(): React.ReactElement
                         default_delta: globalTargetDeltaValue ?? 0.0001
                     };
 
-                    const response = await runDifferentialPrivacy(safeDataFile, configFile, dpApiOptions);
+                    const response = await runDifferentialPrivacy(safeDataFile, configFile, dpApiOptions, pipelineRequestOptions);
 
                     if (!response.success) throw (response.error || new Error('DP API 請求未成功'));
 
@@ -1668,7 +1696,7 @@ export default function Step4_Result(): React.ReactElement
 
                             setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏳ 三攻擊風險評估運算中（第 ${roundIndexNumber + 1}/${effectiveSensitiveCandidateColumnNamesList.length} 輪）...`]);
 
-                            const riskResponse = await runRiskKAnonymity(riskOriginalDataFile, riskConfigFile);
+                            const riskResponse = await runRiskKAnonymity(riskOriginalDataFile, riskConfigFile, pipelineRequestOptions);
                             if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error(`三攻擊風險評估（K-匿名，以「${candidateSensitiveFieldName}」為敏感欄位）API 請求未成功`));
 
                             const thisRoundReport = riskResponse.report;
@@ -1809,7 +1837,7 @@ export default function Step4_Result(): React.ReactElement
                         //   逐輪顯示實際測試中的候選敏感欄位名稱，只要讓使用者看到「運算中」的進度即可。
                         setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏳ 三攻擊風險評估運算中（第 ${roundIndexNumber + 1}/${effectiveCategoricalCandidateFieldsList.length} 輪）...`]);
 
-                        const riskResponse = await runRiskDp(safeDataFile, riskConfigFile);
+                        const riskResponse = await runRiskDp(safeDataFile, riskConfigFile, pipelineRequestOptions);
                         if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error(`三攻擊風險評估（DP，以「${candidateSensitiveFieldName}」為敏感欄位）API 請求未成功`));
 
                         const thisRoundReport = riskResponse.report;
@@ -1939,8 +1967,10 @@ export default function Step4_Result(): React.ReactElement
 
                                 setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏳ CAP 前後對比運算中（第 ${roundIndexNumber + 1}/${capCandidateColumnNamesList.length} 輪）...`]);
 
-                                const capResponse = await runRiskCap(riskOriginalDataFile, processedFileForCap, capConfigFile);
+                                const capResponse = await runRiskCap(riskOriginalDataFile, processedFileForCap, capConfigFile, pipelineRequestOptions);
                                 if (!capResponse.success || !capResponse.report) {
+                                    // 使用者取消：不當成單輪失敗略過，整個流程直接中止
+                                    if (isApiRequestCanceled(capResponse.error)) throw capResponse.error;
                                     const roundFailureReasonText = extractCapRequestFailureReasonText(capResponse.error || new Error('API 請求未成功'));
                                     console.error(`CAP 前後對比（以「${candidateSensitiveFieldName}」為敏感欄位）失敗:`, capResponse.error);
                                     failedCapRoundsList.push({ columnName: candidateSensitiveFieldName, reasonText: roundFailureReasonText });
@@ -1987,7 +2017,7 @@ export default function Step4_Result(): React.ReactElement
                             const capConfigBlob = new Blob([JSON.stringify(capConfigObject)], { type: 'application/json;charset=utf-8' });
                             const capConfigFile = new File([capConfigBlob], 'cap_config.json', { type: 'application/json' });
 
-                            const capResponse = await runRiskCap(riskOriginalDataFile, processedFileForCap, capConfigFile);
+                            const capResponse = await runRiskCap(riskOriginalDataFile, processedFileForCap, capConfigFile, pipelineRequestOptions);
                             if (!capResponse.success || !capResponse.report) throw (capResponse.error || new Error('CAP 前後對比 API 請求未成功'));
                             capReportResult = capResponse.report;
                         }
@@ -2002,6 +2032,7 @@ export default function Step4_Result(): React.ReactElement
                             setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⚠️ CAP 前後對比未能評估：${capReportResult!.message}`]);
                         }
                     } catch (capErrorPayload) {
+                        if (isApiRequestCanceled(capErrorPayload)) throw capErrorPayload;
                         console.error('CAP 前後對比失敗:', capErrorPayload);
                         const capFailureReasonText = extractCapRequestFailureReasonText(capErrorPayload);
                         capReportResult = buildCapUnavailableReceipt(capFailureReasonText);
@@ -2149,6 +2180,23 @@ export default function Step4_Result(): React.ReactElement
                 setSystemSimulationLogsList(prev => [...prev, translate('step4.log.finished', '[{{time}}] 🎉 後端管線運算完畢，合規憑證生成完成！', { time: formatCurrentTimeForLogString() })]);
 
             } catch (error: unknown) {
+                // ★ 2026-09-30：使用者按「取消運算」→ 不是錯誤，不組錯誤卡片、不寫稽核紀錄
+                if (isApiRequestCanceled(error)) {
+                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏹ 已取消運算`]);
+                    messageApi.info(translate('step4.msg.canceled', '已取消運算'));
+                    setIsPipelineCanceledStatus(true);
+                    setPipelineFailedMessage(translate('step4.msg.canceled_detail', '已取消運算。可調整設定後按「重新運算」再執行一次。'));
+                    return;
+                }
+                // 逾時：請求超過 DEFAULT_API_TIMEOUT_MS 仍未完成
+                if (isApiRequestTimeout(error)) {
+                    const timeoutMinutesNumber = Math.round(DEFAULT_API_TIMEOUT_MS / 60000);
+                    const timeoutMessageText = translate('step4.msg.timeout_detail', '後端超過 {{minutes}} 分鐘沒有回應，已停止等待。可能是資料量太大、後端服務異常，或透過 cloudflared 等通道連線時被中斷；建議改用 localhost 開啟或縮小資料量後重新運算。', { minutes: timeoutMinutesNumber });
+                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏱ 請求逾時（${timeoutMinutesNumber} 分鐘）`]);
+                    messageApi.error(translate('step4.msg.timeout', '後端回應逾時'));
+                    setPipelineFailedMessage(timeoutMessageText);
+                    return;
+                }
                 let errorMessage = error instanceof Error ? error.message : '請確認 Docker 服務是否正常啟動';
 
                 const anyError = error as Record<string, unknown>;
@@ -2236,6 +2284,8 @@ export default function Step4_Result(): React.ReactElement
                 setPipelineFailedMessage(friendlyDisplayNode);
             } finally {
                 isPipelineRunInProgressRef.current = false;
+                pipelineAbortControllerRef.current = null;
+                setUploadProgressText(null);
                 setTimeout(() => setIsPipelineCalculatingStatus(false), SIMULATION_COMPLETION_DELAY_MS);
             }
 
@@ -2425,7 +2475,9 @@ export default function Step4_Result(): React.ReactElement
                                         : <WarningFilled style={{ color: '#faad14' }} />}
                                 <span style={{ fontWeight: 600 }}>
                                     {pipelineFailedMessage
-                                        ? translate('step4.alert.title_error', '後端運算失敗，未產出結果')
+                                        ? (isPipelineCanceledStatus
+                                            ? translate('step4.alert.title_canceled', '已取消運算，未產出結果')
+                                            : translate('step4.alert.title_error', '後端運算失敗，未產出結果'))
                                         : isComplianceValidStatus
                                             ? translate('step4.alert.title', '去識別化矩陣演算與風險審計完成')
                                             : translate('step4.alert.title_failed', '去識別化矩陣演算完成，但未達合規標準')}
@@ -2640,6 +2692,12 @@ export default function Step4_Result(): React.ReactElement
                                 {currentPipelinePhaseType === 'completed' && translate('step4.loading.completed', '後端演算完畢，正在生成最終合規報告...')}
                             </h3>
                             <Progress percent={calculationProgressValue} status="active" style={{ maxWidth: '600px', margin: '16px auto' }} strokeColor={token.colorPrimary} />
+                            {uploadProgressText && (
+                                <div style={{ fontSize: '13px', color: token.colorTextSecondary, marginBottom: '12px' }}>{uploadProgressText}</div>
+                            )}
+                            <Button danger onClick={handleCancelPipeline}>
+                                {translate('step4.btn.cancel_pipeline', '取消運算')}
+                            </Button>
                         </div>
                         
                         <div style={{ maxWidth: '800px', margin: '0 auto', background: isDarkModeActiveStatus ? '#000000' : '#1e1e1e', color: '#00ff66', fontFamily: 'monospace', padding: '16px', borderRadius: '8px', textAlign: 'left', fontSize: '13px', height: '180px', overflowY: 'auto', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)' }}>
