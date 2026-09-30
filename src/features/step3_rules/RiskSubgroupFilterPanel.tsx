@@ -34,20 +34,20 @@
  * ============================================================================
  */
 
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { Card, Select, Button, Space, Input, Tooltip, Empty, Typography, Spin } from 'antd';
 import { PlusOutlined, DeleteOutlined, QuestionCircleOutlined, FilterOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import Papa from 'papaparse';
 
 import { useWorkspaceStore, type RiskSubgroupCondition } from '../../store/useWorkspaceStore';
+import { useEnsureDatasetProfile, MAX_TOP_VALUES_PER_COLUMN } from '../../utils/datasetProfile';
 import { resolveColumnKindForSubgroup, isColumnTemporalForSubgroup } from '../../utils/riskSubgroupHelpers';
 
 const { Text } = Typography;
 
 // 完整掃描資料集時，單一欄位最多快取幾個相異值 (依出現次數由高到低排序後截斷)，避免誤把
 // 高基數欄位 (如流水號、自由文字) 當類別型欄位時，掃描結果佔用過多記憶體或選單過長。
-const MAX_CACHED_UNIQUE_VALUES_PER_COLUMN = 1000;
+const MAX_CACHED_UNIQUE_VALUES_PER_COLUMN = MAX_TOP_VALUES_PER_COLUMN;
 
 /**
  * 函數名稱: RiskSubgroupFilterPanel
@@ -74,68 +74,12 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
     const riskSubgroupFiltersMapDict = useWorkspaceStore((state) => state.riskSubgroupFilters);
     const executeSetRiskSubgroupFiltersAction = useWorkspaceStore((state) => state.setRiskSubgroupFilters);
 
-    // ★ 新增：原始上傳檔案物件 (供完整掃描用，不受 Step1 預覽 1000 筆上限)，以及完整掃描結果
-    // 快取與進行中狀態。
-    const uploadedDataFileObj = useWorkspaceStore((state) => state.dataFile);
+    // ★ 完整資料集（不受 Step1 預覽 1000 筆上限）各欄位的常見值快取與掃描進行中狀態。
+    // ★ 2026-09-30：改由 utils/datasetProfile.ts 統一掃描一次（同一份檔案在 Step2～Step4 共用），
+    //   結果的前 1000 個常見值寫入 columnCategoricalUniqueValues，本組件不再另外完整 Papa.parse。
     const columnCategoricalUniqueValuesMapDict = useWorkspaceStore((state) => state.columnCategoricalUniqueValues);
     const isColumnCategoricalValuesScanningStatus = useWorkspaceStore((state) => state.isColumnCategoricalValuesScanning);
-    const executeSetColumnCategoricalUniqueValuesAction = useWorkspaceStore((state) => state.setColumnCategoricalUniqueValues);
-    const executeSetIsColumnCategoricalValuesScanningAction = useWorkspaceStore((state) => state.setIsColumnCategoricalValuesScanning);
-
-    // 防止同一次掛載內重複觸發掃描 (例如 React 嚴格模式下 effect 執行兩次)；是否已針對「目前
-    // 這份檔案」掃描過，仍以全域 Store 的 columnCategoricalUniqueValues 是否已有內容為準
-    // (該快取只在換一份新資料集時才會被 clearFileData／resetWorkspace 清空，可跨越本組件的
-    // 掛載/卸載存活，避免使用者在 Step3 / Step4 之間切換時重複掃描同一份大檔案)。
-    const hasScanStartedInThisMountRef = useRef(false);
-
-    useEffect(() => {
-        if (!uploadedDataFileObj) return;
-        if (Object.keys(columnCategoricalUniqueValuesMapDict).length > 0) return; // 已有快取結果，無需重掃
-        if (hasScanStartedInThisMountRef.current) return;
-        hasScanStartedInThisMountRef.current = true;
-
-        let isEffectCancelledFlag = false;
-        executeSetIsColumnCategoricalValuesScanningAction(true);
-
-        Papa.parse(uploadedDataFileObj, {
-            header: true,
-            skipEmptyLines: true,
-            worker: false,
-            complete: (parseResultsObj) => {
-                if (isEffectCancelledFlag) return;
-
-                const allParsedDataRowsArray = parseResultsObj.data as Record<string, string>[];
-                const parsedColumnNamesArray = parseResultsObj.meta.fields || [];
-                const uniqueValuesResultMapDict: Record<string, string[]> = {};
-
-                parsedColumnNamesArray.forEach((columnNameString) => {
-                    const valueOccurrenceCountMapDict = new Map<string, number>();
-                    allParsedDataRowsArray.forEach((dataRowRecord) => {
-                        const rawCellValue = dataRowRecord[columnNameString];
-                        if (rawCellValue === undefined || rawCellValue === null) return;
-                        const trimmedCellValueStr = String(rawCellValue).trim();
-                        if (trimmedCellValueStr === '') return;
-                        valueOccurrenceCountMapDict.set(trimmedCellValueStr, (valueOccurrenceCountMapDict.get(trimmedCellValueStr) || 0) + 1);
-                    });
-
-                    uniqueValuesResultMapDict[columnNameString] = Array.from(valueOccurrenceCountMapDict.entries())
-                        .sort((a, b) => b[1] - a[1])
-                        .slice(0, MAX_CACHED_UNIQUE_VALUES_PER_COLUMN)
-                        .map(([valueStr]) => valueStr);
-                });
-
-                executeSetColumnCategoricalUniqueValuesAction(uniqueValuesResultMapDict);
-                executeSetIsColumnCategoricalValuesScanningAction(false);
-            },
-            error: () => {
-                if (isEffectCancelledFlag) return;
-                hasScanStartedInThisMountRef.current = false;
-                executeSetIsColumnCategoricalValuesScanningAction(false);
-            }
-        });
-
-        return () => { isEffectCancelledFlag = true; };
-    }, [uploadedDataFileObj, columnCategoricalUniqueValuesMapDict, executeSetColumnCategoricalUniqueValuesAction, executeSetIsColumnCategoricalValuesScanningAction]);
+    useEnsureDatasetProfile();
 
     const configuredColumnNamesListArray = Object.keys(riskSubgroupFiltersMapDict);
     const availableColumnNamesListArray = datasetColumnsListArray.filter(

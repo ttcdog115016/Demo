@@ -15,12 +15,12 @@ import {
 	EyeOutlined, EyeInvisibleOutlined, QuestionCircleOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import Papa from 'papaparse';
 import dayjs from 'dayjs';
 
 import { useWorkspaceStore, type DPField, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import { DP_COLUMN_BUDGETS_REFERENCE } from '../../config/recommendationReferenceConfig';
 import { isDateTimeDpField, mapOutOfBoundsStrategyToBackend, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
+import { ensureDatasetProfile, useEnsureDatasetProfile } from '../../utils/datasetProfile';
 
 /**
  * 預設隱私參數常數宣告
@@ -122,67 +122,16 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		[datasetColumnsList, currentDpFieldsList, setDpFieldsAction]
 	);
 
-	// ★ 新增: 依「資料型態為數值型的邊界防呆檢查」需求，重新完整解析原始上傳檔案 (不受 Step1 上傳時
-	//   1000 筆預覽上限限制)，快取每個欄位之實際有效數值陣列，供下方 boundRangeCoverageInfoMap 計算
-	//   使用者設定的邊界是否涵蓋實際資料範圍、以及超出範圍之筆數/百分比。
+	// ★ 新增: 依「資料型態為數值型的邊界防呆檢查」需求，需要各欄位完整資料 (不受 Step1 上傳時 1000 筆
+	//   預覽上限限制) 的實際有效數值陣列，供下方 boundRangeCoverageInfoMap 計算邊界涵蓋率。
+	// ★ 2026-09-30：改由 utils/datasetProfile.ts 統一掃描一次並寫入 datasetColumnNumericValuesMap，
+	//   不再於本元件另外完整 Papa.parse 一次（同一份檔案在各頁共用同一份結果）。
+	useEnsureDatasetProfile();
 	useEffect(
-		() => 
+		() =>
 		{
-			if (!uploadedDataFileObj) 
-			{
-				setDatasetColumnNumericValuesMapAction({});
-				return;
-			}
-
-			let isEffectCancelledFlag = false;
-
-			Papa.parse(
-				uploadedDataFileObj,
-				{
-					header: true,
-					skipEmptyLines: true,
-					worker: false,
-					complete: (parseResultsObj) => 
-					{
-						if (isEffectCancelledFlag) return;
-
-						const allParsedDataRowsArray = parseResultsObj.data as Record<string, string>[];
-						const parsedColumnNamesArray = parseResultsObj.meta.fields || [];
-						const numericValuesMapResult: Record<string, number[]> = {};
-
-						parsedColumnNamesArray.forEach(
-							(columnNameString) => 
-							{
-								const numericValuesForColumnArray: number[] = [];
-
-								allParsedDataRowsArray.forEach(
-									(dataRowRecord) => 
-									{
-										const rawCellValueStr = dataRowRecord[columnNameString];
-										if (rawCellValueStr === undefined || rawCellValueStr === null || String(rawCellValueStr).trim() === '') return;
-
-										const parsedNumericValue = Number(rawCellValueStr);
-										if (!Number.isFinite(parsedNumericValue)) return;
-
-										numericValuesForColumnArray.push(parsedNumericValue);
-									}
-								);
-
-								if (numericValuesForColumnArray.length > 0) numericValuesMapResult[columnNameString] = numericValuesForColumnArray;
-							}
-						);
-
-						if (!isEffectCancelledFlag) setDatasetColumnNumericValuesMapAction(numericValuesMapResult);
-					},
-					error: () => 
-					{
-						if (!isEffectCancelledFlag) setDatasetColumnNumericValuesMapAction({});
-					}
-				}
-			);
-
-			return () => { isEffectCancelledFlag = true; };
-		}, 
+			if (!uploadedDataFileObj) setDatasetColumnNumericValuesMapAction({});
+		},
 		[uploadedDataFileObj, setDatasetColumnNumericValuesMapAction]
 	);
 
@@ -974,59 +923,42 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 
 		messageApi.loading({ content: '正在讀取資料集，計算數值型欄位的實際邊界範圍...', key: DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY, duration: 0 });
 
-		Papa.parse(
-			rawUploadedDataFileObj,
+		// ★ 2026-09-30：改用 utils/datasetProfile.ts 的共用掃描結果（已掃描過就直接取用，不再重新完整解析整份檔案）。
+		ensureDatasetProfile(rawUploadedDataFileObj)
+			.then((datasetProfileResult) =>
 			{
-				header: true,
-				skipEmptyLines: true,
-				worker: false,
-				complete: (parseResultsObj) =>
-				{
-					messageApi.destroy(DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY);
+				messageApi.destroy(DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY);
 
-					const allParsedDataRowsArray = parseResultsObj.data as Record<string, string>[];
+				const fieldsWithDataDrivenBoundsArray = finalDpFieldsArray.map(
+					(fieldItemRecord) =>
+					{
+						if (fieldItemRecord.fieldType !== 'Numeric' || !numericFieldNamesNeedingRealBoundsList.includes(fieldItemRecord.fieldName)) return fieldItemRecord;
 
-					const fieldsWithDataDrivenBoundsArray = finalDpFieldsArray.map(
-						(fieldItemRecord) =>
+						const columnNumericValuesArray = datasetProfileResult.numericValues[fieldItemRecord.fieldName.replace(/^[\uFEFF\u200B]+/, '').trim()] || [];
+						// ★ 若整欄找不到任何有效數值 (例如欄位實際為空或格式異常)，則保留原本 (關鍵字/參考設定檔) 算出之邊界，避免寫入無意義的 ±Infinity。
+						if (columnNumericValuesArray.length === 0) return fieldItemRecord;
+
+						// 逐筆比較求最小／最大值（大量資料時 Math.min(...陣列) 會因參數過多而 RangeError）
+						let computedMinValue = Number.POSITIVE_INFINITY;
+						let computedMaxValue = Number.NEGATIVE_INFINITY;
+						for (const numericValue of columnNumericValuesArray)
 						{
-							if (fieldItemRecord.fieldType !== 'Numeric' || !numericFieldNamesNeedingRealBoundsList.includes(fieldItemRecord.fieldName)) return fieldItemRecord;
-
-							let computedMinValue = Number.POSITIVE_INFINITY;
-							let computedMaxValue = Number.NEGATIVE_INFINITY;
-							let validNumericValueFoundCount = 0;
-
-							allParsedDataRowsArray.forEach(
-								(dataRowRecord) =>
-								{
-									const rawCellValueStr = dataRowRecord[fieldItemRecord.fieldName];
-									if (rawCellValueStr === undefined || rawCellValueStr === null || String(rawCellValueStr).trim() === '') return;
-
-									const parsedNumericValue = Number(rawCellValueStr);
-									if (!Number.isFinite(parsedNumericValue)) return;
-
-									if (parsedNumericValue < computedMinValue) computedMinValue = parsedNumericValue;
-									if (parsedNumericValue > computedMaxValue) computedMaxValue = parsedNumericValue;
-									validNumericValueFoundCount++;
-								}
-							);
-
-							// ★ 若整欄找不到任何有效數值 (例如欄位實際為空或格式異常)，則保留原本 (關鍵字/參考設定檔) 算出之邊界，避免寫入無意義的 ±Infinity。
-							if (validNumericValueFoundCount === 0) return fieldItemRecord;
-
-							return { ...fieldItemRecord, lowerBound: Math.floor(computedMinValue), upperBound: Math.ceil(computedMaxValue) };
+							if (numericValue < computedMinValue) computedMinValue = numericValue;
+							if (numericValue > computedMaxValue) computedMaxValue = numericValue;
 						}
-					);
 
-					finalizeAndApplyRecommendedFields(fieldsWithDataDrivenBoundsArray);
-				},
-				error: () =>
-				{
-					messageApi.destroy(DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY);
-					messageApi.warning('讀取資料集計算數值範圍失敗，已套用預設邊界值，請手動確認。');
-					finalizeAndApplyRecommendedFields(finalDpFieldsArray);
-				}
-			}
-		);
+						return { ...fieldItemRecord, lowerBound: Math.floor(computedMinValue), upperBound: Math.ceil(computedMaxValue) };
+					}
+				);
+
+				finalizeAndApplyRecommendedFields(fieldsWithDataDrivenBoundsArray);
+			})
+			.catch(() =>
+			{
+				messageApi.destroy(DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY);
+				messageApi.warning('讀取資料集計算數值範圍失敗，已套用預設邊界值，請手動確認。');
+				finalizeAndApplyRecommendedFields(finalDpFieldsArray);
+			});
 	};
 
 	const addField = (): void => 

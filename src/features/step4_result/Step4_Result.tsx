@@ -27,7 +27,8 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuditStore } from '../../store/useAuditStore';
 import { mapOutOfBoundsStrategyToBackend, isDateTimeDpField } from '../../utils/dpFieldHelpers';
-import { buildBackendSubgroupPayload } from '../../utils/riskSubgroupHelpers'; // ★ 新增：風險評估「對象族群限定條件」轉換為後端格式
+import { buildBackendSubgroupPayload } from '../../utils/riskSubgroupHelpers';
+import { ensureDatasetProfile, getColumnUniqueValueRatio } from '../../utils/datasetProfile'; // ★ 新增：風險評估「對象族群限定條件」轉換為後端格式
 
 // 引入 API 服務
 import { runKAnonymity, runDifferentialPrivacy, runRiskKAnonymity, runRiskDp, runRiskCap, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
@@ -559,50 +560,46 @@ export default function Step4_Result(): React.ReactElement
         if (processedCsvBlob) {
             const processedBlobByteSizeValue = processedCsvBlob.size;
 
-            processedCsvBlob.text().then(csvText => {
-                // ★ 與上傳原始檔時的清理方式一致（見 cleanedCsvText 的處理）：後端回傳的
-                //   CSV 若帶有 UTF-8 BOM 或零寬字元，會讓 Papa.parse 判斷出來的第一個欄位
-                //   標頭名稱多出看不見的字元、進而對不上 actualProcessedColumnsList，
-                //   保留此清理可避免這類「看起來欄位對不上」的情況。
-                const cleanedProcessedCsvText = csvText.replace(/^[\uFEFF\u200B]+/, '');
+            // ★ 2026-09-30：預覽只需要前 10 筆，改為直接以串流方式解析 Blob（preview: 10 讀到就停），
+            //   不再先把整份去識別化結果（100 萬筆時近 100 MB）整個讀成字串。欄位名稱開頭的
+            //   UTF-8 BOM／零寬字元以 transformHeader 去除，與上傳原始檔時的清理方式一致，
+            //   避免第一個欄位標頭對不上 actualProcessedColumnsList。
+            // 包成 File（不複製內容）才符合 PapaParse 的串流讀檔型別
+            Papa.parse<Record<string, unknown>>(new File([processedCsvBlob], 'processed_preview.csv', { type: 'text/csv' }), {
+                header: true,
+                skipEmptyLines: true,
+                preview: 10,
+                transformHeader: (rawHeaderName: string) => rawHeaderName.replace(/^[\uFEFF\u200B]+/, ''),
+                complete: (results) => {
+                    if (!isMounted) return;
 
-                Papa.parse(cleanedProcessedCsvText, {
-                    header: true,
-                    skipEmptyLines: true,
-                    preview: 10,
-                    complete: (results) => {
-                        if (!isMounted) return;
+                    setRealMaskedDataRows(results.data as Record<string, unknown>[]);
 
-                        setRealMaskedDataRows(results.data as Record<string, unknown>[]);
-
-                        // ★ 診斷：後端明明回傳了有內容的檔案（bytes > 0），但解析出來的
-                        //   資料列數卻是 0，代表 CSV 內容本身可能有非預期格式（例如編碼、
-                        //   分隔符號問題），而不是「後端真的沒有輸出資料」。記錄診斷資訊，
-                        //   讓畫面能直接顯示原因，不必再另外開發者工具查看。
-                        if (results.data.length === 0 && cleanedProcessedCsvText.trim().length > 0) {
+                    // ★ 診斷：後端明明回傳了有內容的檔案（bytes > 0），但解析出來的資料列數卻是 0，
+                    //   代表 CSV 內容本身可能有非預期格式（例如編碼、分隔符號問題），而不是「後端真的
+                    //   沒有輸出資料」。只在這種情況才讀取檔案開頭一小段內容供診斷顯示。
+                    if (results.data.length === 0 && processedBlobByteSizeValue > 0) {
+                        processedCsvBlob.slice(0, 4096).text().then((headSnippetText) => {
+                            if (!isMounted) return;
+                            const cleanedHeadSnippetText = headSnippetText.replace(/^[\uFEFF\u200B]+/, '');
+                            if (cleanedHeadSnippetText.trim().length === 0) { setPreviewParseDiagnosticText(null); return; }
                             const diagnosticDetailText =
                                 `後端回傳檔案大小：${processedBlobByteSizeValue} bytes；` +
-                                `文字內容長度：${cleanedProcessedCsvText.length} 字元；` +
                                 `解析錯誤數：${results.errors.length}` +
                                 (results.errors.length > 0 ? `（第一筆：${JSON.stringify(results.errors[0])}）` : '') +
-                                `；內容開頭前 200 字：${cleanedProcessedCsvText.slice(0, 200)}`;
+                                `；內容開頭前 200 字：${cleanedHeadSnippetText.slice(0, 200)}`;
                             console.error('⚠️ 結果預覽對照：後端有回傳資料，但解析後資料列數為 0。', diagnosticDetailText);
                             setPreviewParseDiagnosticText(diagnosticDetailText);
-                        } else {
-                            setPreviewParseDiagnosticText(null);
-                        }
-                    },
-                    error: (error: Error) => {
-                        console.error('Error parsing processed CSV blob:', error);
-                        if (isMounted) {
-                            setPreviewParseDiagnosticText(`CSV 解析發生例外：${error.message}`);
-                        }
+                        }).catch(() => undefined);
+                    } else {
+                        setPreviewParseDiagnosticText(null);
                     }
-                });
-            }).catch(err => {
-                console.error('Error reading blob text:', err);
-                if (isMounted) {
-                    setPreviewParseDiagnosticText(`讀取後端回傳檔案內容失敗：${err instanceof Error ? err.message : String(err)}`);
+                },
+                error: (error: Error) => {
+                    console.error('Error parsing processed CSV blob:', error);
+                    if (isMounted) {
+                        setPreviewParseDiagnosticText(`CSV 解析發生例外：${error.message}`);
+                    }
                 }
             });
         }
@@ -1208,6 +1205,12 @@ export default function Step4_Result(): React.ReactElement
                     'input_dataset.csv',
                     { type: 'text/csv;charset=utf-8' }
                 );
+                // 去識別化結果（可達上百 MB）的文字內容只讀一次，CAP 分級距與輸出筆數統計共用
+                let processedCsvTextPromise: Promise<string> | null = null;
+                const readProcessedCsvTextOnce = (): Promise<string> => {
+                    if (!processedCsvTextPromise) processedCsvTextPromise = finalCsvBlobData ? finalCsvBlobData.text() : Promise.resolve('');
+                    return processedCsvTextPromise;
+                };
 
                 // ★ 使用者反映（2026-09-22）：高唯一值比例（近乎每筆都不同值）敏感欄位偵測，原本只
                 //   寫在下方 K-匿名分支內，但差分隱私模式的候選敏感欄位（categoricalCandidateFieldsList）
@@ -1217,16 +1220,12 @@ export default function Step4_Result(): React.ReactElement
                 //   說明）。故把這段偵測邏輯提升到兩個模式共用的位置，只依「實際資料的唯一值佔比」
                 //   判斷（而非欄位型別），K-匿名與差分隱私分支都能重複使用同一份 computeColumnUniqueValueRatio。
                 const HIGH_CARDINALITY_SENSITIVE_RATIO_THRESHOLD = 0.5;
-                const parsedOriginalCsvForCardinalityCheck = Papa.parse<Record<string, string>>(cleanedCsvText, { header: true, skipEmptyLines: true });
-                const originalCsvRowsForCardinalityCheck = (parsedOriginalCsvForCardinalityCheck.data || []) as Record<string, string>[];
-                const computeColumnUniqueValueRatio = (targetColumnName: string): number => {
-                    const nonEmptyValuesList = originalCsvRowsForCardinalityCheck
-                        .map((rowRecordItem) => rowRecordItem[targetColumnName])
-                        .filter((cellValue) => cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '');
-                    if (nonEmptyValuesList.length === 0) return 0;
-                    const distinctValuesCount = new Set(nonEmptyValuesList.map((cellValue) => String(cellValue).trim())).size;
-                    return distinctValuesCount / nonEmptyValuesList.length;
-                };
+                // ★ 2026-09-30：不再把整份原始 CSV 另外 Papa.parse 成列物件陣列（100 萬筆時非常吃記憶體），
+                //   改用 utils/datasetProfile.ts 整份資料集只掃描一次的欄位統計快照（Step2／Step3 通常已掃描過，
+                //   這裡直接取用）。相異值數被截斷的極高基數欄位，佔比一律視為 1（保守判定為高唯一值）。
+                const datasetProfileForRisk = await ensureDatasetProfile(originalFile);
+                const computeColumnUniqueValueRatio = (targetColumnName: string): number => getColumnUniqueValueRatio(datasetProfileForRisk, targetColumnName);
+                const getColumnProfileForRisk = (targetColumnName: string) => datasetProfileForRisk.columns[targetColumnName.replace(/^[\uFEFF\u200B]+/, '').trim()];
 
                 // ★ 後端工程師回覆（2026-09-29）：連續數值型敏感欄位改為先分級距再送風險評估（完整說明見上方
                 //   sensitiveBinWidthOverridesMap 狀態宣告處）。級距一律以 0 為原點切齊
@@ -1242,15 +1241,19 @@ export default function Step4_Result(): React.ReactElement
                     return Number.isFinite(parsedNumber) ? parsedNumber : null;
                 };
                 const analyzeNumericColumnRangeForBinning = (targetColumnName: string): { min: number; max: number } | null => {
-                    const nonEmptyValuesList = originalCsvRowsForCardinalityCheck
-                        .map((rowRecordItem) => rowRecordItem[targetColumnName])
-                        .filter((cellValue) => cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '');
-                    if (nonEmptyValuesList.length === 0) return null;
-                    const parsedNumbersList = nonEmptyValuesList
-                        .map((cellValue) => parseNumericCellForBinning(cellValue))
-                        .filter((parsedValue): parsedValue is number => parsedValue !== null);
-                    if (parsedNumbersList.length / nonEmptyValuesList.length < NUMERIC_COLUMN_MIN_PARSEABLE_RATIO) return null;
-                    return { min: Math.min(...parsedNumbersList), max: Math.max(...parsedNumbersList) };
+                    const columnProfile = getColumnProfileForRisk(targetColumnName);
+                    if (!columnProfile || columnProfile.nonEmptyCount === 0) return null;
+                    if (columnProfile.numericCount / columnProfile.nonEmptyCount < NUMERIC_COLUMN_MIN_PARSEABLE_RATIO) return null;
+                    const columnNumericValuesList = datasetProfileForRisk.numericValues[targetColumnName.replace(/^[\uFEFF\u200B]+/, '').trim()] || [];
+                    if (columnNumericValuesList.length === 0) return null;
+                    // 逐筆比較（大量資料時 Math.min(...陣列) 會因參數過多而 RangeError）
+                    let minValue = Infinity;
+                    let maxValue = -Infinity;
+                    for (const numericValue of columnNumericValuesList) {
+                        if (numericValue < minValue) minValue = numericValue;
+                        if (numericValue > maxValue) maxValue = numericValue;
+                    }
+                    return { min: minValue, max: maxValue };
                 };
                 const computeAutoNiceBinWidth = (minValue: number, maxValue: number): number => {
                     const spanValue = maxValue - minValue;
@@ -1268,15 +1271,13 @@ export default function Step4_Result(): React.ReactElement
                     return `${formatBinBoundaryText(lowerBoundValue)}~${formatBinBoundaryText(lowerBoundValue + binWidthValue)}`;
                 };
                 const computeBinnedColumnStats = (targetColumnName: string, binWidthValue: number): { distinctCount: number; uniqueRatio: number } => {
-                    const nonEmptyValuesList = originalCsvRowsForCardinalityCheck
-                        .map((rowRecordItem) => rowRecordItem[targetColumnName])
-                        .filter((cellValue) => cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '');
-                    if (nonEmptyValuesList.length === 0) return { distinctCount: 0, uniqueRatio: 0 };
-                    const binnedLabelsSet = new Set(nonEmptyValuesList.map((cellValue) => {
-                        const parsedValue = parseNumericCellForBinning(cellValue);
-                        return parsedValue === null ? String(cellValue).trim() : convertNumberToBinLabel(parsedValue, binWidthValue);
-                    }));
-                    return { distinctCount: binnedLabelsSet.size, uniqueRatio: binnedLabelsSet.size / nonEmptyValuesList.length };
+                    const columnProfile = getColumnProfileForRisk(targetColumnName);
+                    if (!columnProfile || columnProfile.nonEmptyCount === 0) return { distinctCount: 0, uniqueRatio: 0 };
+                    const binnedLabelsSet = new Set<string>(columnProfile.nonNumericDistinctValues);
+                    for (const numericValue of datasetProfileForRisk.numericValues[targetColumnName.replace(/^[\uFEFF\u200B]+/, '').trim()] || []) {
+                        binnedLabelsSet.add(convertNumberToBinLabel(numericValue, binWidthValue));
+                    }
+                    return { distinctCount: binnedLabelsSet.size, uniqueRatio: binnedLabelsSet.size / columnProfile.nonEmptyCount };
                 };
                 const applySensitiveBinningToCsvText = (csvText: string, binWidthByColumnMap: Record<string, number>): string => {
                     if (Object.keys(binWidthByColumnMap).length === 0) return csvText;
@@ -1905,7 +1906,7 @@ export default function Step4_Result(): React.ReactElement
                         // ★ 2026-09-29：若本次有敏感欄位自動分級距，CAP 的「原始」與「去識別化」兩份資料都要用
                         //   同一套級距轉換，前後對比才有意義（見 riskEvaluationBinWidthMap 宣告處）。
                         const processedFileForCap = Object.keys(riskEvaluationBinWidthMap).length > 0
-                            ? new File([applySensitiveBinningToCsvText(await finalCsvBlobData.text(), riskEvaluationBinWidthMap)], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' })
+                            ? new File([applySensitiveBinningToCsvText(await readProcessedCsvTextOnce(), riskEvaluationBinWidthMap)], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' })
                             : new File([finalCsvBlobData], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' });
 
                         if (buildCapRiskColumnsMapForCandidateFn && capCandidateColumnNamesList.length > 0) {
@@ -2021,7 +2022,7 @@ export default function Step4_Result(): React.ReactElement
                 let outputRowCountValue = inputRowCountValue;
                 if (finalCsvBlobData) {
                     try {
-                        const processedCsvTextForRowCount = await finalCsvBlobData.text();
+                        const processedCsvTextForRowCount = await readProcessedCsvTextOnce();
                         outputRowCountValue = countCsvDataRowsForStats(processedCsvTextForRowCount);
                     } catch (rowCountErrorPayload) {
                         console.error('計算輸出資料筆數失敗:', rowCountErrorPayload);

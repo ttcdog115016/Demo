@@ -14,6 +14,7 @@ import ReactECharts from 'echarts-for-react';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 
 /**
  * ============================================================================
@@ -128,7 +129,11 @@ export default function KAnonymityRules(): React.ReactElement
         (state) => state.previewData
     ) || [];                                               // 數據資料列清單 (用於計算資料源筆數上限)
 
-    const datasetRowCountValue = datasetRowsListArray.length; // 資料源總筆數 (0 代表尚未載入資料)
+    // ★ 2026-09-30：previewData 只是 Step1 擷取的前 1000 筆預覽，不是整份資料；資料源總筆數改讀
+    //   utils/datasetProfile.ts 完整掃描一次的結果，掃描完成前暫以預覽筆數代替。
+    useEnsureDatasetProfile();
+    const datasetProfileSnapshot = useWorkspaceStore((state) => state.datasetProfile);
+    const datasetRowCountValue = datasetProfileSnapshot ? datasetProfileSnapshot.rowCount : datasetRowsListArray.length; // 資料源總筆數 (0 代表尚未載入資料)
 
     // K 值實際可選上限：不得超過資料源筆數，亦不得超過系統設定之 MAX_K_VALUE
     const effectiveMaxKValue = datasetRowCountValue > 0
@@ -148,34 +153,26 @@ export default function KAnonymityRules(): React.ReactElement
     //   6～10 必定無法通過。改為比照 k（上限 = min(100, 資料筆數)）依實際資料動態決定：
     //   l 上限 = min(目前 k 值, 各敏感欄位相異值數中的最小值)；多個敏感欄位時取最小者（後端會逐一
     //   檢測、須全部通過）。尚未設定敏感欄位或尚未載入資料時，退回原本的備援上限 MAX_L_VALUE。
-    // 直接取 store 原始參考值當相依，避免上方 `|| {}`／`|| []` 每次 render 產生新物件，導致每次都重掃整份資料。
+    // ★ 2026-09-30：相異值數改讀完整資料集的欄位統計快照（見 datasetProfileSnapshot），不再只看
+    //   前 1000 筆預覽；相異值數被截斷（極高基數）時代表遠大於任何合理的 l，視同不限制。
     const rawColumnRolesMapForLUpper = useWorkspaceStore((state) => state.columnRoles);
-    const rawDatasetRowsForLUpper = useWorkspaceStore((state) => state.previewData);
     const sensitiveColumnDistinctCountInfo = useMemo((): { columnName: string; distinctCount: number } | null => {
         const columnPrivacyRolesMapDict = rawColumnRolesMapForLUpper || {};
-        const datasetRowsListArray = rawDatasetRowsForLUpper || [];
         const sensitiveColumnNamesList = Object.keys(columnPrivacyRolesMapDict).filter(
             (columnNameKey) => columnPrivacyRolesMapDict[columnNameKey] === 'Sensitive'
         );
-        if (sensitiveColumnNamesList.length === 0 || datasetRowsListArray.length === 0) return null;
-        const cleanColumnName = (rawName: string): string => rawName.replace(/^[\uFEFF\u200B]+/, '').trim();
+        if (sensitiveColumnNamesList.length === 0 || !datasetProfileSnapshot) return null;
         let minimumInfo: { columnName: string; distinctCount: number } | null = null;
         sensitiveColumnNamesList.forEach((sensitiveColumnName) => {
-            const cleanSensitiveName = cleanColumnName(sensitiveColumnName);
-            const matchedRowKey = Object.keys(datasetRowsListArray[0] || {}).find((rowKey) => cleanColumnName(rowKey) === cleanSensitiveName);
-            if (!matchedRowKey) return;
-            const distinctValuesSet = new Set<string>();
-            for (const rowRecord of datasetRowsListArray) {
-                const cellValue = (rowRecord as Record<string, unknown>)[matchedRowKey];
-                if (cellValue === undefined || cellValue === null || String(cellValue).trim() === '') continue;
-                distinctValuesSet.add(String(cellValue).trim());
-            }
-            if (!minimumInfo || distinctValuesSet.size < minimumInfo.distinctCount) {
-                minimumInfo = { columnName: cleanSensitiveName, distinctCount: distinctValuesSet.size };
+            const cleanSensitiveName = sensitiveColumnName.replace(/^[\uFEFF\u200B]+/, '').trim();
+            const columnProfile = datasetProfileSnapshot.columns[cleanSensitiveName];
+            if (!columnProfile || columnProfile.isDistinctCountCapped) return;
+            if (!minimumInfo || columnProfile.distinctCount < minimumInfo.distinctCount) {
+                minimumInfo = { columnName: cleanSensitiveName, distinctCount: columnProfile.distinctCount };
             }
         });
         return minimumInfo;
-    }, [rawColumnRolesMapForLUpper, rawDatasetRowsForLUpper]);
+    }, [rawColumnRolesMapForLUpper, datasetProfileSnapshot]);
     const sensitiveDistinctUpperLValue = sensitiveColumnDistinctCountInfo
         ? Math.max(MIN_L_VALUE, sensitiveColumnDistinctCountInfo.distinctCount)
         : MAX_L_VALUE;

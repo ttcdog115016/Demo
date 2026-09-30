@@ -17,10 +17,10 @@ import {
 } from '@ant-design/icons';
 import CryptoJS from 'crypto-js';
 import dayjs from 'dayjs';
-import Papa from 'papaparse';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type PreprocessingRule } from '../../store/useWorkspaceStore';
+import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
 
 /**
@@ -748,7 +748,6 @@ export default function KAnonymityMapping(): React.ReactElement
     // 於下方 useEffect 中重新完整解析；解析結果直接寫入 WorkspaceStore 既有之
     // datasetColumnNumericValuesMap 全域快取欄位 (與 DifferentialPrivacyMapping.tsx 共用同一份，
     // 避免兩處各自維護一份重複的快取，也不需要另建本地 useState 儲存)。
-    const uploadedDataFileObjectForBinAutoFill = useWorkspaceStore((state) => state.dataFile);
     const datasetColumnNumericValuesMap = useWorkspaceStore((state) => state.datasetColumnNumericValuesMap);
     // ★ 2026-09-29：各欄位實際資料最小值（逐一比較求得，避免資料量大時 Math.min(...陣列) 參數過多
     //   觸發 RangeError）。供下方「第一個區間已向下延伸至 0」註解判斷用。
@@ -764,7 +763,6 @@ export default function KAnonymityMapping(): React.ReactElement
         });
         return minValueByColumnMap;
     }, [datasetColumnNumericValuesMap]);
-    const setDatasetColumnNumericValuesMapAction = useWorkspaceStore((state) => state.setDatasetColumnNumericValuesMap);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -774,61 +772,11 @@ export default function KAnonymityMapping(): React.ReactElement
     // ★ 新增：每個欄位各自的「系統推薦設定」UI 狀態 (模式/區間數量/單位寬度)。
     const [binAutoFillSettingsMap, setBinAutoFillSettingsMap] = useState<Record<string, { mode: 'even' | 'unit'; binCount: number; unitWidth: number }>>({});
 
-    // ★ 新增：掛載時（以及原始檔案變更時）重新完整解析上傳之原始檔案，將各欄位之實際數值
-    // 陣列寫入 WorkspaceStore 快取，避免依賴筆數有上限的 previewData 導致「系統推薦設定」
-    // 算出來的區間範圍失真。setState 呼叫皆發生於非同步的 Papa.parse 回呼函式內執行
-    // (complete／error)，而非 effect 本體同步執行，故不會觸發 react-hooks/set-state-in-effect。
-    useEffect(
-        () => {
-            if (!uploadedDataFileObjectForBinAutoFill) return;
-
-            let isBinAutoFillParseEffectCancelledFlag = false;
-
-            Papa.parse(
-                uploadedDataFileObjectForBinAutoFill,
-                {
-                    header: true,
-                    skipEmptyLines: true,
-                    worker: false,
-                    complete: (parseResultsObj) => {
-                        if (isBinAutoFillParseEffectCancelledFlag) return;
-
-                        const allParsedDataRowsArray = parseResultsObj.data as Record<string, string>[];
-                        const parsedColumnNamesArray = parseResultsObj.meta.fields || [];
-                        const numericValuesMapResult: Record<string, number[]> = {};
-
-                        parsedColumnNamesArray.forEach(
-                            (columnNameString) => {
-                                const numericValuesForColumnArray: number[] = [];
-
-                                allParsedDataRowsArray.forEach(
-                                    (dataRowRecord) => {
-                                        const rawCellValueStr = dataRowRecord[columnNameString];
-                                        if (rawCellValueStr === undefined || rawCellValueStr === null || String(rawCellValueStr).trim() === '') return;
-
-                                        const parsedNumericValue = Number(rawCellValueStr);
-                                        if (!Number.isFinite(parsedNumericValue)) return;
-
-                                        numericValuesForColumnArray.push(parsedNumericValue);
-                                    }
-                                );
-
-                                if (numericValuesForColumnArray.length > 0) numericValuesMapResult[columnNameString] = numericValuesForColumnArray;
-                            }
-                        );
-
-                        if (!isBinAutoFillParseEffectCancelledFlag) setDatasetColumnNumericValuesMapAction(numericValuesMapResult);
-                    },
-                    error: () => {
-                        if (!isBinAutoFillParseEffectCancelledFlag) setDatasetColumnNumericValuesMapAction({});
-                    }
-                }
-            );
-
-            return () => { isBinAutoFillParseEffectCancelledFlag = true; };
-        },
-        [uploadedDataFileObjectForBinAutoFill, setDatasetColumnNumericValuesMapAction]
-    );
+    // ★ 需要各欄位完整資料的實際數值陣列（datasetColumnNumericValuesMap），避免依賴筆數有上限的
+    //   previewData 導致「系統推薦設定」算出來的區間範圍失真。
+    // ★ 2026-09-30：改由 utils/datasetProfile.ts 統一掃描一次並寫入快取，不再於本元件另外完整
+    //   Papa.parse 一次（同一份檔案在 Step2～Step4 各頁共用同一份結果）。
+    useEnsureDatasetProfile();
 
     // 1. 表單防呆驗證
     useEffect(() => {

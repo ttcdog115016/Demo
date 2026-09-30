@@ -9,6 +9,7 @@
 
 import { create } from 'zustand';
 import { isDateTimeDpField, DEFAULT_DATETIME_LOWER_BOUND_DATE } from '../utils/dpFieldHelpers';
+import type { DatasetProfile } from '../utils/datasetProfile';
 
 /**
  * 預設系統常數宣告
@@ -151,6 +152,7 @@ interface WorkspaceState
     columnTypes: Record<string, string>;                                      // 欄位資料型態映射
     dpFields: DPField[];                                                     // 差分隱私欄位配置陣列
     datasetColumnNumericValuesMap: Record<string, number[]>;                  // 數值型欄位防呆檢查快取：完整解析資料集後，各欄位之實際有效數值陣列 (供跨步驟邊界涵蓋率校驗使用)
+    datasetProfile: DatasetProfile | null;                                   // ★ 2026-09-30：整份資料集只掃描一次的欄位統計快照 (筆數、相異值數、常見值、數值)，見 utils/datasetProfile.ts
     riskSubgroupFilters: Record<string, RiskSubgroupCondition>;              // ★ 新增：風險評估「對象族群限定條件」，未設定 (空物件) 時評估全體，見上方 RiskSubgroupCondition 註記
     // ★ 新增：「限定特定族群評估風險」類別型欄位之完整資料集相異值快取——使用者反映手動輸入
     // 篩選值（如誤打「北區/南區」，但資料集實際存的是「大安區/板橋區」等行政區名稱）會導致
@@ -304,6 +306,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
             columnTypes: {},
             dpFields: [],
             datasetColumnNumericValuesMap: {},
+            datasetProfile: null,
             riskSubgroupFilters: {},
             columnCategoricalUniqueValues: {},
             isColumnCategoricalValuesScanning: false,
@@ -347,7 +350,11 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 columns: datasetColumnsListArray, 
                 previewData: datasetRowsListArray, 
                 fileName: loadedFileNameStr,
-                dpFields: createInitialDPFields(datasetColumnsListArray) 
+                dpFields: createInitialDPFields(datasetColumnsListArray),
+                // 換了新檔案：舊的欄位統計快照已不適用，清空後由各頁 useEnsureDatasetProfile 重新掃描
+                datasetProfile: null,
+                datasetColumnNumericValuesMap: {},
+                columnCategoricalUniqueValues: {}
             }),
             clearFileData: () => setStoreStateAction({ 
                 dataFile: null,                                                      
@@ -360,6 +367,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 missingValueRules: {},
                 dpFields: [],
                 datasetColumnNumericValuesMap: {},
+                datasetProfile: null,
                 riskSubgroupFilters: {}, // ★ 新增：換一份資料集，原欄位名稱可能已不存在，條件一併清空
                 columnCategoricalUniqueValues: {}, // ★ 新增：換一份資料集，快取之相異值已不適用，一併清空觸發重新掃描
                 isColumnCategoricalValuesScanning: false,
@@ -390,6 +398,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 columnTypes: {},
                 dpFields: [],
                 datasetColumnNumericValuesMap: {},
+                datasetProfile: null,
                 riskSubgroupFilters: {}, // ★ 新增
                 columnCategoricalUniqueValues: {}, // ★ 新增
                 isColumnCategoricalValuesScanning: false, // ★ 新增
