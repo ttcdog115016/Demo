@@ -1,36 +1,38 @@
+// @vitest-environment jsdom
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Mock } from 'vitest';
-import '@testing-library/jest-dom';
+import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 
 // 🌟 全局 Mock Ant Design 依賴
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn() })),
+  value: vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })),
 });
-global.ResizeObserver = vi.fn().mockImplementation(() => ({ observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn() }));
+// Vitest 4 的 vi.fn() 箭頭實作無法以 new 呼叫，AntD 內部會 new ResizeObserver()，改用類別
+class MockResizeObserver { observe(): void {} unobserve(): void {} disconnect(): void {} }
+globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 
 import Step2_Mapping from '../../features/step2_mapping/Step2_Mapping';
-import { usePrivacyStore } from '../../store/usePrivacyStore';
+// ★ 2026-09-30：舊版測試 mock 的是已移除的 usePrivacyStore，但元件實際讀的是 useWorkspaceStore，
+//   mock 根本沒有作用。改為直接對真正的 useWorkspaceStore 寫入測試用狀態。
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { App } from 'antd';
 
 vi.mock('../../features/step2_mapping/KAnonymityMapping', () => ({ default: () => <div data-testid="k-anon-mapping" /> }));
 vi.mock('../../features/step2_mapping/DifferentialPrivacyMapping', () => ({ default: () => <div data-testid="dp-mapping" /> }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }),
+  useTranslation: () => ({
+    t: (key: string, fallback?: unknown) =>
+      typeof fallback === 'string' ? fallback : ((fallback as { defaultValue?: string } | undefined)?.defaultValue ?? key),
+  }),
 }));
 
-vi.mock('../../store/usePrivacyStore', () => ({
-  usePrivacyStore: vi.fn(),
-}));
-
-// 🌟 修正點：將 MockApp 移入 vi.mock 內部，避免 hoisting 問題
 vi.mock('antd', async () => {
   const actual = await vi.importActual('antd') as Record<string, unknown>;
   const MockApp = ({ children }: { children: React.ReactNode }) => <>{children}</>;
-  MockApp.useApp = () => ({ message: { success: vi.fn(), error: vi.fn() }, modal: { confirm: vi.fn() } });
+  MockApp.useApp = () => ({ message: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }, modal: { confirm: vi.fn() }, notification: { error: vi.fn(), warning: vi.fn() } });
   return { ...actual, App: MockApp };
 });
 
@@ -39,43 +41,35 @@ describe('Step2_Mapping Component', () => {
     vi.clearAllMocks();
   });
 
-  const setupStore = (preprocessingRules = {}, privacyMode = 'differential-privacy') => {
-    const mockState = {
+  // 未啟用 vitest globals 時 Testing Library 不會自動清除上一個測試的畫面，需手動 cleanup
+  afterEach(() => {
+    cleanup();
+  });
+
+  const setupStore = (privacyMode: 'differential-privacy' | 'k-anonymity' = 'differential-privacy') => {
+    useWorkspaceStore.setState({
       privacyMode,
       columns: ['phone_number'],
       previewData: [{ phone_number: '0912 345 678' }],
-      preprocessingRules,
-    };
-   // 🌟 修正點：判斷 selector 是否存在
-    const mockUsePrivacyStore = usePrivacyStore as unknown as Mock & { setState?: ReturnType<typeof vi.fn> };
-    mockUsePrivacyStore.mockImplementation((selector?: (state: typeof mockState) => unknown) => {
-      if (typeof selector === 'function') {
-        return selector(mockState);
-      }
-      return mockState; // 沒傳 selector 時，回傳整包 state
-    });
-    
-    mockUsePrivacyStore.setState = vi.fn();
+      preprocessingRules: {},
+    } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
   };
 
   it('應正確渲染第一階段清洗表格與預覽', () => {
     setupStore();
     render(<App><Step2_Mapping /></App>);
-    
-    // 檢查欄位與原始預覽資料是否存在
-    expect(screen.getByText('phone_number')).toBeInTheDocument();
-    expect(screen.getByText('0912 345 678')).toBeInTheDocument();
+
+    expect(screen.getAllByText('phone_number').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('0912 345 678').length).toBeGreaterThan(0);
   });
 
   it('當隱私模式不同時，應切換渲染對應的第二階段元件', () => {
-    // 測試 DP 模式
-    setupStore({}, 'differential-privacy');
+    setupStore('differential-privacy');
     const { unmount } = render(<App><Step2_Mapping /></App>);
     expect(screen.getByTestId('dp-mapping')).toBeInTheDocument();
     unmount();
 
-    // 測試 K-Anon 模式
-    setupStore({}, 'k-anonymity');
+    setupStore('k-anonymity');
     render(<App><Step2_Mapping /></App>);
     expect(screen.getByTestId('k-anon-mapping')).toBeInTheDocument();
   });
