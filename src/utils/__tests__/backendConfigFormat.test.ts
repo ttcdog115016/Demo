@@ -103,3 +103,16 @@ describe('K-匿名後端設定檔外層格式', () => {
         expect(buildBackendConfigDocumentFromWorkspace({ ...baseWorkspace, fileName: undefined })).toMatchObject({ dataset: 'dataset.csv' });
     });
 });
+
+describe('本次實際消耗的 ε／δ（Step3 預算中心與 Step4 共用）', () => {
+    it('逐欄直接相加，與送出的 column_budgets 一致；不再把 (ε,δ)-DP 欄位換算成「等效 ε」', async () => {
+        const { computeDpConsumedBudgetsByField, sumDpConsumedBudgets } = await import('../pipelineConfig');
+        // 你的設定：薪資 ε=5、δ=1e-5（全域目標 δ=1e-4 時舊的「等效 ε」會算成 4，總和 16）
+        expect(sumDpConsumedBudgets(IMPORTED_DP_FIELDS)).toEqual({ totalEpsilon: 17, totalDelta: 1e-5 });
+        expect(computeDpConsumedBudgetsByField(IMPORTED_DP_FIELDS).薪資).toEqual({ epsilon: 5, delta: 1e-5 });
+        // 類別型、ε-DP 模式欄位畫面上留著預設 δ，但實際送出 0，不計入
+        expect(computeDpConsumedBudgetsByField(IMPORTED_DP_FIELDS).地區).toEqual({ epsilon: 1, delta: 0 });
+        expect(computeDpConsumedBudgetsByField(IMPORTED_DP_FIELDS).就醫次數).toEqual({ epsilon: 4, delta: 0 });
+        expect(computeDpConsumedBudgetsByField(IMPORTED_DP_FIELDS)).not.toHaveProperty('姓名');
+    });
+});

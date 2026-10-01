@@ -22,7 +22,7 @@ const kAnonymitySettings = {
     maxSuppression: 10, suppressionMethod: 'row_suppression', cellFillMethod: 'star' as const, limitExceededAction: 'stop_and_error'
 };
 const dpConfigInput = {
-    dpFields: [{ fieldName: '薪資', enabled: true, fieldType: 'Numeric', epsilon: 0.5, delta: 1e-5 }, { fieldName: '地區', enabled: true, fieldType: 'Categorical', epsilon: 1 }],
+    dpFields: [{ fieldName: '薪資', enabled: true, fieldType: 'Numeric', mode: 'epsilon-delta' as const, epsilon: 0.5, delta: 1e-5 }, { fieldName: '地區', enabled: true, fieldType: 'Categorical', epsilon: 1, delta: 1e-4 }],
     columnTypes: {}, accumulatedEpsilon: 2, accumulatedDelta: 0, targetDelta: 1e-5
 };
 const phaseInput = (privacyMode: string, configObject: Record<string, unknown> = {}) => ({

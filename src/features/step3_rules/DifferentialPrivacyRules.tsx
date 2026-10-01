@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
 import { resolveIsDateTimeDpField, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
-import { computeDefaultDpSensitivity } from '../../utils/pipelineConfig';
+import { computeDefaultDpSensitivity, computeDpConsumedBudgetsByField, sumDpConsumedBudgets } from '../../utils/pipelineConfig';
 
 const { Text } = Typography;
 
@@ -141,7 +141,8 @@ const PRIVACY_LEVEL_PRESET_LIST: { key: string; labelKey: string; labelDefault: 
  * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
  */
 export type ConvertedField = DPField & {
-	equivalentEpsilon: number; // 依據全域 Target Delta 換算後之等效 Epsilon 數值
+	equivalentEpsilon: number; // 本欄實際送給後端的 ε（與 Step4 送出之 column_budgets 相同）
+	consumedDelta: number;     // 本欄實際送給後端的 δ（類別型與 ε-DP 模式為 0）
 };
 
 /**
@@ -256,47 +257,34 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 		);
 	};
 
-	const equivalentConvertedFieldsList = useMemo(
-		() => 
-		{
-			return activeDpFieldsList.map(
-				(activeFieldItemRecord) => 
-				{
-					const originalEpsilonValue = activeFieldItemRecord.epsilon ?? DEFAULT_EPSILON_BUDGET;
-					const originalDeltaValue = activeFieldItemRecord.delta ?? DEFAULT_DELTA_BUDGET;
-					let calculatedEquivalentEpsilonValue = originalEpsilonValue;
-
-					if (activeFieldItemRecord.mode === 'epsilon-delta' && originalDeltaValue > 0 && globalTargetDeltaValue > 0 && originalDeltaValue !== globalTargetDeltaValue) 
-					{
-						const deltaRatioCalculatedValue = Math.log(1 / globalTargetDeltaValue) / Math.log(1 / originalDeltaValue);
-						calculatedEquivalentEpsilonValue = originalEpsilonValue * deltaRatioCalculatedValue;
-					}
-
-					// ★ 修正：先前在這裡就把每個欄位換算後的 equivalentEpsilon 用 .toFixed(2) 捨入，
-					// 下面加總時用的是已經捨入過的值，8 個欄位各自的捨入誤差會被放大 8 倍
-					// (例如 0.125 捨入成 0.13，加總從 1.00 膨脹成 1.04)，這正是「統一基準等效 ε」
-					// 顯示值偏離使用者實際設定總預算的原因。改為保留完整精度，捨入交給下方
-					// 顯示用的 formatFloatValueAsScientificNotation 處理，不在加總前先行捨位。
-					return { ...activeFieldItemRecord, equivalentEpsilon: calculatedEquivalentEpsilonValue } as ConvertedField;
-				}
-			);
-		}, 
-		[activeDpFieldsList, globalTargetDeltaValue]
+	// ★ 2026-10-01：先前「等效 ε」把 (ε,δ)-DP 欄位換算到全域目標 δ：ε × ln(1/全域δ) ÷ ln(1/欄位δ)
+	//   （例如 ε=5、δ=1e-5、全域 δ=1e-4 → 4）。這不是成立的差分隱私換算，會讓預算中心總和小於實際消耗：
+	//   後端與 Step4 依基本組合定理逐欄相加（同例為 17，Step3 卻顯示 16），預算上限檢查也用了偏低的值。
+	//   改為直接取實際送給後端的 column_budgets（utils/pipelineConfig.computeDpConsumedBudgetsByField），
+	//   ε、δ 各自逐欄相加，與 Step4、後端一致。
+	const consumedBudgetsByFieldName = useMemo(
+		() => computeDpConsumedBudgetsByField(activeDpFieldsList),
+		[activeDpFieldsList]
 	);
 
-	const totalEquivalentEpsilonSumValue = useMemo(
-		() => 
-		{
-			// ★ 修正：totalEquivalentEpsilonSumValue 除了用於下方顯示外，也直接參與
-			// budgetUsagePercentageValue／isBudgetExceededStatus 等預算超支判斷，若在這裡
-			// 就先捨入到小數點後 2 位，會讓「是否超支」的判定基準跟著失真。改為保留完整精度，
-			// 顯示層 (formatFloatValueAsScientificNotation) 自行處理捨入呈現。
-			return equivalentConvertedFieldsList.reduce(
-				(accumulatorValue, currentConvertedFieldItem) => accumulatorValue + currentConvertedFieldItem.equivalentEpsilon,
-				0
-			);
-		}, 
-		[equivalentConvertedFieldsList]
+	const equivalentConvertedFieldsList = useMemo(
+		() => activeDpFieldsList.map(
+			(activeFieldItemRecord) => ({
+				...activeFieldItemRecord,
+				equivalentEpsilon: consumedBudgetsByFieldName[activeFieldItemRecord.fieldName]?.epsilon ?? 0,
+				consumedDelta: consumedBudgetsByFieldName[activeFieldItemRecord.fieldName]?.delta ?? 0
+			} as ConvertedField)
+		),
+		[activeDpFieldsList, consumedBudgetsByFieldName]
+	);
+
+	// 參與下方預算上限判斷，保留完整精度，捨入交給顯示層處理
+	const { totalEquivalentEpsilonSumValue, totalConsumedDeltaSumValue } = useMemo(
+		() => {
+			const { totalEpsilon, totalDelta } = sumDpConsumedBudgets(activeDpFieldsList);
+			return { totalEquivalentEpsilonSumValue: totalEpsilon, totalConsumedDeltaSumValue: totalDelta };
+		},
+		[activeDpFieldsList]
 	);
 
 	// 移除 M 次邏輯，單次耗損即為總耗損
@@ -373,11 +361,11 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 			)
 		},
 		{ 
-			title: translate('step3_dp.col_equivalent', '等效 ε'), 
+			title: translate('step3_dp.col_equivalent', '實際消耗 ε'), 
 			dataIndex: 'equivalentEpsilon', 
 			key: 'equivalentEpsilon', 
 			align: 'right' as const,
-			render: (equivalentEpsilonDataValue: number) => <Text strong style={{ color: '#722ed1', fontSize: 14 }}>{equivalentEpsilonDataValue}</Text> 
+			render: (equivalentEpsilonDataValue: number) => <Text strong style={{ color: '#722ed1', fontSize: 14 }}>{formatFloatValueAsScientificNotation(equivalentEpsilonDataValue, FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}</Text> 
 		}
 	];
 
@@ -793,8 +781,11 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 								() => 
 								(
 									<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, padding: '8px 4px 0 4px' }}>
-										<Text strong>{translate('step3_dp.single_equivalent', '各欄位等效加總')}</Text>
-										<Text strong style={{ color: '#722ed1', fontSize: 18 }}>ε = {formatFloatValueAsScientificNotation(totalEquivalentEpsilonSumValue, FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}</Text>
+										<Text strong>{translate('step3_dp.single_equivalent', '本次消耗預算:')}</Text>
+										<Text strong style={{ color: '#722ed1', fontSize: 18 }}>
+											ε = {formatFloatValueAsScientificNotation(totalEquivalentEpsilonSumValue, FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}
+											{totalConsumedDeltaSumValue > 0 && <span style={{ fontSize: 14, marginLeft: 12 }}>δ = {formatFloatValueAsScientificNotation(totalConsumedDeltaSumValue, FIELD_DELTA_INPUT_MIN_BOUND, FIELD_DELTA_INPUT_MAX_BOUND)}</span>}
+										</Text>
 									</div>
 								)
 							}
@@ -818,7 +809,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 					>
 						<div style={{ display: 'flex', gap: '48px', marginBottom: '8px', padding: '0 16px' }}>
 							<Statistic 
-								title={<Text type="secondary" style={{ fontSize: 14 }}>{translate('step3_dp.unified_eps', '總等效 Epsilon')}</Text>} 
+								title={<Text type="secondary" style={{ fontSize: 14 }}>{translate('step3_dp.unified_eps', '本次總消耗 ε')}</Text>} 
 								value={totalEquivalentEpsilonSumValue}
 								prefix={<CalculatorOutlined style={{ fontSize: 24, marginRight: 8, color: token.colorPrimary }} />}
 								formatter={(formatterOutputValue) => <span style={{ fontSize: 42, fontWeight: 'bold', color: token.colorPrimary }}>{formatFloatValueAsScientificNotation(Number(formatterOutputValue), FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}</span>}
@@ -831,7 +822,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 										<Tooltip
 											title={
 												<div style={{ lineHeight: 1.8 }}>
-													<div>{translate('step3_dp.protection_level_tooltip_desc', '依據總等效隱私預算 (ε) 換算之風險等級：')}</div>
+													<div>{translate('step3_dp.protection_level_tooltip_desc', '依據本次總消耗隱私預算 (ε) 換算之風險等級：')}</div>
 													<div><span style={{ color: '#722ed1' }}>●</span> {translate('step3_dp.protection_level_tooltip_high', ' 高強度：ε ≤ {{threshold}}，低風險', { threshold: HIGH_SECURITY_EPSILON_THRESHOLD })}</div>
 													<div><span style={{ color: '#13c2c2' }}>●</span> {translate('step3_dp.protection_level_tooltip_medium', ' 中強度：{{low}} < ε ≤ {{high}}，風險視應用情境而定 (平衡)', { low: HIGH_SECURITY_EPSILON_THRESHOLD, high: MEDIUM_SECURITY_EPSILON_THRESHOLD })}</div>
 													<div><span style={{ color: '#fa8c16' }}>●</span> {translate('step3_dp.protection_level_tooltip_low', ' 低強度：ε > {{threshold}}，多數情境下屬高風險', { threshold: MEDIUM_SECURITY_EPSILON_THRESHOLD })}</div>

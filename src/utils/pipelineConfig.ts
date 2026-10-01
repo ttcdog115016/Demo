@@ -445,11 +445,37 @@ export const buildDifferentialPrivacyApiOptions = (input: Pick<DifferentialPriva
     default_delta: input.targetDelta ?? 0.0001
 });
 
-/** 已啟用欄位的 ε／δ 總和（後端未回報告時的預設值）；沒有任何 ε 時退回 1.0 */
-export const computeDpTotalBudgets = (dpFields: DpStoreField[] | null | undefined): { totalEpsilonBudget: number; totalDeltaBudget: number } => ({
-    totalEpsilonBudget: dpFields?.reduce((acc: number, field: DpStoreField) => acc + (field.enabled ? Number(field.epsilon || 1.0) : 0), 0) || 1.0,
-    totalDeltaBudget: dpFields?.reduce((acc: number, field: DpStoreField) => acc + (field.enabled ? Number(field.delta || 0) : 0), 0) || 0
-});
+/**
+ * 每個欄位實際送給後端的 ε／δ（直接取自 buildDifferentialPrivacyConfig 組出的 column_budgets，與送出內容保證一致）。
+ * 只有已啟用欄位會出現；類別型與 ε-DP 模式欄位的 δ 為 0（不送或送 0），未填 ε 時與送出內容相同退回 1.0。
+ */
+export const computeDpConsumedBudgetsByField = (dpFields: DpStoreField[] | null | undefined): Record<string, { epsilon: number; delta: number }> => {
+    const differentialPrivacyBlock = buildDifferentialPrivacyConfig({
+        dpFields, columnTypes: {}, accumulatedEpsilon: 0, accumulatedDelta: 0, targetDelta: 0
+    }).differential_privacy as { column_budgets: Record<string, { epsilon_budget?: number; delta_budget?: number }> };
+    const consumedBudgetsByField: Record<string, { epsilon: number; delta: number }> = {};
+    Object.entries(differentialPrivacyBlock.column_budgets).forEach(([fieldName, budgetItem]) => {
+        consumedBudgetsByField[fieldName] = { epsilon: Number(budgetItem.epsilon_budget ?? 0), delta: Number(budgetItem.delta_budget ?? 0) };
+    });
+    return consumedBudgetsByField;
+};
+
+/**
+ * 本次執行實際消耗的 ε／δ 總和（基本組合定理：逐欄直接相加）。
+ * ★ 2026-10-01：δ 先前把所有已啟用欄位的 δ 都加進去（含類別型、ε-DP 模式欄位畫面上保留的預設 δ），
+ *   但那些欄位實際送出的 δ 是 0；例如只有薪資一欄用 (ε,δ)-DP 時，送出 δ 合計 1e-5，這裡卻算成 3.1e-4。
+ */
+export const sumDpConsumedBudgets = (dpFields: DpStoreField[] | null | undefined): { totalEpsilon: number; totalDelta: number } =>
+    Object.values(computeDpConsumedBudgetsByField(dpFields)).reduce(
+        (accumulator, budgetItem) => ({ totalEpsilon: accumulator.totalEpsilon + budgetItem.epsilon, totalDelta: accumulator.totalDelta + budgetItem.delta }),
+        { totalEpsilon: 0, totalDelta: 0 }
+    );
+
+/** 後端未回報告時的預設消耗值（與實際送出的 column_budgets 一致）；沒有任何 ε 時退回 1.0 */
+export const computeDpTotalBudgets = (dpFields: DpStoreField[] | null | undefined): { totalEpsilonBudget: number; totalDeltaBudget: number } => {
+    const { totalEpsilon, totalDelta } = sumDpConsumedBudgets(dpFields);
+    return { totalEpsilonBudget: totalEpsilon || 1.0, totalDeltaBudget: totalDelta || 0 };
+};
 
 /** 有效的明確敏感度（大於 0 的有限數字）；未指定或無效時回傳 null */
 export const parseExplicitDpSensitivity = (sensitivityValue: number | string | null | undefined): number | null => {

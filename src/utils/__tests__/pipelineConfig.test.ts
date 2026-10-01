@@ -182,7 +182,8 @@ describe('差分隱私 config.json 組裝', () => {
 
     it('表單參數與預算總和', () => {
         expect(buildDifferentialPrivacyApiOptions(dpInput)).toEqual({ accumulated_epsilon: 1.5, accumulated_delta: 0, default_delta: 0.0001 });
-        expect(computeDpTotalBudgets(dpInput.dpFields)).toEqual({ totalEpsilonBudget: 4.5, totalDeltaBudget: 2e-5 });
+        // δ 只計入實際送出的部分：薪資為 ε-DP 模式（送 0），只有生日 (ε,δ)-DP 的 1e-5
+        expect(computeDpTotalBudgets(dpInput.dpFields)).toEqual({ totalEpsilonBudget: 4.5, totalDeltaBudget: 1e-5 });
         expect(computeDpTotalBudgets([])).toEqual({ totalEpsilonBudget: 1, totalDeltaBudget: 0 });
     });
 });
