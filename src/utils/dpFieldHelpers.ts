@@ -141,3 +141,26 @@ export const DP_DATETIME_BOUND_PICKER_TIME_FORMAT = 'HH:mm:ss';
 
 /** 選擇器輸出的「YYYY-MM-DD HH:mm:ss」字串轉成寫入設定檔的邊界字串（午夜只留日期） */
 export const compactDpDateTimeBoundText = (dateTimeText: string): string => dateTimeText.replace(/[ T]00:00:00$/, '');
+
+/**
+ * 上下限字串實際用到的最細時間單位：有非 0 的秒為 second、分為 minute、時為 hour，否則為 day。
+ * 用於 Step3 提醒「邊界比雜訊單位細」——此時敏感度與加噪都以較粗的雜訊單位計，邊界的時間部分會被四捨五入。
+ */
+export const detectDpDateTimeBoundsFinestUnit = (boundValues: unknown[]): DpDatetimeNoiseUnit => {
+    let finestUnitIndex = 0;
+    boundValues.forEach((boundValue) => {
+        const matched = /^\d{4}-\d{2}-\d{2}[ T](\d{2})(?::(\d{2})(?::(\d{2}))?)?$/.exec(String(boundValue ?? '').trim());
+        if (!matched) return;
+        const [, hourText, minuteText = '00', secondText = '00'] = matched;
+        if (Number(secondText) !== 0) finestUnitIndex = Math.max(finestUnitIndex, 3);
+        else if (Number(minuteText) !== 0) finestUnitIndex = Math.max(finestUnitIndex, 2);
+        else if (Number(hourText) !== 0) finestUnitIndex = Math.max(finestUnitIndex, 1);
+    });
+    return DP_DATETIME_NOISE_UNITS[finestUnitIndex];
+};
+
+/** 邊界比所選雜訊單位細時回傳邊界的最細單位，否則回傳 null */
+export const findDpBoundsFinerThanNoiseUnit = (field: { lowerBound?: unknown; upperBound?: unknown; noiseUnit?: string }): DpDatetimeNoiseUnit | null => {
+    const boundsFinestUnit = detectDpDateTimeBoundsFinestUnit([field.lowerBound, field.upperBound]);
+    return DP_DATETIME_NOISE_UNITS.indexOf(boundsFinestUnit) > DP_DATETIME_NOISE_UNITS.indexOf(resolveDpDatetimeNoiseUnit(field)) ? boundsFinestUnit : null;
+};

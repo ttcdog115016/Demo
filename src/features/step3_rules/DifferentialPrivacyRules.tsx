@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
 import {
-	resolveIsDateTimeDpField, resolveInputNumberStepByDecimals, resolveDpDatetimeNoiseUnit, convertDpSensitivityBetweenNoiseUnits,
+	resolveIsDateTimeDpField, resolveInputNumberStepByDecimals, resolveDpDatetimeNoiseUnit, convertDpSensitivityBetweenNoiseUnits, findDpBoundsFinerThanNoiseUnit,
 	DP_DATETIME_NOISE_UNITS, type DpDatetimeNoiseUnit
 } from '../../utils/dpFieldHelpers';
 import { computeDefaultDpSensitivity, computeDpConsumedBudgetsByField, sumDpConsumedBudgets } from '../../utils/pipelineConfig';
@@ -721,6 +721,30 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 										})()}
 									</div>
 								)}
+
+								{/* ★ 2026-10-01：Step2 邊界可選到秒，但雜訊單位預設為天；邊界比雜訊單位細時提醒，
+								    否則敏感度與加噪都以天計、邊界的時間部分被四捨五入，使用者不易察覺。 */}
+								{activeFieldItemRecord.fieldType === 'Numeric' && resolveIsDateTimeDpField(activeFieldItemRecord) && (() => {
+									const boundsFinestUnit = findDpBoundsFinerThanNoiseUnit(activeFieldItemRecord);
+									if (!boundsFinestUnit) return null;
+									const currentNoiseUnitText = translateNoiseUnit(resolveDpDatetimeNoiseUnit(activeFieldItemRecord));
+									const boundsUnitText = translateNoiseUnit(boundsFinestUnit);
+									return (
+										<div style={{ paddingLeft: 'calc(25% + 12px)' }} data-testid="dp-noise-unit-coarser-warning">
+											<Alert
+												type="warning"
+												showIcon
+												style={{ padding: '4px 12px', fontSize: 12 }}
+												title={translate('step3_dp.noise_unit_coarser_warning', 'Step2 的上下限細到「{{boundsUnit}}」，但雜訊單位是「{{noiseUnit}}」：敏感度與加噪都以{{noiseUnit}}計，邊界的時間部分會四捨五入。如要以{{boundsUnit}}加噪，請把雜訊單位改為「{{boundsUnit}}」。', { boundsUnit: boundsUnitText, noiseUnit: currentNoiseUnitText })}
+												action={
+													<Button size="small" onClick={() => changeFieldNoiseUnit(activeFieldItemRecord, boundsFinestUnit)}>
+														{translate('step3_dp.noise_unit_coarser_fix', '改為「{{boundsUnit}}」', { boundsUnit: boundsUnitText })}
+													</Button>
+												}
+											/>
+										</div>
+									);
+								})()}
 								</div>
 							)
 						)

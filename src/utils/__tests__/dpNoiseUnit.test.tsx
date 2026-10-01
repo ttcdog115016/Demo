@@ -32,7 +32,7 @@ import DifferentialPrivacyRules from '../../features/step3_rules/DifferentialPri
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
 import { parseBackendDpColumnBudgets } from '../dpConfigImport';
 import { buildBackendConfigDocumentFromWorkspace, computeDefaultDpSensitivity } from '../pipelineConfig';
-import { convertDpSensitivityBetweenNoiseUnits, normalizeDpDatetimeNoiseUnit } from '../dpFieldHelpers';
+import { convertDpSensitivityBetweenNoiseUnits, normalizeDpDatetimeNoiseUnit, detectDpDateTimeBoundsFinestUnit, findDpBoundsFinerThanNoiseUnit } from '../dpFieldHelpers';
 
 type ColumnBudgets = Record<string, Record<string, unknown>>;
 
@@ -113,5 +113,34 @@ describe('DP 日期欄位的雜訊單位（noise_unit：day／hour／minute／se
         await waitFor(() => expect(birthdayField()).toMatchObject({ noiseUnit: 'hour', sensitivity: 8760, noiseStep: 7 }));
         expect(getByText('加噪步階 (時)')).toBeTruthy();
         expect(exportedBudgets().生日).toMatchObject({ noise_unit: 'hour', noise_step: 7, sensitivity: 8760 });
+    });
+
+    it('邊界實際用到的最細單位：午夜／只填日期為天，其餘依非 0 的時、分、秒判定', () => {
+        expect(detectDpDateTimeBoundsFinestUnit(['1930-01-01', '2026-12-31'])).toBe('day');
+        expect(detectDpDateTimeBoundsFinestUnit(['1930-01-01 00:00:00', '2026-12-31 23:00:00'])).toBe('hour');
+        expect(detectDpDateTimeBoundsFinestUnit(['1930-01-01', '2026-12-31 23:30:00'])).toBe('minute');
+        expect(detectDpDateTimeBoundsFinestUnit(['2026-01-01 08:30:15', '2026-12-31'])).toBe('second');
+        expect(findDpBoundsFinerThanNoiseUnit({ lowerBound: '2026-01-01 08:30:15', upperBound: '2026-12-31' })).toBe('second');
+        expect(findDpBoundsFinerThanNoiseUnit({ lowerBound: '2026-01-01 08:30:15', upperBound: '2026-12-31', noiseUnit: 'second' })).toBeNull();
+        expect(findDpBoundsFinerThanNoiseUnit({ lowerBound: '2026-01-01 08:00:00', upperBound: '2026-12-31', noiseUnit: 'minute' })).toBeNull();
+    });
+
+    it('Step3 畫面：邊界細到秒而雜訊單位為天時顯示提醒，按「改為「秒」」後提醒消失、送出 noise_unit second', async () => {
+        const dpFields = loadFields(backendSample.differential_privacy.column_budgets)
+            .map((field) => field.fieldName === '生日' ? { ...field, lowerBound: '1930-01-01', upperBound: '2026-12-31 23:59:59', sensitivity: undefined } : field);
+        setWorkspace(dpFields);
+        const { queryByTestId, getByText } = render(<DifferentialPrivacyRules />);
+        const warningElement = queryByTestId('dp-noise-unit-coarser-warning');
+        expect(warningElement?.textContent).toContain('Step2 的上下限細到「秒」，但雜訊單位是「天」');
+        fireEvent.click(getByText('改為「秒」'));
+        await waitFor(() => expect(queryByTestId('dp-noise-unit-coarser-warning')).toBeNull());
+        expect(birthdayField().noiseUnit).toBe('second');
+        expect(exportedBudgets().生日).toMatchObject({ noise_unit: 'second', time_clipping_bounds: ['1930-01-01', '2026-12-31 23:59:59'] });
+    });
+
+    it('Step3 畫面：邊界只有日期（後端範例）時不顯示提醒', () => {
+        setWorkspace(loadFields(backendSample.differential_privacy.column_budgets));
+        const { queryByTestId } = render(<DifferentialPrivacyRules />);
+        expect(queryByTestId('dp-noise-unit-coarser-warning')).toBeNull();
     });
 });
