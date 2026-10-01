@@ -19,8 +19,9 @@ import dayjs from 'dayjs';
 
 import { useWorkspaceStore, type DPField, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import { DP_COLUMN_BUDGETS_REFERENCE } from '../../config/recommendationReferenceConfig';
-import { isDateTimeDpField, mapOutOfBoundsStrategyToBackend, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
+import { isDateTimeDpField, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
 import { ensureDatasetProfile, useEnsureDatasetProfile } from '../../utils/datasetProfile';
+import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
 
 /**
  * 預設隱私參數常數宣告
@@ -30,12 +31,6 @@ const DEFAULT_DELTA_BUDGET = 0.0001;
 const DEFAULT_NUMERIC_LOWER_BOUND = 0;
 const DEFAULT_NUMERIC_UPPER_BOUND = 100;
 const DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY = 'dp-recommend-minmax-parse';
-const BASE_DEFAULT_K_ANONYMITY_VALUE = 5;
-const BASE_DEFAULT_L_DIVERSITY_VALUE = 2;
-const BASE_DEFAULT_T_CLOSENESS_VALUE = 0.15;
-const BASE_DEFAULT_SUPPRESSION_LIMIT = 10;
-const BASE_DEFAULT_SIMULATE_QUERY_COUNT = 1;
-const BASE_DEFAULT_BUDGET_LIMIT = 20;
 
 const createInitialDPFields = (columnNameList: string[]): DPField[] => 
 {
@@ -243,118 +238,9 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		[currentDpFieldsList, boundRangeCoverageInfoMap]
 	);
 
-	const generateExportJSON = (): Record<string, unknown> => 
-	{
-		const currentWorkspaceStoreState = useWorkspaceStore.getState();
-		const generatedFieldAttributesMap: Record<string, { type: string; role: string }> = {};
-
-		const formattedDpRulesArray = currentDpFieldsList.map(
-			(fieldItemRecord) => 
-			{
-				let mappedAttributeType = 'string';
-				if (fieldItemRecord.fieldType === 'Numeric') mappedAttributeType = 'numeric';
-				else if (fieldItemRecord.fieldType === 'Categorical') mappedAttributeType = 'categorical';
-				else if (fieldItemRecord.fieldType === 'Text') mappedAttributeType = 'string';
-
-				generatedFieldAttributesMap[fieldItemRecord.fieldName] = {
-					type: mappedAttributeType,
-					role: fieldItemRecord.enabled ? (mappedAttributeType === 'numeric' ? 'sensitive' : 'quasi_identifier') : 'identifier'
-				};
-
-				return {
-					id: fieldItemRecord.id,
-					fieldName: fieldItemRecord.fieldName,
-					fieldType: fieldItemRecord.fieldType,
-					enabled: Boolean(fieldItemRecord.enabled),
-					mode: fieldItemRecord.mode || 'epsilon',
-					epsilon: fieldItemRecord.epsilon || DEFAULT_EPSILON_BUDGET,
-					delta: fieldItemRecord.delta || DEFAULT_DELTA_BUDGET,
-					lowerBound: fieldItemRecord.lowerBound !== undefined ? Number(fieldItemRecord.lowerBound) : undefined,
-					upperBound: fieldItemRecord.upperBound !== undefined ? Number(fieldItemRecord.upperBound) : undefined,
-					allowedCategories: fieldItemRecord.fieldType === 'Categorical' ? '' : (fieldItemRecord.allowedCategories || ''),
-					maxLength: fieldItemRecord.maxLength ? Number(fieldItemRecord.maxLength) : undefined
-				};
-			}
-		);
-
-		// ★ 規範對照: 依 Open-PETs API 交付文件 4-2 節之設定檔結構（docs/manual_test/config_dp.json）——
-		//   column_budgets 逐欄指定 type／epsilon_budget／delta_budget／sensitivity／clipping_bounds／
-		//   out_of_bounds_strategy／minimum_unit（日期時間型則對應 time_clipping_bounds／
-		//   time_out_of_bounds_strategy／noise_step），未列入的欄位不加噪、原樣保留；categorical 採
-		//   k-RR 機制，不需 sensitivity。此為後端 /api/v1/dp 實際讀取之設定檔格式，須與 Step4 實際送出
-		//   之 column_budgets (Step4_Result.tsx) 保持一致，避免「即時設定檔預覽」與實際送出內容不符。
-		const generatedColumnBudgetsMap: Record<string, Record<string, unknown>> = {};
-
-		currentDpFieldsList.forEach(
-			(fieldItemRecord) => {
-				if (!fieldItemRecord.enabled) return;
-				if (fieldItemRecord.fieldType !== 'Numeric' && fieldItemRecord.fieldType !== 'Categorical') return;
-				if (!fieldItemRecord.fieldName) return;
-
-				const isNumericFieldType = fieldItemRecord.fieldType === 'Numeric';
-				const isDateTimeFieldType = isNumericFieldType && isDateTimeDpField(fieldItemRecord.fieldName);
-				const hasValidNumericBounds = fieldItemRecord.lowerBound !== undefined && fieldItemRecord.lowerBound !== null
-					&& fieldItemRecord.upperBound !== undefined && fieldItemRecord.upperBound !== null;
-
-				const columnBudgetItem: Record<string, unknown> = {
-					type: isNumericFieldType ? (isDateTimeFieldType ? 'datetime' : 'continuous') : 'categorical',
-					epsilon_budget: fieldItemRecord.epsilon || DEFAULT_EPSILON_BUDGET,
-					delta_budget: fieldItemRecord.delta || 0,
-				};
-
-				if (isDateTimeFieldType && hasValidNumericBounds) {
-					columnBudgetItem.sensitivity = Math.round((Date.parse(String(fieldItemRecord.upperBound)) - Date.parse(String(fieldItemRecord.lowerBound))) / 86400000);
-					columnBudgetItem.noise_unit = 'day';
-					if (fieldItemRecord.noiseStep !== undefined) columnBudgetItem.noise_step = fieldItemRecord.noiseStep;
-					columnBudgetItem.time_clipping_bounds = [fieldItemRecord.lowerBound, fieldItemRecord.upperBound];
-					columnBudgetItem.time_out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(fieldItemRecord.outOfBoundsStrategy);
-				} else if (isNumericFieldType && hasValidNumericBounds) {
-					columnBudgetItem.sensitivity = Number(fieldItemRecord.upperBound) - Number(fieldItemRecord.lowerBound);
-					columnBudgetItem.minimum_unit = fieldItemRecord.minimumUnit ?? 1;
-					columnBudgetItem.clipping_bounds = [Number(fieldItemRecord.lowerBound), Number(fieldItemRecord.upperBound)];
-					columnBudgetItem.out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(fieldItemRecord.outOfBoundsStrategy);
-				}
-
-				generatedColumnBudgetsMap[fieldItemRecord.fieldName] = columnBudgetItem;
-			}
-		);
-
-		return {
-			version: new Date().toISOString(),
-			dataset: currentWorkspaceStoreState.fileName || "current_dataset",
-			privacy_mode: currentWorkspaceStoreState.privacyMode || "differential-privacy",
-			columns: currentWorkspaceStoreState.columns,
-			column_roles: currentWorkspaceStoreState.columnRoles,
-			column_types: currentWorkspaceStoreState.columnTypes,
-			preprocessing_rules: currentWorkspaceStoreState.preprocessingRules && Object.keys(currentWorkspaceStoreState.preprocessingRules).length > 0 ? currentWorkspaceStoreState.preprocessingRules : undefined,
-			field_attributes: generatedFieldAttributesMap,
-			column_budgets: generatedColumnBudgetsMap,
-			privacy_targets: {
-				k_anonymity: { 
-					enabled: currentWorkspaceStoreState.privacyMode === 'k-anonymity', 
-					k: currentWorkspaceStoreState.kValue ?? BASE_DEFAULT_K_ANONYMITY_VALUE, 
-					l: currentWorkspaceStoreState.lValue ?? BASE_DEFAULT_L_DIVERSITY_VALUE,
-					t: currentWorkspaceStoreState.tValue ?? BASE_DEFAULT_T_CLOSENESS_VALUE,
-					suppression_method: currentWorkspaceStoreState.suppressionMethod ?? "row_suppression",
-					cell_fill: currentWorkspaceStoreState.cellFillMethod ?? "star",
-					suppression_limit_percent: currentWorkspaceStoreState.maxSuppression ?? BASE_DEFAULT_SUPPRESSION_LIMIT,
-					limit_exceeded_action: currentWorkspaceStoreState.limitExceededAction ?? "stop_and_error"
-				},
-				differential_privacy: { 
-					enabled: currentWorkspaceStoreState.privacyMode === 'differential-privacy', 
-					global_target_delta: currentWorkspaceStoreState.targetDelta ?? DEFAULT_DELTA_BUDGET,
-					simulate_query_count: currentWorkspaceStoreState.queryCount ?? BASE_DEFAULT_SIMULATE_QUERY_COUNT,
-					budget_limit: currentWorkspaceStoreState.budgetLimitEpsilon ?? BASE_DEFAULT_BUDGET_LIMIT,
-					out_of_bounds_strategy: currentWorkspaceStoreState.outOfBoundsStrategy ?? 'clip'
-				}
-			},
-			differential_privacy_rules: formattedDpRulesArray
-		};
-	};
-
 	/**
 	 * 函數名稱: buildSpecCompliantPreviewJSON
-	 * 函數功能: 從 generateExportJSON() 之完整內部狀態結果中，萃取版本／資料集等識別性中繼資料，
+	 * 函數功能: （2026-10-01 起改為直接呼叫 buildBackendConfigDocumentFromWorkspace，以下為原始說明）萃取版本／資料集等識別性中繼資料，
 	 *           並依 Open-PETs API 交付文件 config_dp.json 結構，將 column_budgets 與
 	 *           accumulated_epsilon／accumulated_delta／default_delta 一併包在 differential_privacy
 	 *           區塊底下呈現，供「即時設定檔預覽」使用，避免混入 field_attributes／
@@ -364,22 +250,11 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 	 *           且 accumulated_epsilon／accumulated_delta 應為「跨批次累計」而非每次固定為 0，此處
 	 *           改為讀取 Step4 每次執行後更新之 dpAccumulatedEpsilon／dpAccumulatedDelta 累計值。
 	 */
-	const buildSpecCompliantPreviewJSON = (): Record<string, unknown> => {
-		const fullExportDataObject = generateExportJSON();
-		const currentWorkspaceStoreState = useWorkspaceStore.getState();
-
-		return {
-			version: fullExportDataObject.version,
-			dataset: fullExportDataObject.dataset,
-			differential_privacy: {
-				enabled: true,
-				accumulated_epsilon: currentWorkspaceStoreState.dpAccumulatedEpsilon ?? 0,
-				accumulated_delta: currentWorkspaceStoreState.dpAccumulatedDelta ?? 0,
-				default_delta: currentWorkspaceStoreState.targetDelta ?? DEFAULT_DELTA_BUDGET,
-				column_budgets: fullExportDataObject.column_budgets
-			}
-		};
-	};
+	const buildSpecCompliantPreviewJSON = (): Record<string, unknown> =>
+		// ★ 2026-10-01：先前預覽另外寫了一套 column_budgets 組裝邏輯，與 Step4 實際送出的內容有多處不同
+		//   （類別型也送 delta_budget、ε-DP 模式未把 δ 歸零、文字型欄位被排除、缺 input_format 等）。
+		//   改為與實際送出、Step3 匯出共用 utils/pipelineConfig.ts，三者保證一致。
+		buildBackendConfigDocumentFromWorkspace({ ...useWorkspaceStore.getState(), privacyMode: 'differential-privacy' }) ?? {};
 
 	const handleImportJSON = (fileChangeEventObj: React.ChangeEvent<HTMLInputElement>): void =>
 	{
@@ -507,7 +382,9 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 							allowedCategories: mappedFieldTypeValue === 'Categorical' ? 'auto_extracted' : '',
 							minimumUnit: calcMinimumUnit,
 							noiseStep: calcNoiseStep,
-							outOfBoundsStrategy: calcOutOfBoundsStrategy
+							outOfBoundsStrategy: calcOutOfBoundsStrategy,
+							// ★ 2026-10-01：保留設定檔指定的敏感度（後端範例與邊界寬度不同），未指定時由邊界寬度計算
+							sensitivity: mappedFieldTypeValue === 'Numeric' && typeof budgetItem.sensitivity === 'number' && budgetItem.sensitivity > 0 ? budgetItem.sensitivity : undefined
 						});
 					});
 

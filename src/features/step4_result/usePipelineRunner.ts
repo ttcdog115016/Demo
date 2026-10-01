@@ -13,7 +13,7 @@ import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuditStore } from '../../store/useAuditStore';
 import { ensureDatasetProfile } from '../../utils/datasetProfile';
 import type { HighCardinalitySensitiveInfo } from '../../utils/riskAssessment';
-import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, type DpStoreField, type KAnonymityPipelineSettings, type DifferentialPrivacyConfigInput } from '../../utils/pipelineConfig';
+import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, wrapBackendConfigDocument, type DpStoreField, type KAnonymityPipelineSettings, type DifferentialPrivacyConfigInput } from '../../utils/pipelineConfig';
 import { isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
 import { describePipelineError } from './backendErrorCatalog';
 import { runDeidentificationPhase } from './pipeline/deidentificationPhase';
@@ -403,16 +403,17 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 let finalApiReportData: KAnonymityQualityReport | DpQualityReport | null = null; 
                 let finalCsvBlobData: Blob | null = null; 
 
+                // 外層補上 version／dataset／input_format，與後端範例 config_*.json 完全同格式（2026-10-01）
                 if (currentPrivacyModeTypeStr === 'k-anonymity') {
-                    configObject = buildKAnonymityConfig({
+                    configObject = wrapBackendConfigDocument(currentDatasetFileNameString, buildKAnonymityConfig({
                         ...kAnonymityPipelineSettings,
                         processedColumnNames: actualProcessedColumnsList,
                         kAnonymityFields: kAnonymityFieldsList,
                         kAnonymityHierarchies: kAnonymityHierarchiesList,
                         resolveFallbackUiRole: (cleanColumnName) => getCalculatedRole(cleanColumnName).role
-                    });
+                    }));
                 } else if (currentPrivacyModeTypeStr === 'differential-privacy') {
-                    configObject = buildDifferentialPrivacyConfig(dpPipelineConfigInput);
+                    configObject = wrapBackendConfigDocument(currentDatasetFileNameString, buildDifferentialPrivacyConfig(dpPipelineConfigInput));
                 }
 
                 console.log(`🔥 傳給後端 (${currentPrivacyModeTypeStr}) 的 JSON Config:`, configObject);

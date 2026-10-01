@@ -12,7 +12,8 @@ import { Result, Button, App as AntdApp, Alert } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
-import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
 
 import KAnonymityRules from './KAnonymityRules';
 import DifferentialPrivacyRules from './DifferentialPrivacyRules';
@@ -57,7 +58,7 @@ export default function Step3_Rules(): React.ReactElement
 
 	/**
 	 * 函數名稱: handleExportJSON
-	 * 函數功能: 彙整工作區 Steps 1 ~ 3 之完整參數（包含欄位角色、預處理清洗規則、K/L/T 參數與 DP 欄位設定），組裝為最終合規隱私 JSON 檔案並觸發下載。
+	 * 函數功能: 依工作區 Steps 1 ~ 3 之設定，組出與 Step4 實際送給後端相同格式的 config.json（K-匿名或差分隱私）並觸發下載。
 	 * 
 	 * 輸入參數 (Input): 無
 	 * 輸出參數 (Output): 無
@@ -68,79 +69,17 @@ export default function Step3_Rules(): React.ReactElement
 	 */
 	const handleExportJSON = (): void => 
 	{
-		// 取得 WorkspaceStore 當前狀態快照 (符合規範 g)
-		const currentWorkspaceStoreState = useWorkspaceStore.getState();
-
-		// 格式化差分隱私欄位清單 (包含啟用與停用項目，防範型別轉型丟失) (符合規範 g)
-		const formattedDpRulesArray = currentWorkspaceStoreState.privacyMode === 'differential-privacy'
-			? (currentWorkspaceStoreState.dpFields || []).map(
-				(dpFieldItemRecord: DPField) => 
-				(
-					{
-						id: dpFieldItemRecord.id,
-						fieldName: dpFieldItemRecord.fieldName,
-						fieldType: dpFieldItemRecord.fieldType || 'Categorical',
-						enabled: Boolean(dpFieldItemRecord.enabled), 
-						epsilon: dpFieldItemRecord.epsilon,
-						delta: dpFieldItemRecord.delta,
-						mode: dpFieldItemRecord.mode,
-						equivalentEpsilon: (dpFieldItemRecord as DPField & { equivalentEpsilon?: number }).equivalentEpsilon ?? dpFieldItemRecord.epsilon,
-						sensitivity: (dpFieldItemRecord as DPField & { sensitivity?: number }).sensitivity ?? 1.0,
-						lowerBound: dpFieldItemRecord.lowerBound,
-						upperBound: dpFieldItemRecord.upperBound,
-						allowedCategories: dpFieldItemRecord.allowedCategories,
-						maxLength: dpFieldItemRecord.maxLength
-					}
-				)
-			)
-			: undefined;
-
-		// 彙整 Steps 1 ~ 3 全載荷 payload 物件 (符合規範 g)
-		const finalExportPayloadObject = {
-			version: new Date().toISOString(),
-			dataset: currentWorkspaceStoreState.fileName || "unknown_dataset",
-			privacy_mode: currentWorkspaceStoreState.privacyMode,
-			
-			// Step 1 & Step 2 的欄位基底結構
-			columns: currentWorkspaceStoreState.columns,
-			column_roles: currentWorkspaceStoreState.columnRoles,
-			column_types: currentWorkspaceStoreState.columnTypes,
-			preprocessing_rules: currentWorkspaceStoreState.preprocessingRules && Object.keys(currentWorkspaceStoreState.preprocessingRules).length > 0 ? currentWorkspaceStoreState.preprocessingRules : undefined,
-			
-			// Step 2 K-Anonymity 規則結構
-			field_attributes: currentWorkspaceStoreState.fieldAttributes,
-			masking_rules: currentWorkspaceStoreState.maskingRules,
-			generalization_rules: currentWorkspaceStoreState.generalizationRules,
-			generalization_hierarchies: currentWorkspaceStoreState.generalizationHierarchies,
-			categorical_hierarchies: currentWorkspaceStoreState.categoricalHierarchies,
-			numeric_bins: currentWorkspaceStoreState.numericBins,
-			temporal_hierarchies: currentWorkspaceStoreState.temporalHierarchies,
-			
-			// Step 3 隱私目標與參數
-			privacy_targets: {
-				k_anonymity: currentWorkspaceStoreState.privacyMode === 'k-anonymity' ? {
-					enabled: true,
-					k_anonymity_value: currentWorkspaceStoreState.kValue,           // 修正: 明確標示為 K-匿名群組大小數值
-					l_diversity_value: currentWorkspaceStoreState.lValue,           // 修正: 明確標示為 L-多樣性種類數值
-					t_closeness_threshold: currentWorkspaceStoreState.tValue,       // 修正: 明確標示為 T-趨近性機率門檻
-					suppression_method: currentWorkspaceStoreState.suppressionMethod,
-					cell_fill: currentWorkspaceStoreState.cellFillMethod,
-					suppression_limit_percent: currentWorkspaceStoreState.maxSuppression,
-					limit_exceeded_action: currentWorkspaceStoreState.limitExceededAction
-				} : { enabled: false },
-				
-				differential_privacy: currentWorkspaceStoreState.privacyMode === 'differential-privacy' ? {
-					enabled: true,
-					global_target_delta: currentWorkspaceStoreState.targetDelta,
-					simulate_query_count: currentWorkspaceStoreState.queryCount,
-					budget_limit: currentWorkspaceStoreState.budgetLimitEpsilon,
-					out_of_bounds_strategy: currentWorkspaceStoreState.outOfBoundsStrategy || 'clip'
-				} : { enabled: false }
-			},
-
-			// 輸出完整的差分隱私規則清單
-			differential_privacy_rules: formattedDpRulesArray
-		};
+		// ★ 2026-10-01：先前匯出的是前端自訂格式（privacy_targets／differential_privacy_rules 陣列、
+		//   column_roles 等內部狀態），與後端 config.json（docs/manual_test/config_kanon.json／config_dp.json）
+		//   格式不同，無法直接交給後端，且漏掉 minimum_unit、逐欄溢出策略、noise_step 等設定。改為與 Step4
+		//   實際送出的設定檔使用同一套組裝邏輯（utils/pipelineConfig.ts），匯出的檔案即後端可直接讀取的格式，
+		//   也可再由 Step2「匯入配置」讀回。
+		const finalExportPayloadObject = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState());
+		if (!finalExportPayloadObject)
+		{
+			messageApi.error(translate('step3.msg_export_no_mode', '尚未選擇隱私保護模式，無法匯出設定檔'));
+			return;
+		}
 
 		try 
 		{

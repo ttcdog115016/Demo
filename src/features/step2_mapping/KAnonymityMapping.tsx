@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
+import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
 import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, findNumericMinMax, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
 
@@ -395,31 +396,15 @@ const buildExportJSON = (fieldsList: FieldDef[], hierarchiesList: HierarchyTable
  *           會覺得「怎麼顯示成這樣」。l／t 僅在使用者於 Step3 實際啟用對應開關時才寫入，
  *           與 Step4_Result.tsx 送出邏輯保持一致。
  */
-const buildSpecCompliantPreviewJSON = (fieldsList: FieldDef[], hierarchiesList: HierarchyTable[]): Record<string, unknown> => {
-    const fullExportDataObject = buildExportJSON(fieldsList, hierarchiesList);
-    const currentWorkspaceStoreStateData = useWorkspaceStore.getState();
-
-    return {
-        version: fullExportDataObject.version,
-        dataset: fullExportDataObject.dataset,
-        k_anonymity: {
-            enabled: true,
-            k: currentWorkspaceStoreStateData.kValue ?? BASE_DEFAULT_K_ANONYMITY_VALUE,
-            ...(currentWorkspaceStoreStateData.enableLDiversity ? { l: currentWorkspaceStoreStateData.lValue ?? BASE_DEFAULT_L_DIVERSITY_VALUE } : {}),
-            ...(currentWorkspaceStoreStateData.enableTCloseness ? { t: currentWorkspaceStoreStateData.tValue ?? BASE_DEFAULT_T_CLOSENESS_VALUE } : {}),
-            suppression_method: currentWorkspaceStoreStateData.suppressionMethod ?? 'row_suppression',
-            // ★ cell_fill 僅在「值抑制」(cell_suppression) 模式下才有意義且才會實際送給後端
-            //   （比照 Step4_Result.tsx 送出邏輯，見該檔案 apiOptions／configObject.k_anonymity 組裝處）。
-            ...((currentWorkspaceStoreStateData.suppressionMethod === 'cell' || currentWorkspaceStoreStateData.suppressionMethod === 'cell_suppression') ? { cell_fill: currentWorkspaceStoreStateData.cellFillMethod ?? 'star' } : {}),
-            suppression_limit_percent: currentWorkspaceStoreStateData.maxSuppression ?? BASE_DEFAULT_SUPPRESSION_LIMIT,
-            limit_exceeded_action: currentWorkspaceStoreStateData.limitExceededAction ?? 'stop_and_error',
-            columns: fullExportDataObject.columns,
-            ...(fullExportDataObject.generalization_hierarchies ? { generalization_hierarchies: fullExportDataObject.generalization_hierarchies } : {}),
-            ...(fullExportDataObject.generalization_matrices ? { generalization_matrices: fullExportDataObject.generalization_matrices } : {}),
-            ...(fullExportDataObject.qi_generalization_levels ? { qi_generalization_levels: fullExportDataObject.qi_generalization_levels } : {}),
-        }
-    };
-};
+const buildSpecCompliantPreviewJSON = (fieldsList: FieldDef[], hierarchiesList: HierarchyTable[]): Record<string, unknown> =>
+    // ★ 2026-10-01：改為與 Step4 實際送出、Step3 匯出共用 utils/pipelineConfig.ts 的組裝邏輯（含 version／
+    //   dataset／input_format），三者保證一致；預覽反映的是畫面上正在編輯、尚未寫入 store 的欄位與階層。
+    buildBackendConfigDocumentFromWorkspace({
+        ...useWorkspaceStore.getState(),
+        privacyMode: 'k-anonymity',
+        kAnonymityFields: fieldsList,
+        kAnonymityHierarchies: hierarchiesList
+    }) ?? {};
 
 let globalCachedKAnonymityFields: FieldDef[] | null = null;
 let globalCachedKAnonymityHierarchies: HierarchyTable[] | null = null;

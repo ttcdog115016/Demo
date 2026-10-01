@@ -19,6 +19,8 @@ export interface DpStoreField {
     minimumUnit?: number;
     noiseStep?: number;
     mode?: 'epsilon' | 'epsilon-delta';
+    /** 使用者指定（或自設定檔匯入）的敏感度；未指定時以邊界寬度計算，見 resolveDpSensitivity */
+    sensitivity?: number | string;
 }
 
 /** Step3 的 K-匿名參數（對應 useWorkspaceStore 同名欄位） */
@@ -388,6 +390,7 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
                             baseBudgetConfig.time_clipping_bounds = [String(field.lowerBound), String(field.upperBound)];
                         }
                     }
+                    applyExplicitDpSensitivity(baseBudgetConfig, field.sensitivity);
                     baseBudgetConfig.noise_unit = 'day';
                     if (field.noiseStep !== undefined) baseBudgetConfig.noise_step = Number(field.noiseStep);
                     baseBudgetConfig.time_out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(field.outOfBoundsStrategy);
@@ -396,6 +399,7 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
                         baseBudgetConfig.sensitivity = Number(field.upperBound) - Number(field.lowerBound);
                         baseBudgetConfig.clipping_bounds = [Number(field.lowerBound), Number(field.upperBound)];
                     }
+                    applyExplicitDpSensitivity(baseBudgetConfig, field.sensitivity);
                     baseBudgetConfig.minimum_unit = field.minimumUnit ?? 1;
                     baseBudgetConfig.out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(field.outOfBoundsStrategy);
                 }
@@ -444,3 +448,109 @@ export const computeDpTotalBudgets = (dpFields: DpStoreField[] | null | undefine
     totalEpsilonBudget: dpFields?.reduce((acc: number, field: DpStoreField) => acc + (field.enabled ? Number(field.epsilon || 1.0) : 0), 0) || 1.0,
     totalDeltaBudget: dpFields?.reduce((acc: number, field: DpStoreField) => acc + (field.enabled ? Number(field.delta || 0) : 0), 0) || 0
 });
+
+/** 有效的明確敏感度（大於 0 的有限數字）；未指定或無效時回傳 null */
+export const parseExplicitDpSensitivity = (sensitivityValue: number | string | null | undefined): number | null => {
+    if (sensitivityValue === undefined || sensitivityValue === null || sensitivityValue === '') return null;
+    const parsedSensitivityValue = Number(sensitivityValue);
+    return Number.isFinite(parsedSensitivityValue) && parsedSensitivityValue > 0 ? parsedSensitivityValue : null;
+};
+
+/**
+ * 預設敏感度＝邊界寬度：數值型為「上限 − 下限」，日期時間型為兩日期相差天數。邊界不完整或無效時回傳 null。
+ * 這是最保守的設定（任一筆值在邊界內任意變動都被涵蓋）；後端範例 config_dp.json 的敏感度另行指定、通常小於邊界寬度。
+ */
+export const computeDefaultDpSensitivity = (
+    field: Pick<DpStoreField, 'lowerBound' | 'upperBound'>, isDateTimeField: boolean
+): number | null => {
+    if (field.upperBound === undefined || field.lowerBound === undefined || field.upperBound === '' || field.lowerBound === '') return null;
+    if (isDateTimeField) {
+        const lowerDateTimestamp = Date.parse(String(field.lowerBound));
+        const upperDateTimestamp = Date.parse(String(field.upperBound));
+        if (Number.isNaN(lowerDateTimestamp) || Number.isNaN(upperDateTimestamp)) return null;
+        return Math.round((upperDateTimestamp - lowerDateTimestamp) / 86400000);
+    }
+    const boundWidthValue = Number(field.upperBound) - Number(field.lowerBound);
+    return Number.isFinite(boundWidthValue) ? boundWidthValue : null;
+};
+
+/** 實際送出的敏感度：使用者有指定就用指定值，否則用邊界寬度 */
+export const resolveDpSensitivity = (field: Pick<DpStoreField, 'lowerBound' | 'upperBound' | 'sensitivity'>, isDateTimeField: boolean): number | null =>
+    parseExplicitDpSensitivity(field.sensitivity) ?? computeDefaultDpSensitivity(field, isDateTimeField);
+
+// ★ 2026-10-01：後端範例 config_dp.json 的 sensitivity 與 clipping_bounds 分開指定（例如年齡邊界 0～120、
+//   敏感度 71；生日邊界 1930～2026、敏感度 365 天）。先前前端一律以邊界寬度計算、匯入時也不讀取，
+//   生日在 ε=1 時雜訊尺度約 97 年。改為使用者指定（或匯入）的值優先，未指定才用邊界寬度。
+const applyExplicitDpSensitivity = (budgetConfig: Record<string, unknown>, sensitivityValue: number | string | null | undefined): void => {
+    const explicitSensitivityValue = parseExplicitDpSensitivity(sensitivityValue);
+    if (explicitSensitivityValue !== null) budgetConfig.sensitivity = explicitSensitivityValue;
+};
+
+/** 後端 config.json 的版本（docs/manual_test/config_*.json） */
+export const BACKEND_CONFIG_VERSION = '1.2.0';
+
+/** 把 k_anonymity 或 differential_privacy 區塊包成後端完整設定檔（version／dataset／input_format＋區塊） */
+export const wrapBackendConfigDocument = (datasetFileName: string | null | undefined, privacyBlock: Record<string, unknown>): Record<string, unknown> => ({
+    version: BACKEND_CONFIG_VERSION,
+    dataset: datasetFileName || 'dataset.csv',
+    // Step1 上傳 Excel 時已轉為 CSV，送給後端的一律是 CSV
+    input_format: 'csv',
+    ...privacyBlock
+});
+
+/** 工作區（useWorkspaceStore）中組設定檔會用到的欄位 */
+export interface WorkspaceConfigSource {
+    privacyMode: string | null | undefined;
+    fileName?: string | null;
+    columns?: string[] | null;
+    columnRoles?: Record<string, string> | null;
+    columnTypes?: Record<string, unknown> | null;
+    kAnonymityFields?: unknown[] | null;
+    kAnonymityHierarchies?: unknown[] | null;
+    kValue: number; lValue: number; tValue: number;
+    enableLDiversity: boolean; enableTCloseness: boolean;
+    maxSuppression: number | null | undefined;
+    suppressionMethod: string | null | undefined;
+    cellFillMethod: 'star' | 'missing' | null | undefined;
+    limitExceededAction: string | null | undefined;
+    dpFields?: DpStoreField[] | null;
+    dpAccumulatedEpsilon?: number | null;
+    dpAccumulatedDelta?: number | null;
+    targetDelta?: number | null;
+}
+
+/**
+ * 依目前工作區設定組出後端完整設定檔（與 Step4 實際送出的內容相同組裝邏輯），供 Step3 匯出與 Step2 即時預覽使用。
+ * 欄位不在 kAnonymityFields 時以 columnRoles 的畫面角色判定；隱私模式未選擇時回傳 null。
+ */
+export const buildBackendConfigDocumentFromWorkspace = (
+    workspaceState: WorkspaceConfigSource,
+    options: { resolveFallbackUiRole?: (cleanColumnName: string) => string } = {}
+): Record<string, unknown> | null => {
+    if (workspaceState.privacyMode === 'k-anonymity') {
+        const kAnonymityFields = workspaceState.kAnonymityFields || [];
+        const processedColumnNames = (workspaceState.columns && workspaceState.columns.length > 0)
+            ? workspaceState.columns.map((columnName) => columnName.replace(/^[\uFEFF\u200B]+/, '').trim())
+            : kAnonymityFields.map((fieldItem) => String((fieldItem as { name?: string }).name || '')).filter(Boolean);
+        return wrapBackendConfigDocument(workspaceState.fileName, buildKAnonymityConfig({
+            kValue: workspaceState.kValue, lValue: workspaceState.lValue, tValue: workspaceState.tValue,
+            enableLDiversity: workspaceState.enableLDiversity, enableTCloseness: workspaceState.enableTCloseness,
+            maxSuppression: workspaceState.maxSuppression, suppressionMethod: workspaceState.suppressionMethod,
+            cellFillMethod: workspaceState.cellFillMethod, limitExceededAction: workspaceState.limitExceededAction,
+            processedColumnNames,
+            kAnonymityFields,
+            kAnonymityHierarchies: workspaceState.kAnonymityHierarchies || [],
+            resolveFallbackUiRole: options.resolveFallbackUiRole ?? ((cleanColumnName) => workspaceState.columnRoles?.[cleanColumnName] || 'Non-sensitive')
+        }));
+    }
+    if (workspaceState.privacyMode === 'differential-privacy') {
+        return wrapBackendConfigDocument(workspaceState.fileName, buildDifferentialPrivacyConfig({
+            dpFields: workspaceState.dpFields,
+            columnTypes: workspaceState.columnTypes,
+            accumulatedEpsilon: workspaceState.dpAccumulatedEpsilon,
+            accumulatedDelta: workspaceState.dpAccumulatedDelta,
+            targetDelta: workspaceState.targetDelta
+        }));
+    }
+    return null;
+};

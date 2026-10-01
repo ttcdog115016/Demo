@@ -69,6 +69,7 @@ export interface DPField
     outOfBoundsStrategy?: 'clip' | 'wrap' | 'reflect';    // 個別欄位邊界溢出處理策略 (數值/日期時間型適用，對應 config_dp.json 之 out_of_bounds_strategy／time_out_of_bounds_strategy)
     minimumUnit?: number;                                 // 連續數值型加噪刻度 (對應 config_dp.json 之 minimum_unit)
     noiseStep?: number;                                   // 日期時間型加噪步階 (對應 config_dp.json 之 noise_step)
+    sensitivity?: number;                                 // 數值／日期時間型敏感度 (對應 config_dp.json 之 sensitivity)；未設定時以邊界寬度計算
 }
 
 /**

@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
 import { isDateTimeDpField, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
+import { computeDefaultDpSensitivity } from '../../utils/pipelineConfig';
 
 const { Text } = Typography;
 
@@ -669,6 +670,32 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 												]
 											}
 										/>
+
+										{/* ★ 2026-10-01：敏感度可自訂（對應 config_dp.json 之 sensitivity）。留空時以邊界寬度計算
+										    （數值型為上限 − 下限、日期型為相差天數），也就是先前固定的做法；匯入的設定檔有指定時沿用。 */}
+										<Text type="secondary" style={{ fontSize: 12, marginLeft: '12px', flexShrink: 0 }}>
+											{translate('step3_dp.sensitivity_label', '敏感度')}
+											<Tooltip title={translate('step3_dp.sensitivity_tooltip', '加噪幅度 ≈ 敏感度 ÷ ε。留空時以邊界寬度計算（數值型為上限減下限，日期型為兩日期相差天數），涵蓋邊界內任意變動、保護力最強，但雜訊也最大；調小可保留較多資料細節，但隱私保證隨之減弱。匯入的設定檔有指定敏感度時會沿用。')}>
+												<QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} />
+											</Tooltip>
+										</Text>
+										{(() => {
+											const isDateTimeSensitivityField = isDateTimeDpField(activeFieldItemRecord.fieldName);
+											const defaultSensitivityValue = computeDefaultDpSensitivity(activeFieldItemRecord, isDateTimeSensitivityField);
+											const sensitivityUnitText = isDateTimeSensitivityField ? translate('step3_dp.sensitivity_unit_day', ' 天') : '';
+											return (
+												<InputNumber
+													size="small"
+													min={0}
+													value={activeFieldItemRecord.sensitivity}
+													placeholder={defaultSensitivityValue !== null
+														? translate('step3_dp.sensitivity_auto_placeholder', '自動：{{value}}', { value: `${defaultSensitivityValue.toLocaleString()}${sensitivityUnitText}` })
+														: translate('step3_dp.sensitivity_auto', '自動')}
+													onChange={(inputNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'sensitivity', inputNumberValue === null || inputNumberValue <= 0 ? undefined : inputNumberValue)}
+													style={{ width: '150px' }}
+												/>
+											);
+										})()}
 									</div>
 								)}
 								</div>
