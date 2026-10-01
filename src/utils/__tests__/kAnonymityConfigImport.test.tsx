@@ -27,7 +27,7 @@ import KAnonymityMapping from '../../features/step2_mapping/KAnonymityMapping';
 import KAnonymityRules from '../../features/step3_rules/KAnonymityRules';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { buildBackendConfigDocumentFromWorkspace } from '../pipelineConfig';
-import { resolveImportedLtSettings, normalizeImportedQiLevel, buildQiLevelValue } from '../kAnonymityConfigImport';
+import { resolveImportedLtSettings, normalizeImportedQiLevel } from '../kAnonymityConfigImport';
 
 const COLUMNS = ['姓名', '身分證號', '生日', '年齡', '薪資', '就醫次數', '地區', '職業', '疾病', '婚姻狀況'];
 
@@ -85,37 +85,26 @@ describe('K-匿名匯入設定檔：有 l／t 時直接開啟 Step3 對應檢測
     });
 });
 
-describe('qi_generalization_levels 層級範圍 [最小, 最大]', () => {
+describe('qi_generalization_levels 寫成陣列時取最小值（本工具不支援層級範圍）', () => {
     afterEach(() => cleanup());
 
-    it('config_kanon.json 的職業 [1, 3]：實際輸出層級 1（職類）、上限 3 保留，送出設定檔仍為 [1, 3]', async () => {
+    it('config_kanon.json 的職業 [1, 3]：匯入為固定層級 1（職類，後端實際輸出），送出為單一整數 1', async () => {
         resetStore();
-        messageMock.success.mockClear();
-        const { container } = render(<KAnonymityMapping />);
-        const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-        fireEvent.change(fileInput, { target: { files: [new File([backendConfigKanonText], 'config_kanon.json', { type: 'application/json' })] } });
-        await waitFor(() => expect(messageMock.success).toHaveBeenCalled());
+        await importThroughStep2(backendConfigKanonText);
         await waitFor(() => expect(useWorkspaceStore.getState().kAnonymityFields.length).toBeGreaterThan(0));
-
         const fieldsByName = Object.fromEntries((useWorkspaceStore.getState().kAnonymityFields as { name: string }[]).map((field) => [field.name, field]));
-        expect(fieldsByName.職業).toMatchObject({ genMaxLevel: 1, genLevelRangeUpper: 3 });
+        expect(fieldsByName.職業).toMatchObject({ genMaxLevel: 1 });
         expect(fieldsByName.地區).toMatchObject({ genMaxLevel: 2 });
-        expect(fieldsByName.地區).not.toHaveProperty('genLevelRangeUpper');
-        expect(container.textContent).toContain('範圍 1～3：實際輸出層級 1');
-
         const exportedConfig = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: Record<string, Record<string, unknown>> };
-        expect(exportedConfig.k_anonymity.qi_generalization_levels).toEqual({ 地區: 2, 職業: [1, 3], 生日: 5 });
+        expect(exportedConfig.k_anonymity.qi_generalization_levels).toEqual({ 地區: 2, 職業: 1, 生日: 5 });
     });
 
-    it('正規化與組回：陣列取最小為實際層級、最大為上限；上下限相同或無上限時為單一整數', () => {
-        expect(normalizeImportedQiLevel([1, 3])).toEqual({ level: 1, rangeUpper: 3 });
-        expect(normalizeImportedQiLevel([3, 1])).toEqual({ level: 1, rangeUpper: 3 });
-        expect(normalizeImportedQiLevel([2, 2])).toEqual({ level: 2 });
-        expect(normalizeImportedQiLevel(2)).toEqual({ level: 2 });
-        expect(normalizeImportedQiLevel('x')).toEqual({});
-        expect(buildQiLevelValue(1, 3)).toEqual([1, 3]);
-        expect(buildQiLevelValue(3, 3)).toBe(3);
-        expect(buildQiLevelValue(2, 0)).toBe(2);
-        expect(buildQiLevelValue(2, undefined)).toBe(2);
+    it('正規化：陣列取最小值，單一整數原樣，其他為 undefined', () => {
+        expect(normalizeImportedQiLevel([1, 3])).toBe(1);
+        expect(normalizeImportedQiLevel([3, 1])).toBe(1);
+        expect(normalizeImportedQiLevel(2)).toBe(2);
+        expect(normalizeImportedQiLevel(0)).toBe(0);
+        expect(normalizeImportedQiLevel('x')).toBeUndefined();
+        expect(normalizeImportedQiLevel([])).toBeUndefined();
     });
 });

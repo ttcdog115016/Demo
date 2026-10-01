@@ -74,13 +74,12 @@ describe('時間粒度：依設定檔自己的 levels 判定層級', () => {
         expect(exportedBirthdayUnit()).toBe('hour');
     });
 
-    it('時間粒度的層級範圍：[1, 3]（levels=[day, month, year]）換算為日～年，送出為 [3, 5]', async () => {
-        const rangedConfig = JSON.parse(backendConfigKanonText);
-        rangedConfig.k_anonymity.qi_generalization_levels.生日 = [1, 3];
-        await importThroughStep2(JSON.stringify(rangedConfig));
-        expect(birthdayFieldOf()).toMatchObject({ genMaxLevel: 3, genLevelRangeUpper: 5 });
-        const config = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: { qi_generalization_levels: Record<string, unknown> } };
-        expect(config.k_anonymity.qi_generalization_levels.生日).toEqual([3, 5]);
+    it('層級寫成陣列 [1, 3]（levels=[day, month, year]）時取最小值：匯入為「日」，送出單一整數', async () => {
+        const arrayLevelConfig = JSON.parse(backendConfigKanonText);
+        arrayLevelConfig.k_anonymity.qi_generalization_levels.生日 = [1, 3];
+        await importThroughStep2(JSON.stringify(arrayLevelConfig));
+        expect(birthdayFieldOf()).toMatchObject({ genMaxLevel: 3 });
+        expect(exportedBirthdayUnit()).toBe('day');
     });
 
     it('換算規則：second 對應到最細的「分」、層級 0 維持不泛化、超出清單或缺漏時交給預設值', () => {
