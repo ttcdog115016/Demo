@@ -19,9 +19,10 @@ import dayjs from 'dayjs';
 
 import { useWorkspaceStore, type DPField, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import { DP_COLUMN_BUDGETS_REFERENCE } from '../../config/recommendationReferenceConfig';
-import { isDateTimeDpField, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
+import { isDateTimeDpField, resolveIsDateTimeDpField, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
 import { ensureDatasetProfile, useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
+import { parseBackendDpColumnBudgets, type BackendDpColumnBudget } from '../../utils/dpConfigImport';
 
 /**
  * 預設隱私參數常數宣告
@@ -197,7 +198,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 						}
 						// ★ 日期時間型欄位（如生日）之邊界為日期字串，Number() 轉換會得到 NaN，NaN 比較一律為 false，
 						//   若沿用下方數值比較會讓「下限必須早於上限」的檢查失效；改以日期解析後之時間戳比較。
-						else if (isDateTimeDpField(fieldItemRecord.fieldName))
+						else if (resolveIsDateTimeDpField(fieldItemRecord))
 						{
 							const lowerDateTimestamp = Date.parse(String(fieldItemRecord.lowerBound));
 							const upperDateTimestamp = Date.parse(String(fieldItemRecord.upperBound));
@@ -275,9 +276,10 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					id?: string; fieldName?: string; field_name?: string; field?: string;
 					fieldType?: DPField['fieldType']; field_type?: DPField['fieldType'];
 					enabled?: boolean; mode?: 'epsilon' | 'epsilon-delta';
-					epsilon?: number; delta?: number; lowerBound?: number; upperBound?: number;
+					epsilon?: number; delta?: number; lowerBound?: number | string; upperBound?: number | string;
 					allowedCategories?: string; maxLength?: number; bounds?: { lower?: number; upper?: number };
 					allowed_categories?: string[] | string; max_length?: number;
+					minimumUnit?: number; noiseStep?: number; outOfBoundsStrategy?: string;
 				};
 
 				type FieldMechanismItem = {
@@ -304,88 +306,13 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 
 				if (rawColumnBudgetsSource)
 				{
-					const columnBudgetsMap = rawColumnBudgetsSource as Record<string, {
-						type?: string, epsilon?: number, delta?: number, epsilon_budget?: number, delta_budget?: number,
-						sensitivity?: number, allowed_categories?: string, clipping_bounds?: [number, number],
-						minimum_unit?: number, out_of_bounds_strategy?: string,
-						time_clipping_bounds?: [string, string], time_out_of_bounds_strategy?: string, noise_step?: number
-					}>;
+					const columnBudgetsMap = rawColumnBudgetsSource as Record<string, BackendDpColumnBudget>;
 					const extractedNewFieldsArray: DPField[] = [];
 					const importedColumnNamesList = Object.keys(columnBudgetsMap);
 
-					importedColumnNamesList.forEach((columnName, index) => {
-						const budgetItem = columnBudgetsMap[columnName];
-						const rawType = String(budgetItem.type || '').toLowerCase();
-						// v1.2.0 欄位名稱為 epsilon_budget／delta_budget；仍相容本工具早期匯出格式的 epsilon／delta。
-						const resolvedEpsilonValue = budgetItem.epsilon_budget ?? budgetItem.epsilon;
-						const resolvedDeltaValue = budgetItem.delta_budget ?? budgetItem.delta;
-						const isImportedDateTimeType = rawType === 'datetime';
-
-						let mappedFieldTypeValue: DPField['fieldType'] = 'Unknown';
-						if (['continuous', 'numeric', 'datetime'].includes(rawType)) {
-							mappedFieldTypeValue = 'Numeric';
-						} else if (['categorical'].includes(rawType)) {
-							mappedFieldTypeValue = 'Categorical';
-						} else if (['string', 'text'].includes(rawType)) {
-							mappedFieldTypeValue = 'Text';
-						}
-
-						let calcLowerBound: number | string | undefined = undefined;
-						let calcUpperBound: number | string | undefined = undefined;
-						let calcMinimumUnit: number | undefined = undefined;
-						let calcNoiseStep: number | undefined = undefined;
-						let calcOutOfBoundsStrategy: DPField['outOfBoundsStrategy'] = undefined;
-
-						if (mappedFieldTypeValue === 'Numeric' && isImportedDateTimeType) {
-							// ★ config_dp.json v1.2.0 日期時間型欄位之邊界存放於 time_clipping_bounds（ISO 日期字串陣列），
-							//   與連續值欄位的 clipping_bounds（數值陣列）分屬不同欄位名稱，須分開解析。
-							if (Array.isArray(budgetItem.time_clipping_bounds) && budgetItem.time_clipping_bounds.length === 2) {
-								calcLowerBound = budgetItem.time_clipping_bounds[0];
-								calcUpperBound = budgetItem.time_clipping_bounds[1];
-							} else {
-								calcLowerBound = DEFAULT_DATETIME_LOWER_BOUND_DATE;
-								calcUpperBound = new Date().toISOString().slice(0, 10);
-							}
-							calcNoiseStep = budgetItem.noise_step;
-							calcOutOfBoundsStrategy = mapOutOfBoundsStrategyFromBackend(budgetItem.time_out_of_bounds_strategy);
-						} else if (mappedFieldTypeValue === 'Numeric') {
-							// ★ config_dp.json v1.2.0 每欄實際上限/下限存放於 clipping_bounds: [下限, 上限]；
-							//   優先直接讀取，避免誤用 sensitivity 推算出與設定檔不符的邊界。
-							if (Array.isArray(budgetItem.clipping_bounds) && budgetItem.clipping_bounds.length === 2) {
-								calcLowerBound = budgetItem.clipping_bounds[0];
-								calcUpperBound = budgetItem.clipping_bounds[1];
-							} else {
-								calcLowerBound = 0;
-								if (budgetItem.sensitivity !== undefined) {
-									calcUpperBound = calcLowerBound + budgetItem.sensitivity;
-								} else {
-									calcUpperBound = DEFAULT_NUMERIC_UPPER_BOUND;
-								}
-							}
-							calcMinimumUnit = budgetItem.minimum_unit ?? 1;
-							calcOutOfBoundsStrategy = mapOutOfBoundsStrategyFromBackend(budgetItem.out_of_bounds_strategy);
-						} else if (mappedFieldTypeValue === 'Categorical') {
-							calcLowerBound = 0;
-							calcUpperBound = 1;
-						}
-
-						extractedNewFieldsArray.push({
-							id: `import_budget_${index}_${Math.random().toString(36).substring(2, 9)}`,
-							fieldName: columnName,
-							fieldType: mappedFieldTypeValue,
-							enabled: mappedFieldTypeValue !== 'Text',
-							mode: (resolvedDeltaValue && resolvedDeltaValue > 0) ? 'epsilon-delta' : 'epsilon',
-							epsilon: resolvedEpsilonValue ?? DEFAULT_EPSILON_BUDGET,
-							delta: resolvedDeltaValue ?? DEFAULT_DELTA_BUDGET,
-							lowerBound: calcLowerBound,
-							upperBound: calcUpperBound,
-							allowedCategories: mappedFieldTypeValue === 'Categorical' ? 'auto_extracted' : '',
-							minimumUnit: calcMinimumUnit,
-							noiseStep: calcNoiseStep,
-							outOfBoundsStrategy: calcOutOfBoundsStrategy,
-							// ★ 2026-10-01：保留設定檔指定的敏感度（後端範例與邊界寬度不同），未指定時由邊界寬度計算
-							sensitivity: mappedFieldTypeValue === 'Numeric' && typeof budgetItem.sensitivity === 'number' && budgetItem.sensitivity > 0 ? budgetItem.sensitivity : undefined
-						});
+					// 逐欄解析見 utils/dpConfigImport.ts（含溢出策略、加噪刻度、敏感度、日期時間型標記）
+					parseBackendDpColumnBudgets(columnBudgetsMap).forEach((parsedFieldItem, index) => {
+						extractedNewFieldsArray.push({ id: `import_budget_${index}_${Math.random().toString(36).substring(2, 9)}`, ...parsedFieldItem });
 					});
 
 					// ★ 核心修正：匯入 JSON 時，絕對不可以去覆蓋 datasetColumnsList，以免毀掉 Step 1 的預覽表格表頭！
@@ -444,10 +371,20 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					const dpRulesArrayFormatList = Array.isArray(rawDpRulesData) ? (rawDpRulesData as DpRuleItem[]) : [];
 					const dpRulesObjectFormatMap = rawDpRulesData && !Array.isArray(rawDpRulesData) ? (rawDpRulesData as Record<string, DpRuleItem>) : {};
 
-					Object.keys(parsedFieldAttributesMap).forEach(
+					// ★ 2026-10-01：本工具舊版匯出檔（final_privacy_config_*.json）在差分隱私模式下 field_attributes 為空物件，
+					//   欄位只列在 differential_privacy_rules 陣列裡；先前只走訪 field_attributes，一個欄位都讀不到，
+					//   畫面只剩初始化的預設值（類型未知、ε=1、無邊界），檔內的 ε／δ／邊界全部遺失。
+					//   改為兩者聯集，並讀取各欄的溢出策略／加噪刻度／步階（沒有時套用 privacy_targets 的全域溢出策略）。
+					const legacyGlobalOutOfBoundsStrategy = parsedJsonContentData.privacy_targets?.differential_privacy?.out_of_bounds_strategy as string | undefined;
+					const legacyFieldNamesList = Array.from(new Set([
+						...Object.keys(parsedFieldAttributesMap),
+						...dpRulesArrayFormatList.map((ruleItem) => ruleItem.fieldName || ruleItem.field_name || ruleItem.field).filter((fieldNameValue): fieldNameValue is string => Boolean(fieldNameValue)),
+						...Object.keys(dpRulesObjectFormatMap)
+					]));
+					legacyFieldNamesList.forEach(
 						(targetFieldNameString, fieldIndexNumber) => 
 						{
-							const currentAttributeItem = parsedFieldAttributesMap[targetFieldNameString]; 
+							const currentAttributeItem = parsedFieldAttributesMap[targetFieldNameString] as { type: string; role: string } | undefined; 
 							const currentMechanismItem = parsedMechanismMap[targetFieldNameString]; 
 							const currentRuleObjectItem = dpRulesObjectFormatMap[targetFieldNameString];
 
@@ -456,12 +393,16 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 							);
 
 							let mappedFieldTypeValue: DPField['fieldType'] = 'Unknown';
-							if (currentAttributeItem.type === 'numeric') mappedFieldTypeValue = 'Numeric';
-							else if (currentAttributeItem.type === 'categorical') mappedFieldTypeValue = 'Categorical';
-							else if (['string', 'temporal'].includes(currentAttributeItem.type)) mappedFieldTypeValue = currentAttributeItem.role === 'identifier' ? 'Text' : 'Categorical';
+							if (currentAttributeItem) {
+								if (currentAttributeItem.type === 'numeric') mappedFieldTypeValue = 'Numeric';
+								else if (currentAttributeItem.type === 'categorical') mappedFieldTypeValue = 'Categorical';
+								else if (['string', 'temporal'].includes(currentAttributeItem.type)) mappedFieldTypeValue = currentAttributeItem.role === 'identifier' ? 'Text' : 'Categorical';
+							} else {
+								mappedFieldTypeValue = currentRuleArrayItem?.fieldType || currentRuleArrayItem?.field_type || currentRuleObjectItem?.fieldType || 'Unknown';
+							}
 
 							const hasRuleSettingData = Boolean(currentMechanismItem || currentRuleObjectItem || currentRuleArrayItem);
-							let isFieldEnabledStatus = mappedFieldTypeValue !== 'Text' && currentAttributeItem.role !== 'identifier' && hasRuleSettingData;
+							let isFieldEnabledStatus = mappedFieldTypeValue !== 'Text' && currentAttributeItem?.role !== 'identifier' && hasRuleSettingData;
 							
 							const explicitEnabledConfig = currentRuleArrayItem?.enabled ?? currentRuleObjectItem?.enabled;
 							if (typeof explicitEnabledConfig === 'boolean') isFieldEnabledStatus = explicitEnabledConfig;
@@ -494,7 +435,14 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 								lowerBound: calculatedLowerBoundValue,
 								upperBound: calculatedUpperBoundValue,
 								allowedCategories: calculatedAllowedCategoriesValue,
-								maxLength: currentRuleArrayItem?.maxLength ?? currentRuleObjectItem?.maxLength
+								maxLength: currentRuleArrayItem?.maxLength ?? currentRuleObjectItem?.maxLength,
+								...(mappedFieldTypeValue === 'Numeric' ? {
+									minimumUnit: currentRuleArrayItem?.minimumUnit ?? currentRuleObjectItem?.minimumUnit,
+									noiseStep: currentRuleArrayItem?.noiseStep ?? currentRuleObjectItem?.noiseStep,
+									outOfBoundsStrategy: mapOutOfBoundsStrategyFromBackend(
+										currentRuleArrayItem?.outOfBoundsStrategy ?? currentRuleObjectItem?.outOfBoundsStrategy ?? currentMechanismItem?.out_of_bounds_strategy ?? legacyGlobalOutOfBoundsStrategy
+									)
+								} : {})
 							});
 						}
 					);
@@ -637,7 +585,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			recommendedIsEnabledStatus = true;
 			recommendedFieldTypeVal = 'Numeric';
 
-			if (isDateTimeDpField(fieldItemRecord.fieldName))
+			if (resolveIsDateTimeDpField(fieldItemRecord))
 			{
 				if (recommendedLowerBoundVal === undefined) recommendedLowerBoundVal = DEFAULT_DATETIME_LOWER_BOUND_DATE;
 				if (recommendedUpperBoundVal === undefined) recommendedUpperBoundVal = new Date().toISOString().slice(0, 10);
@@ -1018,7 +966,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				
 				if (rowRecordItem.fieldType === 'Numeric')
 				{
-					const isDateTimeFieldStatus = isDateTimeDpField(rowRecordItem.fieldName);
+					const isDateTimeFieldStatus = resolveIsDateTimeDpField(rowRecordItem);
 					const currentLowerBoundValue = rowRecordItem.lowerBound;
 					const currentUpperBoundValue = rowRecordItem.upperBound;
 

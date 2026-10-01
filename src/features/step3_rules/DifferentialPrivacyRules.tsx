@@ -20,7 +20,7 @@ import ReactECharts from 'echarts-for-react';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
-import { isDateTimeDpField, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
+import { resolveIsDateTimeDpField, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
 import { computeDefaultDpSensitivity } from '../../utils/pipelineConfig';
 
 const { Text } = Typography;
@@ -633,9 +633,9 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 								{activeFieldItemRecord.fieldType === 'Numeric' && (
 									<div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: 'calc(25% + 12px)' }}>
 										<Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>
-											{isDateTimeDpField(activeFieldItemRecord.fieldName) ? translate('step3_dp.noise_step_label', '加噪步階 (天)') : translate('step3_dp.minimum_unit_label', '加噪刻度 (Minimum Unit)')}
+											{resolveIsDateTimeDpField(activeFieldItemRecord) ? translate('step3_dp.noise_step_label', '加噪步階 (天)') : translate('step3_dp.minimum_unit_label', '加噪刻度 (Minimum Unit)')}
 										</Text>
-										{isDateTimeDpField(activeFieldItemRecord.fieldName) ? (
+										{resolveIsDateTimeDpField(activeFieldItemRecord) ? (
 											<InputNumber
 												size="small"
 												min={1}
@@ -680,7 +680,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 											</Tooltip>
 										</Text>
 										{(() => {
-											const isDateTimeSensitivityField = isDateTimeDpField(activeFieldItemRecord.fieldName);
+											const isDateTimeSensitivityField = resolveIsDateTimeDpField(activeFieldItemRecord);
 											const defaultSensitivityValue = computeDefaultDpSensitivity(activeFieldItemRecord, isDateTimeSensitivityField);
 											const sensitivityUnitText = isDateTimeSensitivityField ? translate('step3_dp.sensitivity_unit_day', ' 天') : '';
 											return (

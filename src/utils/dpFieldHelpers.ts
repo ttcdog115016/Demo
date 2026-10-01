@@ -24,6 +24,15 @@ export const isDateTimeDpField = (fieldNameStr: string, originalColumnTypeStr?: 
     return DATETIME_FIELD_NAME_PATTERN.test(fieldNameStr);
 };
 
+/**
+ * 依 DP 欄位設定判斷是否為日期時間型：匯入設定檔時已記錄 isDateTime（依 config_dp.json 的 type: "datetime"／
+ * "continuous"）就以此為準，否則才退回以欄位名稱／原始型態推斷。
+ * ★ 2026-10-01：先前一律依名稱推斷，名稱不含關鍵字的日期欄位（如「入院日」）匯入後會被當成連續數值匯出
+ *   （溢出策略寫成 out_of_bounds_strategy、邊界變成 NaN），名稱含「出生」的數值欄位（如「出生體重」）則相反。
+ */
+export const resolveIsDateTimeDpField = (field: { fieldName: string; isDateTime?: boolean }, originalColumnTypeStr?: string): boolean =>
+    typeof field.isDateTime === 'boolean' ? field.isDateTime : isDateTimeDpField(field.fieldName, originalColumnTypeStr);
+
 // config_dp.json 邊界溢出處理策略之後端命名，對應本工具 UI 顯示用之 clip／wrap／reflect。
 export type UiOutOfBoundsStrategy = 'clip' | 'wrap' | 'reflect';
 export type BackendOutOfBoundsStrategy = 'clamp' | 'wrap' | 'fold';
@@ -47,8 +56,11 @@ export const mapOutOfBoundsStrategyToBackend = (uiStrategyValue: string | undefi
  */
 export const mapOutOfBoundsStrategyFromBackend = (backendStrategyValue: string | undefined): UiOutOfBoundsStrategy =>
 {
-    if (backendStrategyValue === 'wrap') return 'wrap';
-    if (backendStrategyValue === 'fold') return 'reflect';
+    const normalizedStrategyValue = String(backendStrategyValue ?? '').trim().toLowerCase();
+    if (normalizedStrategyValue === 'wrap') return 'wrap';
+    // ★ 2026-10-01：同時接受本工具 UI 命名（reflect／clip），避免手寫或舊版設定檔的 reflect 被誤讀成截斷
+    if (normalizedStrategyValue === 'fold' || normalizedStrategyValue === 'reflect') return 'reflect';
+    // clamp／clip／未填寫：截斷（後端未填寫時的預設）
     return 'clip';
 };
 

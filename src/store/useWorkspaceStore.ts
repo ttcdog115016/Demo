@@ -70,6 +70,7 @@ export interface DPField
     minimumUnit?: number;                                 // 連續數值型加噪刻度 (對應 config_dp.json 之 minimum_unit)
     noiseStep?: number;                                   // 日期時間型加噪步階 (對應 config_dp.json 之 noise_step)
     sensitivity?: number;                                 // 數值／日期時間型敏感度 (對應 config_dp.json 之 sensitivity)；未設定時以邊界寬度計算
+    isDateTime?: boolean;                                 // 是否為日期時間型 (匯入 config_dp.json 時依 type 記錄)；未設定時依欄位名稱推斷，見 resolveIsDateTimeDpField
 }
 
 /**

@@ -4,7 +4,7 @@
  * 2026-09-30 自 Step4_Result.tsx 的 runFullPipeline 原封不動搬出（函式本體未改寫，
  * 只把元件內的 state 改成參數傳入），讓組裝結果可單獨測試。各段落的 ★ 註解保留原本的修正脈絡。
  */
-import { mapOutOfBoundsStrategyToBackend, isDateTimeDpField } from './dpFieldHelpers';
+import { mapOutOfBoundsStrategyToBackend, resolveIsDateTimeDpField } from './dpFieldHelpers';
 
 /** Step2／Step3 存在 useWorkspaceStore.dpFields 的單一欄位設定 */
 export interface DpStoreField {
@@ -21,6 +21,8 @@ export interface DpStoreField {
     mode?: 'epsilon' | 'epsilon-delta';
     /** 使用者指定（或自設定檔匯入）的敏感度；未指定時以邊界寬度計算，見 resolveDpSensitivity */
     sensitivity?: number | string;
+    /** 匯入設定檔時依 type 記錄的日期時間型標記；未設定時依欄位名稱推斷，見 resolveIsDateTimeDpField */
+    isDateTime?: boolean;
 }
 
 /** Step3 的 K-匿名參數（對應 useWorkspaceStore 同名欄位） */
@@ -349,7 +351,7 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
             //   在 Step2 會被判定為日期時間型（顯示日期選擇器、邊界存為 ISO 日期字串），但在這裡
             //   卻仍被判定為一般連續數值型，導致送給後端的 sensitivity／clipping_bounds 對日期字串
             //   做 Number() 運算而得到 NaN。改為與 Step2／Step3 共用同一個判斷函式，避免分歧。
-            const isDateTimeType = isDateTimeDpField(field.fieldName, originalColType);
+            const isDateTimeType = resolveIsDateTimeDpField(field, originalColType);
 
             let mappedBackendType = 'text';
             if (isNumeric) {

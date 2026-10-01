@@ -15,7 +15,7 @@
 
 import type { DPField } from '../store/useWorkspaceStore';
 import type { RiskSubgroupCondition } from '../store/useWorkspaceStore';
-import { isDateTimeDpField } from './dpFieldHelpers';
+import { resolveIsDateTimeDpField } from './dpFieldHelpers';
 
 /**
  * 函數名稱: resolveColumnKindForSubgroup
@@ -67,7 +67,7 @@ export const isColumnTemporalForSubgroup = (
 ): boolean => {
     if (privacyModeTypeStr === 'differential-privacy') {
         const matchedDpFieldRecord = dpFieldsListArray.find((dpFieldItem) => dpFieldItem.fieldName === columnNameString);
-        return matchedDpFieldRecord?.fieldType === 'Numeric' && isDateTimeDpField(columnNameString);
+        return matchedDpFieldRecord?.fieldType === 'Numeric' && resolveIsDateTimeDpField(matchedDpFieldRecord);
     }
     return (columnTypesMapDict[columnNameString] || '').toLowerCase() === 'temporal';
 };

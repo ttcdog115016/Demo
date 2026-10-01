@@ -9,7 +9,7 @@ import { isApiRequestCanceled } from '../api/apiService';
 import type { DatasetProfile } from './datasetProfile';
 import { getColumnUniqueValueRatio } from './datasetProfile';
 import { analyzeNumericColumnRange, computeBinnedColumnStats, computeAutoNiceBinWidth } from './sensitiveBinning';
-import { isDateTimeDpField } from './dpFieldHelpers';
+import { isDateTimeDpField, resolveIsDateTimeDpField } from './dpFieldHelpers';
 import { extractCapRequestFailureReasonText, buildCapUnavailableReceipt } from './riskResultHelpers';
 import type { DpStoreField } from './pipelineConfig';
 
@@ -245,7 +245,7 @@ export const buildDifferentialPrivacyRiskColumnsForCandidate = (
         const targetField = (input.dpFields || []).find((field) => field.fieldName === fieldName);
         const isNumeric = targetField?.fieldType === 'Numeric';
         const originalColType = String(input.columnTypes?.[fieldName] || '').toLowerCase();
-        const isDateTimeType = isDateTimeDpField(fieldName, originalColType);
+        const isDateTimeType = targetField ? resolveIsDateTimeDpField(targetField, originalColType) : isDateTimeDpField(fieldName, originalColType);
         if (isNumeric) return isDateTimeType ? 'temporal' : 'numeric';
         if (targetField?.fieldType === 'Categorical') return 'categorical';
         return 'string';
