@@ -20,6 +20,7 @@ import Step2_Mapping from '../step2_mapping/Step2_Mapping';
 import Step3_Rules from '../step3_rules/Step3_Rules';
 import Step4_Result from '../step4_result/Step4_Result';
 import { validateProgression } from './validateProgression'; 
+import { listDpFieldsWithBoundsFinerThanNoiseUnit, applyDpDatetimeNoiseUnit } from '../../utils/dpFieldHelpers';
 
 /**
  * ============================================================================
@@ -80,7 +81,76 @@ export default function MainLayout(): React.ReactElement
     //   若使用 message（頂部小提示條）預設僅顯示 3 秒且無法手動關閉，使用者常常來不及看完
     //   就自動消失。改用 notification（右下角通知卡片）：本身內建可手動關閉的 X 按鈕，
     //   並將顯示時間拉長，兩者一併解決「顯示時間太短」與「無法手動關閉」兩項回饋。
-    const { notification: globalNotificationApi } = AntdApp.useApp();
+    const { notification: globalNotificationApi, modal: globalModalApi } = AntdApp.useApp();
+
+    /**
+     * 函數名稱: confirmDpNoiseUnitBeforeLeavingRules
+     * 函數功能: DP 模式由 Step3 前往 Step4 時，若有日期欄位的上下限比雜訊單位細（例如邊界到秒、雜訊單位為天），
+     *           跳出小視窗提醒；使用者可改為建議單位後繼續、維持目前設定繼續，或返回修改。沒有這種欄位時直接繼續。
+     * ★ 2026-10-01：先前只在 Step3 欄位下方顯示黃色提示，使用者反映不夠明顯。
+     */
+    const confirmDpNoiseUnitBeforeLeavingRules = (proceedAction: () => void): void =>
+    {
+        const workspaceStateSnapshot = useWorkspaceStore.getState();
+        const mismatchedFieldsList = workspaceStateSnapshot.privacyMode === 'differential-privacy'
+            ? listDpFieldsWithBoundsFinerThanNoiseUnit(workspaceStateSnapshot.dpFields)
+            : [];
+        if (mismatchedFieldsList.length === 0)
+        {
+            proceedAction();
+            return;
+        }
+
+        const unitLabelMap: Record<string, string> = {
+            day: translate('step3_dp.noise_unit_day', '天'), hour: translate('step3_dp.noise_unit_hour', '時'),
+            minute: translate('step3_dp.noise_unit_minute', '分'), second: translate('step3_dp.noise_unit_second', '秒')
+        };
+        const applySuggestedUnitsAndProceed = (): void =>
+        {
+            useWorkspaceStore.setState((currentStoreState) => ({
+                dpFields: currentStoreState.dpFields.map((fieldItemRecord) => {
+                    const mismatchedItem = mismatchedFieldsList.find((item) => item.fieldId === fieldItemRecord.id);
+                    return mismatchedItem ? applyDpDatetimeNoiseUnit(fieldItemRecord, mismatchedItem.boundsUnit) : fieldItemRecord;
+                })
+            }));
+            proceedAction();
+        };
+
+        const noiseUnitConfirmDialog = globalModalApi.confirm({
+            title: translate('workspace.dp_noise_unit_confirm_title', '日期欄位的雜訊單位比上下限粗'),
+            width: 520,
+            closable: true,
+            content: (
+                <div data-testid="dp-noise-unit-confirm">
+                    <p style={{ marginBottom: 8 }}>
+                        {translate('workspace.dp_noise_unit_confirm_desc', '下列欄位在 Step2 設定的上下限比 Step3 選的雜訊單位細，敏感度與加噪會以雜訊單位計，邊界的時間部分會被四捨五入：')}
+                    </p>
+                    <ul style={{ paddingLeft: 20, margin: 0 }}>
+                        {mismatchedFieldsList.map((item) => (
+                            <li key={item.fieldId ?? item.fieldName}>
+                                {translate('workspace.dp_noise_unit_confirm_item', '「{{field}}」：上下限細到「{{boundsUnit}}」，雜訊單位為「{{noiseUnit}}」', {
+                                    field: item.fieldName, boundsUnit: unitLabelMap[item.boundsUnit], noiseUnit: unitLabelMap[item.noiseUnit]
+                                })}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            ),
+            footer: (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                    <Button onClick={() => noiseUnitConfirmDialog.destroy()}>
+                        {translate('workspace.dp_noise_unit_confirm_back', '返回修改')}
+                    </Button>
+                    <Button onClick={() => { noiseUnitConfirmDialog.destroy(); proceedAction(); }}>
+                        {translate('workspace.dp_noise_unit_confirm_keep', '維持目前設定繼續')}
+                    </Button>
+                    <Button type="primary" onClick={() => { noiseUnitConfirmDialog.destroy(); applySuggestedUnitsAndProceed(); }}>
+                        {translate('workspace.dp_noise_unit_confirm_apply', '改為與上下限相同的單位並繼續')}
+                    </Button>
+                </div>
+            )
+        });
+    };
 
     // 取得當前主題之 Token，並判定是否處於深色模式 (符合規範 g)
     const isDarkModeActiveStatus = theme.useToken().token.colorBgContainer !== '#ffffff';
@@ -123,9 +193,20 @@ export default function MainLayout(): React.ReactElement
         }
 
         // 若驗證通過或為「向後回退」，直接更新 Store 狀態並跳轉
-        useWorkspaceStore.setState({ currentStep: targetStepIndexValue });
+        const jumpToTargetStep = (): void =>
+        {
+            useWorkspaceStore.setState({ currentStep: targetStepIndexValue });
+            executeNavigationAction(`/workspace?step=${targetStepIndexValue + 1}`);
+        };
 
-        executeNavigationAction(`/workspace?step=${targetStepIndexValue + 1}`);
+        // DP：由 Step3 往後時檢查日期欄位雜訊單位（見 confirmDpNoiseUnitBeforeLeavingRules）
+        if (currentStepIndexValue === STEP_INDEX_RULES && targetStepIndexValue > currentStepIndexValue)
+        {
+            confirmDpNoiseUnitBeforeLeavingRules(jumpToTargetStep);
+            return;
+        }
+
+        jumpToTargetStep();
     };
 
     /**
@@ -154,11 +235,23 @@ export default function MainLayout(): React.ReactElement
             return;
         }
         
-        // 呼叫全域 Store 之內建 Action 更新 currentStep
-        executeNextStepAction();
+        const goToNextStep = (): void =>
+        {
+            // 呼叫全域 Store 之內建 Action 更新 currentStep
+            executeNextStepAction();
 
-        // 同步更新網址列
-        executeNavigationAction(`/workspace?step=${expectedNextTargetStepIndexValue + 1}`); 
+            // 同步更新網址列
+            executeNavigationAction(`/workspace?step=${expectedNextTargetStepIndexValue + 1}`);
+        };
+
+        // DP：由 Step3 前往 Step4 時檢查日期欄位雜訊單位（見 confirmDpNoiseUnitBeforeLeavingRules）
+        if (currentStepIndexValue === STEP_INDEX_RULES)
+        {
+            confirmDpNoiseUnitBeforeLeavingRules(goToNextStep);
+            return;
+        }
+
+        goToNextStep(); 
     };
 
     /**

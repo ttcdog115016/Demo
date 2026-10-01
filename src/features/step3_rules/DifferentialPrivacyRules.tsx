@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
 import {
-	resolveIsDateTimeDpField, resolveInputNumberStepByDecimals, resolveDpDatetimeNoiseUnit, convertDpSensitivityBetweenNoiseUnits, findDpBoundsFinerThanNoiseUnit,
+	resolveIsDateTimeDpField, resolveInputNumberStepByDecimals, resolveDpDatetimeNoiseUnit, applyDpDatetimeNoiseUnit, findDpBoundsFinerThanNoiseUnit,
 	DP_DATETIME_NOISE_UNITS, type DpDatetimeNoiseUnit
 } from '../../utils/dpFieldHelpers';
 import { computeDefaultDpSensitivity, computeDpConsumedBudgetsByField, sumDpConsumedBudgets } from '../../utils/pipelineConfig';
@@ -170,11 +170,8 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 
 	// 切換雜訊單位：一次寫入單位與換算後的敏感度（未指定敏感度時維持自動，由邊界寬度依新單位重算）
 	const changeFieldNoiseUnit = (targetField: DPField, nextNoiseUnit: DpDatetimeNoiseUnit): void => {
-		const previousNoiseUnit = resolveDpDatetimeNoiseUnit(targetField);
 		useWorkspaceStore.setState((currentStoreState) => ({
-			dpFields: currentStoreState.dpFields.map((fieldItemRecord) => fieldItemRecord.id === targetField.id
-				? { ...fieldItemRecord, noiseUnit: nextNoiseUnit, sensitivity: convertDpSensitivityBetweenNoiseUnits(fieldItemRecord.sensitivity, previousNoiseUnit, nextNoiseUnit) }
-				: fieldItemRecord)
+			dpFields: currentStoreState.dpFields.map((fieldItemRecord) => fieldItemRecord.id === targetField.id ? applyDpDatetimeNoiseUnit(fieldItemRecord, nextNoiseUnit) : fieldItemRecord)
 		}));
 	};
 

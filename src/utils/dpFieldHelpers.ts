@@ -168,3 +168,23 @@ export const findDpBoundsFinerThanNoiseUnit = (field: { lowerBound?: unknown; up
 /** 時間戳（以 UTC 解讀，見 parseDpDateTimeBoundTimestamp）轉回邊界字串：午夜只留日期，其餘到秒 */
 export const formatDpDateTimeBoundFromTimestamp = (timestamp: number): string =>
     compactDpDateTimeBoundText(new Date(timestamp).toISOString().slice(0, 19).replace('T', ' '));
+
+/** 換雜訊單位：一併把已指定的敏感度換算成新單位（代表的時間長度不變），Step3 選單與 Step3→Step4 提醒視窗共用 */
+export const applyDpDatetimeNoiseUnit = <FieldType extends { noiseUnit?: string; sensitivity?: number }>(field: FieldType, nextNoiseUnit: DpDatetimeNoiseUnit): FieldType => ({
+    ...field,
+    noiseUnit: nextNoiseUnit,
+    sensitivity: convertDpSensitivityBetweenNoiseUnits(field.sensitivity, resolveDpDatetimeNoiseUnit(field), nextNoiseUnit)
+});
+
+/**
+ * 已啟用的日期時間欄位中，上下限比雜訊單位細的欄位清單（Step3 按「下一步」時跳出提醒用）。
+ * 例如邊界 2026-12-31 23:59:59（細到秒）而雜訊單位為天：敏感度與加噪都以天計，邊界的時間部分被四捨五入。
+ */
+export const listDpFieldsWithBoundsFinerThanNoiseUnit = (
+    dpFields: { id?: string; fieldName: string; enabled?: boolean; fieldType?: string; isDateTime?: boolean; lowerBound?: unknown; upperBound?: unknown; noiseUnit?: string }[] | null | undefined
+): { fieldId?: string; fieldName: string; boundsUnit: DpDatetimeNoiseUnit; noiseUnit: DpDatetimeNoiseUnit }[] =>
+    (dpFields ?? []).flatMap((field) => {
+        if (!field.enabled || field.fieldType !== 'Numeric' || !resolveIsDateTimeDpField(field)) return [];
+        const boundsUnit = findDpBoundsFinerThanNoiseUnit(field);
+        return boundsUnit ? [{ fieldId: field.id, fieldName: field.fieldName, boundsUnit, noiseUnit: resolveDpDatetimeNoiseUnit(field) }] : [];
+    });
