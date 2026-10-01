@@ -22,6 +22,7 @@ import { useWorkspaceStore, type PreprocessingRule } from '../../store/useWorksp
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
+import { resolveImportedLtSettings } from '../../utils/kAnonymityConfigImport';
 import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, findNumericMinMax, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
 
@@ -846,8 +847,7 @@ export default function KAnonymityMapping(): React.ReactElement
                         privacyMode: 'k-anonymity',
                         kValue: importedKAnonymityBlock.k ?? BASE_DEFAULT_K_ANONYMITY_VALUE,
                         maxSuppression: importedKAnonymityBlock.suppression_limit_percent ?? BASE_DEFAULT_SUPPRESSION_LIMIT,
-                        ...(importedKAnonymityBlock.l !== undefined ? { lValue: importedKAnonymityBlock.l } : {}),
-                        ...(importedKAnonymityBlock.t !== undefined ? { tValue: importedKAnonymityBlock.t } : {}),
+                        ...resolveImportedLtSettings(importedKAnonymityBlock, Boolean(parsedJsonContentData.k_anonymity)),
                         ...(importedKAnonymityBlock.suppression_method ? { suppressionMethod: importedKAnonymityBlock.suppression_method } : {}),
                         ...(importedKAnonymityBlock.cell_fill ? { cellFillMethod: importedKAnonymityBlock.cell_fill } : {}),
                         ...(importedKAnonymityBlock.limit_exceeded_action ? { limitExceededAction: importedKAnonymityBlock.limit_exceeded_action } : {}),
