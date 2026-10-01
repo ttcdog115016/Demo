@@ -19,15 +19,19 @@
  *     isDistinctCountCapped（此時真正的相異值數只知道「至少這麼多」，使用端應保守視為很高）
  *   - topValues：出現次數最多的前 MAX_TOP_VALUES_PER_COLUMN 個值（供下拉選單）
  *   - numericCount：可轉為有限數字的筆數；所有數值另存於 numericValues（供邊界檢查、區間建議）
+ *   - dateTimeRanges：可解析為日期時間（YYYY-MM-DD[ HH:mm[:ss]]）的欄位之最早／最晚值，供 DP 日期邊界推薦
  *   - nonNumericDistinctValues：非數值的相異值（最多 MAX_NON_NUMERIC_DISTINCT_SAMPLE 個，供分級距統計）
  */
 import Papa from 'papaparse';
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
+import { parseDpDateTimeBoundTimestamp, formatDpDateTimeBoundFromTimestamp } from './dpFieldHelpers';
 
 export const MAX_TRACKED_DISTINCT_VALUES_PER_COLUMN = 200000;
 export const MAX_TOP_VALUES_PER_COLUMN = 1000;
 const MAX_NON_NUMERIC_DISTINCT_SAMPLE = 1000;
+// 看起來像日期（YYYY-MM-DD 開頭）才嘗試解析，避免每個文字儲存格都跑完整解析
+const DATE_TIME_CELL_PREFIX_PATTERN = /^\d{4}-\d{2}-\d{2}/;
 
 export interface DatasetColumnProfile {
     nonEmptyCount: number;
@@ -44,6 +48,8 @@ export interface DatasetProfile {
     columnNamesList: string[];
     columns: Record<string, DatasetColumnProfile>;
     numericValues: Record<string, number[]>;
+    /** 日期時間欄位的最早／最晚值（邊界字串格式，午夜只留日期）與可解析筆數；沒有任何可解析值的欄位不列入 */
+    dateTimeRanges?: Record<string, { min: string; max: string; count: number }>;
 }
 
 /** 以檔名＋大小＋修改時間辨識「同一份檔案」 */
@@ -68,6 +74,7 @@ const scanDatasetFile = (file: File): Promise<DatasetProfile> => new Promise((re
     const nonEmptyCountByColumn: Record<string, number> = {};
     const numericValuesByColumn: Record<string, number[]> = {};
     const nonNumericDistinctByColumn: Record<string, Set<string>> = {};
+    const dateTimeExtremaByColumn: Record<string, { minTimestamp: number; maxTimestamp: number; count: number }> = {};
     let rawToCleanNameMap: Record<string, string> | null = null;
     let columnNamesList: string[] = [];
     let rowCount = 0;
@@ -108,8 +115,25 @@ const scanDatasetFile = (file: File): Promise<DatasetProfile> => new Promise((re
                     }
 
                     const numericValue = Number(trimmedCellValue);
-                    if (Number.isFinite(numericValue)) numericValuesByColumn[columnName].push(numericValue);
-                    else if (nonNumericDistinctByColumn[columnName].size < MAX_NON_NUMERIC_DISTINCT_SAMPLE) nonNumericDistinctByColumn[columnName].add(trimmedCellValue);
+                    if (Number.isFinite(numericValue)) {
+                        numericValuesByColumn[columnName].push(numericValue);
+                        continue;
+                    }
+                    if (nonNumericDistinctByColumn[columnName].size < MAX_NON_NUMERIC_DISTINCT_SAMPLE) nonNumericDistinctByColumn[columnName].add(trimmedCellValue);
+                    // ★ 2026-10-01：日期欄位（如生日 1974-06-18）不是數值、不會進 numericValues，先前 DP「自動智慧推薦」
+                    //   因此拿不到實際範圍，日期邊界維持預設值、看起來沒有反應。另記最早／最晚值供推薦使用。
+                    if (DATE_TIME_CELL_PREFIX_PATTERN.test(trimmedCellValue)) {
+                        const cellTimestamp = parseDpDateTimeBoundTimestamp(trimmedCellValue);
+                        if (Number.isFinite(cellTimestamp)) {
+                            const extrema = dateTimeExtremaByColumn[columnName];
+                            if (!extrema) dateTimeExtremaByColumn[columnName] = { minTimestamp: cellTimestamp, maxTimestamp: cellTimestamp, count: 1 };
+                            else {
+                                if (cellTimestamp < extrema.minTimestamp) extrema.minTimestamp = cellTimestamp;
+                                if (cellTimestamp > extrema.maxTimestamp) extrema.maxTimestamp = cellTimestamp;
+                                extrema.count++;
+                            }
+                        }
+                    }
                 }
             }
         },
@@ -132,7 +156,15 @@ const scanDatasetFile = (file: File): Promise<DatasetProfile> => new Promise((re
                 // 與原本 datasetColumnNumericValuesMap 的規則一致：至少有 1 筆有效數值的欄位才放入
                 if (numericValuesByColumn[columnName].length > 0) numericValues[columnName] = numericValuesByColumn[columnName];
             });
-            resolve({ fileKey: buildDatasetFileKey(file), rowCount, columnNamesList, columns, numericValues });
+            const dateTimeRanges: Record<string, { min: string; max: string; count: number }> = {};
+            Object.entries(dateTimeExtremaByColumn).forEach(([columnName, extrema]) => {
+                dateTimeRanges[columnName] = {
+                    min: formatDpDateTimeBoundFromTimestamp(extrema.minTimestamp),
+                    max: formatDpDateTimeBoundFromTimestamp(extrema.maxTimestamp),
+                    count: extrema.count
+                };
+            });
+            resolve({ fileKey: buildDatasetFileKey(file), rowCount, columnNamesList, columns, numericValues, dateTimeRanges });
         },
         error: (parseError: Error) => reject(parseError)
     });

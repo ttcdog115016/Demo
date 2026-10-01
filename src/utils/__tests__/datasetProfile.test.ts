@@ -31,6 +31,16 @@ describe('datasetProfile 欄位統計快照', () => {
         expect(storeState.columnCategoricalUniqueValues['地區']).toEqual(['大安區', '板橋區']);
     });
 
+    it('日期欄位記錄最早／最晚值（午夜只留日期、帶時間者到秒），非日期欄位不列入', async () => {
+        const csvFile = buildCsvFile('生日,就診時間,地區\n1974-06-18,2026-01-01 08:30:15,大安區\n1938-11-26,2026-01-02,板橋區\n,2025-12-31 23:00,大安區\n2005-02-01,x,大安區\n');
+        useWorkspaceStore.setState({ dataFile: csvFile });
+        const profile = await ensureDatasetProfile(csvFile);
+        expect(profile.dateTimeRanges).toEqual({
+            生日: { min: '1938-11-26', max: '2005-02-01', count: 3 },
+            就診時間: { min: '2025-12-31 23:00:00', max: '2026-01-02', count: 3 }
+        });
+    });
+
     it('同一份檔案重複呼叫只掃描一次（回傳同一份結果）', async () => {
         const csvFile = buildCsvFile('a\n1\n2\n');
         useWorkspaceStore.setState({ dataFile: csvFile });

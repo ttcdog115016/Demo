@@ -164,3 +164,7 @@ export const findDpBoundsFinerThanNoiseUnit = (field: { lowerBound?: unknown; up
     const boundsFinestUnit = detectDpDateTimeBoundsFinestUnit([field.lowerBound, field.upperBound]);
     return DP_DATETIME_NOISE_UNITS.indexOf(boundsFinestUnit) > DP_DATETIME_NOISE_UNITS.indexOf(resolveDpDatetimeNoiseUnit(field)) ? boundsFinestUnit : null;
 };
+
+/** 時間戳（以 UTC 解讀，見 parseDpDateTimeBoundTimestamp）轉回邊界字串：午夜只留日期，其餘到秒 */
+export const formatDpDateTimeBoundFromTimestamp = (timestamp: number): string =>
+    compactDpDateTimeBoundText(new Date(timestamp).toISOString().slice(0, 19).replace('T', ' '));
