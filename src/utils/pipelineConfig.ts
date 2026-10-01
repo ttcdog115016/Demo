@@ -6,6 +6,7 @@
  */
 import { mapOutOfBoundsStrategyToBackend, resolveIsDateTimeDpField, resolveDpDatetimeNoiseUnit, DP_DATETIME_NOISE_UNIT_MILLISECONDS, parseDpDateTimeBoundTimestamp } from './dpFieldHelpers';
 import { TEMPORAL_GRANULARITY_UNITS } from './temporalGranularity';
+import { buildQiLevelValue } from './kAnonymityConfigImport';
 
 /** Step2／Step3 存在 useWorkspaceStore.dpFields 的單一欄位設定 */
 export interface DpStoreField {
@@ -83,7 +84,7 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
     } = input;
 
     const columnsMap: Record<string, { role: string; type: string; strategy?: string; mask_mode?: string; mask_char?: string; }> = {};
-    const qiGeneralizationLevelsMap: Record<string, number> = {};
+    const qiGeneralizationLevelsMap: Record<string, number | [number, number]> = {};
     // 後端要求每欄位的類別階層以 { mapping: { 原始值: [原始值, 上一層, ...] } } 包裝
     // （不是原始 row 陣列），格式依據 app/core/config.py 的 parse_categorical_mapping()
     const generalizationMatricesMap: Record<string, { mapping: Record<string, string[]> }> = {};
@@ -142,9 +143,15 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
                     // KAnonymityMapping.tsx 之 STRING_LENGTH_STRATEGY_FIXED_LEVEL），這裡
                     // 送給後端的層級數字比照辦理、強制固定為 1，不論欄位當下實際存的
                     // genMaxLevel 是多少，避免殘留切換策略前的舊層級數字被誤送出去。
-                    qiGeneralizationLevelsMap[cleanName] = (colType === 'string' && matchedField.genStrategy === 'length')
+                    const resolvedQiLevelValue = (colType === 'string' && matchedField.genStrategy === 'length')
                         ? 1
                         : (typeof matchedField.genMaxLevel === 'number' ? Math.floor(matchedField.genMaxLevel) : 0);
+                    // ★ 2026-10-01：類別型階層樹與時間粒度可設層級範圍 [最小, 最大]（後端實際輸出最小層級、評估兩端並回報），
+                    //   genMaxLevel 為最小層級、genLevelRangeUpper 為上限，見 utils/kAnonymityConfigImport.buildQiLevelValue。
+                    const isLevelRangeSupportedStatus = colType === 'categorical' || (colType === 'temporal' && matchedField.genStrategy === 'time_rounding');
+                    qiGeneralizationLevelsMap[cleanName] = isLevelRangeSupportedStatus
+                        ? buildQiLevelValue(resolvedQiLevelValue, matchedField.genLevelRangeUpper)
+                        : resolvedQiLevelValue;
                 }
 
                 // 讀取使用者於 Step2「泛化階層對照」分頁實際填寫的自訂區間，

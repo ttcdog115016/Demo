@@ -22,7 +22,7 @@ import { useWorkspaceStore, type PreprocessingRule } from '../../store/useWorksp
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
-import { resolveImportedLtSettings, normalizeImportedQiLevel } from '../../utils/kAnonymityConfigImport';
+import { resolveImportedLtSettings, normalizeImportedQiLevel, buildQiLevelValue } from '../../utils/kAnonymityConfigImport';
 import { TEMPORAL_GRANULARITY_UNITS, TEMPORAL_DEFAULT_GRANULARITY_LEVEL, temporalUnitOfLevel, resolveImportedTemporalLevel } from '../../utils/temporalGranularity';
 import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, findNumericMinMax, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
@@ -203,6 +203,7 @@ interface FieldDef
     genMaxLevel: number;
     genDirection?: 'front' | 'back'; // 字串「前後綴」泛化策略之保留方向 (僅 type==='string' 且 genStrategy==='prefix' 時適用)
     customBins?: CustomBin[];
+    genLevelRangeUpper?: number; // 層級範圍上限（類別型階層樹、時間粒度適用）；大於 genMaxLevel 時送出 [genMaxLevel, 上限]，genMaxLevel 為實際輸出層級
 
     [key: string]: unknown; 
 }
@@ -231,7 +232,7 @@ const buildExportJSON = (fieldsList: FieldDef[], hierarchiesList: HierarchyTable
     const generatedGeneralizationHierarchiesMap: Record<string, GenHierarchySpec> = {};
     const generatedTemporalHierarchiesMap: Record<string, GenHierarchySpec> = {};
     const generatedCategoricalHierarchiesMap: Record<string, { mapping: Record<string, string[]> }> = {};
-    const generatedQiLevelsMap: Record<string, number> = {};
+    const generatedQiLevelsMap: Record<string, number | [number, number]> = {};
 
     fieldsList.forEach((fieldItemRecord) => {
         if (!fieldItemRecord.name) return;
@@ -266,7 +267,7 @@ const buildExportJSON = (fieldsList: FieldDef[], hierarchiesList: HierarchyTable
             //   數值型間接識別碼的切法已由 bins／rounding 寫死，不吃層級，故 qi_generalization_levels
             //   不應包含數值型欄位，否則此處匯出的 JSON 會與實際送給後端的設定檔內容兜不起來。
             if (fieldItemRecord.type !== 'numeric') {
-                generatedQiLevelsMap[fieldItemRecord.name] = fieldItemRecord.genMaxLevel;
+                generatedQiLevelsMap[fieldItemRecord.name] = buildQiLevelValue(fieldItemRecord.genMaxLevel, fieldItemRecord.genLevelRangeUpper);
             }
 
             // ★ 字串型「保留前後綴」策略依 genDirection 輸出 keep_prefix／keep_suffix，與 masking_rules 之策略命名慣例保持一致
@@ -862,13 +863,16 @@ export default function KAnonymityMapping(): React.ReactElement
                 //   （例如「職業」為 [1, 3]，代表允許搜尋層級 1～3、上限為 3），但先前把這個欄位直接當成
                 //   Record<string, number> 使用，遇到陣列值時，畫面上的「最大層級」InputNumber／Segmented
                 //   收到的 value 會是整個陣列而非數字，導致顯示不出正確的最大層級（甚至顯示空白/錯亂）。
-                // ★ 2026-10-01 更正：依後端 2_操作說明.md 4-1 節，[最小, 最大] 的實際輸出是「最小層級」，改為取最小值
-                //   作為固定層級（本工具不支援層級範圍，見 utils/kAnonymityConfigImport.normalizeImportedQiLevel）。
+                // ★ 2026-10-01 更正：依後端 2_操作說明.md 4-1 節，[最小, 最大] 的實際輸出是「最小層級」，
+                //   上限只用於評估並回報。改為最小層級寫入 genMaxLevel（實際輸出），上限另存 genLevelRangeUpper，
+                //   送出時組回陣列（見 utils/kAnonymityConfigImport.normalizeImportedQiLevel）。
                 const rawImportedQiGeneralizationLevelsMap: Record<string, number | number[]> = importedKAnonymityBlock?.qi_generalization_levels || parsedJsonContentData.qi_generalization_levels || {};
                 const importedQiGeneralizationLevelsMap: Record<string, number> = {};
+                const importedQiLevelRangeUpperMap: Record<string, number> = {};
                 Object.keys(rawImportedQiGeneralizationLevelsMap).forEach((columnNameKeyStr) => {
-                    const normalizedLevelValue = normalizeImportedQiLevel(rawImportedQiGeneralizationLevelsMap[columnNameKeyStr]);
+                    const { level: normalizedLevelValue, rangeUpper: normalizedRangeUpperValue } = normalizeImportedQiLevel(rawImportedQiGeneralizationLevelsMap[columnNameKeyStr]);
                     if (normalizedLevelValue !== undefined) importedQiGeneralizationLevelsMap[columnNameKeyStr] = normalizedLevelValue;
+                    if (normalizedRangeUpperValue !== undefined) importedQiLevelRangeUpperMap[columnNameKeyStr] = normalizedRangeUpperValue;
                 });
                 // ★ 修正: 類別型（自訂階層樹）欄位是否已匯入真正的階層對照表，需要在下方欄位迴圈中
                 //   判斷「最大層級」保底值，因此提前到迴圈之前宣告（原本宣告在迴圈結束之後，欄位
@@ -994,6 +998,8 @@ export default function KAnonymityMapping(): React.ReactElement
                     let calculatedGeneralizationParamValue = DEFAULT_GENERALIZATION_PARAM;
                     let calculatedMaxGeneralizationLevelValue = importedQiGeneralizationLevelsMap[columnNameString] ?? DEFAULT_MAX_GENERALIZATION_LEVEL;
                     let calculatedGenDirectionValue: 'front' | 'back' = 'front';
+                    // 層級範圍上限：類別型沿用設定檔數字，時間粒度於下方依 levels 換算，其他型態不支援範圍
+                    let calculatedLevelRangeUpperValue: number | undefined = mappedFieldTypeValue === 'categorical' ? importedQiLevelRangeUpperMap[columnNameString] : undefined;
 
                     if (currentGeneralizationConfig) {
                         // ★ 匯入判斷：泛化策略名稱正規化，相容匯出格式 (keep_prefix／keep_suffix) 與舊版/淘汰策略名稱 (masking／binning／segment)
@@ -1052,6 +1058,9 @@ export default function KAnonymityMapping(): React.ReactElement
                             //   例如 config_kanon.json 的 levels=[day, month, year]、層級 3 是「年」；先前直接沿用數字 3，
                             //   在前端的單位清單裡變成「時」。
                             calculatedMaxGeneralizationLevelValue = resolveImportedTemporalLevel(importedTemporalHierarchyConfig.levels, importedQiGeneralizationLevelsMap[columnNameString]) ?? TEMPORAL_DEFAULT_GRANULARITY_LEVEL;
+                            // 層級範圍上限同樣依設定檔的 levels 換算
+                            const convertedTemporalRangeUpperValue = resolveImportedTemporalLevel(importedTemporalHierarchyConfig.levels, importedQiLevelRangeUpperMap[columnNameString]);
+                            if (convertedTemporalRangeUpperValue !== null) calculatedLevelRangeUpperValue = convertedTemporalRangeUpperValue;
                         }
                     } else if (mappedFieldTypeValue === 'categorical') {
                         // ★ 修正 (第三版，依使用者提供之真實交付包 config_kanon.json 核對): 使用者回報匯入
@@ -1105,7 +1114,9 @@ export default function KAnonymityMapping(): React.ReactElement
                         genParam: calculatedGeneralizationParamValue,
                         genMaxLevel: calculatedMaxGeneralizationLevelValue,
                         genDirection: calculatedGenDirectionValue,
-                        ...(calculatedCustomBinsValue ? { customBins: calculatedCustomBinsValue } : {})
+                        ...(calculatedCustomBinsValue ? { customBins: calculatedCustomBinsValue } : {}),
+                        ...(calculatedLevelRangeUpperValue !== undefined && calculatedLevelRangeUpperValue > calculatedMaxGeneralizationLevelValue
+                            ? { genLevelRangeUpper: calculatedLevelRangeUpperValue } : {})
                     });
                 });
 
@@ -1779,15 +1790,39 @@ export default function KAnonymityMapping(): React.ReactElement
                         const targetHierarchyTableRecord = kAnonymityHierarchiesList.find((hierarchyItemRecord) => hierarchyItemRecord.fieldName === rowRecordItem.name);
                         const maxLevelCalculatedValue = targetHierarchyTableRecord ? Math.max(...targetHierarchyTableRecord.mappings.map(mappingRowArray => mappingRowArray.length), 2) - 1 : 3;
 
+                        // ★ 2026-10-01：可另設層級範圍上限（qi_generalization_levels 的 [最小, 最大]）。後端實際輸出最小層級
+                        //   （即左側數字），上限只用於評估兩端的落單比例並寫入報告；留空即為固定層級。
+                        const isCategoricalLevelRangeActiveStatus = typeof rowRecordItem.genLevelRangeUpper === 'number' && rowRecordItem.genLevelRangeUpper > rowRecordItem.genMaxLevel;
                         return (
-                            <InputNumber
-                                size="small"
-                                min={0}
-                                max={maxLevelCalculatedValue}
-                                value={rowRecordItem.genMaxLevel}
-                                onChange={(inputNumberValue) => handleFieldChange(rowRecordItem.id, 'genMaxLevel', inputNumberValue ?? 1)}
-                                style={{ width: '100%' }}
-                            />
+                            <div>
+                                <Space.Compact size="small" style={{ width: 'calc(100% - 18px)' }}>
+                                    <InputNumber
+                                        size="small"
+                                        min={0}
+                                        max={maxLevelCalculatedValue}
+                                        value={rowRecordItem.genMaxLevel}
+                                        onChange={(inputNumberValue) => handleFieldChange(rowRecordItem.id, 'genMaxLevel', inputNumberValue ?? 1)}
+                                        style={{ width: '50%' }}
+                                    />
+                                    <InputNumber
+                                        size="small"
+                                        min={0}
+                                        max={maxLevelCalculatedValue}
+                                        placeholder={translate('step2.level_range_upper_ph', '評估至')}
+                                        value={isCategoricalLevelRangeActiveStatus ? rowRecordItem.genLevelRangeUpper : null}
+                                        onChange={(inputNumberValue) => handleFieldChange(rowRecordItem.id, 'genLevelRangeUpper', inputNumberValue ?? 0)}
+                                        style={{ width: '50%' }}
+                                    />
+                                </Space.Compact>
+                                <Tooltip title={translate('step2.level_range_tooltip', '選填。設定後送出 [目前層級, 評估層級]（後端《操作說明》4-1 節的層級範圍）：資料仍以目前層級輸出，後端另外試算提高到評估層級時的落單比例，寫在品質報告的調整建議裡，方便判斷要不要再提高層級。不設即為固定層級。')}>
+                                    <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} />
+                                </Tooltip>
+                                {isCategoricalLevelRangeActiveStatus && (
+                                    <div style={{ fontSize: 11, color: token.colorTextDescription, marginTop: 2 }}>
+                                        {translate('step2.level_range_hint', { min: rowRecordItem.genMaxLevel, max: rowRecordItem.genLevelRangeUpper, defaultValue: `輸出層級 ${rowRecordItem.genMaxLevel}；報告另附層級 ${rowRecordItem.genLevelRangeUpper} 的落單比例` })}
+                                    </div>
+                                )}
+                            </div>
                         );
                     } else if (rowRecordItem.type === 'string') {
                         // ★ 修正 (依實際後端原始碼核對): 「保留前後綴」策略的實際保留字數是由這個
@@ -1855,7 +1890,35 @@ export default function KAnonymityMapping(): React.ReactElement
                         return <span style={{ color: token.colorTextDescription }}>-</span>;
                     }
 
-                    return <div style={{ padding: '0 2px' }}><Segmented size="small" options={segmentedLevelOptionList} value={rowRecordItem.genMaxLevel} onChange={(selectedSegmentedLevelValue) => handleFieldChange(rowRecordItem.id, 'genMaxLevel', selectedSegmentedLevelValue as number)} block /></div>;
+                    // ★ 2026-10-01：時間粒度同樣可設層級範圍上限（qi_generalization_levels 的 [最小, 最大]），實際輸出為上方所選單位
+                    const isTemporalLevelRangeSupportedStatus = rowRecordItem.type === 'temporal' && rowRecordItem.genStrategy === 'time_rounding';
+                    const temporalRangeUpperOptionList = segmentedLevelOptionList.filter((levelOptionItem) => levelOptionItem.value > rowRecordItem.genMaxLevel);
+                    const isTemporalLevelRangeActiveStatus = isTemporalLevelRangeSupportedStatus
+                        && typeof rowRecordItem.genLevelRangeUpper === 'number' && rowRecordItem.genLevelRangeUpper > rowRecordItem.genMaxLevel;
+                    return (
+                        <div style={{ padding: '0 2px' }}>
+                            <Segmented size="small" options={segmentedLevelOptionList} value={rowRecordItem.genMaxLevel} onChange={(selectedSegmentedLevelValue) => handleFieldChange(rowRecordItem.id, 'genMaxLevel', selectedSegmentedLevelValue as number)} block />
+                            {isTemporalLevelRangeSupportedStatus && temporalRangeUpperOptionList.length > 0 && (
+                                <Space size={6} align="center" style={{ marginTop: 4 }}>
+                                    <span style={{ fontSize: 11, color: token.colorTextDescription, whiteSpace: 'nowrap' }}>
+                                        {translate('step2.level_range_upper_label', '評估至')}
+                                        <Tooltip title={translate('step2.level_range_tooltip', '選填。設定後送出 [目前層級, 評估層級]（後端《操作說明》4-1 節的層級範圍）：資料仍以目前層級輸出，後端另外試算提高到評估層級時的落單比例，寫在品質報告的調整建議裡，方便判斷要不要再提高層級。不設即為固定層級。')}>
+                                            <QuestionCircleOutlined style={{ marginLeft: 4, cursor: 'help' }} />
+                                        </Tooltip>
+                                    </span>
+                                    <Select
+                                        size="small"
+                                        allowClear
+                                        placeholder={translate('step2.level_range_none', '不設範圍')}
+                                        value={isTemporalLevelRangeActiveStatus ? rowRecordItem.genLevelRangeUpper : undefined}
+                                        onChange={(selectedUpperLevelValue) => handleFieldChange(rowRecordItem.id, 'genLevelRangeUpper', selectedUpperLevelValue ?? 0)}
+                                        options={temporalRangeUpperOptionList}
+                                        style={{ width: 96 }}
+                                    />
+                                </Space>
+                            )}
+                        </div>
+                    );
                 }
 
                 return <span style={{ color: token.colorTextDescription }}>-</span>;
