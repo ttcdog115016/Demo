@@ -6,6 +6,7 @@
  */
 import { mapOutOfBoundsStrategyToBackend, resolveIsDateTimeDpField } from './dpFieldHelpers';
 import { TEMPORAL_GRANULARITY_UNITS } from './temporalGranularity';
+import { buildQiLevelValue } from './kAnonymityConfigImport';
 
 /** Step2／Step3 存在 useWorkspaceStore.dpFields 的單一欄位設定 */
 export interface DpStoreField {
@@ -19,7 +20,8 @@ export interface DpStoreField {
     outOfBoundsStrategy?: 'clip' | 'wrap' | 'reflect';
     minimumUnit?: number;
     noiseStep?: number;
-    mode?: 'epsilon' | 'epsilon-delta';
+    /** epsilon＝純 ε（送 delta_budget 0）；epsilon-delta＝送該欄 δ；default-delta＝不送 delta_budget、由 default_delta 補足 */
+    mode?: 'epsilon' | 'epsilon-delta' | 'default-delta';
     /** 使用者指定（或自設定檔匯入）的敏感度；未指定時以邊界寬度計算，見 resolveDpSensitivity */
     sensitivity?: number | string;
     /** 匯入設定檔時依 type 記錄的日期時間型標記；未設定時依欄位名稱推斷，見 resolveIsDateTimeDpField */
@@ -80,7 +82,7 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
     } = input;
 
     const columnsMap: Record<string, { role: string; type: string; strategy?: string; mask_mode?: string; mask_char?: string; }> = {};
-    const qiGeneralizationLevelsMap: Record<string, number> = {};
+    const qiGeneralizationLevelsMap: Record<string, number | [number, number]> = {};
     // 後端要求每欄位的類別階層以 { mapping: { 原始值: [原始值, 上一層, ...] } } 包裝
     // （不是原始 row 陣列），格式依據 app/core/config.py 的 parse_categorical_mapping()
     const generalizationMatricesMap: Record<string, { mapping: Record<string, string[]> }> = {};
@@ -139,9 +141,15 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
                     // KAnonymityMapping.tsx 之 STRING_LENGTH_STRATEGY_FIXED_LEVEL），這裡
                     // 送給後端的層級數字比照辦理、強制固定為 1，不論欄位當下實際存的
                     // genMaxLevel 是多少，避免殘留切換策略前的舊層級數字被誤送出去。
-                    qiGeneralizationLevelsMap[cleanName] = (colType === 'string' && matchedField.genStrategy === 'length')
+                    const resolvedQiLevelValue = (colType === 'string' && matchedField.genStrategy === 'length')
                         ? 1
                         : (typeof matchedField.genMaxLevel === 'number' ? Math.floor(matchedField.genMaxLevel) : 0);
+                    // ★ 2026-10-01：類別型階層樹與時間粒度可設層級範圍 [最小, 最大]（後端實際輸出最小層級、評估兩端並回報），
+                    //   genMaxLevel 為最小層級、genLevelRangeUpper 為上限，見 utils/kAnonymityConfigImport.buildQiLevelValue。
+                    const isLevelRangeSupportedStatus = colType === 'categorical' || (colType === 'temporal' && matchedField.genStrategy === 'time_rounding');
+                    qiGeneralizationLevelsMap[cleanName] = isLevelRangeSupportedStatus
+                        ? buildQiLevelValue(resolvedQiLevelValue, matchedField.genLevelRangeUpper)
+                        : resolvedQiLevelValue;
                 }
 
                 // 讀取使用者於 Step2「泛化階層對照」分頁實際填寫的自訂區間，
@@ -375,7 +383,11 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
                 //   非零 delta_budget，後端依 delta>0 判斷機制時會誤用 Gaussian，與使用者於
                 //   Step3 的選擇不符。改為：只有明確選擇「(ε,δ)-DP」模式時才送出實際 delta
                 //   值，其餘一律強制送 0，確保送出的機制與使用者畫面上的選擇一致。
-                baseBudgetConfig.delta_budget = field.mode === 'epsilon-delta' ? Number(field.delta || 0.0) : 0;
+                // ★ 2026-10-01：新增「沿用全域 δ」模式——不送 delta_budget，依後端 2_操作說明.md 4-2 節由 default_delta 補足
+                //   （後端範例 config_dp.json 的就醫次數即是如此）；匯入設定檔時沒有 delta_budget 的欄位即為此模式。
+                if (field.mode !== 'default-delta') {
+                    baseBudgetConfig.delta_budget = field.mode === 'epsilon-delta' ? Number(field.delta || 0.0) : 0;
+                }
                 const hasValidBoundsStatus = field.upperBound !== undefined && field.lowerBound !== undefined && field.upperBound !== '' && field.lowerBound !== '';
 
                 // ★ 使用者反映：Step2 設定的邊界(下限/上限)與每欄個別溢出處理策略，先前完全沒有送給
@@ -450,13 +462,20 @@ export const buildDifferentialPrivacyApiOptions = (input: Pick<DifferentialPriva
  * 每個欄位實際送給後端的 ε／δ（直接取自 buildDifferentialPrivacyConfig 組出的 column_budgets，與送出內容保證一致）。
  * 只有已啟用欄位會出現；類別型與 ε-DP 模式欄位的 δ 為 0（不送或送 0），未填 ε 時與送出內容相同退回 1.0。
  */
-export const computeDpConsumedBudgetsByField = (dpFields: DpStoreField[] | null | undefined): Record<string, { epsilon: number; delta: number }> => {
+export const computeDpConsumedBudgetsByField = (
+    dpFields: DpStoreField[] | null | undefined, targetDelta?: number | null
+): Record<string, { epsilon: number; delta: number }> => {
     const differentialPrivacyBlock = buildDifferentialPrivacyConfig({
-        dpFields, columnTypes: {}, accumulatedEpsilon: 0, accumulatedDelta: 0, targetDelta: 0
-    }).differential_privacy as { column_budgets: Record<string, { epsilon_budget?: number; delta_budget?: number }> };
+        dpFields, columnTypes: {}, accumulatedEpsilon: 0, accumulatedDelta: 0, targetDelta
+    }).differential_privacy as { default_delta: number; column_budgets: Record<string, { type?: string; epsilon_budget?: number; delta_budget?: number }> };
     const consumedBudgetsByField: Record<string, { epsilon: number; delta: number }> = {};
     Object.entries(differentialPrivacyBlock.column_budgets).forEach(([fieldName, budgetItem]) => {
-        consumedBudgetsByField[fieldName] = { epsilon: Number(budgetItem.epsilon_budget ?? 0), delta: Number(budgetItem.delta_budget ?? 0) };
+        // 連續數值／日期欄位沒有 delta_budget 時由 default_delta 補足（後端 4-2 節）；類別型不使用 δ
+        const isDefaultDeltaFilledStatus = budgetItem.delta_budget === undefined && (budgetItem.type === 'continuous' || budgetItem.type === 'datetime');
+        consumedBudgetsByField[fieldName] = {
+            epsilon: Number(budgetItem.epsilon_budget ?? 0),
+            delta: isDefaultDeltaFilledStatus ? Number(differentialPrivacyBlock.default_delta) : Number(budgetItem.delta_budget ?? 0)
+        };
     });
     return consumedBudgetsByField;
 };
@@ -466,15 +485,15 @@ export const computeDpConsumedBudgetsByField = (dpFields: DpStoreField[] | null 
  * ★ 2026-10-01：δ 先前把所有已啟用欄位的 δ 都加進去（含類別型、ε-DP 模式欄位畫面上保留的預設 δ），
  *   但那些欄位實際送出的 δ 是 0；例如只有薪資一欄用 (ε,δ)-DP 時，送出 δ 合計 1e-5，這裡卻算成 3.1e-4。
  */
-export const sumDpConsumedBudgets = (dpFields: DpStoreField[] | null | undefined): { totalEpsilon: number; totalDelta: number } =>
-    Object.values(computeDpConsumedBudgetsByField(dpFields)).reduce(
+export const sumDpConsumedBudgets = (dpFields: DpStoreField[] | null | undefined, targetDelta?: number | null): { totalEpsilon: number; totalDelta: number } =>
+    Object.values(computeDpConsumedBudgetsByField(dpFields, targetDelta)).reduce(
         (accumulator, budgetItem) => ({ totalEpsilon: accumulator.totalEpsilon + budgetItem.epsilon, totalDelta: accumulator.totalDelta + budgetItem.delta }),
         { totalEpsilon: 0, totalDelta: 0 }
     );
 
 /** 後端未回報告時的預設消耗值（與實際送出的 column_budgets 一致）；沒有任何 ε 時退回 1.0 */
-export const computeDpTotalBudgets = (dpFields: DpStoreField[] | null | undefined): { totalEpsilonBudget: number; totalDeltaBudget: number } => {
-    const { totalEpsilon, totalDelta } = sumDpConsumedBudgets(dpFields);
+export const computeDpTotalBudgets = (dpFields: DpStoreField[] | null | undefined, targetDelta?: number | null): { totalEpsilonBudget: number; totalDeltaBudget: number } => {
+    const { totalEpsilon, totalDelta } = sumDpConsumedBudgets(dpFields, targetDelta);
     return { totalEpsilonBudget: totalEpsilon || 1.0, totalDeltaBudget: totalDelta || 0 };
 };
 

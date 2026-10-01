@@ -78,7 +78,10 @@ export const parseBackendDpColumnBudgets = (
         fieldName: columnName,
         fieldType: mappedFieldTypeValue,
         enabled: mappedFieldTypeValue !== 'Text',
-        mode: (resolvedDeltaValue && resolvedDeltaValue > 0) ? 'epsilon-delta' : 'epsilon',
+        // 沒有 delta_budget 的連續數值／日期欄位：沿用全域 δ（不送 delta_budget，由 default_delta 補足）；0＝純 ε
+        mode: (resolvedDeltaValue && resolvedDeltaValue > 0)
+            ? 'epsilon-delta'
+            : (resolvedDeltaValue === undefined && mappedFieldTypeValue === 'Numeric' ? 'default-delta' : 'epsilon'),
         epsilon: resolvedEpsilonValue ?? DP_IMPORT_DEFAULT_EPSILON_BUDGET,
         delta: resolvedDeltaValue ?? DP_IMPORT_DEFAULT_DELTA_BUDGET,
         lowerBound: calcLowerBound,

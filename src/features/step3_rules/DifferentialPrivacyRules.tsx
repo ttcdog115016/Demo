@@ -263,8 +263,8 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 	//   改為直接取實際送給後端的 column_budgets（utils/pipelineConfig.computeDpConsumedBudgetsByField），
 	//   ε、δ 各自逐欄相加，與 Step4、後端一致。
 	const consumedBudgetsByFieldName = useMemo(
-		() => computeDpConsumedBudgetsByField(activeDpFieldsList),
-		[activeDpFieldsList]
+		() => computeDpConsumedBudgetsByField(activeDpFieldsList, globalTargetDeltaValue),
+		[activeDpFieldsList, globalTargetDeltaValue]
 	);
 
 	const equivalentConvertedFieldsList = useMemo(
@@ -281,10 +281,10 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 	// 參與下方預算上限判斷，保留完整精度，捨入交給顯示層處理
 	const { totalEquivalentEpsilonSumValue, totalConsumedDeltaSumValue } = useMemo(
 		() => {
-			const { totalEpsilon, totalDelta } = sumDpConsumedBudgets(activeDpFieldsList);
+			const { totalEpsilon, totalDelta } = sumDpConsumedBudgets(activeDpFieldsList, globalTargetDeltaValue);
 			return { totalEquivalentEpsilonSumValue: totalEpsilon, totalConsumedDeltaSumValue: totalDelta };
 		},
-		[activeDpFieldsList]
+		[activeDpFieldsList, globalTargetDeltaValue]
 	);
 
 	// 移除 M 次邏輯，單次耗損即為總耗損
@@ -356,7 +356,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 			key: 'original', 
 			render: (_: unknown, convertedRecordItem: ConvertedField) => (
 				<div style={{ fontSize: 12, color: token.colorTextSecondary }}>
-					ε: {(convertedRecordItem.epsilon ?? DEFAULT_EPSILON_BUDGET).toFixed(2)} {convertedRecordItem.mode === 'epsilon-delta' && ` | δ: ${formatFloatValueAsScientificNotation(convertedRecordItem.delta ?? DEFAULT_DELTA_BUDGET, FIELD_DELTA_INPUT_MIN_BOUND, FIELD_DELTA_INPUT_MAX_BOUND)}`}
+					ε: {(convertedRecordItem.epsilon ?? DEFAULT_EPSILON_BUDGET).toFixed(2)} {convertedRecordItem.mode === 'default-delta' && convertedRecordItem.fieldType === 'Numeric' && ` | δ: ${translate('step3_dp.delta_from_global', '全域')}`}{convertedRecordItem.mode === 'epsilon-delta' && ` | δ: ${formatFloatValueAsScientificNotation(convertedRecordItem.delta ?? DEFAULT_DELTA_BUDGET, FIELD_DELTA_INPUT_MIN_BOUND, FIELD_DELTA_INPUT_MAX_BOUND)}`}
 				</div>
 			)
 		},
@@ -560,8 +560,13 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 											size="middle" 
 											value={activeFieldItemRecord.mode || 'epsilon'} 
 											onChange={(dropdownSelectedModeString) => updateFieldDP(activeFieldItemRecord.id, 'mode', dropdownSelectedModeString)}
-											options={[{ value: 'epsilon', label: 'ε-DP' }, { value: 'epsilon-delta', label: '(ε, δ)-DP' }]}
-											style={{ width: '110px' }}
+											options={[
+												{ value: 'epsilon', label: 'ε-DP' },
+												{ value: 'epsilon-delta', label: '(ε, δ)-DP' },
+												// ★ 2026-10-01：不送 delta_budget，由 default_delta（上方全域目標 δ）補足；匯入設定檔時未指定 δ 的欄位即為此模式
+												...(activeFieldItemRecord.fieldType === 'Numeric' ? [{ value: 'default-delta', label: translate('step3_dp.mode_default_delta', '沿用全域 δ') }] : [])
+											]}
+											style={{ width: '130px' }}
 										/>
 
 										<div style={{ flex: 1, display: 'flex', gap: '24px', alignItems: 'center' }}>

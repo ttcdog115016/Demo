@@ -61,7 +61,7 @@ export interface DPField
     fieldType?: 'Numeric' | 'Categorical' | 'Text' | 'Unknown'; // 欄位資料型態
     epsilon?: number;                                     // 個人化 Epsilon 隱私預算 (ε)
     delta?: number;                                       // 個人化 Delta 鬆弛參數 (δ)
-    mode?: 'epsilon' | 'epsilon-delta';                   // 差分隱私運作模式
+    mode?: 'epsilon' | 'epsilon-delta' | 'default-delta'; // 差分隱私運作模式；default-delta＝不送 delta_budget、由 default_delta（全域目標 δ）補足
     lowerBound?: number | string;                         // 連續數值型裁剪下限；日期時間型則為 ISO 日期字串 (如 "1930-01-01")
     upperBound?: number | string;                         // 連續數值型裁剪上限；日期時間型則為 ISO 日期字串
     allowedCategories?: string;                           // 類別型允許之類別清單 (以逗號分隔)

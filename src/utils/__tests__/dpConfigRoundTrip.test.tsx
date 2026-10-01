@@ -58,11 +58,10 @@ describe('差分隱私設定檔：讀取與匯出的邊界溢出策略', () => {
         expect(strategiesOf(importedFields)).toEqual({ 年齡: 'clip', 薪資: 'reflect', 就醫次數: 'wrap', 生日: 'clip' });
         expect(importedFields.find((field) => field.fieldName === '生日')).toMatchObject({ isDateTime: true, noiseStep: 7, sensitivity: 365 });
 
-        const exportedConfig = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState());
-        const expectedConfig = structuredClone(backendSample);
-        // 範例省略「就醫次數」的 delta_budget（未填即純 ε），前端明確送 0，意義相同
-        expectedConfig.differential_privacy.column_budgets.就醫次數.delta_budget = 0;
-        expect(exportedConfig).toEqual(expectedConfig);
+        // 就醫次數沒有 delta_budget → 沿用全域 δ（不送 delta_budget，由 default_delta 補足）
+        expect(importedFields.find((field) => field.fieldName === '就醫次數')).toMatchObject({ mode: 'default-delta' });
+        // 與後端範例逐字一致
+        expect(buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState())).toEqual(backendSample);
     });
 
     it('匯出的檔案再匯入後再匯出，內容完全相同', async () => {

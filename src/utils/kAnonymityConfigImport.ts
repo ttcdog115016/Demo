@@ -21,3 +21,24 @@ export const resolveImportedLtSettings = (
         ...(isBackendFormat ? { enableLDiversity: isValidNumber(importedLValue), enableTCloseness: isValidNumber(importedTValue) } : {})
     };
 };
+
+/**
+ * qi_generalization_levels 單一欄位的值：單一整數為固定層級；[最小, 最大] 為層級範圍（後端 2_操作說明.md 4-1 節：
+ * 系統評估兩端的落單比例並於報告回報，實際輸出為最小層級那份）。
+ * ★ 2026-10-01：先前匯入時取陣列最後一個值（上限），config_kanon.json 的職業 [1, 3] 被當成固定層級 3（全體），
+ *   後端實際輸出的卻是層級 1（職類）。改為：level＝最小層級（＝實際輸出，前端各處依此預覽與判斷），
+ *   rangeUpper＝最大層級（僅在大於 level 時存在），送出時再組回 [最小, 最大]。
+ */
+export const normalizeImportedQiLevel = (rawLevelValue: unknown): { level?: number; rangeUpper?: number } => {
+    if (typeof rawLevelValue === 'number' && Number.isFinite(rawLevelValue)) return { level: rawLevelValue };
+    if (!Array.isArray(rawLevelValue)) return {};
+    const numericLevels = rawLevelValue.filter((levelItem): levelItem is number => typeof levelItem === 'number' && Number.isFinite(levelItem));
+    if (numericLevels.length === 0) return {};
+    const minLevel = Math.min(...numericLevels);
+    const maxLevel = Math.max(...numericLevels);
+    return maxLevel > minLevel ? { level: minLevel, rangeUpper: maxLevel } : { level: minLevel };
+};
+
+/** 組出送給後端的 qi_generalization_levels 值：有大於最小層級的上限時為 [最小, 最大]，否則為單一整數 */
+export const buildQiLevelValue = (level: number, rangeUpper: unknown): number | [number, number] =>
+    typeof rangeUpper === 'number' && Number.isFinite(rangeUpper) && Math.floor(rangeUpper) > level ? [level, Math.floor(rangeUpper)] : level;

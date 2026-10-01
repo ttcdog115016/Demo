@@ -60,7 +60,7 @@ export const runDeidentificationPhase = async (input: {
 
     if (input.privacyMode === 'differential-privacy') {
         // 逐欄 ε／δ 在 config 的 column_budgets；表單參數只放跨批次累計基準（上次執行後留存之累計值）
-        const { totalEpsilonBudget, totalDeltaBudget } = computeDpTotalBudgets(input.dpConfigInput.dpFields);
+        const { totalEpsilonBudget, totalDeltaBudget } = computeDpTotalBudgets(input.dpConfigInput.dpFields, input.dpConfigInput.targetDelta);
         const dpApiOptions = buildDifferentialPrivacyApiOptions(input.dpConfigInput);
 
         const response = await runDifferentialPrivacy(input.safeDataFile, input.configFile, dpApiOptions, input.requestOptions);
