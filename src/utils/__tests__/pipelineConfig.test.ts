@@ -13,7 +13,8 @@ const baseSettings: KAnonymityPipelineSettings = {
 const kanonFields = [
     { name: '姓名', role: 'Identifier', type: 'string', maskStrategy: 'hash' },
     { name: '身分證號', role: 'Identifier', type: 'string', maskStrategy: 'hash' },
-    { name: '生日', role: 'Quasi-identifier', type: 'temporal', genStrategy: 'time_rounding', genMaxLevel: 3 },
+    // 生日泛化到「年」：前端層級 5（分/時/日/月/年）；config_kanon.json 以 levels=[day, month, year]、層級 3 表示同一件事
+    { name: '生日', role: 'Quasi-identifier', type: 'temporal', genStrategy: 'time_rounding', genMaxLevel: 5 },
     { name: '年齡', role: 'Quasi-identifier', type: 'numeric', genStrategy: 'custom_bins', genMaxLevel: 2,
       customBins: [{ min: null, max: 18, label: '未成年' }, { min: 18, max: 40, label: '青年' }, { min: 40, max: 65, label: '中年' }, { min: 65, max: null, label: '銀髮族' }] },
     { name: '薪資', role: 'Quasi-identifier', type: 'numeric', genStrategy: 'rounding', genParam: 50000 },
@@ -52,7 +53,7 @@ describe('K-匿名 config.json 組裝', () => {
                     婚姻狀況: { role: 'non_sensitive', type: 'categorical' }
                 },
                 generalization_hierarchies: {
-                    生日: { levels: ['second', 'minute', 'hour', 'day', 'month', 'year'] },
+                    生日: { levels: ['minute', 'hour', 'day', 'month', 'year'] },
                     年齡: { bins: [{ min: null, max: 18, label: '未成年' }, { min: 18, max: 40, label: '青年' }, { min: 40, max: 65, label: '中年' }, { min: 65, max: null, label: '銀髮族' }] },
                     薪資: { rounding: 50000 },
                     就醫次數: { rounding: 10 }
@@ -61,7 +62,7 @@ describe('K-匿名 config.json 組裝', () => {
                     地區: { mapping: { 大安區: ['大安區', '臺北市', '北部', '全國'], 板橋區: ['板橋區', '新北市', '北部', '全國'] } }
                 },
                 // 數值型間接識別欄位不寫層級
-                qi_generalization_levels: { 生日: 3, 地區: 2 }
+                qi_generalization_levels: { 生日: 5, 地區: 2 }
             }
         });
     });

@@ -23,6 +23,7 @@ import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
 import { resolveImportedLtSettings } from '../../utils/kAnonymityConfigImport';
+import { TEMPORAL_GRANULARITY_UNITS, TEMPORAL_DEFAULT_GRANULARITY_LEVEL, temporalUnitOfLevel, resolveImportedTemporalLevel } from '../../utils/temporalGranularity';
 import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, findNumericMinMax, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
 
@@ -106,10 +107,8 @@ const DEFAULT_GEN_STRATEGY_BY_TYPE: Record<string, string> = {
     categorical: 'tree',
 };
 
-// 時間型間接識別欄位「時間粒度」策略之泛化層級：合併原「日期粒度」（日/月/年）與「時間粒度」
-// （原為捨入分鐘數，現改為秒/分/時），對齊後端 TEMPORAL_LEVEL_ORDER 之細到粗排列。
-// 層級 1~6 依序對應 秒/分/時/日/月/年；層級 0 為原始值（不泛化）。
-const TEMPORAL_DEFAULT_GRANULARITY_LEVEL = 5; // 月（與合併前「日期粒度」慣用預設一致）
+// 時間型間接識別欄位「時間粒度」策略之泛化層級：層級 1~5 依序對應 分/時/日/月/年（2026-10-01 移除「秒」），
+// 預設為「月」。匯入時依設定檔自己的 levels 清單換算，見 utils/temporalGranularity.ts。
 
 /**
  * 函數名稱: resolveDefaultGenStrategyForType
@@ -310,7 +309,7 @@ const buildExportJSON = (fieldsList: FieldDef[], hierarchiesList: HierarchyTable
                 //   temporal_hierarchies（Step3 即時預覽用，維持既有欄位相容）。
                 let temporalHierarchySpecValue: GenHierarchySpec | undefined;
                 if (fieldItemRecord.genStrategy === 'time_rounding') {
-                    temporalHierarchySpecValue = { levels: ['second', 'minute', 'hour', 'day', 'month', 'year'] };
+                    temporalHierarchySpecValue = { levels: [...TEMPORAL_GRANULARITY_UNITS] };
                 } else if (fieldItemRecord.genStrategy === 'time_range' && fieldItemRecord.customBins) {
                     temporalHierarchySpecValue = {
                         levels: ['hour'],
@@ -759,14 +758,10 @@ export default function KAnonymityMapping(): React.ReactElement
                 }
             } else if (fieldItemConfigRecord.type === 'temporal') {
                 if (fieldItemConfigRecord.genStrategy === 'time_rounding') {
-                    // 六級時間粒度（秒/分/時/日/月/年），對齊後端 TEMPORAL_LEVEL_ORDER 細到粗排列；
-                    // 假設欄位格式為 "YYYY-MM-DD HH:MM:SS"（或其可辨識前綴），僅作即時預覽用途。
-                    if (fieldItemConfigRecord.genMaxLevel === 1) return parsedStringValue.substring(0, 19);
-                    if (fieldItemConfigRecord.genMaxLevel === 2) return parsedStringValue.substring(0, 16);
-                    if (fieldItemConfigRecord.genMaxLevel === 3) return parsedStringValue.substring(0, 13);
-                    if (fieldItemConfigRecord.genMaxLevel === 4) return parsedStringValue.substring(0, 10);
-                    if (fieldItemConfigRecord.genMaxLevel === 5) return parsedStringValue.substring(0, 7);
-                    if (fieldItemConfigRecord.genMaxLevel >= 6) return parsedStringValue.substring(0, 4);
+                    // 時間粒度（分/時/日/月/年）；假設欄位格式為 "YYYY-MM-DD HH:MM:SS"（或其可辨識前綴），僅作即時預覽用途。
+                    const previewPrefixLengthByUnit: Record<string, number> = { minute: 16, hour: 13, day: 10, month: 7, year: 4 };
+                    const previewUnitName = temporalUnitOfLevel(fieldItemConfigRecord.genMaxLevel);
+                    if (previewUnitName) return parsedStringValue.substring(0, previewPrefixLengthByUnit[previewUnitName]);
                 } else if (fieldItemConfigRecord.genStrategy === 'time_range' && fieldItemConfigRecord.customBins) {
                     const timeOfDayMatchResultArray = parsedStringValue.match(/(\d{1,2}):(\d{2})/);
                     if (timeOfDayMatchResultArray) {
@@ -1055,7 +1050,10 @@ export default function KAnonymityMapping(): React.ReactElement
                             calculatedMaxGeneralizationLevelValue = 1;
                         } else if (Array.isArray(importedTemporalHierarchyConfig?.levels) && importedTemporalHierarchyConfig.levels.length > 0) {
                             calculatedGeneralizationStrategyValue = 'time_rounding';
-                            calculatedMaxGeneralizationLevelValue = importedQiGeneralizationLevelsMap[columnNameString] ?? TEMPORAL_DEFAULT_GRANULARITY_LEVEL;
+                            // ★ 2026-10-01：層級要依「設定檔自己的 levels 清單」換算成時間單位，再對應回前端層級。
+                            //   例如 config_kanon.json 的 levels=[day, month, year]、層級 3 是「年」；先前直接沿用數字 3，
+                            //   在前端的單位清單裡變成「時」。
+                            calculatedMaxGeneralizationLevelValue = resolveImportedTemporalLevel(importedTemporalHierarchyConfig.levels, importedQiGeneralizationLevelsMap[columnNameString]) ?? TEMPORAL_DEFAULT_GRANULARITY_LEVEL;
                         }
                     } else if (mappedFieldTypeValue === 'categorical') {
                         // ★ 修正 (第三版，依使用者提供之真實交付包 config_kanon.json 核對): 使用者回報匯入
@@ -1760,16 +1758,15 @@ export default function KAnonymityMapping(): React.ReactElement
                     let segmentedLevelOptionList: { label: string; value: number }[] = [];
 
                     if (rowRecordItem.type === 'temporal') {
-                        // ★ 修正: 使用者反映時間粒度不需要提供「精確」(0，完全不泛化) 與「秒」(1) 這兩個
-                        //   選項，最細只到「分」即可，故從可選清單中移除，底層數值仍沿用原本 2～6
-                        //   (分/時/日/月/年)，與後端 TEMPORAL_LEVEL_ORDER 的層級編號保持一致。
+                        // ★ 時間粒度不提供「精確」(不泛化) 與「秒」，最細到「分」。2026-10-01 起「秒」自送給後端的
+                        //   levels 清單中移除，層級改為 1～5 依序對應 分/時/日/月/年（見 utils/temporalGranularity.ts）。
                         segmentedLevelOptionList = rowRecordItem.genStrategy === 'time_rounding'
                             ? [
-                                { label: translate('step2.lvl_minute', '分'), value: 2 },
-                                { label: translate('step2.lvl_hour', '時'), value: 3 },
-                                { label: translate('step2.lvl_day'), value: 4 },
-                                { label: translate('step2.lvl_month'), value: 5 },
-                                { label: translate('step2.lvl_year'), value: 6 },
+                                { label: translate('step2.lvl_minute', '分'), value: 1 },
+                                { label: translate('step2.lvl_hour', '時'), value: 2 },
+                                { label: translate('step2.lvl_day'), value: 3 },
+                                { label: translate('step2.lvl_month'), value: 4 },
+                                { label: translate('step2.lvl_year'), value: 5 },
                             ]
                             : [{ label: translate('step2.lvl_original'), value: 0 }, { label: translate('step2.lvl_enable'), value: 1 }];
                     } else if (rowRecordItem.type === 'categorical') {

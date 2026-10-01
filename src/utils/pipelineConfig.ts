@@ -5,6 +5,7 @@
  * 只把元件內的 state 改成參數傳入），讓組裝結果可單獨測試。各段落的 ★ 註解保留原本的修正脈絡。
  */
 import { mapOutOfBoundsStrategyToBackend, resolveIsDateTimeDpField } from './dpFieldHelpers';
+import { TEMPORAL_GRANULARITY_UNITS } from './temporalGranularity';
 
 /** Step2／Step3 存在 useWorkspaceStore.dpFields 的單一欄位設定 */
 export interface DpStoreField {
@@ -185,11 +186,11 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
                 // DatetimeGeneralizer 收不到 levels 就直接判定「未泛化」（no_levels），
                 // 使用者於 Step2 的設定形同虛設。比照上面數值自訂區間的修法補上實際串接。
                 if (colType === 'temporal' && matchedField.genStrategy === 'time_rounding') {
-                    // 時間粒度：一律宣告完整六級（秒/分/時/日/月/年，細到粗），
-                    // 由 qi_generalization_levels 既有的層級數字（1~6）挑選要泛化到哪一級，
-                    // 與 KAnonymityMapping.tsx 之 Segmented 六級選項一一對應。
+                    // 時間粒度：宣告前端可選的時間單位（分/時/日/月/年，細到粗），qi_generalization_levels 的
+                    // 層級數字 N 即泛化到第 N 個單位（後端語意），與 KAnonymityMapping.tsx 之 Segmented 選項一一對應。
+                    // ★ 2026-10-01：移除 second（層級改為 1～5），見 utils/temporalGranularity.ts。
                     generalizationHierarchiesMap[cleanName] = {
-                        levels: ['second', 'minute', 'hour', 'day', 'month', 'year']
+                        levels: [...TEMPORAL_GRANULARITY_UNITS]
                     };
                 } else if (colType === 'temporal' && matchedField.genStrategy === 'time_range') {
                     // 時間區間：customBins 為使用者以 TimePicker 選取、已轉為「當日第幾分鐘」
