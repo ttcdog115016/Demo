@@ -3,10 +3,11 @@
  * 2026-10-01 自 DifferentialPrivacyMapping.tsx 的「匯入配置」抽出，並補上：
  *   - isDateTime：依 type（datetime／continuous）記錄，匯出時不再依欄位名稱猜測
  *   - sensitivity：保留設定檔指定的敏感度
+ *   - noiseUnit：讀入日期欄位的 noise_unit（day／hour／minute／second），先前未讀、再匯出時一律變回 day
  * 與 utils/pipelineConfig.ts 的匯出邏輯互為反向，往返測試見 __tests__/backendConfigFormat.test.ts。
  */
 import type { DPField } from '../store/useWorkspaceStore';
-import { mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE } from './dpFieldHelpers';
+import { mapOutOfBoundsStrategyFromBackend, normalizeDpDatetimeNoiseUnit, DEFAULT_DATETIME_LOWER_BOUND_DATE } from './dpFieldHelpers';
 
 /** 與 DifferentialPrivacyMapping.tsx 相同的預設值 */
 export const DP_IMPORT_DEFAULT_EPSILON_BUDGET = 1.0;
@@ -18,7 +19,7 @@ export interface BackendDpColumnBudget {
     epsilon?: number; delta?: number; epsilon_budget?: number; delta_budget?: number;
     sensitivity?: number; allowed_categories?: string;
     clipping_bounds?: [number, number]; minimum_unit?: number; out_of_bounds_strategy?: string;
-    time_clipping_bounds?: [string, string]; time_out_of_bounds_strategy?: string; noise_step?: number;
+    time_clipping_bounds?: [string, string]; time_out_of_bounds_strategy?: string; noise_step?: number; noise_unit?: string;
 }
 
 /**
@@ -45,6 +46,7 @@ export const parseBackendDpColumnBudgets = (
     let calcUpperBound: number | string | undefined = undefined;
     let calcMinimumUnit: number | undefined = undefined;
     let calcNoiseStep: number | undefined = undefined;
+    let calcNoiseUnit: DPField['noiseUnit'] = undefined;
     let calcOutOfBoundsStrategy: DPField['outOfBoundsStrategy'] = undefined;
 
     if (mappedFieldTypeValue === 'Numeric' && isImportedDateTimeType) {
@@ -57,6 +59,8 @@ export const parseBackendDpColumnBudgets = (
             calcUpperBound = todayIsoDate;
         }
         calcNoiseStep = budgetItem.noise_step;
+        // 後端不支援的單位（例如 month）退回 day
+        calcNoiseUnit = normalizeDpDatetimeNoiseUnit(budgetItem.noise_unit) ?? 'day';
         calcOutOfBoundsStrategy = mapOutOfBoundsStrategyFromBackend(budgetItem.time_out_of_bounds_strategy);
     } else if (mappedFieldTypeValue === 'Numeric') {
         // 邊界優先直接讀 clipping_bounds，避免誤用 sensitivity 推算出與設定檔不符的邊界
@@ -89,6 +93,7 @@ export const parseBackendDpColumnBudgets = (
         allowedCategories: mappedFieldTypeValue === 'Categorical' ? 'auto_extracted' : '',
         minimumUnit: calcMinimumUnit,
         noiseStep: calcNoiseStep,
+        noiseUnit: calcNoiseUnit,
         outOfBoundsStrategy: calcOutOfBoundsStrategy,
         isDateTime: mappedFieldTypeValue === 'Numeric' ? isImportedDateTimeType : undefined,
         sensitivity: mappedFieldTypeValue === 'Numeric' && typeof budgetItem.sensitivity === 'number' && budgetItem.sensitivity > 0 ? budgetItem.sensitivity : undefined

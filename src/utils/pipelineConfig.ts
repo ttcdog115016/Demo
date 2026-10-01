@@ -4,7 +4,7 @@
  * 2026-09-30 自 Step4_Result.tsx 的 runFullPipeline 原封不動搬出（函式本體未改寫，
  * 只把元件內的 state 改成參數傳入），讓組裝結果可單獨測試。各段落的 ★ 註解保留原本的修正脈絡。
  */
-import { mapOutOfBoundsStrategyToBackend, resolveIsDateTimeDpField } from './dpFieldHelpers';
+import { mapOutOfBoundsStrategyToBackend, resolveIsDateTimeDpField, resolveDpDatetimeNoiseUnit, DP_DATETIME_NOISE_UNIT_MILLISECONDS } from './dpFieldHelpers';
 import { TEMPORAL_GRANULARITY_UNITS } from './temporalGranularity';
 
 /** Step2／Step3 存在 useWorkspaceStore.dpFields 的單一欄位設定 */
@@ -19,6 +19,8 @@ export interface DpStoreField {
     outOfBoundsStrategy?: 'clip' | 'wrap' | 'reflect';
     minimumUnit?: number;
     noiseStep?: number;
+    /** 日期時間型雜訊單位（day／hour／minute／second）；未設定時為 day。noise_step 與 sensitivity 皆以此為單位 */
+    noiseUnit?: string;
     /** epsilon＝純 ε（送 delta_budget 0）；epsilon-delta＝送該欄 δ；default-delta＝不送 delta_budget、由 default_delta 補足 */
     mode?: 'epsilon' | 'epsilon-delta' | 'default-delta';
     /** 使用者指定（或自設定檔匯入）的敏感度；未指定時以邊界寬度計算，見 resolveDpSensitivity */
@@ -394,12 +396,13 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
                         const lowerDateTimestamp = Date.parse(String(field.lowerBound));
                         const upperDateTimestamp = Date.parse(String(field.upperBound));
                         if (!Number.isNaN(lowerDateTimestamp) && !Number.isNaN(upperDateTimestamp)) {
-                            baseBudgetConfig.sensitivity = Math.round((upperDateTimestamp - lowerDateTimestamp) / 86400000);
+                            baseBudgetConfig.sensitivity = Math.round((upperDateTimestamp - lowerDateTimestamp) / DP_DATETIME_NOISE_UNIT_MILLISECONDS[resolveDpDatetimeNoiseUnit(field)]);
                             baseBudgetConfig.time_clipping_bounds = [String(field.lowerBound), String(field.upperBound)];
                         }
                     }
                     applyExplicitDpSensitivity(baseBudgetConfig, field.sensitivity);
-                    baseBudgetConfig.noise_unit = 'day';
+                    // ★ 2026-10-01：先前固定送 day；改送使用者選的單位（後端支援 day／hour／minute／second），敏感度已依同一單位換算
+                    baseBudgetConfig.noise_unit = resolveDpDatetimeNoiseUnit(field);
                     if (field.noiseStep !== undefined) baseBudgetConfig.noise_step = Number(field.noiseStep);
                     baseBudgetConfig.time_out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(field.outOfBoundsStrategy);
                 } else if (mappedBackendType === 'continuous') {
@@ -498,25 +501,25 @@ export const parseExplicitDpSensitivity = (sensitivityValue: number | string | n
 };
 
 /**
- * 預設敏感度＝邊界寬度：數值型為「上限 − 下限」，日期時間型為兩日期相差天數。邊界不完整或無效時回傳 null。
+ * 預設敏感度＝邊界寬度：數值型為「上限 − 下限」，日期時間型為兩日期相差的時間、以欄位的雜訊單位（預設天）計。邊界不完整或無效時回傳 null。
  * 這是最保守的設定（任一筆值在邊界內任意變動都被涵蓋）；後端範例 config_dp.json 的敏感度另行指定、通常小於邊界寬度。
  */
 export const computeDefaultDpSensitivity = (
-    field: Pick<DpStoreField, 'lowerBound' | 'upperBound'>, isDateTimeField: boolean
+    field: Pick<DpStoreField, 'lowerBound' | 'upperBound' | 'noiseUnit'>, isDateTimeField: boolean
 ): number | null => {
     if (field.upperBound === undefined || field.lowerBound === undefined || field.upperBound === '' || field.lowerBound === '') return null;
     if (isDateTimeField) {
         const lowerDateTimestamp = Date.parse(String(field.lowerBound));
         const upperDateTimestamp = Date.parse(String(field.upperBound));
         if (Number.isNaN(lowerDateTimestamp) || Number.isNaN(upperDateTimestamp)) return null;
-        return Math.round((upperDateTimestamp - lowerDateTimestamp) / 86400000);
+        return Math.round((upperDateTimestamp - lowerDateTimestamp) / DP_DATETIME_NOISE_UNIT_MILLISECONDS[resolveDpDatetimeNoiseUnit(field)]);
     }
     const boundWidthValue = Number(field.upperBound) - Number(field.lowerBound);
     return Number.isFinite(boundWidthValue) ? boundWidthValue : null;
 };
 
 /** 實際送出的敏感度：使用者有指定就用指定值，否則用邊界寬度 */
-export const resolveDpSensitivity = (field: Pick<DpStoreField, 'lowerBound' | 'upperBound' | 'sensitivity'>, isDateTimeField: boolean): number | null =>
+export const resolveDpSensitivity = (field: Pick<DpStoreField, 'lowerBound' | 'upperBound' | 'sensitivity' | 'noiseUnit'>, isDateTimeField: boolean): number | null =>
     parseExplicitDpSensitivity(field.sensitivity) ?? computeDefaultDpSensitivity(field, isDateTimeField);
 
 // ★ 2026-10-01：後端範例 config_dp.json 的 sensitivity 與 clipping_bounds 分開指定（例如年齡邊界 0～120、

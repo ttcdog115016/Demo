@@ -68,7 +68,8 @@ export interface DPField
     maxLength?: number;                                   // 文字型最大長度限制
     outOfBoundsStrategy?: 'clip' | 'wrap' | 'reflect';    // 個別欄位邊界溢出處理策略 (數值/日期時間型適用，對應 config_dp.json 之 out_of_bounds_strategy／time_out_of_bounds_strategy)
     minimumUnit?: number;                                 // 連續數值型加噪刻度 (對應 config_dp.json 之 minimum_unit)
-    noiseStep?: number;                                   // 日期時間型加噪步階 (對應 config_dp.json 之 noise_step)
+    noiseStep?: number;                                   // 日期時間型加噪步階 (對應 config_dp.json 之 noise_step)，單位為 noiseUnit
+    noiseUnit?: 'day' | 'hour' | 'minute' | 'second';     // 日期時間型雜訊單位 (對應 config_dp.json 之 noise_unit)；未設定時為 day，敏感度單位跟著它
     sensitivity?: number;                                 // 數值／日期時間型敏感度 (對應 config_dp.json 之 sensitivity)；未設定時以邊界寬度計算
     isDateTime?: boolean;                                 // 是否為日期時間型 (匯入 config_dp.json 時依 type 記錄)；未設定時依欄位名稱推斷，見 resolveIsDateTimeDpField
 }

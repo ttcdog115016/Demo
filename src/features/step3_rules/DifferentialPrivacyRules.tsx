@@ -20,7 +20,10 @@ import ReactECharts from 'echarts-for-react';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
-import { resolveIsDateTimeDpField, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
+import {
+	resolveIsDateTimeDpField, resolveInputNumberStepByDecimals, resolveDpDatetimeNoiseUnit, convertDpSensitivityBetweenNoiseUnits,
+	DP_DATETIME_NOISE_UNITS, type DpDatetimeNoiseUnit
+} from '../../utils/dpFieldHelpers';
 import { computeDefaultDpSensitivity, computeDpConsumedBudgetsByField, sumDpConsumedBudgets } from '../../utils/pipelineConfig';
 
 const { Text } = Typography;
@@ -162,6 +165,18 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 	const globalTargetDeltaValue = useWorkspaceStore((state) => state.targetDelta);
 	const globalBudgetLimitEpsilonValue = useWorkspaceStore((state) => state.budgetLimitEpsilon);
 	const setStepValidationAction = useWorkspaceStore((state) => state.setStepValidation);
+
+	const translateNoiseUnit = (noiseUnitValue: DpDatetimeNoiseUnit): string => translate(`step3_dp.noise_unit_${noiseUnitValue}`, { day: '天', hour: '時', minute: '分', second: '秒' }[noiseUnitValue]);
+
+	// 切換雜訊單位：一次寫入單位與換算後的敏感度（未指定敏感度時維持自動，由邊界寬度依新單位重算）
+	const changeFieldNoiseUnit = (targetField: DPField, nextNoiseUnit: DpDatetimeNoiseUnit): void => {
+		const previousNoiseUnit = resolveDpDatetimeNoiseUnit(targetField);
+		useWorkspaceStore.setState((currentStoreState) => ({
+			dpFields: currentStoreState.dpFields.map((fieldItemRecord) => fieldItemRecord.id === targetField.id
+				? { ...fieldItemRecord, noiseUnit: nextNoiseUnit, sensitivity: convertDpSensitivityBetweenNoiseUnits(fieldItemRecord.sensitivity, previousNoiseUnit, nextNoiseUnit) }
+				: fieldItemRecord)
+		}));
+	};
 
 	const updateFieldDP = <AttributeKey extends keyof DPField>(targetFieldIdStr: string, targetAttributeKeyName: AttributeKey, newAttributeValueData: DPField[AttributeKey]): void => 
 	{
@@ -626,16 +641,31 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 								{activeFieldItemRecord.fieldType === 'Numeric' && (
 									<div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: 'calc(25% + 12px)' }}>
 										<Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>
-											{resolveIsDateTimeDpField(activeFieldItemRecord) ? translate('step3_dp.noise_step_label', '加噪步階 (天)') : translate('step3_dp.minimum_unit_label', '加噪刻度 (Minimum Unit)')}
+											{resolveIsDateTimeDpField(activeFieldItemRecord) ? translate('step3_dp.noise_unit_label', '雜訊單位') : translate('step3_dp.minimum_unit_label', '加噪刻度 (Minimum Unit)')}
 										</Text>
 										{resolveIsDateTimeDpField(activeFieldItemRecord) ? (
-											<InputNumber
-												size="small"
-												min={1}
-												value={activeFieldItemRecord.noiseStep}
-												onChange={(inputNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'noiseStep', inputNumberValue === null ? undefined : inputNumberValue)}
-												style={{ width: '110px' }}
-											/>
+											<>
+												{/* ★ 2026-10-01：雜訊單位可選天／時／分／秒（對應 config_dp.json 之 noise_unit，先前固定為天）。
+												    切換時把已指定的敏感度換算成新單位，讓它代表的時間長度不變；加噪步階維持「幾個單位一格」。 */}
+												<Select
+													size="small"
+													data-testid="dp-noise-unit-select"
+													value={resolveDpDatetimeNoiseUnit(activeFieldItemRecord)}
+													onChange={(selectedNoiseUnit: DpDatetimeNoiseUnit) => changeFieldNoiseUnit(activeFieldItemRecord, selectedNoiseUnit)}
+													style={{ width: '90px' }}
+													options={DP_DATETIME_NOISE_UNITS.map((noiseUnitValue) => ({ value: noiseUnitValue, label: translateNoiseUnit(noiseUnitValue) }))}
+												/>
+												<Text type="secondary" style={{ fontSize: 12, marginLeft: '12px', flexShrink: 0 }}>
+													{translate('step3_dp.noise_step_unit_label', '加噪步階 ({{unit}})', { unit: translateNoiseUnit(resolveDpDatetimeNoiseUnit(activeFieldItemRecord)) })}
+												</Text>
+												<InputNumber
+													size="small"
+													min={1}
+													value={activeFieldItemRecord.noiseStep}
+													onChange={(inputNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'noiseStep', inputNumberValue === null ? undefined : inputNumberValue)}
+													style={{ width: '90px' }}
+												/>
+											</>
 										) : (
 											<InputNumber
 												size="small"
@@ -665,17 +695,17 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 										/>
 
 										{/* ★ 2026-10-01：敏感度可自訂（對應 config_dp.json 之 sensitivity）。留空時以邊界寬度計算
-										    （數值型為上限 − 下限、日期型為相差天數），也就是先前固定的做法；匯入的設定檔有指定時沿用。 */}
+										    （數值型為上限 − 下限、日期型為相差時間，以雜訊單位計），也就是先前固定的做法；匯入的設定檔有指定時沿用。 */}
 										<Text type="secondary" style={{ fontSize: 12, marginLeft: '12px', flexShrink: 0 }}>
 											{translate('step3_dp.sensitivity_label', '敏感度')}
-											<Tooltip title={translate('step3_dp.sensitivity_tooltip', '加噪幅度 ≈ 敏感度 ÷ ε。留空時以邊界寬度計算（數值型為上限減下限，日期型為兩日期相差天數），涵蓋邊界內任意變動、保護力最強，但雜訊也最大；調小可保留較多資料細節，但隱私保證隨之減弱。匯入的設定檔有指定敏感度時會沿用。')}>
+											<Tooltip title={translate('step3_dp.sensitivity_tooltip', '加噪幅度 ≈ 敏感度 ÷ ε。留空時以邊界寬度計算（數值型為上限減下限，日期型為兩日期相差的時間，以所選雜訊單位計），涵蓋邊界內任意變動、保護力最強，但雜訊也最大；調小可保留較多資料細節，但隱私保證隨之減弱。匯入的設定檔有指定敏感度時會沿用。')}>
 												<QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} />
 											</Tooltip>
 										</Text>
 										{(() => {
 											const isDateTimeSensitivityField = resolveIsDateTimeDpField(activeFieldItemRecord);
 											const defaultSensitivityValue = computeDefaultDpSensitivity(activeFieldItemRecord, isDateTimeSensitivityField);
-											const sensitivityUnitText = isDateTimeSensitivityField ? translate('step3_dp.sensitivity_unit_day', ' 天') : '';
+											const sensitivityUnitText = isDateTimeSensitivityField ? ` ${translateNoiseUnit(resolveDpDatetimeNoiseUnit(activeFieldItemRecord))}` : '';
 											return (
 												<InputNumber
 													size="small"

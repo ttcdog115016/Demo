@@ -82,3 +82,39 @@ export const resolveInputNumberStepByDecimals = (currentValue: unknown, fallback
     const decimalsCount = valueText.includes('.') ? valueText.split('.')[1].length : 0;
     return decimalsCount === 0 ? 1 : Number((10 ** -Math.min(decimalsCount, 10)).toFixed(Math.min(decimalsCount, 10)));
 };
+
+/**
+ * 日期時間型欄位的雜訊單位（config_dp.json 之 noise_unit）。依後端《2_操作說明.md》4-2 節，可為 day／hour／minute／second；
+ * noise_step 為幾個 noise_unit 算一格，sensitivity 的單位也跟著 noise_unit（範例生日：day、noise_step 7、sensitivity 365 即 365 天）。
+ * ★ 2026-10-01：先前前端固定送 day，無法處理到時／分／秒。
+ */
+export const DP_DATETIME_NOISE_UNITS = ['day', 'hour', 'minute', 'second'] as const;
+export type DpDatetimeNoiseUnit = typeof DP_DATETIME_NOISE_UNITS[number];
+export const DEFAULT_DP_DATETIME_NOISE_UNIT: DpDatetimeNoiseUnit = 'day';
+
+/** 每個雜訊單位的毫秒數，供邊界寬度換算成敏感度 */
+export const DP_DATETIME_NOISE_UNIT_MILLISECONDS: Record<DpDatetimeNoiseUnit, number> = {
+    day: 86400000, hour: 3600000, minute: 60000, second: 1000
+};
+
+/** 匯入時正規化 noise_unit（不分大小寫、去空白）；不是後端支援的單位時回傳 undefined，由呼叫端退回預設 day */
+export const normalizeDpDatetimeNoiseUnit = (rawNoiseUnit: unknown): DpDatetimeNoiseUnit | undefined => {
+    const normalizedUnitText = String(rawNoiseUnit ?? '').trim().toLowerCase();
+    return (DP_DATETIME_NOISE_UNITS as readonly string[]).includes(normalizedUnitText) ? normalizedUnitText as DpDatetimeNoiseUnit : undefined;
+};
+
+/** 欄位實際使用的雜訊單位（未設定或無效時為 day） */
+export const resolveDpDatetimeNoiseUnit = (field: { noiseUnit?: string }): DpDatetimeNoiseUnit =>
+    normalizeDpDatetimeNoiseUnit(field.noiseUnit) ?? DEFAULT_DP_DATETIME_NOISE_UNIT;
+
+/**
+ * 切換雜訊單位時換算使用者指定的敏感度，讓它代表的時間長度不變（例如 365 天 → 8760 時）。
+ * 結果四捨五入、至少為 1；未指定（undefined）時維持未指定。
+ */
+export const convertDpSensitivityBetweenNoiseUnits = (
+    sensitivityValue: number | undefined, fromUnit: DpDatetimeNoiseUnit, toUnit: DpDatetimeNoiseUnit
+): number | undefined => {
+    if (sensitivityValue === undefined || !Number.isFinite(sensitivityValue) || sensitivityValue <= 0) return undefined;
+    const convertedValue = sensitivityValue * DP_DATETIME_NOISE_UNIT_MILLISECONDS[fromUnit] / DP_DATETIME_NOISE_UNIT_MILLISECONDS[toUnit];
+    return Math.max(1, Math.round(convertedValue));
+};
