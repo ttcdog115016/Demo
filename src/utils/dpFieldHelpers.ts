@@ -132,12 +132,12 @@ export const parseDpDateTimeBoundTimestamp = (boundValue: unknown): number => {
 };
 
 /**
- * Step2 日期邊界選擇器依雜訊單位決定可選到多細：天只選日期；時／分／秒加上時間。
- * storeFormat 為寫入設定檔（time_clipping_bounds）的字串格式，比所選單位細的部分補 0。
+ * Step2 日期邊界選擇器一律可選到秒（顯示 YYYY-MM-DD HH:mm:ss）。寫入設定檔（time_clipping_bounds）時，
+ * 時間為 00:00:00 者只留日期（與後端範例 config_dp.json 的 1930-01-01 寫法一致，匯入再匯出內容不變），否則保留到秒。
+ * ★ 2026-10-01：先前依 Step3 雜訊單位決定能否選時間，但 Step2 在 Step3 之前設定、雜訊單位預設為天，實際只能選到天。
  */
-export const DP_DATETIME_BOUND_PICKER_FORMATS: Record<DpDatetimeNoiseUnit, { displayFormat: string; timeFormat?: string; storeFormat: string }> = {
-    day: { displayFormat: 'YYYY-MM-DD', storeFormat: 'YYYY-MM-DD' },
-    hour: { displayFormat: 'YYYY-MM-DD HH:00', timeFormat: 'HH', storeFormat: 'YYYY-MM-DD HH:00:00' },
-    minute: { displayFormat: 'YYYY-MM-DD HH:mm', timeFormat: 'HH:mm', storeFormat: 'YYYY-MM-DD HH:mm:00' },
-    second: { displayFormat: 'YYYY-MM-DD HH:mm:ss', timeFormat: 'HH:mm:ss', storeFormat: 'YYYY-MM-DD HH:mm:ss' }
-};
+export const DP_DATETIME_BOUND_PICKER_DISPLAY_FORMAT = 'YYYY-MM-DD HH:mm:ss';
+export const DP_DATETIME_BOUND_PICKER_TIME_FORMAT = 'HH:mm:ss';
+
+/** 選擇器輸出的「YYYY-MM-DD HH:mm:ss」字串轉成寫入設定檔的邊界字串（午夜只留日期） */
+export const compactDpDateTimeBoundText = (dateTimeText: string): string => dateTimeText.replace(/[ T]00:00:00$/, '');
