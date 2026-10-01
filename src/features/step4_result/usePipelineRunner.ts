@@ -102,14 +102,23 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             columnTypes: currentColumnTypesMapDict,
             preprocessingRules: currentPreprocessingRulesMapDict,
             kAnonymityFields: kAnonymityFieldsList,
-            kAnonymityHierarchies: kAnonymityHierarchiesList
+            kAnonymityHierarchies: kAnonymityHierarchiesList,
+            // ★ 2026-10-01（第 16 項）：以下四項都會送給後端、影響結果，先前卻沒有納入雜湊——快取有效時改了
+            //   不會重新運算、畫面繼續顯示舊結果；快取無效時則只靠 runFullPipeline 參考值改變間接觸發。
+            //   自動執行改為只看這個雜湊後，必須一併納入。（DP 累計 ε／δ 是執行結果，刻意不納入。）
+            cellFillMethod: currentCellFillMethodStr,
+            riskSubgroupFilters: riskSubgroupFiltersMapDict,
+            targetDelta: globalTargetDeltaValue,
+            // 換上傳檔案時 step4Cache 不會被清空，欄位設定又相同時會誤用上一份資料的結果
+            datasetFileKey: dataFile ? `${dataFile.name}|${dataFile.size}|${dataFile.lastModified}` : null
         }),
         [
             currentPrivacyModeTypeStr, currentKValueNumber, currentLValueNumber, currentTValueNumber,
             isEnableLDiversityStatus, isEnableTClosenessStatus, currentMaxSuppressionNumber,
             currentSuppressionMethodStr, currentLimitExceededActionStr, simulatedQueryCountValue,
             currentDpFieldsListArray, columnPrivacyRolesMapDict, currentColumnTypesMapDict, currentPreprocessingRulesMapDict,
-            kAnonymityFieldsList, kAnonymityHierarchiesList
+            kAnonymityFieldsList, kAnonymityHierarchiesList,
+            currentCellFillMethodStr, riskSubgroupFiltersMapDict, globalTargetDeltaValue, dataFile
         ]
     );
 
@@ -198,7 +207,13 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
     //   改變參考值而造成同一輪管線被重複觸發（例如 CSV 解析中途又被另一輪重置
     //   清空），這裡加一個「執行中旗標」，確保同一時間只會有一輪 runFullPipeline
     //   在真正執行，杜絕任何重疊執行造成的狀態互相覆蓋。
+    //   （2026-10-01 起自動執行改為只看參數雜湊、不再跟著 runFullPipeline 參考值觸發，見檔案末段自動執行
+    //   effect；此旗標仍保留，防止手動「重新運算」與自動執行重疊。）
     const isPipelineRunInProgressRef = useRef(false);
+    // ★ 2026-10-01（第 16 項）：最近一次「真正開始執行」時的參數雜湊，以及每輪結束時遞增的計數，
+    //   供下方自動執行 effect 判斷「這組參數是否已經跑過」與「執行中被擋下的參數變更要不要補跑」。
+    const lastAttemptedParamsHashRef = useRef<string | null>(null);
+    const [pipelineRunGeneration, setPipelineRunGeneration] = useState(0);
     // ★ 2026-09-30：API 請求可取消、可看上傳進度。每一輪 runFullPipeline 建立一個 AbortController，
     //   畫面上的「取消運算」按鈕呼叫 abort()，這一輪之後所有進行中的請求都會立即中斷。
     const pipelineAbortControllerRef = useRef<AbortController | null>(null);
@@ -302,6 +317,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 return;
             }
             isPipelineRunInProgressRef.current = true;
+            lastAttemptedParamsHashRef.current = currentParametersHashString;
 
             if (!dataFile) {
                 messageApi.error(translate('step4.msg.no_file', '找不到原始資料集，請先回到 Step 1 上傳檔案！'));
@@ -567,6 +583,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 isPipelineRunInProgressRef.current = false;
                 pipelineAbortControllerRef.current = null;
                 setUploadProgressText(null);
+                setPipelineRunGeneration((generationValue) => generationValue + 1);
                 setTimeout(() => setIsPipelineCalculatingStatus(false), SIMULATION_COMPLETION_DELAY_MS);
             }
 
@@ -574,7 +591,20 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
         [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, currentCellFillMethodStr, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentParametersHashString, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
     );
 
-    useEffect(() => { if (!isAnalysisCacheValidStatus) { const tId = setTimeout(() => runFullPipeline(false), 0); return () => clearTimeout(tId); } }, [isAnalysisCacheValidStatus, runFullPipeline]);
+    // ★ 2026-10-01（第 16 項）：自動執行只在「使用者可調整的參數」（currentParametersHashString）改變、且這組
+    //   參數還沒開始執行過時觸發。先前 effect 依賴 runFullPipeline 的參考值，而執行途中寫回 store 的 DP 累計
+    //   ε／δ 也會讓參考值改變：若這輪在去識別化之後失敗（例如沒有可用的類別型敏感欄位、三攻擊請求失敗），
+    //   快取仍無效，就會自動再跑一輪、再呼叫一次 DP API、再消耗一次隱私預算；後端未回傳 accumulated_delta
+    //   時累計值每輪都不同，形成無止盡的重跑（離開本頁後仍在背景持續）。現在失敗後不自動重跑，改由使用者
+    //   調整參數或按「重新運算」。一輪執行中參數又被改變時，該次呼叫會被執行中旗標擋下，等這輪結束
+    //   （pipelineRunGeneration 遞增）後再檢查一次，以新參數補跑。
+    const runFullPipelineRef = useRef(runFullPipeline);
+    useEffect(() => { runFullPipelineRef.current = runFullPipeline; }, [runFullPipeline]);
+    useEffect(() => {
+        if (isAnalysisCacheValidStatus || lastAttemptedParamsHashRef.current === currentParametersHashString) return;
+        const tId = setTimeout(() => runFullPipelineRef.current(false), 0);
+        return () => clearTimeout(tId);
+    }, [isAnalysisCacheValidStatus, currentParametersHashString, pipelineRunGeneration]);
 
     return {
         apiReport,
