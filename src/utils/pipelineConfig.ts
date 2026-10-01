@@ -4,7 +4,7 @@
  * 2026-09-30 自 Step4_Result.tsx 的 runFullPipeline 原封不動搬出（函式本體未改寫，
  * 只把元件內的 state 改成參數傳入），讓組裝結果可單獨測試。各段落的 ★ 註解保留原本的修正脈絡。
  */
-import { mapOutOfBoundsStrategyToBackend, resolveIsDateTimeDpField, resolveDpDatetimeNoiseUnit, DP_DATETIME_NOISE_UNIT_MILLISECONDS } from './dpFieldHelpers';
+import { mapOutOfBoundsStrategyToBackend, resolveIsDateTimeDpField, resolveDpDatetimeNoiseUnit, DP_DATETIME_NOISE_UNIT_MILLISECONDS, parseDpDateTimeBoundTimestamp } from './dpFieldHelpers';
 import { TEMPORAL_GRANULARITY_UNITS } from './temporalGranularity';
 
 /** Step2／Step3 存在 useWorkspaceStore.dpFields 的單一欄位設定 */
@@ -393,8 +393,8 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
                 //   （非數值型的 clipping_bounds／out_of_bounds_strategy）。
                 if (mappedBackendType === 'datetime') {
                     if (hasValidBoundsStatus) {
-                        const lowerDateTimestamp = Date.parse(String(field.lowerBound));
-                        const upperDateTimestamp = Date.parse(String(field.upperBound));
+                        const lowerDateTimestamp = parseDpDateTimeBoundTimestamp(field.lowerBound);
+                        const upperDateTimestamp = parseDpDateTimeBoundTimestamp(field.upperBound);
                         if (!Number.isNaN(lowerDateTimestamp) && !Number.isNaN(upperDateTimestamp)) {
                             baseBudgetConfig.sensitivity = Math.round((upperDateTimestamp - lowerDateTimestamp) / DP_DATETIME_NOISE_UNIT_MILLISECONDS[resolveDpDatetimeNoiseUnit(field)]);
                             baseBudgetConfig.time_clipping_bounds = [String(field.lowerBound), String(field.upperBound)];
@@ -509,8 +509,8 @@ export const computeDefaultDpSensitivity = (
 ): number | null => {
     if (field.upperBound === undefined || field.lowerBound === undefined || field.upperBound === '' || field.lowerBound === '') return null;
     if (isDateTimeField) {
-        const lowerDateTimestamp = Date.parse(String(field.lowerBound));
-        const upperDateTimestamp = Date.parse(String(field.upperBound));
+        const lowerDateTimestamp = parseDpDateTimeBoundTimestamp(field.lowerBound);
+        const upperDateTimestamp = parseDpDateTimeBoundTimestamp(field.upperBound);
         if (Number.isNaN(lowerDateTimestamp) || Number.isNaN(upperDateTimestamp)) return null;
         return Math.round((upperDateTimestamp - lowerDateTimestamp) / DP_DATETIME_NOISE_UNIT_MILLISECONDS[resolveDpDatetimeNoiseUnit(field)]);
     }

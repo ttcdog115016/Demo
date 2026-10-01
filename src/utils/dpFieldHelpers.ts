@@ -118,3 +118,26 @@ export const convertDpSensitivityBetweenNoiseUnits = (
     const convertedValue = sensitivityValue * DP_DATETIME_NOISE_UNIT_MILLISECONDS[fromUnit] / DP_DATETIME_NOISE_UNIT_MILLISECONDS[toUnit];
     return Math.max(1, Math.round(convertedValue));
 };
+
+/**
+ * 日期時間邊界字串轉時間戳（毫秒）。「YYYY-MM-DD」與「YYYY-MM-DD HH:mm[:ss]」一律當 UTC 解讀，
+ * 避免 Date.parse 對純日期採 UTC、對帶時間者採本地時區，兩者混用時敏感度差了時區的小時數。無法解析時回傳 NaN。
+ */
+export const parseDpDateTimeBoundTimestamp = (boundValue: unknown): number => {
+    const boundText = String(boundValue ?? '').trim();
+    const matched = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2})(?::(\d{2})(?::(\d{2}))?)?)?$/.exec(boundText);
+    if (!matched) return Date.parse(boundText);
+    const [, year, month, day, hour = '0', minute = '0', second = '0'] = matched;
+    return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+};
+
+/**
+ * Step2 日期邊界選擇器依雜訊單位決定可選到多細：天只選日期；時／分／秒加上時間。
+ * storeFormat 為寫入設定檔（time_clipping_bounds）的字串格式，比所選單位細的部分補 0。
+ */
+export const DP_DATETIME_BOUND_PICKER_FORMATS: Record<DpDatetimeNoiseUnit, { displayFormat: string; timeFormat?: string; storeFormat: string }> = {
+    day: { displayFormat: 'YYYY-MM-DD', storeFormat: 'YYYY-MM-DD' },
+    hour: { displayFormat: 'YYYY-MM-DD HH:00', timeFormat: 'HH', storeFormat: 'YYYY-MM-DD HH:00:00' },
+    minute: { displayFormat: 'YYYY-MM-DD HH:mm', timeFormat: 'HH:mm', storeFormat: 'YYYY-MM-DD HH:mm:00' },
+    second: { displayFormat: 'YYYY-MM-DD HH:mm:ss', timeFormat: 'HH:mm:ss', storeFormat: 'YYYY-MM-DD HH:mm:ss' }
+};
