@@ -22,7 +22,7 @@ import { useWorkspaceStore, type PreprocessingRule } from '../../store/useWorksp
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
-import { resolveImportedLtSettings, normalizeImportedQiLevel, buildQiLevelValue } from '../../utils/kAnonymityConfigImport';
+import { resolveImportedLtSettings, normalizeImportedQiLevel, buildQiLevelValue, extractImportedCellFillValues } from '../../utils/kAnonymityConfigImport';
 import { TEMPORAL_GRANULARITY_UNITS, TEMPORAL_DEFAULT_GRANULARITY_LEVEL, temporalUnitOfLevel, resolveImportedTemporalLevel } from '../../utils/temporalGranularity';
 import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, findNumericMinMax, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
@@ -846,6 +846,8 @@ export default function KAnonymityMapping(): React.ReactElement
                         ...resolveImportedLtSettings(importedKAnonymityBlock, Boolean(parsedJsonContentData.k_anonymity)),
                         ...(importedKAnonymityBlock.suppression_method ? { suppressionMethod: importedKAnonymityBlock.suppression_method } : {}),
                         ...(importedKAnonymityBlock.cell_fill ? { cellFillMethod: importedKAnonymityBlock.cell_fill } : {}),
+                        // 後端格式：columns 底下的逐欄 cell_fill_value（沒有即清空，與本工具匯出「未填不寫入」一致）
+                        ...(parsedJsonContentData.k_anonymity ? { cellFillValuesByColumn: extractImportedCellFillValues(importedKAnonymityBlock.columns) } : {}),
                         ...(importedKAnonymityBlock.limit_exceeded_action ? { limitExceededAction: importedKAnonymityBlock.limit_exceeded_action } : {}),
                     });
                 }

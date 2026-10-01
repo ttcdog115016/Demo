@@ -42,3 +42,19 @@ export const normalizeImportedQiLevel = (rawLevelValue: unknown): { level?: numb
 /** 組出送給後端的 qi_generalization_levels 值：有大於最小層級的上限時為 [最小, 最大]，否則為單一整數 */
 export const buildQiLevelValue = (level: number, rangeUpper: unknown): number | [number, number] =>
     typeof rangeUpper === 'number' && Number.isFinite(rangeUpper) && Math.floor(rangeUpper) > level ? [level, Math.floor(rangeUpper)] : level;
+
+/**
+ * 匯入設定檔 columns 底下各欄的 cell_fill_value（值抑制時逐欄填值，後端 config_kanon.yaml 註解）。
+ * 只收非空字串；數字等其他型別轉成字串。沒有 columns 時回傳空物件。
+ */
+export const extractImportedCellFillValues = (importedColumnsBlock: unknown): Record<string, string> => {
+    if (!importedColumnsBlock || typeof importedColumnsBlock !== 'object') return {};
+    const cellFillValuesByColumn: Record<string, string> = {};
+    Object.entries(importedColumnsBlock as Record<string, unknown>).forEach(([columnName, columnConfig]) => {
+        const rawFillValue = (columnConfig as { cell_fill_value?: unknown } | null)?.cell_fill_value;
+        if (rawFillValue === undefined || rawFillValue === null) return;
+        const fillValueText = String(rawFillValue).trim();
+        if (fillValueText) cellFillValuesByColumn[columnName.replace(/^[\uFEFF\u200B]+/, '').trim()] = fillValueText;
+    });
+    return cellFillValuesByColumn;
+};

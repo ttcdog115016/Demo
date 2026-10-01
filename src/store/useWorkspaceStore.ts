@@ -193,6 +193,7 @@ interface WorkspaceState
     //   行為一致，不影響既有使用者），僅在抑制方式為「值抑制」時才會實際送給後端（見 Step4
     //   apiOptions 組裝處）。
     cellFillMethod: 'star' | 'missing';                                      // 值抑制填法 ('star'｜'missing')，僅 cell_suppression 模式下生效
+    cellFillValuesByColumn: Record<string, string>;                          // ★ 2026-10-01：值抑制時逐欄填值 (對應 columns.<欄>.cell_fill_value)，未填的欄位沿用 cellFillMethod
     limitExceededAction: string;                                             // 抑制率超限處置動作
 
     kAnonymityFields: Record<string, unknown>[];                             // K-匿名欄位明細
@@ -325,6 +326,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
             maxSuppression: DEFAULT_MAX_SUPPRESSION_PERCENT,
             suppressionMethod: 'row_suppression',
             cellFillMethod: 'star',
+            cellFillValuesByColumn: {},
             limitExceededAction: 'stop_and_error',
             kAnonymityFields: [],
             kAnonymityHierarchies: [],
@@ -389,6 +391,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
             setIsColumnCategoricalValuesScanning: (isScanningStatus) => setStoreStateAction({ isColumnCategoricalValuesScanning: isScanningStatus }), // ★ 新增
             resetWorkspace: () => setStoreStateAction({
                 dataFile: null,                                                  
+                cellFillValuesByColumn: {},
                 currentStep: MIN_STEP_INDEX,
                 privacyMode: null,
                 columns: [],

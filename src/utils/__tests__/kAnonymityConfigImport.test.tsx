@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, cleanup, fireEvent, waitFor, screen } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import backendConfigKanonText from './fixtures/backend_config_kanon.json?raw';
 
@@ -15,6 +15,7 @@ const stableTranslation = vi.hoisted(() => ({
     t: (key: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : ((fallback as { defaultValue?: string } | undefined)?.defaultValue ?? key))
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => stableTranslation }));
+vi.mock('echarts-for-react', () => ({ default: () => null }));
 const messageMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn(), loading: vi.fn(), destroy: vi.fn() }));
 vi.mock('antd', async () => {
     const actual = await vi.importActual<typeof import('antd')>('antd');
@@ -27,7 +28,7 @@ import KAnonymityMapping from '../../features/step2_mapping/KAnonymityMapping';
 import KAnonymityRules from '../../features/step3_rules/KAnonymityRules';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { buildBackendConfigDocumentFromWorkspace } from '../pipelineConfig';
-import { resolveImportedLtSettings, normalizeImportedQiLevel, buildQiLevelValue } from '../kAnonymityConfigImport';
+import { resolveImportedLtSettings, normalizeImportedQiLevel, buildQiLevelValue, extractImportedCellFillValues } from '../kAnonymityConfigImport';
 
 const COLUMNS = ['姓名', '身分證號', '生日', '年齡', '薪資', '就醫次數', '地區', '職業', '疾病', '婚姻狀況'];
 
@@ -117,5 +118,66 @@ describe('qi_generalization_levels 層級範圍 [最小, 最大]', () => {
         expect(buildQiLevelValue(3, 3)).toBe(3);
         expect(buildQiLevelValue(2, 0)).toBe(2);
         expect(buildQiLevelValue(2, undefined)).toBe(2);
+    });
+});
+
+describe('值抑制逐欄填值 cell_fill_value', () => {
+    afterEach(() => cleanup());
+
+    const cellSuppressionConfig = () => {
+        const config = JSON.parse(backendConfigKanonText);
+        config.k_anonymity.suppression_method = 'cell_suppression';
+        config.k_anonymity.cell_fill = 'missing';
+        config.k_anonymity.columns.地區.cell_fill_value = '臺灣';
+        return config;
+    };
+    const exportedKanonBlock = () => (buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: { columns: Record<string, Record<string, unknown>>; cell_fill?: string } }).k_anonymity;
+
+    it('匯入含 cell_fill_value 的設定檔：讀入逐欄填值，送出設定檔照原樣帶回', async () => {
+        resetStore();
+        await importThroughStep2(JSON.stringify(cellSuppressionConfig()));
+        await waitFor(() => expect(useWorkspaceStore.getState().kAnonymityFields.length).toBeGreaterThan(0));
+        expect(useWorkspaceStore.getState()).toMatchObject({ suppressionMethod: 'cell_suppression', cellFillMethod: 'missing', cellFillValuesByColumn: { 地區: '臺灣' } });
+        const kanonBlock = exportedKanonBlock();
+        expect(kanonBlock.cell_fill).toBe('missing');
+        expect(kanonBlock.columns.地區).toMatchObject({ role: 'quasi_identifier', cell_fill_value: '臺灣' });
+        expect(kanonBlock.columns.職業).not.toHaveProperty('cell_fill_value');
+    });
+
+    it('改成列抑制時不送 cell_fill_value；非間接識別碼欄位也不送', async () => {
+        resetStore();
+        await importThroughStep2(JSON.stringify(cellSuppressionConfig()));
+        await waitFor(() => expect(useWorkspaceStore.getState().kAnonymityFields.length).toBeGreaterThan(0));
+        useWorkspaceStore.setState({ cellFillValuesByColumn: { 地區: '臺灣', 疾病: 'x' } });
+        expect(exportedKanonBlock().columns.疾病).not.toHaveProperty('cell_fill_value');
+        useWorkspaceStore.setState({ suppressionMethod: 'row_suppression' });
+        expect(exportedKanonBlock().columns.地區).not.toHaveProperty('cell_fill_value');
+    });
+
+    it('Step3 畫面：值抑制時列出間接識別碼欄位，輸入填值後寫入 store、清空即移除', () => {
+        useWorkspaceStore.setState({
+            columns: ['地區', '職業', '疾病'], columnRoles: { 地區: 'Quasi-identifier', 職業: 'Quasi-identifier', 疾病: 'Sensitive' },
+            suppressionMethod: 'cell_suppression', cellFillMethod: 'star', cellFillValuesByColumn: {}, kAnonymityFields: []
+        } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+        render(<KAnonymityRules />);
+        const panelText = screen.getByTestId('cell-fill-values-by-column').textContent;
+        expect(panelText).toContain('地區');
+        expect(panelText).toContain('職業');
+        expect(panelText).not.toContain('疾病');
+        fireEvent.change(screen.getByLabelText('地區 cell_fill_value'), { target: { value: '臺灣' } });
+        expect(useWorkspaceStore.getState().cellFillValuesByColumn).toEqual({ 地區: '臺灣' });
+        fireEvent.change(screen.getByLabelText('地區 cell_fill_value'), { target: { value: '' } });
+        expect(useWorkspaceStore.getState().cellFillValuesByColumn).toEqual({});
+    });
+
+    it('列抑制時不顯示逐欄填值', () => {
+        useWorkspaceStore.setState({ columns: ['地區'], columnRoles: { 地區: 'Quasi-identifier' }, suppressionMethod: 'row_suppression' } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+        render(<KAnonymityRules />);
+        expect(screen.queryByTestId('cell-fill-values-by-column')).toBeNull();
+    });
+
+    it('extractImportedCellFillValues：只收非空值、去除欄名 BOM', () => {
+        expect(extractImportedCellFillValues({ '\uFEFF地區': { cell_fill_value: ' 臺灣 ' }, 職業: { cell_fill_value: '' }, 年齡: { cell_fill_value: 0 }, 姓名: {} })).toEqual({ 地區: '臺灣', 年齡: '0' });
+        expect(extractImportedCellFillValues(undefined)).toEqual({});
     });
 });

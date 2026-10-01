@@ -3,10 +3,7 @@
  * 2026-09-30 自 Step4_Result.tsx 的 runFullPipeline 抽出，行為不變；畫面狀態與 store 由呼叫端更新。
  */
 import { runKAnonymity, runDifferentialPrivacy, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport } from '../../../api/apiService';
-import {
-    buildKAnonymityApiOptions, buildDifferentialPrivacyApiOptions, computeDpTotalBudgets,
-    type KAnonymityPipelineSettings, type DifferentialPrivacyConfigInput
-} from '../../../utils/pipelineConfig';
+import { computeDpTotalBudgets, type DifferentialPrivacyConfigInput } from '../../../utils/pipelineConfig';
 
 export interface DeidentificationPhaseResult {
     report: KAnonymityQualityReport | DpQualityReport;
@@ -36,15 +33,12 @@ export const runDeidentificationPhase = async (input: {
     safeDataFile: File;
     configFile: File;
     configObject: Record<string, unknown>;
-    kAnonymitySettings: KAnonymityPipelineSettings;
     dpConfigInput: DifferentialPrivacyConfigInput;
     requestOptions: ApiRequestOptions;
 }): Promise<DeidentificationPhaseResult | null> => {
     if (input.privacyMode === 'k-anonymity') {
-        const apiOptions = buildKAnonymityApiOptions(input.kAnonymitySettings);
-        console.log(`🚀 傳給後端 (k-anonymity) 的 Step 3 參數:`, apiOptions);
-
-        const response = await runKAnonymity(input.safeDataFile, input.configFile, apiOptions, input.requestOptions);
+        // 所有參數都在 configFile 的 k_anonymity 區塊內（後端 v3 不收表單參數）
+        const response = await runKAnonymity(input.safeDataFile, input.configFile, input.requestOptions);
         if (!response.success) throw (response.error || new Error('API 請求未成功'));
 
         const finalReport = response.report || {
@@ -59,11 +53,10 @@ export const runDeidentificationPhase = async (input: {
     }
 
     if (input.privacyMode === 'differential-privacy') {
-        // 逐欄 ε／δ 在 config 的 column_budgets；表單參數只放跨批次累計基準（上次執行後留存之累計值）
+        // 逐欄 ε／δ 與跨批次累計基準皆在 configFile 的 differential_privacy 區塊內（後端 v3 不收表單參數）
         const { totalEpsilonBudget, totalDeltaBudget } = computeDpTotalBudgets(input.dpConfigInput.dpFields, input.dpConfigInput.targetDelta);
-        const dpApiOptions = buildDifferentialPrivacyApiOptions(input.dpConfigInput);
 
-        const response = await runDifferentialPrivacy(input.safeDataFile, input.configFile, dpApiOptions, input.requestOptions);
+        const response = await runDifferentialPrivacy(input.safeDataFile, input.configFile, input.requestOptions);
         if (!response.success) throw (response.error || new Error('DP API 請求未成功'));
 
         const accumulatedEpsilonBase = input.dpConfigInput.accumulatedEpsilon ?? 0;

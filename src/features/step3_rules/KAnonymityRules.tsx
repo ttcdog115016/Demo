@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Alert, Card, Slider, Row, Col, Divider, InputNumber, theme, Select, Button, Tag, Space, Tooltip, Switch } from 'antd';
+import { Alert, Card, Slider, Row, Col, Divider, InputNumber, Input, theme, Select, Button, Tag, Space, Tooltip, Switch } from 'antd';
 import { LockOutlined, PlusOutlined, DeleteOutlined, WarningOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { useTranslation } from 'react-i18next';
@@ -117,6 +117,11 @@ export default function KAnonymityRules(): React.ReactElement
     const currentCellFillMethodTypeStr = useWorkspaceStore(
         (state) => state.cellFillMethod
     );                                                     // 值抑制填法 ('star' | 'missing')，僅 cell_suppression 模式下生效
+
+    // ★ 2026-10-01：值抑制時可逐欄指定填入值（後端 columns.<欄>.cell_fill_value），未填的欄位沿用上面的填法
+    const cellFillValuesByColumnMap = useWorkspaceStore(
+        (state) => state.cellFillValuesByColumn
+    );
 
     const currentLimitExceededActionTypeStr = useWorkspaceStore(
         (state) => state.limitExceededAction
@@ -314,6 +319,20 @@ export default function KAnonymityRules(): React.ReactElement
     const handleCellFillMethodChange = (selectedFillMethodTypeString: string): void =>
     {
         useWorkspaceStore.setState({ cellFillMethod: selectedFillMethodTypeString as 'star' | 'missing' });
+    };
+
+    /**
+     * 函數名稱: handleCellFillValueChange
+     * 函數功能: 更新單一準識別符欄位的值抑制填入值；清空即移除該欄設定（沿用整體填法）。
+     */
+    const handleCellFillValueChange = (columnNameString: string, fillValueText: string): void =>
+    {
+        useWorkspaceStore.setState((currentStoreState) => {
+            const nextCellFillValuesMap = { ...(currentStoreState.cellFillValuesByColumn || {}) };
+            if (fillValueText === '') delete nextCellFillValuesMap[columnNameString];
+            else nextCellFillValuesMap[columnNameString] = fillValueText;
+            return { cellFillValuesByColumn: nextCellFillValuesMap };
+        });
     };
 
     /**
@@ -748,6 +767,35 @@ export default function KAnonymityRules(): React.ReactElement
                                             <Tooltip title={translate('step3.cell_fill_method_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
                                         </Col>
                                         <Col span={17}><Select value={currentCellFillMethodTypeStr} onChange={handleCellFillMethodChange} size="small" style={{ width: '100%' }} options={[{ value: 'star', label: translate('step3.cell_fill_star') }, { value: 'missing', label: translate('step3.cell_fill_missing') }]} /></Col>
+                                    </Row>
+                                )}
+
+                                {/* ★ 2026-10-01：值抑制只會置換「間接識別碼」欄位，可逐欄指定填入值（例如地區填「臺灣」），
+                                    對應後端 columns.<欄>.cell_fill_value；留空即沿用上面的填法。 */}
+                                {(currentSuppressionMethodTypeStr === 'cell' || currentSuppressionMethodTypeStr === 'cell_suppression') && filteredQuasiIdentifierColumnsList.length > 0 && (
+                                    <Row align="top" style={{ marginBottom: '16px' }} data-testid="cell-fill-values-by-column">
+                                        <Col span={7}>
+                                            <span style={{ color: token.colorTextSecondary, fontSize: '13px' }}>{translate('step3.cell_fill_value_by_column', '逐欄填值（選填）')}</span>
+                                            <Tooltip title={translate('step3.cell_fill_value_by_column_tooltip', '值抑制時，可以替個別「間接識別碼」欄位指定要填入的文字，例如地區填「臺灣」、職業填「其他」，讓輸出資料比「*」或空白更容易閱讀。留空的欄位沿用上面選的填法。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
+                                        </Col>
+                                        <Col span={17}>
+                                            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                                {filteredQuasiIdentifierColumnsList.map((columnNameString: string) => (
+                                                    <Space.Compact key={columnNameString} size="small" style={{ width: '100%' }}>
+                                                        <span style={{ width: '40%', display: 'inline-flex', alignItems: 'center', padding: '0 8px', fontSize: '12px', color: token.colorText, border: `1px solid ${token.colorBorder}`, borderRight: 'none', borderRadius: '4px 0 0 4px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} title={columnNameString}>{columnNameString}</span>
+                                                        <Input
+                                                            size="small"
+                                                            allowClear
+                                                            aria-label={`${columnNameString} cell_fill_value`}
+                                                            value={cellFillValuesByColumnMap?.[columnNameString] ?? ''}
+                                                            placeholder={currentCellFillMethodTypeStr === 'missing' ? translate('step3.cell_fill_value_ph_missing', '未填：空值') : translate('step3.cell_fill_value_ph_star', '未填：*')}
+                                                            onChange={(inputChangeEvent) => handleCellFillValueChange(columnNameString, inputChangeEvent.target.value)}
+                                                            style={{ width: '60%' }}
+                                                        />
+                                                    </Space.Compact>
+                                                ))}
+                                            </Space>
+                                        </Col>
                                     </Row>
                                 )}
 

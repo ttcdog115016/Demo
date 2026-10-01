@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    buildKAnonymityConfig, buildDifferentialPrivacyConfig, buildKAnonymityApiOptions,
-    buildDifferentialPrivacyApiOptions, computeDpTotalBudgets, type KAnonymityPipelineSettings
+    buildKAnonymityConfig, buildDifferentialPrivacyConfig, computeDpTotalBudgets, type KAnonymityPipelineSettings
 } from '../pipelineConfig';
 
 const baseSettings: KAnonymityPipelineSettings = {
@@ -141,15 +140,6 @@ describe('K-匿名 config.json 組裝', () => {
         expect(config).not.toHaveProperty('generalization_matrices');
         expect(config).not.toHaveProperty('qi_generalization_levels');
     });
-
-    it('API 表單參數與 config 規則一致', () => {
-        expect(buildKAnonymityApiOptions(baseSettings)).toEqual({
-            k: 5, l: 2, t: 0.7, suppression_limit_percent: 20, suppression_method: 'row_suppression', limit_exceeded_action: 'allow_with_warning'
-        });
-        expect(buildKAnonymityApiOptions({ ...baseSettings, enableLDiversity: false, suppressionMethod: 'cell_suppression', cellFillMethod: null })).toEqual({
-            k: 5, t: 0.7, suppression_limit_percent: 20, suppression_method: 'cell_suppression', cell_fill: 'star', limit_exceeded_action: 'allow_with_warning'
-        });
-    });
 });
 
 describe('差分隱私 config.json 組裝', () => {
@@ -181,8 +171,7 @@ describe('差分隱私 config.json 組裝', () => {
         expect(config).toMatchObject({ enabled: true, accumulated_epsilon: 1.5, accumulated_delta: 0, default_delta: 0.0001 });
     });
 
-    it('表單參數與預算總和', () => {
-        expect(buildDifferentialPrivacyApiOptions(dpInput)).toEqual({ accumulated_epsilon: 1.5, accumulated_delta: 0, default_delta: 0.0001 });
+    it('預算總和', () => {
         // δ 只計入實際送出的部分：薪資為 ε-DP 模式（送 0），只有生日 (ε,δ)-DP 的 1e-5
         expect(computeDpTotalBudgets(dpInput.dpFields)).toEqual({ totalEpsilonBudget: 4.5, totalDeltaBudget: 1e-5 });
         expect(computeDpTotalBudgets([])).toEqual({ totalEpsilonBudget: 1, totalDeltaBudget: 0 });

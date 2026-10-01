@@ -54,6 +54,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
     //   時才有作用，先前前端從未讀取／送出這個值，後端只能默默套用內建預設 (star)。這裡讀取 Step3
     //   新增的選單狀態，並在下方組裝 K-匿名 apiOptions／configObject 時，僅於「值抑制」模式才送出。
     const currentCellFillMethodStr = useWorkspaceStore((state) => state.cellFillMethod);
+    const cellFillValuesByColumnMap = useWorkspaceStore((state) => state.cellFillValuesByColumn);
     const currentLimitExceededActionStr = useWorkspaceStore((state) => state.limitExceededAction);
     const budgetLimitEpsilonValue = useWorkspaceStore((state) => state.budgetLimitEpsilon);
     const globalTargetDeltaValue = useWorkspaceStore((state) => state.targetDelta);
@@ -107,6 +108,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             //   不會重新運算、畫面繼續顯示舊結果；快取無效時則只靠 runFullPipeline 參考值改變間接觸發。
             //   自動執行改為只看這個雜湊後，必須一併納入。（DP 累計 ε／δ 是執行結果，刻意不納入。）
             cellFillMethod: currentCellFillMethodStr,
+            cellFillValuesByColumn: cellFillValuesByColumnMap,
             riskSubgroupFilters: riskSubgroupFiltersMapDict,
             targetDelta: globalTargetDeltaValue,
             // 換上傳檔案時 step4Cache 不會被清空，欄位設定又相同時會誤用上一份資料的結果
@@ -118,7 +120,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             currentSuppressionMethodStr, currentLimitExceededActionStr, simulatedQueryCountValue,
             currentDpFieldsListArray, columnPrivacyRolesMapDict, currentColumnTypesMapDict, currentPreprocessingRulesMapDict,
             kAnonymityFieldsList, kAnonymityHierarchiesList,
-            currentCellFillMethodStr, riskSubgroupFiltersMapDict, globalTargetDeltaValue, dataFile
+            currentCellFillMethodStr, cellFillValuesByColumnMap, riskSubgroupFiltersMapDict, globalTargetDeltaValue, dataFile
         ]
     );
 
@@ -391,6 +393,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     maxSuppression: currentMaxSuppressionNumber,
                     suppressionMethod: currentSuppressionMethodStr,
                     cellFillMethod: currentCellFillMethodStr,
+                    cellFillValuesByColumn: cellFillValuesByColumnMap,
                     limitExceededAction: currentLimitExceededActionStr
                 };
                 const dpPipelineConfigInput: DifferentialPrivacyConfigInput = {
@@ -451,7 +454,6 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     safeDataFile,
                     configFile,
                     configObject,
-                    kAnonymitySettings: kAnonymityPipelineSettings,
                     dpConfigInput: dpPipelineConfigInput,
                     requestOptions: pipelineRequestOptions
                 });
@@ -589,7 +591,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             }
 
         },
-        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, currentCellFillMethodStr, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentParametersHashString, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
+        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentParametersHashString, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
     );
 
     // ★ 2026-10-01（第 16 項）：自動執行只在「使用者可調整的參數」（currentParametersHashString）改變、且這組

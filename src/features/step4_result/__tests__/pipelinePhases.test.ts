@@ -17,27 +17,24 @@ const attackReport = (singling: number, linkability: number, inference: number, 
     sample_size: sampleSize, linkability_evaluated: 1, n_repeats: 1, overlap_ratio: 0, processing_config: null, message: ''
 });
 
-const kAnonymitySettings = {
-    kValue: 3, lValue: 2, tValue: 0.5, enableLDiversity: false, enableTCloseness: false,
-    maxSuppression: 10, suppressionMethod: 'row_suppression', cellFillMethod: 'star' as const, limitExceededAction: 'stop_and_error'
-};
 const dpConfigInput = {
     dpFields: [{ fieldName: '薪資', enabled: true, fieldType: 'Numeric', mode: 'epsilon-delta' as const, epsilon: 0.5, delta: 1e-5 }, { fieldName: '地區', enabled: true, fieldType: 'Categorical', epsilon: 1, delta: 1e-4 }],
     columnTypes: {}, accumulatedEpsilon: 2, accumulatedDelta: 0, targetDelta: 1e-5
 };
 const phaseInput = (privacyMode: string, configObject: Record<string, unknown> = {}) => ({
     privacyMode, safeDataFile: new File(['a,b\n1,2\n'], 'input_dataset.csv'), configFile: new File(['{}'], 'config.json'),
-    configObject, kAnonymitySettings, dpConfigInput, requestOptions: {}
+    configObject, dpConfigInput, requestOptions: {}
 });
 
 describe('去識別化階段', () => {
     beforeEach(() => { apiMocks.runKAnonymity.mockReset(); apiMocks.runDifferentialPrivacy.mockReset(); vi.spyOn(console, 'log').mockImplementation(() => {}); });
 
-    it('K-匿名：送出表單參數，沒有報告時用預設報告，回傳 CSV', async () => {
+    it('K-匿名：只送資料檔與設定檔（不另送表單參數），沒有報告時用預設報告，回傳 CSV', async () => {
         const csvBlob = new Blob(['a\n1\n']);
         apiMocks.runKAnonymity.mockResolvedValue({ success: true, blob: csvBlob });
         const result = await runDeidentificationPhase(phaseInput('k-anonymity'));
-        expect(apiMocks.runKAnonymity.mock.calls[0][2]).toEqual({ k: 3, suppression_limit_percent: 10, suppression_method: 'row_suppression', limit_exceeded_action: 'stop_and_error' });
+        expect(apiMocks.runKAnonymity.mock.calls[0]).toHaveLength(3);
+        expect(apiMocks.runKAnonymity.mock.calls[0][2]).toEqual({});
         expect(result).toMatchObject({ report: { is_valid: true, message: '成功完成去識別化處理' }, csvBlob, updatedDpAccumulated: null, logMessages: ['✅ K-Anonymity API 處理成功！'] });
     });
 
@@ -51,7 +48,8 @@ describe('去識別化階段', () => {
         apiMocks.runDifferentialPrivacy.mockResolvedValue({ success: true, data: 'x\n1\n' });
         const configObject = { differential_privacy: { accumulated_epsilon: 2, accumulated_delta: 0 } };
         const result = await runDeidentificationPhase(phaseInput('differential-privacy', configObject));
-        expect(apiMocks.runDifferentialPrivacy.mock.calls[0][2]).toEqual({ accumulated_epsilon: 2, accumulated_delta: 0, default_delta: 1e-5 });
+        expect(apiMocks.runDifferentialPrivacy.mock.calls[0]).toHaveLength(3);
+        expect(apiMocks.runDifferentialPrivacy.mock.calls[0][2]).toEqual({});
         expect(result!.updatedDpAccumulated).toEqual({ epsilon: 3.5, delta: 1e-5 });
         expect(configObject.differential_privacy).toEqual({ accumulated_epsilon: 3.5, accumulated_delta: 1e-5 });
         expect(result!.logMessages).toEqual(['✅ DP API 處理成功！噪聲已注入。', '📊 消耗隱私預算 (Epsilon): 1.5']);

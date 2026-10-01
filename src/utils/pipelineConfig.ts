@@ -40,6 +40,8 @@ export interface KAnonymityPipelineSettings {
     maxSuppression: number | null | undefined;
     suppressionMethod: string | null | undefined;
     cellFillMethod: 'star' | 'missing' | null | undefined;
+    /** 值抑制時逐欄填值（準識別符欄位名稱 → 填入值），送出為 columns.<欄>.cell_fill_value；空字串視為未填、沿用 cell_fill */
+    cellFillValuesByColumn?: Record<string, string> | null;
     limitExceededAction: string | null | undefined;
 }
 
@@ -83,7 +85,8 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
         limitExceededAction: currentLimitExceededActionStr
     } = input;
 
-    const columnsMap: Record<string, { role: string; type: string; strategy?: string; mask_mode?: string; mask_char?: string; }> = {};
+    const columnsMap: Record<string, { role: string; type: string; strategy?: string; mask_mode?: string; mask_char?: string; cell_fill_value?: string; }> = {};
+    const isCellSuppressionActiveStatus = isCellSuppressionMethod(input.suppressionMethod);
     const qiGeneralizationLevelsMap: Record<string, number | [number, number]> = {};
     // 後端要求每欄位的類別階層以 { mapping: { 原始值: [原始值, 上一層, ...] } } 包裝
     // （不是原始 row 陣列），格式依據 app/core/config.py 的 parse_categorical_mapping()
@@ -263,12 +266,19 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
             if (uiRole === 'Sensitive') backendRole = 'sensitive';
         }
 
+        // ★ 2026-10-01：值抑制時逐欄填值（後端 config_kanon.yaml：columns 底下的 cell_fill_value，未填即沿用 cell_fill）。
+        //   值抑制只置換準識別符欄位，故只對準識別符送出；列抑制時不送。
+        const cellFillValueText = isCellSuppressionActiveStatus && backendRole === 'quasi_identifier'
+            ? String(input.cellFillValuesByColumn?.[cleanName] ?? '').trim()
+            : '';
+
         columnsMap[cleanName] = {
             role: backendRole,
             type: colType,
             ...(maskStrategy ? { strategy: String(maskStrategy) } : {}),
             ...(qiMaskModeValue ? { mask_mode: qiMaskModeValue } : {}),
-            ...(qiMaskCharValue ? { mask_char: qiMaskCharValue } : {})
+            ...(qiMaskCharValue ? { mask_char: qiMaskCharValue } : {}),
+            ...(cellFillValueText ? { cell_fill_value: cellFillValueText } : {})
         };
     });
 
@@ -329,10 +339,10 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
             ...(isEnableTClosenessStatus ? { t: currentTValueNumber } : {}),
             suppression_limit_percent: currentMaxSuppressionNumber ?? 5,
             limit_exceeded_action: (currentLimitExceededActionStr || 'stop_and_error') as 'stop_and_error' | 'allow_with_warning',
-            suppression_method: (currentSuppressionMethodStr === 'cell' || currentSuppressionMethodStr === 'cell_suppression' ? 'cell_suppression' : 'row_suppression') as 'row_suppression' | 'cell_suppression',
+            suppression_method: (isCellSuppressionMethod(currentSuppressionMethodStr) ? 'cell_suppression' : 'row_suppression') as 'row_suppression' | 'cell_suppression',
             // ★ cell_fill 僅在「值抑制」(cell_suppression) 模式下才有意義，未啟用時完全不送出，
             //   避免像上方 l／t 一樣把無效參數塞進設定檔造成誤解（見上方新增選單處的完整說明）。
-            ...((currentSuppressionMethodStr === 'cell' || currentSuppressionMethodStr === 'cell_suppression') ? { cell_fill: currentCellFillMethodStr ?? 'star' } : {}),
+            ...(isCellSuppressionMethod(currentSuppressionMethodStr) ? { cell_fill: currentCellFillMethodStr ?? 'star' } : {}),
             columns: columnsMap,
             ...(Object.keys(generalizationHierarchiesMap).length > 0 && { generalization_hierarchies: generalizationHierarchiesMap }),
             ...(Object.keys(generalizationMatricesMap).length > 0 && { generalization_matrices: generalizationMatricesMap }),
@@ -443,24 +453,6 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
     };
 };
 
-/** K-匿名 API 表單參數（與 config.json 的 k_anonymity 區塊規則一致：未啟用的 l／t、非值抑制時的 cell_fill 都不送） */
-export const buildKAnonymityApiOptions = (settings: KAnonymityPipelineSettings) => ({
-    k: settings.kValue,
-    ...(settings.enableLDiversity ? { l: settings.lValue } : {}),
-    ...(settings.enableTCloseness ? { t: settings.tValue } : {}),
-    suppression_limit_percent: settings.maxSuppression ?? 5,
-    suppression_method: (isCellSuppressionMethod(settings.suppressionMethod) ? 'cell_suppression' : 'row_suppression') as 'row_suppression' | 'cell_suppression',
-    ...(isCellSuppressionMethod(settings.suppressionMethod) ? { cell_fill: (settings.cellFillMethod ?? 'star') as 'star' | 'missing' } : {}),
-    limit_exceeded_action: (settings.limitExceededAction || 'stop_and_error') as 'stop_and_error' | 'allow_with_warning'
-});
-
-/** 差分隱私 API 表單參數：只放跨批次累計值（逐欄 ε／δ 在 config 的 column_budgets） */
-export const buildDifferentialPrivacyApiOptions = (input: Pick<DifferentialPrivacyConfigInput, 'accumulatedEpsilon' | 'accumulatedDelta' | 'targetDelta'>) => ({
-    accumulated_epsilon: input.accumulatedEpsilon ?? 0,
-    accumulated_delta: input.accumulatedDelta ?? 0,
-    default_delta: input.targetDelta ?? 0.0001
-});
-
 /**
  * 每個欄位實際送給後端的 ε／δ（直接取自 buildDifferentialPrivacyConfig 組出的 column_budgets，與送出內容保證一致）。
  * 只有已啟用欄位會出現；類別型與 ε-DP 模式欄位的 δ 為 0（不送或送 0），未填 ε 時與送出內容相同退回 1.0。
@@ -563,6 +555,7 @@ export interface WorkspaceConfigSource {
     maxSuppression: number | null | undefined;
     suppressionMethod: string | null | undefined;
     cellFillMethod: 'star' | 'missing' | null | undefined;
+    cellFillValuesByColumn?: Record<string, string> | null;
     limitExceededAction: string | null | undefined;
     dpFields?: DpStoreField[] | null;
     dpAccumulatedEpsilon?: number | null;
@@ -587,7 +580,8 @@ export const buildBackendConfigDocumentFromWorkspace = (
             kValue: workspaceState.kValue, lValue: workspaceState.lValue, tValue: workspaceState.tValue,
             enableLDiversity: workspaceState.enableLDiversity, enableTCloseness: workspaceState.enableTCloseness,
             maxSuppression: workspaceState.maxSuppression, suppressionMethod: workspaceState.suppressionMethod,
-            cellFillMethod: workspaceState.cellFillMethod, limitExceededAction: workspaceState.limitExceededAction,
+            cellFillMethod: workspaceState.cellFillMethod, cellFillValuesByColumn: workspaceState.cellFillValuesByColumn,
+            limitExceededAction: workspaceState.limitExceededAction,
             processedColumnNames,
             kAnonymityFields,
             kAnonymityHierarchies: workspaceState.kAnonymityHierarchies || [],

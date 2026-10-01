@@ -39,18 +39,6 @@ export const isApiRequestTimeout = (error: unknown): boolean => {
 // K-Anonymity (K-匿名化) 相關介面宣告
 // ============================================================================
 
-// 1. 定義選填參數的型別 (根據 API 規格書 2-1)
-export interface KAnonymityOptions {
-  k?: number;
-  l?: number;
-  t?: number;
-  salt_key?: string;
-  suppression_limit_percent?: number;
-  limit_exceeded_action?: 'stop_and_error' | 'allow_with_warning';
-  suppression_method?: 'row_suppression' | 'cell_suppression';
-  cell_fill?: 'star' | 'missing';
-}
-
 // 2. 根據 API 規格書 2-5 定義完整的品質報告型別
 export interface KAnonymityQualityReport {
   is_valid: boolean;
@@ -61,9 +49,11 @@ export interface KAnonymityQualityReport {
   suppression_unit: 'row' | 'cell';
   suppressed_count?: number;          // 被抑制的列數（row）或格數（cell）
   suppression_total_count?: number;   // 抑制率分母：總列數（row）或總格數（cell）
+  hash_algorithm?: string;            // 本次假名化採用的雜湊演算法（v3 報告新增）
+  hash_salted?: boolean;              // 本次雜湊是否加鹽（鹽值由部署環境 .env 的 OPEN_PETS_DEFAULT_SALT 提供）
   message: string;
   recommendations: unknown[];
-  applied_defaults: unknown[];
+  applied_defaults: unknown[];        // 設定檔未指定、由系統套用預設值的項目
 }
 
 // 3. 定義回傳值的型別 (回傳成功的 Blob 資料，供前端自由處置)
@@ -79,22 +69,21 @@ export interface KAnonymityResponse {
 // Differential Privacy (差分隱私) 相關介面宣告
 // ============================================================================
 
-// 根據 Open-PETs API 交付文件 3-1 節：逐欄的型別、ε、δ 一律於 config 設定檔 (column_budgets) 指定，
-// 此處僅為跨批次累計追蹤與全域補值之選填參數，無 epsilon／delta／simulated_query_count 欄位
-export interface DifferentialPrivacyOptions {
-  accumulated_epsilon?: number;
-  accumulated_delta?: number;
-  default_delta?: number;
-}
-
 // 根據 Open-PETs API 交付文件 3-5 節定義之預算報告 (X-Budget-Report) 型別
 export interface DpPerColumnBudgetReport {
   column: string;
   type: 'continuous' | 'categorical' | 'datetime';
-  mechanism: 'Laplace' | 'k-RR';
+  // ★ 2026-10-01：v3 實際回傳 DiscreteLaplace／DiscreteGaussian／k-RR（先前型別只寫 'Laplace'）
+  mechanism: 'DiscreteLaplace' | 'DiscreteGaussian' | 'k-RR' | string;
   epsilon: number;
+  delta?: number;                     // 該欄實際採用的 δ（未指定時取自 default_delta）
+  // 換算為整數個刻度後的敏感度，非設定檔原始申報值（例如薪資申報 125000、刻度 1000 → 125）
   sensitivity: number | null;
   sensitivity_source: 'user' | null;
+  minimum_unit?: number;              // 連續值欄位的刻度
+  noise_unit?: string;                // 日期欄位的雜訊單位
+  noise_step?: number;                // 日期欄位幾個 noise_unit 算一格
+  out_of_bounds_strategy?: string | null; // clamp／fold／wrap，null 表示未設上下限
 }
 
 export interface DpQualityReport {
@@ -121,13 +110,13 @@ export interface DpResponse {
 /**
  * 呼叫 K-匿名化 API (已移除自動觸發下載邏輯)
  * @param dataFile - 使用者上傳的原始資料集檔案
- * @param configFile - 使用者上傳的欄位設定檔
- * @param options - 選填參數物件
+ * @param configFile - 設定檔（所有參數皆寫在 k_anonymity 區塊內）
+ * ★ 2026-10-01：依後端 2_操作說明.md v3「API 表單不再提供個別參數欄位」，表單只送 file／config；
+ *   先前另送的 k／l／t／salt_key／suppression_*／cell_fill 表單欄位已移除（後端不讀，鹽值僅由部署環境 .env 提供）。
  */
 export const runKAnonymity = async (
   dataFile: File,
   configFile: File,
-  options: KAnonymityOptions = {},
   requestOptions?: ApiRequestOptions
 ): Promise<KAnonymityResponse> => {
   try {
@@ -135,24 +124,6 @@ export const runKAnonymity = async (
     formData.append('file', dataFile);
     formData.append('config', configFile);
 
-    if (options.k !== undefined) formData.append('k', options.k.toString());
-    if (options.l !== undefined) formData.append('l', options.l.toString());
-    if (options.t !== undefined) formData.append('t', options.t.toString());
-    if (options.salt_key) formData.append('salt_key', options.salt_key);
-    
-    if (options.suppression_limit_percent !== undefined) {
-      formData.append('suppression_limit_percent', options.suppression_limit_percent.toString());
-    }
-    if (options.limit_exceeded_action) {
-      formData.append('limit_exceeded_action', options.limit_exceeded_action);
-    }
-    if (options.suppression_method) {
-      formData.append('suppression_method', options.suppression_method);
-    }
-    if (options.cell_fill) {
-      formData.append('cell_fill', options.cell_fill);
-    }
-    
     const response = await axios.post(
       '/api/v1/k-anonymity',
       formData,
@@ -205,23 +176,18 @@ export const runKAnonymity = async (
 /**
  * 呼叫差分隱私 (Differential Privacy) API
  * @param dataFile - 使用者上傳的原始資料集檔案
- * @param configFile - 使用者上傳的欄位預算設定檔 (column_budgets)
- * @param options - 選填參數物件 (accumulated_epsilon、accumulated_delta、default_delta)
+ * @param configFile - 設定檔（column_budgets、accumulated_epsilon／accumulated_delta、default_delta 皆在 differential_privacy 區塊內）
+ * ★ 2026-10-01：表單只送 file／config，先前另送的 accumulated_*／default_delta 表單欄位已移除（同上）。
  */
 export const runDifferentialPrivacy = async (
   dataFile: File,
   configFile: File,
-  options: DifferentialPrivacyOptions = {},
   requestOptions?: ApiRequestOptions
 ): Promise<DpResponse> => {
   try {
     const formData = new FormData();
     formData.append('file', dataFile);
     formData.append('config', configFile);
-
-    if (options.accumulated_epsilon !== undefined) formData.append('accumulated_epsilon', options.accumulated_epsilon.toString());
-    if (options.accumulated_delta !== undefined) formData.append('accumulated_delta', options.accumulated_delta.toString());
-    if (options.default_delta !== undefined) formData.append('default_delta', options.default_delta.toString());
 
     const response = await axios.post(
       '/api/v1/dp',
