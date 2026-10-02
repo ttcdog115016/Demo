@@ -319,7 +319,11 @@ Vite/React 預設模板殘留的展示頁樣式（`.counter`、`.hero`、`#next-
 - `dataTableColumnsConfig`：8 欄表格（憑證編號、檔案名稱、保護模式、操作者/角色、三項風險、綜合風險、審計時間、調閱操作）。
 - `handleOpenCertificate(logItem)`：開啟憑證詳情 Modal。
 - `getSnapshotRole(logItem, columnName)`：從紀錄的「簽發當下快照」讀取欄位角色，**不受後續 workspace 狀態變更影響**。
-- 憑證調閱 Modal 內的「欄位處置與技術對照表」依角色與模式推導套用技術描述文字（完全移除/完全遮蔽/區間泛化/差分隱私加噪/保留原文）；底部顯示**模擬的**SHA-256 防篡改指紋與數位簽章（程式註解明確標示為前端展示用 Mock Data，正式環境應由後端動態產生）。
+- 憑證調閱 Modal 內的「欄位處置與技術對照表」依角色與模式推導套用技術描述文字（完全移除/完全遮蔽/區間泛化/差分隱私加噪/保留原文）；底部顯示防篡改指紋與數位簽章（`components/AuditIntegrityPanel.tsx`，與 Step4 合規報告共用）。**2026-10-02 起改為真實值**（原為寫死的假字串）：
+  - 產生（`utils/auditIntegrity.ts` 的 `createAuditIntegrity`，於 `usePipelineRunner` 寫入稽核紀錄前呼叫）：簽署文件＝憑證內容（不含 id）＋原始檔／輸出檔 SHA-256＋簽署時間＋金鑰 ID，以鍵值排序 JSON 序列化；指紋＝SHA-256(簽署文件)；簽章＝ECDSA P-256／SHA-256（Web Crypto）。結果存於 `AuditLogItem.integrity`。
+  - 金鑰：瀏覽器端產生、私鑰不可匯出，存於 IndexedDB（無法使用時退回本次頁面記憶體）；公鑰（JWK）隨憑證保存，金鑰 ID＝公鑰指紋前 16 碼。
+  - 驗證（`verifyAuditIntegrity`）：開啟憑證時依目前內容重組簽署文件，指紋不符、簽章驗不過或公鑰被換掉 → 顯示「驗證失敗，可能已被竄改」。
+  - 限制：金鑰由使用者瀏覽器產生，只能證明「簽發後內容未被改動」，不能證明「由伺服器簽發」，正式環境應改由後端私鑰簽署；Web Crypto 僅在 HTTPS 或 localhost 可用，以 http://區網IP 開啟時只有指紋、無簽章；檔案超過 512MB 不計算檔案指紋。
 - `handleDownloadPDF()`：動態從 CDN 載入 `html2pdf.js`，組裝參數後鏈式呼叫 `.set().from().save()` 匯出 PDF；`isPdfExporting` 狀態切換兩種 DOM 排版（匯出用/預覽用）。
 
 ---
@@ -378,7 +382,7 @@ Vite/React 預設模板殘留的展示頁樣式（`.counter`、`.hero`、`#next-
 **檔案用途**：Step2「資料預先處理」容器/父層元件。第一階段設定缺失值處理與清洗策略鏈並即時預覽；第二階段依隱私模式切換渲染 `KAnonymityMapping` 或 `DifferentialPrivacyMapping` 子組件。
 
 - `resolveTableScrollAreaAsPopupContainer(node)`：修正下拉選單因表格內部捲動區（`scroll={{y:250}}`）而浮貼蓋住標題列的跑版問題——找到 `.ant-table-body` 容器作掛載點，並明確賦予 `position:relative` 建立正確定位基準。
-- `applyPreprocessStep(cellValue, step)`：單一清洗動作邏輯，支援 `trim`（去空白）、`slice`（截斷）、`anchor_truncate`（相對保留與截斷，如身分證部分遮蔽）、`type_cast`（型態轉換，**修正過**：整數轉換先 `parseFloat` 再 `Math.round`，避免 27.8 誤轉 278）、`normalize`（全形轉半形/大小寫）、`clamp`（上下界截斷）、`hash`（MD5/SHA256/SHA512 雜湊）、`regex_replace`（正則替換）。
+- `applyPreprocessStep(cellValue, step)`：單一清洗動作邏輯，支援 `trim`（去空白）、`slice`（截斷）、`anchor_truncate`（相對保留與截斷，如身分證部分遮蔽）、`type_cast`（型態轉換，**修正過**：整數轉換先 `parseFloat` 再 `Math.round`，避免 27.8 誤轉 278）、`normalize`（全形轉半形/大小寫）、`clamp`（上下界截斷）、`hash`（SHA-256／SHA-512 雜湊；鹽值可選不加鹽／自訂鹽值／系統隨機鹽值，加鹽時改用 HMAC 計算，2026-10-02 修正：原標示 SHA3 但實際為 SHA-2，已改標示；「目前時間戳」改為每次頁面載入產生一次的密碼學隨機鹽值。實作在 `utils/preprocessSteps.ts`，目前僅影響畫面預覽）、`regex_replace`（正則替換）。
 - `applyPreprocessSteps(value, steps)`：依序套用多道策略；**雜湊為不可逆終點**，一旦執行即 `break` 不再繼續套用後續步驟。
 - `handleStepActionChange`/`handleStepParamChange`/`handleAddPreprocessStep`/`handleRemovePreprocessStep`：欄位清洗策略鏈的 CRUD；新增/變更雜湊步驟時，其後步驟強制重設為「不處理」。
 - `handleMissingValueStrategyChange`/`handleMissingValueParamChange`：缺失值策略（不處理/丟棄/常數填充/策略填充）設定。

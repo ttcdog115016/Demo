@@ -20,6 +20,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
+import AuditIntegrityPanel from '../../components/AuditIntegrityPanel';
 
 /**
  * 預設常數宣告
@@ -644,21 +645,13 @@ export default function AuditLogHub(): React.ReactElement
 							</div>
 						)}
 
-						{/* 
-						  * ============================================================================
-						  * [前端模擬區塊 - 數位簽章與防篡改指紋]
-						  * 規範對照: 符合變數撰寫參考 b) 說明變數含義與作用、e) 避免魔術字串混淆
-						  * 實作說明:
-						  * 1. 目前此區塊的 SHA-256 與簽章字串為「純前端 UI 展示用」的靜態模擬資料 (Mock Data)。
-						  * 2. 生產環境 (Production) 實作方向：
-						  *    - SHA-256: 應於送出時，透過 crypto-js 等套件，針對該次憑證的 JSON Payload 動態即時運算生成真實雜湊值。
-						  *    - 數位簽章: 應由後端伺服器利用私鑰 (Private Key) 對紀錄進行非對稱加密簽署，並回傳 Base64/JWT 簽章，確保憑證具備真實防篡改效力。
-						  * ============================================================================
-						  */}
-						<div className="pdf-page-break avoid-break" style={{ textAlign: 'right', marginTop: '24px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: '12px', color: '#888888', pageBreakInside: 'avoid' }}>
-							{translate('audit.report_SHA', '數位防篡改指核 (SHA-256):')} 8f3c7e9a0b12d3e4f56789a0b12c3d4e56789a0b<br/>
-							{translate('audit.report_signature', '系統數位簽章：PRIVACY-APP-AUDIT-ENGINE-V2.0-PASSED')}
-						</div>
+						{/* ★ 2026-10-02：原為寫死的假指紋與假簽章（Mock Data），改為簽發時產生的真實 SHA-256 指紋與 ECDSA 數位簽章，
+						    開啟憑證時依目前內容即時驗證是否被竄改（見 utils/auditIntegrity.ts、components/AuditIntegrityPanel.tsx）。 */}
+						<AuditIntegrityPanel
+							entry={selectedAuditLog}
+							className="pdf-page-break avoid-break"
+							style={{ textAlign: 'left', marginTop: '24px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: '12px', color: '#888888', pageBreakInside: 'avoid', lineHeight: 1.7 }}
+						/>
 					</div>
 				)}
 			</Modal>

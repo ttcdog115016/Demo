@@ -284,24 +284,26 @@ export default function Step2_Mapping(): React.ReactElement
                 {
                     key: 'algorithm', type: 'select', label: translate('step2.param_hash_algorithm', '演算法'), defaultValue: 'SHA256',
                     options: [
-                        { value: 'SHA256', label: 'SHA3-256' },
-                        { value: 'SHA512', label: 'SHA3-512' }
+                        // ★ 2026-10-02：原標示 SHA3-256／SHA3-512，但實際計算為 SHA-2，標示改為與實際一致
+                        { value: 'SHA256', label: 'SHA-256' },
+                        { value: 'SHA512', label: 'SHA-512' }
                     ]
                 },
                 {
-                    key: 'seedMode', type: 'select', label: translate('step2.param_hash_seed_mode', '隨機種子'), defaultValue: 'none',
+                    key: 'seedMode', type: 'select', label: translate('step2.param_hash_seed_mode', '鹽值 (Salt)'), defaultValue: 'none',
                     options: [
                         { value: 'none', label: translate('step2.hash_seed_none', '不添加鹽值') },
                         { value: 'fixed', label: translate('step2.hash_seed_fixed', '固定種子') },
-                        { value: 'timestamp', label: translate('step2.hash_seed_timestamp', '目前時間戳') }
+                        // ★ 2026-10-02：「目前時間戳」改為「系統隨機鹽值」（時間戳可被猜測），舊設定的 'timestamp' 仍可讀取並視同隨機鹽值
+                        { value: 'random', label: translate('step2.hash_seed_random', '系統隨機鹽值') }
                     ],
                     optionHintMap: {
                         none: translate('step2.hint_hash_seed_none', '效果：直接對原始值雜湊，同一個值永遠得到相同結果。適用情境：需跨批次比對同一個值（如流水號、代碼）時使用；但對手機、身分證字號等值域較小的欄位，仍有被查表反推的風險。'),
                         fixed: translate('step2.hint_hash_seed_fixed', '效果：雜湊前加上一組固定字串（種子），同一種子下同一個值仍會得到相同結果。適用情境：需兼顧「跨批次比對」與「防止查表反推」時使用；種子須自行妥善保管，一旦外流即失去防護效果。'),
-                        timestamp: translate('step2.hint_hash_seed_timestamp', '效果：每次執行都以當下時間混入雜湊，同一個值每次執行結果都不同。適用情境：只需遮蔽當次結果、不需要跨批次比對時使用，安全性最高但無法比對追蹤同一筆資料。')
+                        random: translate('step2.hint_hash_seed_random', '效果：系統自動產生一組無法猜測的隨機鹽值，本次操作內同一個值結果相同，重新整理頁面後即換新、不會保存。適用情境：只需遮蔽本批資料、不需要跨批次比對時使用，安全性最高，但無法與其他批次比對同一筆資料。')
                     }
                 },
-                { key: 'seedValue', type: 'text', label: translate('step2.param_hash_seed_value', '種子值'), defaultValue: '', visibleWhen: (paramsDict) => paramsDict.seedMode === 'fixed', required: true }
+                { key: 'seedValue', type: 'text', label: translate('step2.param_hash_seed_value', '鹽值'), defaultValue: '', visibleWhen: (paramsDict) => paramsDict.seedMode === 'fixed', required: true }
             ]
         },
         {

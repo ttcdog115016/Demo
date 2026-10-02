@@ -29,6 +29,8 @@ import type { KAnonymityQualityReport, DpQualityReport } from '../../api/apiServ
 
 import { usePipelineRunner } from './usePipelineRunner';
 import BackendReportDetails from './BackendReportDetails';
+import AuditIntegrityPanel from '../../components/AuditIntegrityPanel';
+import { useAuditStore } from '../../store/useAuditStore';
 
 // ★ 2026-10-02：使用者要求暫不顯示「後端處理報告明細」（內容偏技術，一般使用者看了反而更混淆），
 //   元件與單元測試保留，日後要恢復顯示把此旗標改回 true 即可。說明見專案文件「修改建議整理」。
@@ -364,6 +366,8 @@ export default function Step4_Result(): React.ReactElement
         runFullPipeline,
         handleCancelPipeline
     } = usePipelineRunner({ actualProcessedColumnsList, getCalculatedRole });
+    // ★ 2026-10-02：本次憑證的防篡改指紋與數位簽章（簽發時寫入稽核紀錄，見 usePipelineRunner）
+    const currentAuditLogEntry = useAuditStore((state) => state.auditLogs.find((logItem) => logItem.certificateId === auditMetadataObject.certificateId));
 
     // ★ 修正：使用者對照瀏覽器開發者工具的實際後端回應後發現，「脫敏結果預覽對照」在
     //   「K-匿名化後資料／差分隱私加噪後資料」檢視下，表格欄位（姓名、身分證號、生日等
@@ -1416,9 +1420,12 @@ export default function Step4_Result(): React.ReactElement
                                     )}
                                 </div>
 
-                                <div className="pdf-page-break" style={{ textAlign: 'right', marginTop: '16px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: '12px', color: '#888888', pageBreakInside: 'avoid' }}>
-                                    {translate('step4.report.signature', '系統數位簽章：PRIVACY-APP-AUDIT-ENGINE-V2.0-PASSED')}
-                                </div>
+                                {/* ★ 2026-10-02：原為寫死的假簽章字串，改為真實防篡改指紋與數位簽章（見 components/AuditIntegrityPanel） */}
+                                <AuditIntegrityPanel
+                                    entry={currentAuditLogEntry}
+                                    className="pdf-page-break"
+                                    style={{ textAlign: 'left', marginTop: '16px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: '12px', color: '#888888', pageBreakInside: 'avoid', lineHeight: 1.7 }}
+                                />
                             </div>
                         </div>
                     );

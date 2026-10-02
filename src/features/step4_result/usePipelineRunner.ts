@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuditStore } from '../../store/useAuditStore';
+import { createAuditIntegrity } from '../../utils/auditIntegrity';
 import { ensureDatasetProfile } from '../../utils/datasetProfile';
 import type { HighCardinalitySensitiveInfo } from '../../utils/riskAssessment';
 import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, wrapBackendConfigDocument, type DpStoreField, type KAnonymityPipelineSettings, type DifferentialPrivacyConfigInput } from '../../utils/pipelineConfig';
@@ -537,7 +538,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     currentParametersHashString
                 );
 
-                addAuditLogAction(buildPipelineAuditLogEntry({
+                const pipelineAuditLogEntry = buildPipelineAuditLogEntry({
                     certificateId: generatedNewAuditMetadataObj.certificateId,
                     auditTime: generatedNewAuditMetadataObj.auditTime,
                     auditTimestamp: generatedNewAuditMetadataObj.auditTimestamp,
@@ -554,7 +555,19 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     columnNames: actualProcessedColumnsList,
                     resolveColumnRole: getCalculatedRole,
                     dpEnabledFieldNames: (currentDpFieldsListArray || []).filter((field: DpStoreField) => field.enabled).map((field: DpStoreField) => field.fieldName)
-                }));
+                });
+                // ★ 2026-10-02：簽發前計算防篡改指紋（憑證內容＋原始檔／輸出檔 SHA-256）並以 ECDSA 簽章（見 utils/auditIntegrity.ts）；
+                //   簽章失敗不影響稽核紀錄寫入，只是該筆紀錄沒有簽章
+                try {
+                    const auditIntegrityRecord = await createAuditIntegrity(pipelineAuditLogEntry, { inputFile: safeDataFile, outputFile: finalCsvBlobData });
+                    addAuditLogAction({ ...pipelineAuditLogEntry, integrity: auditIntegrityRecord });
+                    setSystemSimulationLogsList(prev => [...prev, auditIntegrityRecord.signature
+                        ? `[${formatCurrentTimeForLogString()}] 🔏 已產生防篡改指紋並完成數位簽章（金鑰 ID ${auditIntegrityRecord.keyId}）`
+                        : `[${formatCurrentTimeForLogString()}] ⚠️ 已產生防篡改指紋，但目前環境無法數位簽章（需以 HTTPS 或 localhost 開啟）`]);
+                } catch (integrityErrorPayload) {
+                    console.error('產生稽核憑證防篡改資料失敗:', integrityErrorPayload);
+                    addAuditLogAction(pipelineAuditLogEntry);
+                }
 
                 setSystemSimulationLogsList(prev => [...prev, translate('step4.log.finished', '[{{time}}] 🎉 後端管線運算完畢，合規憑證生成完成！', { time: formatCurrentTimeForLogString() })]);
 

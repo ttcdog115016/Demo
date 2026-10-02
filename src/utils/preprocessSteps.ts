@@ -12,6 +12,22 @@ import type { PreprocessingRule } from '../store/useWorkspaceStore';
 
 const DEFAULT_PREVIEW_SYMBOL = '-';
 const HASH_PREVIEW_LENGTH = 16;
+
+/**
+ * ★ 2026-10-02：「系統隨機鹽值」——本次頁面載入時以密碼學亂數產生一次（32 bytes），之後同一個值在本次操作內
+ *   雜湊結果一致（預覽穩定、可在同批資料內比對），重新整理頁面即換新且不保存，無法跨批次比對也無法被反推。
+ *   取代原本的「目前時間戳」：時間戳可被猜測、且每格呼叫 Date.now() 都不同，會讓同一值在同批資料內也對不起來。
+ */
+const generateSessionRandomSalt = (): string => {
+    try {
+        const randomBytes = new Uint8Array(32);
+        globalThis.crypto.getRandomValues(randomBytes);
+        return Array.from(randomBytes).map((byteValue) => byteValue.toString(16).padStart(2, '0')).join('');
+    } catch {
+        return CryptoJS.lib.WordArray.random(32).toString(CryptoJS.enc.Hex);
+    }
+};
+const SESSION_RANDOM_HASH_SALT = generateSessionRandomSalt();
 const FULLWIDTH_CHAR_CODE_OFFSET = 0xFEE0;   // 全形字元 (！~～) 與對應半形字元間之 Unicode 編碼差值
 const FULLWIDTH_SPACE_CHAR_CODE = 0x3000;    // 全形空白字元碼
 
@@ -139,22 +155,26 @@ export const applyPreprocessStep = (cellValueStr: string, stepItemRecord: Prepro
         {
             try
             {
-                const algorithmStr = String(actionParamsDict.algorithm || 'SHA3-256');
+                const algorithmStr = String(actionParamsDict.algorithm || 'SHA256');
                 const seedModeStr = String(actionParamsDict.seedMode || 'none');
 
-                let seedSuffixStr = '';
-                if (seedModeStr === 'fixed') seedSuffixStr = String(actionParamsDict.seedValue || '');
-                else if (seedModeStr === 'timestamp') seedSuffixStr = String(Date.now());
-
-                const hashInputStr = cellValueStr + seedSuffixStr;
+                // ★ 2026-10-02：加鹽改用 HMAC（以鹽值為金鑰），取代「原始值＋鹽值字串串接」——串接法有長度延伸等弱點，
+                //   且「值＋鹽」與「另一值＋另一鹽」可能拼出相同字串。舊設定的 'timestamp' 視同系統隨機鹽值。
+                let saltKeyStr = '';
+                if (seedModeStr === 'fixed') saltKeyStr = String(actionParamsDict.seedValue || '');
+                else if (seedModeStr === 'random' || seedModeStr === 'timestamp') saltKeyStr = SESSION_RANDOM_HASH_SALT;
+                const hashInputStr = cellValueStr;
 
                 // ★ 2026-09-30：Step2 與 K-匿名頁原本各有一份此函式且雜湊判斷不同步——畫面選項實際存的值是
                 //   'SHA256'／'SHA512'，Step2 卻只比對 'SHA3-512'，導致選 512 時 Step2 預覽仍用 256。統一為：
                 //   'SHA512'／'SHA3-512' → 512，'md5' → MD5，其餘 → 256。僅影響畫面預覽，不影響送給後端的設定。
+                //   ★ 2026-10-02：畫面標示原為 SHA3-256／SHA3-512，但實際計算一直是 SHA-2（CryptoJS.SHA256／SHA512），
+                //   標示改為 SHA-256／SHA-512 與實際一致（CryptoJS.SHA3 為 Keccak 舊版，非 FIPS 202 標準 SHA3，故不採用）。
+                const isSha512Status = algorithmStr === 'SHA512' || algorithmStr === 'SHA3-512';
                 let calculatedHashResult = '';
-                if (algorithmStr === 'md5') calculatedHashResult = CryptoJS.MD5(hashInputStr).toString();
-                else if (algorithmStr === 'SHA512' || algorithmStr === 'SHA3-512') calculatedHashResult = CryptoJS.SHA512(hashInputStr).toString();
-                else calculatedHashResult = CryptoJS.SHA256(hashInputStr).toString();
+                if (algorithmStr === 'md5') calculatedHashResult = (saltKeyStr ? CryptoJS.HmacMD5(hashInputStr, saltKeyStr) : CryptoJS.MD5(hashInputStr)).toString();
+                else if (isSha512Status) calculatedHashResult = (saltKeyStr ? CryptoJS.HmacSHA512(hashInputStr, saltKeyStr) : CryptoJS.SHA512(hashInputStr)).toString();
+                else calculatedHashResult = (saltKeyStr ? CryptoJS.HmacSHA256(hashInputStr, saltKeyStr) : CryptoJS.SHA256(hashInputStr)).toString();
 
                 // 為了 UI 預覽美觀，擷取前 16 碼並加上刪節號
                 return calculatedHashResult.substring(0, HASH_PREVIEW_LENGTH) + '...';

@@ -8,6 +8,7 @@
  */
 
 import { create } from 'zustand';
+import type { AuditIntegrityRecord } from '../utils/auditIntegrity';
 
 /**
  * 歷史審計軌跡單筆紀錄資料結構介面
@@ -36,6 +37,7 @@ export interface AuditLogItem
 	columnRoleSnapshot: Record<string, string>;       // 簽發當下各欄位最終隱私角色快照 (如 Identifier/Quasi-identifier/DP Sensitive/Retained/Non-sensitive)
 	identifierMaskStrategySnapshot: Record<string, string>; // 簽發當下 Identifier 欄位實際套用之遮蔽策略快照 ('hash' | 'remove')，用以區分套用技術對照表顯示「完全遮蔽」或「直接移除」
 	dpEnabledFieldNamesSnapshot: string[];            // 簽發當下已啟用差分隱私之欄位名稱清單快照
+	integrity?: AuditIntegrityRecord;                 // ★ 2026-10-02：防篡改指紋（SHA-256）與數位簽章（ECDSA P-256），見 utils/auditIntegrity.ts；舊紀錄無此欄位
 }
 
 /**
