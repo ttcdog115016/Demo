@@ -292,10 +292,15 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
             return;
         }
 
-        // 判斷：如果是第 1 步而且根本沒檔案，就不需要跳確認視窗
+        // 判斷：尚未上傳任何檔案（無進度可遺失）時，不需跳確認視窗，直接回到主控台
+        // ★ 修正：原本在 Step1 且無檔案時直接 return，導致點擊 Logo／麵包屑完全沒有反應
         const currentDataFile = useWorkspaceStore.getState().dataFile;
-        if (currentLocationData.pathname === '/workspace' && currentWorkspaceStepIndexValue === MIN_STEP_INDEX && !currentDataFile) {
-            return; 
+        if (!currentDataFile) {
+            resetWorkspaceAction();
+            if (currentLocationData.pathname !== '/dashboard') {
+                executeNavigationAction('/dashboard?Dashboard', { replace: true });
+            }
+            return;
         }
 
         // 彈出確認視窗，確認後徹底重置資料並回到第 1 步
@@ -514,7 +519,6 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                     <Header style={{ background: themeDynamicColorsConfiguration.bgComponent, padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${themeDynamicColorsConfiguration.border}`, transition: 'background 0.3s' }}>
                         
                         <div style={{ color: themeDynamicColorsConfiguration.textMuted, fontSize: '14px', display: 'flex', alignItems: 'center' }}>
-                            {translate('header.project_space', '專案空間')} / 
                             
                             {/* ★ 修正：將上方麵包屑的工具包也綁定 handleLogoClick */}
                             <span 
@@ -522,7 +526,6 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                                     color: themeDynamicColorsConfiguration.textMain, 
                                     fontWeight: 'bold',
                                     cursor: 'pointer',
-                                    marginLeft: '4px',
                                     transition: 'color 0.2s'
                                 }}
                                 onClick={handleLogoClick}

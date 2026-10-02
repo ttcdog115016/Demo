@@ -1017,7 +1017,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					const boundRangeTooltipTitleText = isBoundOrderInvalidStatus
 						? "下限值必須嚴格小於上限值！"
 						: isBoundRangeCoverageInvalidStatus
-							? `此邊界範圍未涵蓋實際資料範圍：有 ${boundRangeCoverageIssueInfo.outOfRangeCount} 筆／共 ${boundRangeCoverageIssueInfo.totalValidValueCount} 筆 (${boundRangeCoverageIssueInfo.percentText}) 資料超出此範圍，加噪後可能產生無意義的異常數值，請擴大邊界範圍或確認資料。`
+							? `此邊界範圍未涵蓋實際資料範圍：有 ${boundRangeCoverageIssueInfo.outOfRangeCount} 筆／共 ${boundRangeCoverageIssueInfo.totalValidValueCount} 筆 (${boundRangeCoverageIssueInfo.percentText}) 資料超出此範圍，請擴大邊界範圍或確認資料。`
 							: undefined;
 
 					return (

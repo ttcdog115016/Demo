@@ -816,6 +816,15 @@ export default function Step2_Mapping(): React.ReactElement
                 style={{ background: token.colorBgContainer, padding: 0 }}
                 styles={{ body: { padding: '16px' } }}
             >
+                {/* ★ 2026-10-01：資料預先處理（缺失值處理、清洗策略鏈）由後端負責執行，目前後端仍在開發中；
+                    此處設定僅影響本頁預覽，尚未送給後端、不會套用到 Step4 去識別化結果，先明確提示避免 Demo 時被誤認為 bug。 */}
+                <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    title={translate('step2.preprocess_backend_pending_title', '此功能後端開發中')}
+                    description={translate('step2.preprocess_backend_pending_desc', '目前設定僅供預覽，不會套用到去識別化結果。')}
+                />
                 <Table dataSource={mappingTableDataList} columns={preprocessTableColumnsConfig} pagination={false} size="small" bordered={false} rowKey="key" scroll={{ y: 250 }} style={{ background: isDarkModeActive ? '#141414' : '#fafafa', borderRadius: 8, border: `1px solid ${token.colorBorderSecondary}` }} />
             </Card>
 

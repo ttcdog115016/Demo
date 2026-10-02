@@ -308,6 +308,30 @@ export default function Step4_Result(): React.ReactElement
         [actualProcessedColumnsList, currentDpFieldsListArray, currentPrivacyModeTypeStr, isColumnActuallyDeidentifiedFn]
     );
 
+    // ★ 使用者需求（2026-10-01）：在「實際去識別數 / 總欄位數」卡片列出未計入的欄位與原因，
+    //   讓使用者知道是哪些欄位維持原樣輸出、該回 Step2 調整哪裡。判斷條件與上方
+    //   deidentifiedColumnsCountValue 完全一致（同樣以 isColumnActuallyDeidentifiedFn／DP 啟用狀態為準）。
+    const nonDeidentifiedColumnsDetailList = useMemo(
+        (): { columnName: string; reason: string }[] => actualProcessedColumnsList.flatMap((columnNameString) => {
+            if (currentPrivacyModeTypeStr === 'differential-privacy') {
+                const cleanColName = columnNameString.replace(/^[\uFEFF\u200B]+/, '').trim();
+                const isDpEnabled = (currentDpFieldsListArray || []).some((field: DpStoreField) =>
+                    field.enabled && String(field.fieldName || '').replace(/^[\uFEFF\u200B]+/, '').trim() === cleanColName
+                );
+                return isDpEnabled ? [] : [{ columnName: columnNameString, reason: translate('step4.utility.reason_dp_disabled', '未啟用差分隱私') }];
+            }
+            if (isColumnActuallyDeidentifiedFn(columnNameString)) return [];
+            const { role } = getCalculatedRole(columnNameString);
+            let reason: string;
+            if (role === 'Identifier') reason = translate('step4.utility.reason_no_mask', '識別符未選擇遮蔽策略（為「不處理」）');
+            else if (role === 'Quasi-identifier') reason = translate('step4.utility.reason_qi_incomplete', '準識別符泛化參數未設定完整');
+            else if (role === 'Sensitive') reason = translate('step4.utility.reason_sensitive', '敏感欄位，K-匿名不改動其值');
+            else reason = translate('step4.utility.reason_non_sensitive', '非敏感欄位，保留原值');
+            return [{ columnName: columnNameString, reason }];
+        }),
+        [actualProcessedColumnsList, currentDpFieldsListArray, currentPrivacyModeTypeStr, isColumnActuallyDeidentifiedFn, getCalculatedRole, translate]
+    );
+
     // 去識別化／風險評估的執行流程與結果 state 見 usePipelineRunner.ts
     const {
         apiReport,
@@ -1041,10 +1065,33 @@ export default function Step4_Result(): React.ReactElement
                                         )}
                                     </div>
                                     <div style={{ textAlign: 'center', width: '100%', paddingTop: '24px' }}>
-                                        <div style={{ fontSize: '14px', color: token.colorTextDescription, marginBottom: '16px' }}>{translate('step4.utility.total_cols', '實際去識別數 / 總欄位數')}</div>
+                                        <div style={{ fontSize: '14px', color: token.colorTextDescription, marginBottom: '16px' }}>
+                                            {translate('step4.utility.total_cols', '實際去識別數 / 總欄位數')}
+                                            <Tooltip title={currentPrivacyModeTypeStr === 'differential-privacy'
+                                                ? translate('step4.utility.total_cols_tooltip_dp', '只計入已啟用差分隱私（實際會被加噪）的欄位。')
+                                                : translate('step4.utility.total_cols_tooltip_k', '只計入實際會被遮蔽或泛化的欄位：識別符需選擇遮蔽策略（非「不處理」）；準識別符需設定完整的泛化參數（如區間、進位單位或分類樹對照表）。敏感與非敏感欄位不會被 K-匿名改動，因此不計入。')}>
+                                                <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} />
+                                            </Tooltip>
+                                        </div>
                                         <div style={{ fontSize: '36px', fontWeight: 'bold', color: token.colorText, fontFamily: 'monospace', lineHeight: 1 }}>
                                             {deidentifiedColumnsCountValue} <span style={{ fontSize: '20px', color: token.colorTextSecondary }}>/ {actualProcessedColumnsList.length}</span>
                                         </div>
+                                        {nonDeidentifiedColumnsDetailList.length > 0 && (
+                                            <Tooltip
+                                                placement="bottom"
+                                                title={(
+                                                    <div>
+                                                        {nonDeidentifiedColumnsDetailList.map((item) => (
+                                                            <div key={item.columnName}>• <b>{item.columnName}</b>：{item.reason}</div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            >
+                                                <div style={{ marginTop: '12px', fontSize: '12px', color: token.colorWarningText, cursor: 'help' }}>
+                                                    {translate('step4.utility.non_deidentified_hint', '{{count}} 個欄位未計入（維持原值輸出），滑鼠移過查看', { count: nonDeidentifiedColumnsDetailList.length })}
+                                                </div>
+                                            </Tooltip>
+                                        )}
                                     </div>
                                 </div>
                             </Card>
