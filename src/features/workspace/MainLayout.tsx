@@ -21,6 +21,7 @@ import Step3_Rules from '../step3_rules/Step3_Rules';
 import Step4_Result from '../step4_result/Step4_Result';
 import { validateProgression } from './validateProgression'; 
 import { listDpFieldsWithBoundsFinerThanNoiseUnit, applyDpDatetimeNoiseUnit } from '../../utils/dpFieldHelpers';
+import { resolveDpFieldRiskRole } from '../../utils/riskAssessment';
 
 /**
  * ============================================================================
@@ -118,7 +119,8 @@ export default function MainLayout(): React.ReactElement
 
         const noiseUnitConfirmDialog = globalModalApi.confirm({
             title: translate('workspace.dp_noise_unit_confirm_title', '日期欄位的雜訊單位比上下限粗'),
-            width: 520,
+            // ★ 2026-10-02：三顆按鈕在 520px 內放不下而凸出視窗外，改加寬並允許換行、主要按鈕靠右
+            width: 600,
             closable: true,
             content: (
                 <div data-testid="dp-noise-unit-confirm">
@@ -137,7 +139,7 @@ export default function MainLayout(): React.ReactElement
                 </div>
             ),
             footer: (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
                     <Button onClick={() => noiseUnitConfirmDialog.destroy()}>
                         {translate('workspace.dp_noise_unit_confirm_back', '返回修改')}
                     </Button>
@@ -146,6 +148,56 @@ export default function MainLayout(): React.ReactElement
                     </Button>
                     <Button type="primary" onClick={() => { noiseUnitConfirmDialog.destroy(); applySuggestedUnitsAndProceed(); }}>
                         {translate('workspace.dp_noise_unit_confirm_apply', '改為與上下限相同的單位並繼續')}
+                    </Button>
+                </div>
+            )
+        });
+    };
+
+    /**
+     * 函數名稱: confirmDpSensitiveFieldBeforeLeavingMapping
+     * 函數功能: DP 模式由 Step2 往後時，若尚未點選風險評估敏感欄位，跳出視窗提醒 Step4 會輪流評估 N 個類別型欄位
+     *           （執行時間約 N 倍）；可「返回點選」或「仍要繼續」。已點選，或非 DP 模式時直接繼續。
+     * ★ 2026-10-02：使用者反映 Step2 表格上方的提示不夠明顯，比照 confirmDpNoiseUnitBeforeLeavingRules 加確認視窗。
+     */
+    const confirmDpSensitiveFieldBeforeLeavingMapping = (proceedAction: () => void): void =>
+    {
+        const workspaceStateSnapshot = useWorkspaceStore.getState();
+        const dpFieldsList = workspaceStateSnapshot.dpFields || [];
+        if (workspaceStateSnapshot.privacyMode !== 'differential-privacy' || dpFieldsList.some((fieldItemRecord) => fieldItemRecord.isRiskSensitive))
+        {
+            proceedAction();
+            return;
+        }
+
+        const autoCandidateFieldNamesList = dpFieldsList
+            .filter((fieldItemRecord) => resolveDpFieldRiskRole(fieldItemRecord) !== 'none' && fieldItemRecord.fieldType === 'Categorical')
+            .map((fieldItemRecord) => fieldItemRecord.fieldName);
+
+        const sensitiveFieldConfirmDialog = globalModalApi.confirm({
+            title: translate('workspace.dp_sensitive_confirm_title', '尚未點選敏感欄位'),
+            width: 520,
+            closable: true,
+            content: (
+                <div data-testid="dp-sensitive-confirm">
+                    <p style={{ marginBottom: 8 }}>
+                        {translate('workspace.dp_sensitive_confirm_desc', 'Step4 將輪流以下列 {{count}} 個類別型欄位為敏感欄位，各執行一輪三攻擊與 CAP，取風險最高的結果，執行時間約為點選 1 個敏感欄位時的 {{count}} 倍：', { count: autoCandidateFieldNamesList.length })}
+                    </p>
+                    <p style={{ marginBottom: 8, fontWeight: 600 }}>
+                        {autoCandidateFieldNamesList.map((fieldNameText) => `「${fieldNameText}」`).join('、') || translate('workspace.dp_sensitive_confirm_none', '（無，三攻擊與 CAP 將無法執行）')}
+                    </p>
+                    <p style={{ margin: 0 }}>
+                        {translate('workspace.dp_sensitive_confirm_hint', '建議返回 Step2，在表格「敏感欄位」欄點選真正需要保護的欄位（例如疾病），結果較有意義，且點選幾個就只執行幾輪。')}
+                    </p>
+                </div>
+            ),
+            footer: (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                    <Button onClick={() => { sensitiveFieldConfirmDialog.destroy(); proceedAction(); }}>
+                        {translate('workspace.dp_sensitive_confirm_continue', '仍要繼續（自動輪流評估）')}
+                    </Button>
+                    <Button type="primary" onClick={() => sensitiveFieldConfirmDialog.destroy()}>
+                        {translate('workspace.dp_sensitive_confirm_back', '返回點選')}
                     </Button>
                 </div>
             )
@@ -206,6 +258,13 @@ export default function MainLayout(): React.ReactElement
             return;
         }
 
+        // DP：由 Step2 往後時提醒尚未點選敏感欄位（見 confirmDpSensitiveFieldBeforeLeavingMapping）
+        if (currentStepIndexValue === STEP_INDEX_MAPPING && targetStepIndexValue > currentStepIndexValue)
+        {
+            confirmDpSensitiveFieldBeforeLeavingMapping(jumpToTargetStep);
+            return;
+        }
+
         jumpToTargetStep();
     };
 
@@ -248,6 +307,13 @@ export default function MainLayout(): React.ReactElement
         if (currentStepIndexValue === STEP_INDEX_RULES)
         {
             confirmDpNoiseUnitBeforeLeavingRules(goToNextStep);
+            return;
+        }
+
+        // DP：由 Step2 前往 Step3 時提醒尚未點選敏感欄位（見 confirmDpSensitiveFieldBeforeLeavingMapping）
+        if (currentStepIndexValue === STEP_INDEX_MAPPING)
+        {
+            confirmDpSensitiveFieldBeforeLeavingMapping(goToNextStep);
             return;
         }
 

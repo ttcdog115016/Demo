@@ -198,22 +198,98 @@ export const buildKAnonymityConfigBlockForRisk = (originalKAnonBlock: unknown, b
     return { ...kAnonBlockRecord, columns: overriddenColumnsMap };
 };
 
+export type DpRiskRole = 'quasi_identifier' | 'sensitive' | 'none';
+
 /**
- * 差分隱私：候選敏感欄位只從已啟用的類別型欄位挑（連續數值當分類目標會讓後端 sklearn 當機），
- * 再排除高唯一值欄位（勾選強制執行則保留）。沒有已啟用欄位或沒有類別型欄位時直接丟錯。
+ * 差分隱私欄位在 Step4 風險評估中的角色（2026-10-02 新增，Step2「敏感欄位」欄點選）。
+ * 點選為敏感欄位者＝sensitive，與是否加噪無關（後端 /risk/dp 只要求欄位存在於資料中，未加噪的欄位
+ * 也能當敏感欄位）；其餘沿用原本規則：已啟用 DP＝間接識別、未啟用＝不參與。
+ */
+export const resolveDpFieldRiskRole = (field: Pick<DpStoreField, 'enabled' | 'isRiskSensitive'>): DpRiskRole =>
+    field.isRiskSensitive ? 'sensitive' : (field.enabled ? 'quasi_identifier' : 'none');
+
+/**
+ * 差分隱私：此欄位能否在 Step2 點選為風險評估敏感欄位（2026-10-02）。
+ * 推斷性攻擊以敏感欄位為分類目標、以「預測值與真實值完全相等」判定成功，目標須可列舉：
+ * - 類別型：可以。
+ * - 連續數值型：可以，Step4 會比照 K-匿名先分級距（例如薪資每 5 萬一級）再以級距當類別評估，
+ *   級距寬度可在 Step4 調整（見 selectDifferentialPrivacySensitiveCandidates）。
+ * - 日期時間型、文字型（識別碼，幾乎每筆唯一）、尚未選型態：不行。
+ */
+export const isDpFieldSelectableAsRiskSensitive = (field: Pick<DpStoreField, 'fieldName' | 'fieldType'> & { isDateTime?: boolean }): boolean => {
+    if (field.fieldType === 'Categorical') return true;
+    if (field.fieldType === 'Numeric') return !resolveIsDateTimeDpField(field);
+    return false;
+};
+
+/** 差分隱私：不能當敏感欄位時的型態說明文字（錯誤訊息用） */
+export const describeDpRiskSensitiveUnsupportedType = (field: Pick<DpStoreField, 'fieldName' | 'fieldType'> & { isDateTime?: boolean }): string => {
+    if (field.fieldType === 'Numeric') return '日期時間型';
+    if (field.fieldType === 'Text') return '文字型';
+    return '尚未選擇型態';
+};
+
+/**
+ * 差分隱私：決定 Step4 三攻擊／CAP 要用哪些欄位、以哪些欄位為敏感欄位。
+ * - Step2 已點選敏感欄位（isRiskSensitive，可複數個，2026-10-02 起；類別型或連續數值型，數值型會先分級距）：後端 RiskConfig 每次只接受恰好 1 個
+ *   sensitive，因此 Step4 每輪只以其中 1 個為敏感欄位，點選幾個就跑幾輪，取風險最高者；其餘已啟用 DP 且未被
+ *   點選為敏感的欄位為攻擊面（間接識別），其他被點選的敏感欄位在該輪不參與（見 buildDifferentialPrivacyRiskColumnsForCandidate）。
+ * - 未指定：沿用舊行為，輪流以每個參與評估且為類別型的欄位為敏感欄位（連續數值當分類目標會讓後端
+ *   sklearn 當機），取風險最高者。
+ * 兩種情況都會排除高唯一值欄位（勾選強制執行則保留）。回傳的 enabledFields 為「參與評估的欄位」
+ * （名稱沿用舊版，未設定角色時即等於已啟用 DP 的欄位）。
  */
 export const selectDifferentialPrivacySensitiveCandidates = (input: {
     dpFields: DpStoreField[] | null | undefined;
     datasetProfile: DatasetProfile;
     forceRunHighCardinality: boolean;
-}): { enabledFields: DpStoreField[]; effectiveCandidateColumnNames: string[]; highCardinalityInfo: HighCardinalitySensitiveInfo[] } => {
-    const enabledFields = (input.dpFields || []).filter((field) => field.enabled);
-    if (enabledFields.length === 0) {
+    /** Step4 使用者調整的級距寬度（欄位名稱 → 寬度）；未提供時一律自動計算 */
+    binWidthOverrides?: Record<string, number>;
+}): {
+    enabledFields: DpStoreField[]; effectiveCandidateColumnNames: string[]; highCardinalityInfo: HighCardinalitySensitiveInfo[]; designatedSensitiveColumnNames: string[];
+    /** 需先分級距才送風險評估的欄位 → 級距寬度（原始資料與去識別化結果都要套用） */
+    binWidthMap: Record<string, number>;
+    /** 風險評估時改宣告為類別型的敏感欄位（點選為敏感的連續數值型欄位，不論是否分級距） */
+    categoricalOverrideColumnNames: string[];
+} => {
+    const allFieldsList = input.dpFields || [];
+    if (!allFieldsList.some((field) => field.enabled)) {
         throw new Error('風險評估要求至少 1 個已啟用的差分隱私欄位，請回到步驟二欄位設定啟用欄位後再重新運算。');
+    }
+    const enabledFields = allFieldsList.filter((field) => resolveDpFieldRiskRole(field) !== 'none');
+    const designatedSensitiveFieldsList = allFieldsList.filter((field) => field.isRiskSensitive);
+    if (designatedSensitiveFieldsList.length > 0) {
+        const unsupportedSensitiveField = designatedSensitiveFieldsList.find((field) => !isDpFieldSelectableAsRiskSensitive(field));
+        if (unsupportedSensitiveField) {
+            throw new Error(`敏感欄位「${unsupportedSensitiveField.fieldName}」為${describeDpRiskSensitiveUnsupportedType(unsupportedSensitiveField)}，無法作為推斷性攻擊的預測目標，請回到步驟二改選類別型或連續數值型欄位。`);
+        }
+        if (!enabledFields.some((field) => resolveDpFieldRiskRole(field) === 'quasi_identifier')) {
+            throw new Error('已點選敏感欄位，但沒有其他已啟用差分隱私的欄位可作為間接識別，三攻擊缺少攻擊面，請回到步驟二再啟用至少 1 個欄位。');
+        }
+    }
+    // Step2 有點選敏感欄位：比照 K-匿名的處理——高唯一值的連續數值欄位自動（或依 Step4 使用者調整的寬度）分級距，
+    //   分級距後佔比降到門檻以下才保留；高唯一值的類別欄位略過（勾選強制執行則保留）
+    if (designatedSensitiveFieldsList.length > 0) {
+        const designatedSelection = selectKAnonymitySensitiveCandidates({
+            candidateColumnNames: designatedSensitiveFieldsList.map((field) => field.fieldName),
+            datasetProfile: input.datasetProfile,
+            binWidthOverrides: input.binWidthOverrides || {},
+            forceRunHighCardinality: input.forceRunHighCardinality
+        });
+        return {
+            enabledFields,
+            effectiveCandidateColumnNames: designatedSelection.effectiveCandidateColumnNames,
+            highCardinalityInfo: designatedSelection.highCardinalityInfo,
+            designatedSensitiveColumnNames: designatedSensitiveFieldsList.map((field) => field.fieldName),
+            binWidthMap: designatedSelection.binWidthMap,
+            categoricalOverrideColumnNames: designatedSensitiveFieldsList
+                .filter((field) => field.fieldType === 'Numeric' && designatedSelection.effectiveCandidateColumnNames.includes(field.fieldName))
+                .map((field) => field.fieldName)
+        };
     }
     const categoricalCandidateFieldsList = enabledFields.filter((field) => field.fieldType === 'Categorical');
     if (categoricalCandidateFieldsList.length === 0) {
-        throw new Error('風險評估的敏感欄位僅能從已啟用的「類別型」欄位中挑選，目前沒有已啟用的類別型欄位，請回到步驟二欄位設定啟用至少 1 個類別型欄位後再重新運算。');
+        throw new Error('風險評估的敏感欄位僅能從已啟用的「類別型」欄位中挑選，目前沒有已啟用的類別型欄位，請回到步驟二欄位設定啟用至少 1 個類別型欄位（或點選敏感欄位）後再重新運算。');
     }
     const highCardinalityInfo: HighCardinalitySensitiveInfo[] = [];
     const effectiveCandidateFieldsList = categoricalCandidateFieldsList.filter((field) => {
@@ -224,21 +300,35 @@ export const selectDifferentialPrivacySensitiveCandidates = (input: {
         }
         return true;
     });
-    return { enabledFields, effectiveCandidateColumnNames: effectiveCandidateFieldsList.map((field) => field.fieldName), highCardinalityInfo };
+    return {
+        enabledFields,
+        effectiveCandidateColumnNames: effectiveCandidateFieldsList.map((field) => field.fieldName),
+        highCardinalityInfo,
+        designatedSensitiveColumnNames: [],
+        binWidthMap: {},
+        categoricalOverrideColumnNames: []
+    };
 };
 
 /** 差分隱私：高唯一值欄位處理結果的執行紀錄訊息（不含時間前綴） */
 export const describeDifferentialPrivacyHighCardinalityHandling = (highCardinalityInfo: HighCardinalitySensitiveInfo[], forceRunHighCardinality: boolean): string[] => {
     if (highCardinalityInfo.length === 0) return [];
+    // 有分級距紀錄（Step2 點選了連續數值型敏感欄位）時，訊息格式與 K-匿名一致
+    if (highCardinalityInfo.some((item) => item.binWidth !== undefined)) return describeKAnonymityHighCardinalityHandling(highCardinalityInfo);
     const flaggedColumnsDescriptionText = describeHighCardinalityColumnsText(highCardinalityInfo);
     return [forceRunHighCardinality
         ? `⚠️ 已依設定強制對 ${flaggedColumnsDescriptionText} 執行三攻擊／CAP，此類欄位過去曾造成後端服務當機，如遇執行失敗或無回應請取消勾選「仍要強制執行」。`
         : `⚠️ ${flaggedColumnsDescriptionText} 的值幾乎每筆都不同，已略過該欄位的三攻擊／CAP 風險評估以避免觸發後端服務當機（不影響去識別化結果本身）；如仍要嘗試，請於下方勾選「仍要強制執行」。`];
 };
 
-/** 差分隱私：以某個候選欄位為敏感欄位、其餘已啟用欄位為間接識別 */
+/**
+ * 差分隱私：以某個候選欄位為敏感欄位、其餘參與評估的欄位為間接識別。
+ * Step2 點選了多個敏感欄位時，本輪以外的其他敏感欄位不放進 columns（攻擊者不應已知其他敏感屬性，
+ * 也避免後端一次收到多個 sensitive）。
+ * categoricalOverrideColumnNames：點選為敏感的連續數值欄位（已分級距或本身相異值少），型別改宣告為類別型。
+ */
 export const buildDifferentialPrivacyRiskColumnsForCandidate = (
-    input: { enabledFields: DpStoreField[]; dpFields: DpStoreField[] | null | undefined; columnTypes: Record<string, unknown> | null | undefined },
+    input: { enabledFields: DpStoreField[]; dpFields: DpStoreField[] | null | undefined; columnTypes: Record<string, unknown> | null | undefined; categoricalOverrideColumnNames?: string[] },
     candidateSensitiveFieldName: string
 ): RiskColumnsMap => {
     const resolveDpRiskColumnType = (fieldName: string): string => {
@@ -252,12 +342,30 @@ export const buildDifferentialPrivacyRiskColumnsForCandidate = (
     };
     const columnsMapResult: RiskColumnsMap = {};
     input.enabledFields.forEach((field) => {
+        if (field.isRiskSensitive && field.fieldName !== candidateSensitiveFieldName) return;
         columnsMapResult[field.fieldName] = {
             role: field.fieldName === candidateSensitiveFieldName ? 'sensitive' : 'quasi_identifier',
-            type: resolveDpRiskColumnType(field.fieldName)
+            type: (input.categoricalOverrideColumnNames || []).includes(field.fieldName) ? 'categorical' : resolveDpRiskColumnType(field.fieldName)
         };
     });
     return columnsMapResult;
+};
+
+/**
+ * 差分隱私：送 /risk/dp 的 differential_privacy 區塊。點選為敏感的連續數值欄位在風險評估時改以類別型評估
+ * （原始資料已分級距），對應的 column_budgets 項目改為類別型（只保留 epsilon_budget，與一般類別型欄位格式相同），
+ * 避免後端對級距值再加連續型雜訊、讓推斷性攻擊的「完全相等」判定失去意義。原物件不修改。
+ */
+export const buildDifferentialPrivacyConfigBlockForRisk = (originalDpBlock: unknown, categoricalOverrideColumnNames: string[]): unknown => {
+    const dpBlockRecord = originalDpBlock as Record<string, unknown> | undefined;
+    if (!dpBlockRecord || categoricalOverrideColumnNames.length === 0) return dpBlockRecord;
+    const originalBudgetsMap = (dpBlockRecord.column_budgets || {}) as Record<string, Record<string, unknown>>;
+    const overriddenBudgetsMap: Record<string, Record<string, unknown>> = { ...originalBudgetsMap };
+    categoricalOverrideColumnNames.forEach((colName) => {
+        const budgetItem = overriddenBudgetsMap[colName];
+        if (budgetItem) overriddenBudgetsMap[colName] = { type: 'categorical', epsilon_budget: budgetItem.epsilon_budget };
+    });
+    return { ...dpBlockRecord, column_budgets: overriddenBudgetsMap };
 };
 
 /** 三攻擊設定檔；privacyBlock 為 { k_anonymity } 或 { differential_privacy } */

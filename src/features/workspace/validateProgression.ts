@@ -9,6 +9,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
+import { resolveDpFieldRiskRole, isDpFieldSelectableAsRiskSensitive } from '../../utils/riskAssessment';
 
 /**
  * 預設步驟驗證門檻常數宣告
@@ -200,6 +201,20 @@ export const validateProgression = (
 			if (hasIncompleteDPFieldSettingStatus)
 			{
 				return translateFunction('message.dp_incomplete', '設定不完整：請先完成所有紅框標示的參數設定，才能進入下一步！');
+			}
+
+			// 子關卡 C（2026-10-02）：有點選風險評估敏感欄位時，須至少 1 個未點選為敏感、已啟用 DP 的欄位作為間接識別（敏感欄位可複數個），且敏感欄位須為類別型或連續數值型（數值型 Step4 會先分級距）
+			const designatedRiskSensitiveFieldsList = typedDpFieldsListArray.filter((dpFieldItemRecord) => dpFieldItemRecord.isRiskSensitive);
+			if (designatedRiskSensitiveFieldsList.length > 0)
+			{
+				if (designatedRiskSensitiveFieldsList.some((dpFieldItemRecord) => !isDpFieldSelectableAsRiskSensitive(dpFieldItemRecord)))
+				{
+					return translateFunction('message.dp_risk_sensitive_numeric', '風險評估的敏感欄位須為類別型或連續數值型，文字型與日期時間型欄位不能設為敏感欄位！');
+				}
+				if (!typedDpFieldsListArray.some((dpFieldItemRecord) => resolveDpFieldRiskRole(dpFieldItemRecord) === 'quasi_identifier'))
+				{
+					return translateFunction('message.dp_risk_require_qi', '已點選敏感欄位，請再啟用至少一個欄位的差分隱私作為間接識別，才能進行風險評估！');
+				}
 			}
 
 			// ★ 邊界範圍是否涵蓋實際資料數值 (例如年齡邊界設為 0~1，但真實資料介於 20~80)，

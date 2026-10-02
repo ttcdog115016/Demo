@@ -28,6 +28,8 @@ export interface DpStoreField {
     sensitivity?: number | string;
     /** 匯入設定檔時依 type 記錄的日期時間型標記；未設定時依欄位名稱推斷，見 resolveIsDateTimeDpField */
     isDateTime?: boolean;
+    /** Step2 點選為 Step4 風險評估的敏感欄位（可複數個，與是否加噪無關；Step4 每輪只以其中 1 個評估），見 resolveDpFieldRiskRole */
+    isRiskSensitive?: boolean;
 }
 
 /** Step3 的 K-匿名參數（對應 useWorkspaceStore 同名欄位） */

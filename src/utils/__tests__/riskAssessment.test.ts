@@ -3,8 +3,8 @@ import type { AttackReport, CapReport } from '../../api/apiService';
 import type { DatasetProfile } from '../datasetProfile';
 import {
     RISK_ATTACK_DEFAULT_PARAMS, resolveKAnonymityRiskColumns, selectKAnonymitySensitiveCandidates, describeKAnonymityHighCardinalityHandling,
-    buildKAnonymityRiskColumnsForCandidate, buildKAnonymityConfigBlockForRisk, selectDifferentialPrivacySensitiveCandidates,
-    describeDifferentialPrivacyHighCardinalityHandling, buildDifferentialPrivacyRiskColumnsForCandidate, buildRiskAttackConfigObject,
+    buildKAnonymityRiskColumnsForCandidate, buildKAnonymityConfigBlockForRisk, selectDifferentialPrivacySensitiveCandidates, resolveDpFieldRiskRole,
+    describeDifferentialPrivacyHighCardinalityHandling, buildDifferentialPrivacyRiskColumnsForCandidate, buildDifferentialPrivacyConfigBlockForRisk, isDpFieldSelectableAsRiskSensitive, buildRiskAttackConfigObject,
     buildCapConfigObject, mergeWorstCaseAttackReport, runWorstCaseAttackRounds, runWorstCaseCapRounds
 } from '../riskAssessment';
 
@@ -115,6 +115,79 @@ describe('差分隱私候選敏感欄位', () => {
     it('沒有已啟用欄位或沒有類別型欄位時丟錯', () => {
         expect(() => selectDifferentialPrivacySensitiveCandidates({ dpFields: [], datasetProfile: profile, forceRunHighCardinality: false })).toThrow('至少 1 個已啟用');
         expect(() => selectDifferentialPrivacySensitiveCandidates({ dpFields: [dpFields[2]], datasetProfile: profile, forceRunHighCardinality: false })).toThrow('類別型');
+    });
+
+    it('Step2 點選敏感欄位：只評估該欄 1 輪，未啟用 DP 的敏感欄位也能參與，其餘已啟用欄位為間接識別', () => {
+        const designatedFields = [
+            { fieldName: '疾病', enabled: false, fieldType: 'Categorical', isRiskSensitive: true },
+            { fieldName: '備註', enabled: true, fieldType: 'Categorical' },
+            { fieldName: '生日', enabled: true, fieldType: 'Numeric' },
+            { fieldName: '地區', enabled: false, fieldType: 'Categorical' }
+        ];
+        const selection = selectDifferentialPrivacySensitiveCandidates({ dpFields: designatedFields, datasetProfile: profile, forceRunHighCardinality: false });
+        expect(selection.designatedSensitiveColumnNames).toEqual(['疾病']);
+        expect(selection.effectiveCandidateColumnNames).toEqual(['疾病']);
+        expect(selection.enabledFields.map((field) => field.fieldName)).toEqual(['疾病', '備註', '生日']);
+        expect(resolveDpFieldRiskRole({ enabled: true })).toBe('quasi_identifier');
+        expect(resolveDpFieldRiskRole({ enabled: false })).toBe('none');
+        expect(resolveDpFieldRiskRole({ enabled: false, isRiskSensitive: true })).toBe('sensitive');
+    });
+
+    it('Step2 點選敏感欄位：日期時間型、文字型、沒有間接識別時丟錯', () => {
+        const dateTimeSensitive = [{ fieldName: '生日', enabled: true, fieldType: 'Numeric', isRiskSensitive: true }, { fieldName: '地區', enabled: true, fieldType: 'Categorical' }];
+        expect(() => selectDifferentialPrivacySensitiveCandidates({ dpFields: dateTimeSensitive, datasetProfile: profile, forceRunHighCardinality: false })).toThrow('日期時間型');
+        const textSensitive = [{ fieldName: '備註', enabled: false, fieldType: 'Text', isRiskSensitive: true }, { fieldName: '地區', enabled: true, fieldType: 'Categorical' }];
+        expect(() => selectDifferentialPrivacySensitiveCandidates({ dpFields: textSensitive, datasetProfile: profile, forceRunHighCardinality: false })).toThrow('文字型');
+        const noQi = [{ fieldName: '疾病', enabled: true, fieldType: 'Categorical', isRiskSensitive: true }];
+        expect(() => selectDifferentialPrivacySensitiveCandidates({ dpFields: noQi, datasetProfile: profile, forceRunHighCardinality: false })).toThrow('間接識別');
+        const twoSensitiveNoQi = [...noQi, { fieldName: '地區', enabled: true, fieldType: 'Categorical', isRiskSensitive: true }];
+        expect(() => selectDifferentialPrivacySensitiveCandidates({ dpFields: twoSensitiveNoQi, datasetProfile: profile, forceRunHighCardinality: false })).toThrow('間接識別');
+    });
+
+    it('可點選為敏感欄位：類別型、連續數值型可以；文字型、日期時間型、未選型態不行', () => {
+        expect(isDpFieldSelectableAsRiskSensitive({ fieldName: '疾病', fieldType: 'Categorical' })).toBe(true);
+        expect(isDpFieldSelectableAsRiskSensitive({ fieldName: '薪資', fieldType: 'Numeric' })).toBe(true);
+        expect(isDpFieldSelectableAsRiskSensitive({ fieldName: '生日', fieldType: 'Numeric' })).toBe(false);
+        expect(isDpFieldSelectableAsRiskSensitive({ fieldName: '備註', fieldType: 'Text' })).toBe(false);
+        expect(isDpFieldSelectableAsRiskSensitive({ fieldName: '某欄', fieldType: 'Unknown' })).toBe(false);
+    });
+
+    it('Step2 點選連續數值型敏感欄位：自動分級距（可覆寫寬度），風險評估時改宣告為類別型', () => {
+        const salarySensitiveFields = [
+            { fieldName: '薪資', enabled: true, fieldType: 'Numeric', isRiskSensitive: true },
+            { fieldName: '地區', enabled: true, fieldType: 'Categorical' }
+        ];
+        const selection = selectDifferentialPrivacySensitiveCandidates({ dpFields: salarySensitiveFields, datasetProfile: profile, forceRunHighCardinality: false });
+        expect(selection.effectiveCandidateColumnNames).toEqual(['薪資']);
+        expect(selection.binWidthMap).toEqual({ 薪資: 10000 });
+        expect(selection.categoricalOverrideColumnNames).toEqual(['薪資']);
+        expect(selection.highCardinalityInfo[0]).toMatchObject({ columnName: '薪資', handling: 'binned', binWidth: 10000 });
+        expect(describeDifferentialPrivacyHighCardinalityHandling(selection.highCardinalityInfo, false)[0]).toContain('一級距');
+        expect(selectDifferentialPrivacySensitiveCandidates({ dpFields: salarySensitiveFields, datasetProfile: profile, forceRunHighCardinality: false, binWidthOverrides: { 薪資: 50000 } }).binWidthMap).toEqual({ 薪資: 50000 });
+        expect(buildDifferentialPrivacyRiskColumnsForCandidate({ enabledFields: selection.enabledFields, dpFields: salarySensitiveFields, columnTypes: {}, categoricalOverrideColumnNames: selection.categoricalOverrideColumnNames }, '薪資')).toEqual({
+            薪資: { role: 'sensitive', type: 'categorical' }, 地區: { role: 'quasi_identifier', type: 'categorical' }
+        });
+        const dpBlock = { enabled: true, column_budgets: { 薪資: { type: 'continuous', epsilon_budget: 0.5, delta_budget: 0, clipping_bounds: [0, 200000] }, 地區: { type: 'categorical', epsilon_budget: 0.5 } } };
+        expect(buildDifferentialPrivacyConfigBlockForRisk(dpBlock, ['薪資'])).toEqual({ enabled: true, column_budgets: { 薪資: { type: 'categorical', epsilon_budget: 0.5 }, 地區: { type: 'categorical', epsilon_budget: 0.5 } } });
+        expect(dpBlock.column_budgets.薪資.type).toBe('continuous');
+    });
+
+    it('Step2 點選多個敏感欄位：每輪只以其中 1 個為 sensitive，其他敏感欄位不放進該輪 columns', () => {
+        const multiSensitiveFields = [
+            { fieldName: '疾病', enabled: false, fieldType: 'Categorical', isRiskSensitive: true },
+            { fieldName: '地區', enabled: true, fieldType: 'Categorical', isRiskSensitive: true },
+            { fieldName: '生日', enabled: true, fieldType: 'Numeric' }
+        ];
+        const selection = selectDifferentialPrivacySensitiveCandidates({ dpFields: multiSensitiveFields, datasetProfile: profile, forceRunHighCardinality: false });
+        expect(selection.designatedSensitiveColumnNames).toEqual(['疾病', '地區']);
+        expect(selection.effectiveCandidateColumnNames).toEqual(['疾病', '地區']);
+        const roundInput = { enabledFields: selection.enabledFields, dpFields: multiSensitiveFields, columnTypes: {} };
+        expect(buildDifferentialPrivacyRiskColumnsForCandidate(roundInput, '疾病')).toEqual({
+            疾病: { role: 'sensitive', type: 'categorical' }, 生日: { role: 'quasi_identifier', type: 'temporal' }
+        });
+        expect(buildDifferentialPrivacyRiskColumnsForCandidate(roundInput, '地區')).toEqual({
+            地區: { role: 'sensitive', type: 'categorical' }, 生日: { role: 'quasi_identifier', type: 'temporal' }
+        });
     });
 
     it('欄位型別：日期時間→temporal、數值→numeric、類別→categorical', () => {

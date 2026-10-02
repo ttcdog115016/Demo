@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
 import {
 	resolveIsDateTimeDpField, resolveInputNumberStepByDecimals, resolveDpDatetimeNoiseUnit, applyDpDatetimeNoiseUnit, findDpBoundsFinerThanNoiseUnit,
-	DP_DATETIME_NOISE_UNITS, type DpDatetimeNoiseUnit
+	DP_DATETIME_NOISE_UNITS, type DpDatetimeNoiseUnit, resolveDpNoiseStepMax, isDpNoiseStepOutOfRange
 } from '../../utils/dpFieldHelpers';
 import { computeDefaultDpSensitivity, computeDpConsumedBudgetsByField, sumDpConsumedBudgets } from '../../utils/pipelineConfig';
 
@@ -326,6 +326,21 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 				return;
 			}
 
+			// ★ 2026-10-02：日期時間欄位的加噪步階不可超過雜訊單位上限（秒、分 ≤ 59，時 ≤ 23）
+			const noiseStepOutOfRangeField = activeDpFieldsList.find(
+				(activeFieldItemRecord) => activeFieldItemRecord.fieldType === 'Numeric' && resolveIsDateTimeDpField(activeFieldItemRecord)
+					&& isDpNoiseStepOutOfRange(activeFieldItemRecord.noiseStep, resolveDpDatetimeNoiseUnit(activeFieldItemRecord))
+			);
+			if (noiseStepOutOfRangeField)
+			{
+				const noiseUnitOfField = resolveDpDatetimeNoiseUnit(noiseStepOutOfRangeField);
+				setStepValidationAction(false, translate('step3_dp.error_noise_step_out_of_range', {
+					field: noiseStepOutOfRangeField.fieldName, unit: translateNoiseUnit(noiseUnitOfField), max: resolveDpNoiseStepMax(noiseUnitOfField),
+					defaultValue: `「${noiseStepOutOfRangeField.fieldName}」的加噪步階須介於 1～${resolveDpNoiseStepMax(noiseUnitOfField)} ${translateNoiseUnit(noiseUnitOfField)}，超過請改用較大的雜訊單位。`
+				}));
+				return;
+			}
+
 			if (totalEquivalentEpsilonSumValue > safeBudgetLimitThresholdValue) 
 			{
 				setStepValidationAction(false, translate('step3_dp.error_budget_exceeded', '消耗的總隱私預算已超過設定上限，請調降各欄位的 ε。'));
@@ -334,6 +349,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 
 			setStepValidationAction(true, null);
 		}, 
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- translateNoiseUnit 僅包裝 translate，已列入依賴
 		[globalTargetDeltaValue, activeDpFieldsList, totalEquivalentEpsilonSumValue, safeBudgetLimitThresholdValue, setStepValidationAction, translate]
 	);
 
@@ -655,13 +671,21 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 												<Text type="secondary" style={{ fontSize: 12, marginLeft: '12px', flexShrink: 0 }}>
 													{translate('step3_dp.noise_step_unit_label', '加噪步階 ({{unit}})', { unit: translateNoiseUnit(resolveDpDatetimeNoiseUnit(activeFieldItemRecord)) })}
 												</Text>
-												<InputNumber
-													size="small"
-													min={1}
-													value={activeFieldItemRecord.noiseStep}
-													onChange={(inputNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'noiseStep', inputNumberValue === null ? undefined : inputNumberValue)}
-													style={{ width: '90px' }}
-												/>
+												{/* ★ 2026-10-02：步階上限依雜訊單位（秒、分 ≤ 59，時 ≤ 23，天不限），超過顯示紅框並阻擋下一步 */}
+												<Tooltip title={resolveDpNoiseStepMax(resolveDpDatetimeNoiseUnit(activeFieldItemRecord)) !== undefined
+													? translate('step3_dp.noise_step_max_tooltip', { max: resolveDpNoiseStepMax(resolveDpDatetimeNoiseUnit(activeFieldItemRecord)), unit: translateNoiseUnit(resolveDpDatetimeNoiseUnit(activeFieldItemRecord)), defaultValue: `可輸入 1～${resolveDpNoiseStepMax(resolveDpDatetimeNoiseUnit(activeFieldItemRecord))}；需要更大的步階請改用較大的雜訊單位。` })
+													: undefined}>
+													<InputNumber
+														size="small"
+														min={1}
+														max={resolveDpNoiseStepMax(resolveDpDatetimeNoiseUnit(activeFieldItemRecord))}
+														precision={0}
+														status={isDpNoiseStepOutOfRange(activeFieldItemRecord.noiseStep, resolveDpDatetimeNoiseUnit(activeFieldItemRecord)) ? 'error' : undefined}
+														value={activeFieldItemRecord.noiseStep}
+														onChange={(inputNumberValue) => updateFieldDP(activeFieldItemRecord.id, 'noiseStep', inputNumberValue === null ? undefined : inputNumberValue)}
+														style={{ width: '90px' }}
+													/>
+												</Tooltip>
 											</>
 										) : (
 											<InputNumber

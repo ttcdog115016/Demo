@@ -28,6 +28,11 @@ import type { DpStoreField } from '../../utils/pipelineConfig';
 import type { KAnonymityQualityReport, DpQualityReport } from '../../api/apiService';
 
 import { usePipelineRunner } from './usePipelineRunner';
+import BackendReportDetails from './BackendReportDetails';
+
+// ★ 2026-10-02：使用者要求暫不顯示「後端處理報告明細」（內容偏技術，一般使用者看了反而更混淆），
+//   元件與單元測試保留，日後要恢復顯示把此旗標改回 true 即可。說明見專案文件「修改建議整理」。
+const SHOW_BACKEND_REPORT_DETAILS = false;
 import { evaluateComplianceValidity } from './pipeline/pipelineResults';
 import { BACKEND_ERROR_CODE_CATEGORY_MAP, DEBUG_ERRORS_LOCAL_STORAGE_KEY, buildFriendlyErrorDisplayNode, DEBUG_PANEL_ERROR_CODE_OPTIONS } from './backendErrorCatalog';
 
@@ -373,6 +378,18 @@ export default function Step4_Result(): React.ReactElement
     const maskedPreviewColumnNamesList = useMemo(
         () => realMaskedDataRows.length > 0 ? Object.keys(realMaskedDataRows[0]) : actualProcessedColumnsList,
         [realMaskedDataRows, actualProcessedColumnsList]
+    );
+
+    // ★ 2026-10-02 修正：預覽表格原本以 rowKey = JSON.stringify(整列) 當 key，K-匿名／泛化後常有多列內容
+    //   完全相同（例如同一等價類），產生重複 key；React 依 key 比對時會把舊列殘留在畫面上，
+    //   「去識別化後 ↔ 原始明文」來回切換後列數越疊越多、兩種檢視的列混在一起。
+    //   改為依「檢視模式 + 列序」產生唯一 key（另以 Table key 強制切換時重新掛載）。
+    //   __previewRowKey 不在 columns 內，不會顯示成欄位。
+    const PREVIEW_ROW_KEY_FIELD = '__previewRowKey';
+    const previewTableDataRowsList = useMemo(
+        () => (previewViewMode === 'masked' ? realMaskedDataRows : sampleRawDataRowsList)
+            .map((rowRecordItem, rowIndexNumber) => ({ ...rowRecordItem, [PREVIEW_ROW_KEY_FIELD]: `${previewViewMode}-${rowIndexNumber}` })),
+        [previewViewMode, realMaskedDataRows, sampleRawDataRowsList]
     );
 
 
@@ -1143,7 +1160,8 @@ export default function Step4_Result(): React.ReactElement
                             />
                         )}
                         <Table
-                            dataSource={previewViewMode === 'masked' ? (realMaskedDataRows.length > 0 ? realMaskedDataRows : []) : sampleRawDataRowsList}
+                            key={`preview-table-${previewViewMode}`}
+                            dataSource={previewTableDataRowsList}
                             columns={(previewViewMode === 'masked' ? maskedPreviewColumnNamesList : actualProcessedColumnsList).map((columnNameString) => {
                                 const { role: configuredRoleNameString, tagColor: mappedTagColorString } = getCalculatedRole(columnNameString);
                                 const localizedRoleI18nKeyString = `step4.role.${configuredRoleNameString.toLowerCase().replace(/ /g, '_').replace(/-/g, '_')}`;
@@ -1165,9 +1183,13 @@ export default function Step4_Result(): React.ReactElement
                             // ★ 使用者確認維持預覽 10 筆即可：資料來源（realMaskedDataRows／
                             // sampleRawDataRowsList）本身都已經只有最多 10 筆，分頁永遠只會有
                             // 1 頁，右下角的分頁按鈕形同虛設、只是多餘的雜訊，故關閉分頁功能。
-                            pagination={false} size="small" rowKey={(rowRecordItemObject) => JSON.stringify(rowRecordItemObject)} scroll={{ x: 'max-content' }}
+                            pagination={false} size="small" rowKey={PREVIEW_ROW_KEY_FIELD} scroll={{ x: 'max-content' }}
                         />
                     </Card>
+
+                    {/* ★ 2026-10-01：後端報告中先前未呈現的項目（雜湊演算法／加鹽／系統預設值；DP 逐欄預算明細），預設收合
+                        ★ 2026-10-02：暫不顯示，見 SHOW_BACKEND_REPORT_DETAILS */}
+                    {SHOW_BACKEND_REPORT_DETAILS && <BackendReportDetails kReport={kReport} dpReport={dpReport} />}
                     </>
                 )
             )}

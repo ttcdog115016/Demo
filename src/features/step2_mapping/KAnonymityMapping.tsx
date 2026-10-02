@@ -27,6 +27,12 @@ import { TEMPORAL_GRANULARITY_UNITS, TEMPORAL_DEFAULT_GRANULARITY_LEVEL, tempora
 import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, findNumericMinMax, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
 
+// ★ 2026-10-02：使用者要求「後端處理報告明細」及其相關功能一律不顯示。「最大層級」的「評估至／試算層級」
+//   （qi_generalization_levels 的上限，只用於後端報告的試算建議、不影響實際輸出）一併隱藏；
+//   匯入設定檔帶入的上限仍會保留並照原樣送出。日後恢復時改回 true（並同時開啟 Step4_Result.tsx 的
+//   SHOW_BACKEND_REPORT_DETAILS）。
+const SHOW_LEVEL_RANGE_TRIAL = false;
+
 /**
  * ============================================================================
  * 魔術數字常數化宣告 (Magic Numbers)
@@ -1809,17 +1815,21 @@ export default function KAnonymityMapping(): React.ReactElement
                         // ★ 2026-10-01：可另設層級範圍上限（qi_generalization_levels 的 [最小, 最大]）。後端實際輸出最小層級
                         //   （即左側數字），上限只用於評估兩端的落單比例並寫入報告；留空即為固定層級。
                         const isCategoricalLevelRangeActiveStatus = typeof rowRecordItem.genLevelRangeUpper === 'number' && rowRecordItem.genLevelRangeUpper > rowRecordItem.genMaxLevel;
+                        const maxLevelInputElement = (
+                            <InputNumber
+                                size="small"
+                                min={0}
+                                max={maxLevelCalculatedValue}
+                                value={rowRecordItem.genMaxLevel}
+                                onChange={(inputNumberValue) => handleFieldChange(rowRecordItem.id, 'genMaxLevel', inputNumberValue ?? 1)}
+                                style={{ width: SHOW_LEVEL_RANGE_TRIAL ? '50%' : '100%' }}
+                            />
+                        );
+                        if (!SHOW_LEVEL_RANGE_TRIAL) return maxLevelInputElement;
                         return (
                             <div>
                                 <Space.Compact size="small" style={{ width: 'calc(100% - 18px)' }}>
-                                    <InputNumber
-                                        size="small"
-                                        min={0}
-                                        max={maxLevelCalculatedValue}
-                                        value={rowRecordItem.genMaxLevel}
-                                        onChange={(inputNumberValue) => handleFieldChange(rowRecordItem.id, 'genMaxLevel', inputNumberValue ?? 1)}
-                                        style={{ width: '50%' }}
-                                    />
+                                    {maxLevelInputElement}
                                     <InputNumber
                                         size="small"
                                         min={0}
@@ -1907,7 +1917,7 @@ export default function KAnonymityMapping(): React.ReactElement
                     }
 
                     // ★ 2026-10-01：時間粒度同樣可設層級範圍上限（qi_generalization_levels 的 [最小, 最大]），實際輸出為上方所選單位
-                    const isTemporalLevelRangeSupportedStatus = rowRecordItem.type === 'temporal' && rowRecordItem.genStrategy === 'time_rounding';
+                    const isTemporalLevelRangeSupportedStatus = SHOW_LEVEL_RANGE_TRIAL && rowRecordItem.type === 'temporal' && rowRecordItem.genStrategy === 'time_rounding';
                     const temporalRangeUpperOptionList = segmentedLevelOptionList.filter((levelOptionItem) => levelOptionItem.value > rowRecordItem.genMaxLevel);
                     const isTemporalLevelRangeActiveStatus = isTemporalLevelRangeSupportedStatus
                         && typeof rowRecordItem.genLevelRangeUpper === 'number' && rowRecordItem.genLevelRangeUpper > rowRecordItem.genMaxLevel;

@@ -97,6 +97,32 @@ export const DP_DATETIME_NOISE_UNIT_MILLISECONDS: Record<DpDatetimeNoiseUnit, nu
     day: 86400000, hour: 3600000, minute: 60000, second: 1000
 };
 
+/**
+ * 各雜訊單位的加噪步階上限（2026-10-02）：步階不應超過進位到上一級單位前的最大值——秒、分 ≤ 59，時 ≤ 23；
+ * 天沒有更大的雜訊單位，不設上限。超過時應改用較大的雜訊單位（例如 90 秒 → 改為分）。
+ */
+export const DP_DATETIME_NOISE_STEP_MAX: Record<DpDatetimeNoiseUnit, number | undefined> = {
+    day: undefined, hour: 23, minute: 59, second: 59
+};
+
+/** 此雜訊單位的加噪步階上限（無上限時回傳 undefined） */
+export const resolveDpNoiseStepMax = (noiseUnit: DpDatetimeNoiseUnit): number | undefined => DP_DATETIME_NOISE_STEP_MAX[noiseUnit];
+
+/** 把加噪步階夾在 1～該單位上限之間；未設定步階時原樣回傳 undefined */
+export const clampDpNoiseStep = (noiseStep: number | undefined, noiseUnit: DpDatetimeNoiseUnit): number | undefined => {
+    if (noiseStep === undefined || noiseStep === null || Number.isNaN(Number(noiseStep))) return noiseStep;
+    const maxStepValue = resolveDpNoiseStepMax(noiseUnit);
+    const flooredStepValue = Math.max(1, Number(noiseStep));
+    return maxStepValue === undefined ? flooredStepValue : Math.min(flooredStepValue, maxStepValue);
+};
+
+/** 加噪步階是否超出該單位上限 */
+export const isDpNoiseStepOutOfRange = (noiseStep: number | undefined, noiseUnit: DpDatetimeNoiseUnit): boolean => {
+    if (noiseStep === undefined || noiseStep === null) return false;
+    const maxStepValue = resolveDpNoiseStepMax(noiseUnit);
+    return Number(noiseStep) < 1 || (maxStepValue !== undefined && Number(noiseStep) > maxStepValue);
+};
+
 /** 匯入時正規化 noise_unit（不分大小寫、去空白）；不是後端支援的單位時回傳 undefined，由呼叫端退回預設 day */
 export const normalizeDpDatetimeNoiseUnit = (rawNoiseUnit: unknown): DpDatetimeNoiseUnit | undefined => {
     const normalizedUnitText = String(rawNoiseUnit ?? '').trim().toLowerCase();
@@ -170,10 +196,12 @@ export const formatDpDateTimeBoundFromTimestamp = (timestamp: number): string =>
     compactDpDateTimeBoundText(new Date(timestamp).toISOString().slice(0, 19).replace('T', ' '));
 
 /** 換雜訊單位：一併把已指定的敏感度換算成新單位（代表的時間長度不變），Step3 選單與 Step3→Step4 提醒視窗共用 */
-export const applyDpDatetimeNoiseUnit = <FieldType extends { noiseUnit?: string; sensitivity?: number }>(field: FieldType, nextNoiseUnit: DpDatetimeNoiseUnit): FieldType => ({
+export const applyDpDatetimeNoiseUnit = <FieldType extends { noiseUnit?: string; sensitivity?: number; noiseStep?: number }>(field: FieldType, nextNoiseUnit: DpDatetimeNoiseUnit): FieldType => ({
     ...field,
     noiseUnit: nextNoiseUnit,
-    sensitivity: convertDpSensitivityBetweenNoiseUnits(field.sensitivity, resolveDpDatetimeNoiseUnit(field), nextNoiseUnit)
+    sensitivity: convertDpSensitivityBetweenNoiseUnits(field.sensitivity, resolveDpDatetimeNoiseUnit(field), nextNoiseUnit),
+    // ★ 2026-10-02：換成較小的單位時，步階一併夾在新單位上限內（例如 90 分改成時以外的「秒」→ 59）
+    noiseStep: clampDpNoiseStep(field.noiseStep, nextNoiseUnit)
 });
 
 /**

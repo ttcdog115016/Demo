@@ -15,7 +15,7 @@ import { extractCapRequestFailureReasonText, buildCapUnavailableReceipt } from '
 import {
     resolveKAnonymityRiskColumns, selectKAnonymitySensitiveCandidates, describeKAnonymityHighCardinalityHandling,
     buildKAnonymityRiskColumnsForCandidate, buildKAnonymityConfigBlockForRisk, selectDifferentialPrivacySensitiveCandidates,
-    describeDifferentialPrivacyHighCardinalityHandling, buildDifferentialPrivacyRiskColumnsForCandidate, buildRiskAttackConfigObject,
+    describeDifferentialPrivacyHighCardinalityHandling, buildDifferentialPrivacyRiskColumnsForCandidate, buildDifferentialPrivacyConfigBlockForRisk, buildRiskAttackConfigObject,
     buildCapConfigObject, createJsonConfigFile, runWorstCaseAttackRounds, runWorstCaseCapRounds,
     type RiskColumnsMap, type HighCardinalitySensitiveInfo
 } from '../../../utils/riskAssessment';
@@ -176,8 +176,24 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
         const dpCandidateSelection = selectDifferentialPrivacySensitiveCandidates({
             dpFields: currentDpFieldsListArray,
             datasetProfile: datasetProfileForRisk,
-            forceRunHighCardinality: forceRunHighCardinalitySensitiveFieldsStatus
+            forceRunHighCardinality: forceRunHighCardinalitySensitiveFieldsStatus,
+            binWidthOverrides: sensitiveBinWidthOverridesMap
         });
+        // 點選為敏感的連續數值欄位（如薪資）先分級距：原始資料在這裡轉換，去識別化結果在下方 CAP 段落以同一套級距轉換
+        Object.assign(riskEvaluationBinWidthMap, dpCandidateSelection.binWidthMap);
+        if (Object.keys(riskEvaluationBinWidthMap).length > 0) {
+            riskOriginalDataFile = new File(
+                [applySensitiveBinningToCsvText(cleanedCsvText, riskEvaluationBinWidthMap)],
+                'input_dataset.csv',
+                { type: 'text/csv;charset=utf-8' }
+            );
+        }
+        const dpConfigBlockForRisk = buildDifferentialPrivacyConfigBlockForRisk(
+            (configObject as Record<string, unknown>).differential_privacy, dpCandidateSelection.categoricalOverrideColumnNames
+        );
+        appendPipelineLog(dpCandidateSelection.designatedSensitiveColumnNames.length > 0
+            ? `ℹ️ 依步驟二點選的 ${dpCandidateSelection.designatedSensitiveColumnNames.length} 個敏感欄位（${dpCandidateSelection.designatedSensitiveColumnNames.map((name) => `「${name}」`).join('、')}），每輪只以其中 1 個為敏感欄位執行三攻擊／CAP（共 ${dpCandidateSelection.effectiveCandidateColumnNames.length} 輪），取風險最高的結果`
+            : `ℹ️ 步驟二未指定敏感欄位，改為輪流以 ${dpCandidateSelection.effectiveCandidateColumnNames.length} 個類別型欄位為敏感欄位評估，取風險最高的結果`);
         if (dpCandidateSelection.highCardinalityInfo.length > 0) {
             setHighCardinalitySensitiveWarningInfo(dpCandidateSelection.highCardinalityInfo);
             finalHighCardinalitySensitiveWarningInfo = dpCandidateSelection.highCardinalityInfo;
@@ -185,7 +201,7 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
         }
 
         const buildDpRiskColumnsMapForCandidate = (candidateSensitiveFieldName: string) => buildDifferentialPrivacyRiskColumnsForCandidate(
-            { enabledFields: dpCandidateSelection.enabledFields, dpFields: currentDpFieldsListArray, columnTypes: currentColumnTypesMapDict },
+            { enabledFields: dpCandidateSelection.enabledFields, dpFields: currentDpFieldsListArray, columnTypes: currentColumnTypesMapDict, categoricalOverrideColumnNames: dpCandidateSelection.categoricalOverrideColumnNames },
             candidateSensitiveFieldName
         );
         capCandidateColumnNamesList = dpCandidateSelection.effectiveCandidateColumnNames;
@@ -199,9 +215,9 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             runRound: async (columnsForThisRound, candidateSensitiveFieldName) => {
                 const riskConfigFile = createJsonConfigFile(buildRiskAttackConfigObject({
                     version: 'step4_risk_dp', dataset: riskDatasetNameText, columns: columnsForThisRound,
-                    subgroup: resolvedRiskSubgroupPayload, privacyBlock: { differential_privacy: (configObject as Record<string, unknown>).differential_privacy }
+                    subgroup: resolvedRiskSubgroupPayload, privacyBlock: { differential_privacy: dpConfigBlockForRisk }
                 }), 'risk_config.json');
-                const riskResponse = await runRiskDp(safeDataFile, riskConfigFile, pipelineRequestOptions);
+                const riskResponse = await runRiskDp(riskOriginalDataFile, riskConfigFile, pipelineRequestOptions);
                 if (!riskResponse.success || !riskResponse.report) throw (riskResponse.error || new Error(`三攻擊風險評估（DP，以「${candidateSensitiveFieldName}」為敏感欄位）API 請求未成功`));
                 return riskResponse.report;
             }

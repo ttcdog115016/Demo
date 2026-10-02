@@ -19,10 +19,14 @@ import dayjs from 'dayjs';
 
 import { useWorkspaceStore, type DPField, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import { DP_COLUMN_BUDGETS_REFERENCE } from '../../config/recommendationReferenceConfig';
-import { isDateTimeDpField, resolveIsDateTimeDpField, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals } from '../../utils/dpFieldHelpers';
+import {
+	isDateTimeDpField, resolveIsDateTimeDpField, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals,
+	parseDpDateTimeBoundTimestamp, compactDpDateTimeBoundText, DP_DATETIME_BOUND_PICKER_DISPLAY_FORMAT, DP_DATETIME_BOUND_PICKER_TIME_FORMAT
+} from '../../utils/dpFieldHelpers';
 import { ensureDatasetProfile, useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
 import { parseBackendDpColumnBudgets, type BackendDpColumnBudget } from '../../utils/dpConfigImport';
+import { resolveDpFieldRiskRole, isDpFieldSelectableAsRiskSensitive } from '../../utils/riskAssessment';
 
 /**
  * 預設隱私參數常數宣告
@@ -200,8 +204,8 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 						//   若沿用下方數值比較會讓「下限必須早於上限」的檢查失效；改以日期解析後之時間戳比較。
 						else if (resolveIsDateTimeDpField(fieldItemRecord))
 						{
-							const lowerDateTimestamp = Date.parse(String(fieldItemRecord.lowerBound));
-							const upperDateTimestamp = Date.parse(String(fieldItemRecord.upperBound));
+							const lowerDateTimestamp = parseDpDateTimeBoundTimestamp(fieldItemRecord.lowerBound);
+							const upperDateTimestamp = parseDpDateTimeBoundTimestamp(fieldItemRecord.upperBound);
 							if (Number.isNaN(lowerDateTimestamp) || Number.isNaN(upperDateTimestamp) || lowerDateTimestamp >= upperDateTimestamp)
 							{
 								currentFieldHasErrorStatus = true;
@@ -637,13 +641,24 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		};
 	};
 
+	// ★ 2026-10-01：日期時間型欄位改用資料集掃描到的最早／最晚日期當推薦邊界（datasetProfile.dateTimeRanges）。
+	//   先前日期欄位不在數值快取裡、推薦時直接跳過，邊界一直停在預設的 1930-01-01～今天，看起來按了沒反應。
+	//   資料中找不到可解析的日期時才維持原本的邊界。
+	const applyRealDateTimeBounds = (fieldItemRecord: DPField, dateTimeRangesMap: Record<string, { min: string; max: string }> | undefined): DPField =>
+	{
+		const dateTimeRange = dateTimeRangesMap?.[fieldItemRecord.fieldName.replace(/^[\uFEFF\u200B]+/, '').trim()];
+		if (!dateTimeRange || dateTimeRange.min === dateTimeRange.max) return fieldItemRecord;
+		return { ...fieldItemRecord, lowerBound: dateTimeRange.min, upperBound: dateTimeRange.max };
+	};
+
 	// ★ 新增：只把「已快取的實際資料範圍」(datasetColumnNumericValuesMap，見上方 useEffect)
 	//   套用到單一數值型欄位，跟「切換資料型態」下拉選單時已採用的做法一致（見下方欄位表格
 	//   fieldType 欄 onChange），不需要重新解析整份檔案，也不會動到其他欄位。日期時間型欄位
-	//   因邊界是日期字串、不會出現在這份數值快取裡，下方判斷會自然跳過、維持原本算出的日期邊界。
+	//   改用 datasetProfile.dateTimeRanges 的最早／最晚日期（見 applyRealDateTimeBounds）。
 	const applyRealDataBoundsToSingleNumericField = (fieldItemRecord: DPField): DPField =>
 	{
 		if (fieldItemRecord.fieldType !== 'Numeric') return fieldItemRecord;
+		if (resolveIsDateTimeDpField(fieldItemRecord)) return applyRealDateTimeBounds(fieldItemRecord, useWorkspaceStore.getState().datasetProfile?.dateTimeRanges);
 
 		const realColumnValuesArray = datasetColumnNumericValuesMap[fieldItemRecord.fieldName];
 		if (!realColumnValuesArray || realColumnValuesArray.length === 0) return fieldItemRecord;
@@ -758,6 +773,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					(fieldItemRecord) =>
 					{
 						if (fieldItemRecord.fieldType !== 'Numeric' || !numericFieldNamesNeedingRealBoundsList.includes(fieldItemRecord.fieldName)) return fieldItemRecord;
+						if (resolveIsDateTimeDpField(fieldItemRecord)) return applyRealDateTimeBounds(fieldItemRecord, datasetProfileResult.dateTimeRanges);
 
 						const columnNumericValuesArray = datasetProfileResult.numericValues[fieldItemRecord.fieldName.replace(/^[\uFEFF\u200B]+/, '').trim()] || [];
 						// ★ 若整欄找不到任何有效數值 (例如欄位實際為空或格式異常)，則保留原本 (關鍵字/參考設定檔) 算出之邊界，避免寫入無意義的 ±Infinity。
@@ -800,6 +816,43 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 
 		setDpFieldsAction([...currentDpFieldsList, manuallyAddedNewFieldObj]);
 	};
+
+	/**
+	 * 函數名稱: handleRiskSensitiveToggle
+	 * 函數功能: 點選／取消單一欄位為風險評估敏感欄位；可複數點選（2026-10-02），Step4 每輪只以其中 1 個評估。
+	 */
+	const handleRiskSensitiveToggle = (targetFieldIdStr: string, isCheckedStatus: boolean): void =>
+	{
+		setDpFieldsAction(
+			currentDpFieldsList.map((fieldItemRecord) =>
+			{
+				if (fieldItemRecord.id === targetFieldIdStr) return { ...fieldItemRecord, isRiskSensitive: isCheckedStatus };
+				return fieldItemRecord;
+			})
+		);
+	};
+
+	// ★ 2026-10-02：防呆——不能當敏感欄位的欄位（文字型／日期時間型／未選型態）若殘留敏感欄位點選
+	//   （例如舊工作區狀態、匯入設定檔或套用推薦設定後型態改變），開關已被停用無法手動取消，在此自動清除
+	useEffect(() =>
+	{
+		if (!currentDpFieldsList.some((fieldItemRecord) => fieldItemRecord.isRiskSensitive && !isDpFieldSelectableAsRiskSensitive(fieldItemRecord))) return;
+		setDpFieldsAction(
+			currentDpFieldsList.map((fieldItemRecord) =>
+				fieldItemRecord.isRiskSensitive && !isDpFieldSelectableAsRiskSensitive(fieldItemRecord)
+					? { ...fieldItemRecord, isRiskSensitive: false }
+					: fieldItemRecord
+			)
+		);
+	}, [currentDpFieldsList, setDpFieldsAction]);
+
+	// 敏感欄位點選狀態即時摘要（表格上方提示列使用）
+	const designatedRiskSensitiveFieldsList = currentDpFieldsList.filter((fieldItemRecord) => fieldItemRecord.isRiskSensitive);
+	const designatedRiskSensitiveNamesText = designatedRiskSensitiveFieldsList
+		.map((fieldItemRecord) => `「${fieldItemRecord.fieldName}」${fieldItemRecord.enabled ? '（已加噪）' : '（未加噪，以原值評估）'}`)
+		.join('、');
+	const riskQuasiIdentifierFieldsCount = currentDpFieldsList.filter((fieldItemRecord) => resolveDpFieldRiskRole(fieldItemRecord) === 'quasi_identifier').length;
+	const autoRiskSensitiveCandidatesCount = currentDpFieldsList.filter((fieldItemRecord) => resolveDpFieldRiskRole(fieldItemRecord) !== 'none' && fieldItemRecord.fieldType === 'Categorical').length;
 
 	const removeField = (targetFieldIdStr: string): void => 
 	{
@@ -865,7 +918,13 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 												//   處理大量資料的寫法一致。掃描不到有效數值時 (例如欄位選錯、整欄皆
 												//   空白) 才退回原本寫死的預設值。
 												const realColumnValuesArray = datasetColumnNumericValuesMap[fieldItemRecord.fieldName];
-												if (realColumnValuesArray && realColumnValuesArray.length > 0) {
+												// ★ 2026-10-01：日期時間型欄位邊界為日期字串：帶入資料的最早／最晚日期，沒有時用預設日期範圍（不可帶數字 0～100）
+												if (resolveIsDateTimeDpField(fieldItemRecord)) {
+													const dateTimeBoundsField = applyRealDateTimeBounds(fieldItemRecord, useWorkspaceStore.getState().datasetProfile?.dateTimeRanges);
+													const hasDateStringBoundsStatus = typeof dateTimeBoundsField.lowerBound === 'string' && typeof dateTimeBoundsField.upperBound === 'string';
+													newLower = hasDateStringBoundsStatus ? dateTimeBoundsField.lowerBound : DEFAULT_DATETIME_LOWER_BOUND_DATE;
+													newUpper = hasDateStringBoundsStatus ? dateTimeBoundsField.upperBound : new Date().toISOString().slice(0, 10);
+												} else if (realColumnValuesArray && realColumnValuesArray.length > 0) {
 													let computedRealMinValue = realColumnValuesArray[0];
 													let computedRealMaxValue = realColumnValuesArray[0];
 													for (let valueIndexNumber = 1; valueIndexNumber < realColumnValuesArray.length; valueIndexNumber++) {
@@ -885,6 +944,9 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 												...fieldItemRecord, 
 												fieldType: newSelectedTypeStr, 
 												enabled: newSelectedTypeStr === 'Text' ? false : fieldItemRecord.enabled,
+												// ★ 2026-10-02：改成文字型時自動取消敏感欄位點選（數值型可保留，Step4 會先分級距；
+												//   日期時間型由下方防呆 useEffect 清除）
+												isRiskSensitive: newSelectedTypeStr === 'Text' ? false : fieldItemRecord.isRiskSensitive,
 												lowerBound: newLower,
 												upperBound: newUpper,
 												allowedCategories: newAllowed
@@ -947,16 +1009,49 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			},
 		},
 		{
+			// ★ 2026-10-02 新增：點選 Step4 三攻擊／CAP 的敏感欄位（是／否），與「套用 DP」分開——後端 /risk/dp
+			//   只要求欄位存在於資料中，未加噪的欄位（例如疾病）也能當敏感欄位。可複數點選，但後端 RiskConfig
+			//   規定每次恰好 1 個 sensitive，故 Step4 每輪只以其中 1 個評估、點選幾個跑幾輪；其餘已啟用 DP 的欄位為間接識別。
+			title: (
+				<Space>
+					{translate('step2.dp_risk_sensitive_col', '敏感欄位')}
+					<Tooltip title={translate('step2.dp_risk_sensitive_col_tooltip', '點選最需要保護、不希望被推斷出來的欄位（如疾病），Step4 會以它為目標執行三攻擊與 CAP 風險評估，其餘已啟用差分隱私的欄位視為攻擊者可能已知的間接識別欄位。與是否加噪無關，未啟用差分隱私的欄位也可點選；可點選多個（須為類別型或連續數值型；數值型如薪資會在 Step4 自動分級距後再評估，級距寬度可在 Step4 調整），Step4 每輪只以其中 1 個為目標評估，點選幾個就執行幾輪、取風險最高的結果。未點選時，系統會輪流以每個已啟用的類別型欄位評估、取風險最高的結果（較耗時）。')}>
+						<QuestionCircleOutlined style={{ color: token.colorTextDescription, cursor: 'help' }} />
+					</Tooltip>
+				</Space>
+			),
+			key: 'isRiskSensitive',
+			width: 110,
+			render: (_: unknown, rowRecordItem: DPField) =>
+			{
+				// ★ 2026-10-02：類別型、連續數值型（Step4 先分級距）可點選；文字型、日期時間型、尚未選型態停用
+				const isSensitiveSelectableStatus = isDpFieldSelectableAsRiskSensitive(rowRecordItem);
+				const sensitiveSwitchElement = (
+					<Switch
+						checked={Boolean(rowRecordItem.isRiskSensitive)}
+						onChange={(isCheckedStatus) => handleRiskSensitiveToggle(rowRecordItem.id, isCheckedStatus)}
+						disabled={!isSensitiveSelectableStatus}
+						checkedChildren={translate('step2.yes', '是')}
+						unCheckedChildren={translate('step2.no', '否')}
+					/>
+				);
+				return isSensitiveSelectableStatus
+					? sensitiveSwitchElement
+					: <Tooltip title={translate('step2.dp_risk_role_sensitive_non_categorical_tooltip', '推斷性攻擊須以可列舉的值為預測目標，文字型與日期時間型欄位不能設為敏感欄位；請改用類別型或連續數值型欄位（數值型會在 Step4 先分級距）。')}><span>{sensitiveSwitchElement}</span></Tooltip>;
+			},
+		},
+		{
 			title: (
 				<Space>
 					{translate('step2.dp_param_settings', '邊界與規則設定')}
-					<Tooltip title={translate('step2.dp_param_tooltip', '數值型欄位請填寫可能出現的最小值與最大值，例如年齡 0～120。範圍越大，系統判定的「敏感度」越高、需加入的雜訊也越多，資料會更模糊但保護力更強；範圍設太窄則可能讓超出範圍的真實值被裁剪。日期時間型欄位（如生日）請改選日期。加噪刻度與邊界溢出處理方式請至 Step3 差分隱私規則頁面設定。類別型欄位由系統自動判斷類別數量，不需手動設定。')}>
+					<Tooltip title={translate('step2.dp_param_tooltip', '數值型欄位請填寫可能出現的最小值與最大值，例如年齡 0～120。範圍越大，系統判定的「敏感度」越高、需加入的雜訊也越多，資料會更模糊但保護力更強；範圍設太窄則可能讓超出範圍的真實值被裁剪。日期時間型欄位（如生日）請改選日期與時間（可到秒，只填日期即為當天 00:00:00）。加噪刻度與邊界溢出處理方式請至 Step3 差分隱私規則頁面設定。類別型欄位由系統自動判斷類別數量，不需手動設定。')}>
 						<QuestionCircleOutlined style={{ color: token.colorTextDescription, cursor: 'help' }} />
 					</Tooltip>
 				</Space>
 			),
 			key: 'bounds',
-			width: 260,
+			// 日期時間型邊界顯示到秒（YYYY-MM-DD HH:mm:ss），兩個選擇器並排需約 360px
+			width: 360,
 			render: (_: unknown, rowRecordItem: DPField) => 
 			{
 				if (!rowRecordItem.enabled) 
@@ -980,6 +1075,9 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 						const lowerDateValue = typeof currentLowerBoundValue === 'string' && currentLowerBoundValue ? dayjs(currentLowerBoundValue) : undefined;
 						const upperDateValue = typeof currentUpperBoundValue === 'string' && currentUpperBoundValue ? dayjs(currentUpperBoundValue) : undefined;
 						const isDateBoundOrderInvalidStatus = !!lowerDateValue && !!upperDateValue && !lowerDateValue.isBefore(upperDateValue);
+						// ★ 2026-10-01：邊界一律可選到秒（先前只能選日期）；午夜只存日期，其餘存到秒，見 compactDpDateTimeBoundText
+						const toBoundText = (pickedDateValue: dayjs.Dayjs | null): string | undefined =>
+							pickedDateValue ? compactDpDateTimeBoundText(pickedDateValue.format('YYYY-MM-DD HH:mm:ss')) : undefined;
 
 						return (
 							<Tooltip title={isDateBoundOrderInvalidStatus ? '下限日期必須早於上限日期！' : undefined} open={isDateBoundOrderInvalidStatus} color="volcano">
@@ -987,14 +1085,18 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 									<DatePicker
 										placeholder={translate('step2.ph_lower_bound_date', '下限日期')}
 										value={lowerDateValue}
-										onChange={(pickedDateValue) => updateFieldLocal(rowRecordItem.id, 'lowerBound', pickedDateValue ? pickedDateValue.format('YYYY-MM-DD') : undefined)}
+										format={DP_DATETIME_BOUND_PICKER_DISPLAY_FORMAT}
+										showTime={{ format: DP_DATETIME_BOUND_PICKER_TIME_FORMAT, defaultOpenValue: dayjs('00:00:00', 'HH:mm:ss') }}
+										onChange={(pickedDateValue) => updateFieldLocal(rowRecordItem.id, 'lowerBound', toBoundText(pickedDateValue))}
 										style={{ width: '50%' }}
 										status={!lowerDateValue || isDateBoundOrderInvalidStatus ? 'error' : ''}
 									/>
 									<DatePicker
 										placeholder={translate('step2.ph_upper_bound_date', '上限日期')}
 										value={upperDateValue}
-										onChange={(pickedDateValue) => updateFieldLocal(rowRecordItem.id, 'upperBound', pickedDateValue ? pickedDateValue.format('YYYY-MM-DD') : undefined)}
+										format={DP_DATETIME_BOUND_PICKER_DISPLAY_FORMAT}
+										showTime={{ format: DP_DATETIME_BOUND_PICKER_TIME_FORMAT, defaultOpenValue: dayjs('00:00:00', 'HH:mm:ss') }}
+										onChange={(pickedDateValue) => updateFieldLocal(rowRecordItem.id, 'upperBound', toBoundText(pickedDateValue))}
 										style={{ width: '50%' }}
 										status={!upperDateValue || isDateBoundOrderInvalidStatus ? 'error' : ''}
 									/>
@@ -1154,8 +1256,33 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 									</Space>
 								</div>
 								
+								{designatedRiskSensitiveFieldsList.length > 0 ? (
+									riskQuasiIdentifierFieldsCount === 0 ? (
+										<Alert type="error" showIcon style={{ marginBottom: '12px', textAlign: 'left' }} message={translate('step2.dp_risk_sensitive_no_qi', { names: designatedRiskSensitiveNamesText, defaultValue: `已點選 ${designatedRiskSensitiveNamesText} 為敏感欄位，但沒有其他已啟用差分隱私的欄位可作為間接識別，三攻擊缺少攻擊面。請再啟用至少 1 個未點選為敏感的欄位才能進入下一步。` })} />
+									) : (
+										<Alert type="success" showIcon style={{ marginBottom: '12px', textAlign: 'left' }} message={translate('step2.dp_risk_sensitive_designated', { names: designatedRiskSensitiveNamesText, sensitiveCount: designatedRiskSensitiveFieldsList.length, count: riskQuasiIdentifierFieldsCount, defaultValue: `風險評估敏感欄位：${designatedRiskSensitiveNamesText}，其餘 ${riskQuasiIdentifierFieldsCount} 個已啟用差分隱私的欄位為間接識別。Step4 每輪只以 1 個敏感欄位執行三攻擊與 CAP，共 ${designatedRiskSensitiveFieldsList.length} 輪，取風險最高的結果。` })} />
+									)
+								) : (
+									// ★ 2026-10-02：使用者反映藍色資訊提示不夠明顯，改為黃色警告並放大輪數；按「下一步」時另跳確認視窗（見 MainLayout）
+									<Alert
+										type="warning"
+										showIcon
+										style={{ marginBottom: '12px', textAlign: 'left' }}
+										message={<strong>{translate('step2.dp_risk_sensitive_auto_title', '尚未點選敏感欄位')}</strong>}
+										description={
+											<span>
+												{translate('step2.dp_risk_sensitive_auto_prefix', 'Step4 將輪流以')}
+												<strong style={{ fontSize: 16, margin: '0 4px' }}>{autoRiskSensitiveCandidatesCount}</strong>
+												{translate('step2.dp_risk_sensitive_auto_suffix', '個類別型欄位為敏感欄位，各執行一輪三攻擊與 CAP，取風險最高的結果。')}
+												<strong>{translate('step2.dp_risk_sensitive_auto_time', { count: autoRiskSensitiveCandidatesCount, defaultValue: `執行時間約為點選 1 個敏感欄位時的 ${autoRiskSensitiveCandidatesCount} 倍。` })}</strong>
+												{translate('step2.dp_risk_sensitive_auto_hint', '建議在表格「敏感欄位」欄點選真正需要保護的欄位（例如疾病），結果較有意義，且點選幾個就只執行幾輪。')}
+											</span>
+										}
+									/>
+								)}
+
 								<div style={{ background: isDarkModeActive ? '#1d1d1d' : '#ffffff', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${token.colorBorderSecondary}` }}>
-									<Table dataSource={currentDpFieldsList} columns={dpDataTableColumnsConfig} rowKey="id" pagination={false} size="small" bordered={false} className="attribute-table" scroll={{ x: 900, y: 400 }} />
+									<Table dataSource={currentDpFieldsList} columns={dpDataTableColumnsConfig} rowKey="id" pagination={false} size="small" bordered={false} className="attribute-table" scroll={{ x: 1010, y: 400 }} />
 								</div>
 
 								{isJsonPreviewVisibleStatus && (

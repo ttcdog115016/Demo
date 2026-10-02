@@ -72,6 +72,7 @@ export interface DPField
     noiseUnit?: 'day' | 'hour' | 'minute' | 'second';     // 日期時間型雜訊單位 (對應 config_dp.json 之 noise_unit)；未設定時為 day，敏感度單位跟著它
     sensitivity?: number;                                 // 數值／日期時間型敏感度 (對應 config_dp.json 之 sensitivity)；未設定時以邊界寬度計算
     isDateTime?: boolean;                                 // 是否為日期時間型 (匯入 config_dp.json 時依 type 記錄)；未設定時依欄位名稱推斷，見 resolveIsDateTimeDpField
+    isRiskSensitive?: boolean;                            // Step2 點選為 Step4 風險評估的敏感欄位 (可複數個，與是否加噪無關；Step4 每輪只以其中 1 個評估)；其餘已啟用 DP 欄位為間接識別，見 resolveDpFieldRiskRole
 }
 
 /**

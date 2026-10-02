@@ -7,7 +7,7 @@
  * 與 utils/pipelineConfig.ts 的匯出邏輯互為反向，往返測試見 __tests__/backendConfigFormat.test.ts。
  */
 import type { DPField } from '../store/useWorkspaceStore';
-import { mapOutOfBoundsStrategyFromBackend, normalizeDpDatetimeNoiseUnit, DEFAULT_DATETIME_LOWER_BOUND_DATE } from './dpFieldHelpers';
+import { mapOutOfBoundsStrategyFromBackend, normalizeDpDatetimeNoiseUnit, clampDpNoiseStep, DEFAULT_DATETIME_LOWER_BOUND_DATE } from './dpFieldHelpers';
 
 /** 與 DifferentialPrivacyMapping.tsx 相同的預設值 */
 export const DP_IMPORT_DEFAULT_EPSILON_BUDGET = 1.0;
@@ -58,9 +58,10 @@ export const parseBackendDpColumnBudgets = (
             calcLowerBound = DEFAULT_DATETIME_LOWER_BOUND_DATE;
             calcUpperBound = todayIsoDate;
         }
-        calcNoiseStep = budgetItem.noise_step;
         // 後端不支援的單位（例如 month）退回 day
         calcNoiseUnit = normalizeDpDatetimeNoiseUnit(budgetItem.noise_unit) ?? 'day';
+        // ★ 2026-10-02：步階超過該單位上限（例如 noise_unit second、noise_step 64）時夾回上限
+        calcNoiseStep = clampDpNoiseStep(budgetItem.noise_step, calcNoiseUnit);
         calcOutOfBoundsStrategy = mapOutOfBoundsStrategyFromBackend(budgetItem.time_out_of_bounds_strategy);
     } else if (mappedFieldTypeValue === 'Numeric') {
         // 邊界優先直接讀 clipping_bounds，避免誤用 sensitivity 推算出與設定檔不符的邊界

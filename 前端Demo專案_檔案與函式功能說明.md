@@ -494,6 +494,14 @@ Vite/React 預設模板殘留的展示頁樣式（`.counter`、`.hero`、`#next-
 
 ---
 
+### `src/features/step4_result/BackendReportDetails.tsx`（Step4「後端處理報告明細」，目前隱藏）
+
+**用途**：以預設收合的面板顯示後端品質／預算報告中主畫面未呈現的項目——K-匿名：雜湊演算法、是否加鹽、系統套用的預設值、後端調整建議原文（含 Step2「最大層級」試算結果）；差分隱私：逐欄預算明細（型別、機制、ε、δ、換算為刻度後的敏感度、刻度、溢出處理）。顯示文字轉換在 `pipeline/backendReportFormat.ts`。
+
+> **備註（2026-10-02）**：依使用者要求，此面板**暫不在 Step4 畫面顯示**，以免不熟悉技術細節的使用者更加混淆。`Step4_Result.tsx` 以常數 `SHOW_BACKEND_REPORT_DETAILS = false` 關閉；元件、文字轉換函式與單元測試（`__tests__/BackendReportDetails.test.tsx`）皆保留，日後要恢復時把常數改回 `true` 即可。相關功能一併隱藏：K-匿名 Step2「最大層級」欄位的「評估至／試算層級」（`qi_generalization_levels` 的上限，只用於後端報告的試算建議、不影響實際輸出）在 `KAnonymityMapping.tsx` 以常數 `SHOW_LEVEL_RANGE_TRIAL = false` 隱藏，類別型只剩層級數字、時間型不再出現「評估至」下拉；匯入設定檔帶入的上限仍保留並照原樣送出。恢復時兩個常數需同時改回 `true`。如需查閱試算結果，可從後端回應 Header `x-quality-report` 取得。
+
+---
+
 ### 測試檔案
 
 **`src/utils/__tests__/DifferentialPrivacyMapping.test.tsx`**：測試 DP 欄位設定表單，驗證數值型欄位未填上下界時阻擋「下一步」且顯示錯誤訊息；填齊合法參數後允許前進。

@@ -575,10 +575,11 @@ export default function Step1_Upload(): React.ReactElement
                         </div>
 
                         <Table 
-                            dataSource={displayPreviewRowsList} 
+                            // ★ 2026-10-02：原以 JSON.stringify(整列) 當 key，資料有完全相同的列時會重複 key 造成殘列，改用列序
+                            dataSource={displayPreviewRowsList.map((dataRowRecordItem, rowIndexNumber) => ({ ...dataRowRecordItem, __previewRowKey: `row-${rowIndexNumber}` }))} 
                             columns={dataTableColumnsConfig} 
                             pagination={false} 
-                            rowKey={(dataRowRecordItem) => JSON.stringify(dataRowRecordItem)}
+                            rowKey="__previewRowKey"
                             size="small"
                             scroll={{ x: 'max-content' }}
                             style={{ background: isDarkModeActive ? '#141414' : '#fff' }}
