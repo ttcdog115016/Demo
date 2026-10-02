@@ -1816,12 +1816,12 @@ export default function KAnonymityMapping(): React.ReactElement
                                         style={{ width: '50%' }}
                                     />
                                 </Space.Compact>
-                                <Tooltip title={translate('step2.level_range_tooltip', '選填。設定後送出 [目前層級, 評估層級]（後端《操作說明》4-1 節的層級範圍）：資料仍以目前層級輸出，後端另外試算提高到評估層級時的落單比例，寫在品質報告的調整建議裡，方便判斷要不要再提高層級。不設即為固定層級。')}>
+                                <Tooltip title={translate('step2.level_range_tooltip', '選填。資料仍會依照目前選的層級處理；這裡可以再選一個更高的層級做「試算」，系統會估算改用那個層級時，有多少比例的資料因為太特殊、需要被刪除或遮蔽，結果列在結果頁下方「後端處理報告明細」的調整建議中，幫你判斷要不要把層級再調高。不填就不試算。')}>
                                     <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} />
                                 </Tooltip>
                                 {isCategoricalLevelRangeActiveStatus && (
                                     <div style={{ fontSize: 11, color: token.colorTextDescription, marginTop: 2 }}>
-                                        {translate('step2.level_range_hint', { min: rowRecordItem.genMaxLevel, max: rowRecordItem.genLevelRangeUpper, defaultValue: `輸出層級 ${rowRecordItem.genMaxLevel}；報告另附層級 ${rowRecordItem.genLevelRangeUpper} 的落單比例` })}
+                                        {translate('step2.level_range_hint', { min: rowRecordItem.genMaxLevel, max: rowRecordItem.genLevelRangeUpper, defaultValue: `依層級 ${rowRecordItem.genMaxLevel} 處理；另試算層級 ${rowRecordItem.genLevelRangeUpper}` })}
                                     </div>
                                 )}
                             </div>
@@ -1904,7 +1904,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                 <Space size={6} align="center" style={{ marginTop: 4 }}>
                                     <span style={{ fontSize: 11, color: token.colorTextDescription, whiteSpace: 'nowrap' }}>
                                         {translate('step2.level_range_upper_label', '評估至')}
-                                        <Tooltip title={translate('step2.level_range_tooltip', '選填。設定後送出 [目前層級, 評估層級]（後端《操作說明》4-1 節的層級範圍）：資料仍以目前層級輸出，後端另外試算提高到評估層級時的落單比例，寫在品質報告的調整建議裡，方便判斷要不要再提高層級。不設即為固定層級。')}>
+                                        <Tooltip title={translate('step2.level_range_tooltip', '選填。資料仍會依照目前選的層級處理；這裡可以再選一個更高的層級做「試算」，系統會估算改用那個層級時，有多少比例的資料因為太特殊、需要被刪除或遮蔽，結果列在結果頁下方「後端處理報告明細」的調整建議中，幫你判斷要不要把層級再調高。不填就不試算。')}>
                                             <QuestionCircleOutlined style={{ marginLeft: 4, cursor: 'help' }} />
                                         </Tooltip>
                                     </span>

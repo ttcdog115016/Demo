@@ -102,7 +102,7 @@ describe('qi_generalization_levels 層級範圍 [最小, 最大]', () => {
         expect(fieldsByName.職業).toMatchObject({ genMaxLevel: 1, genLevelRangeUpper: 3 });
         expect(fieldsByName.地區).toMatchObject({ genMaxLevel: 2 });
         expect(fieldsByName.地區).not.toHaveProperty('genLevelRangeUpper');
-        expect(container.textContent).toContain('輸出層級 1；報告另附層級 3 的落單比例');
+        expect(container.textContent).toContain('依層級 1 處理；另試算層級 3');
 
         const exportedConfig = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: Record<string, Record<string, unknown>> };
         expect(exportedConfig.k_anonymity.qi_generalization_levels).toEqual({ 地區: 2, 職業: [1, 3], 生日: 5 });
