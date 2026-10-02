@@ -37,8 +37,8 @@ export default function AuditIntegrityPanel({ entry, style, className }: AuditIn
     const integrity = entry?.integrity;
     const statusKey = !entry ? 'missing' : (verificationResult?.status ?? 'checking');
     const statusLabelMap: Record<string, string> = {
-        valid: translate('audit.integrity.status_valid', '驗證通過：內容自簽發後未被改動'),
-        tampered: translate('audit.integrity.status_tampered', '驗證失敗：憑證內容或簽章與簽發時不符，可能已被竄改'),
+        valid: translate('audit.integrity.status_valid', '未被竄改：紀錄內容與簽發時一致'),
+        tampered: translate('audit.integrity.status_tampered', '可能已被竄改：紀錄內容或簽章與簽發時不符'),
         unsigned: translate('audit.integrity.status_unsigned', '僅有指紋、未簽章（簽發時環境不支援簽章）'),
         unsupported: translate('audit.integrity.status_unsupported', '指紋相符；目前環境無法驗證簽章（請以 HTTPS 或 localhost 開啟）'),
         missing: translate('audit.integrity.status_missing', '此筆紀錄沒有防篡改資料（舊版紀錄或尚未簽發）'),
@@ -52,6 +52,8 @@ export default function AuditIntegrityPanel({ entry, style, className }: AuditIn
 
     return (
         <div className={className} style={style} data-testid="audit-integrity-panel">
+            {/* ★ 2026-10-02：使用者看到「驗證通過」誤以為是合規判定，加註此區只檢查紀錄有無被竄改 */}
+            <div style={{ fontWeight: 600, color: '#6b7280' }}>{translate('audit.integrity.section_title', '紀錄防篡改資訊（僅檢查紀錄是否被竄改，與是否符合合規標準無關）')}</div>
             {integrity ? (
                 <>
                     <div>{translate('audit.report_SHA', '數位防篡改指紋 (SHA-256):')} <span style={monoStyle}>{integrity.documentSha256}</span></div>
@@ -67,7 +69,7 @@ export default function AuditIntegrityPanel({ entry, style, className }: AuditIn
                 </>
             ) : null}
             <div style={{ color: STATUS_COLOR_MAP[statusKey], fontWeight: 600 }} data-testid="audit-integrity-status">
-                {translate('audit.integrity.verify_label', '完整性驗證：')}{statusLabelMap[statusKey]}
+                {translate('audit.integrity.verify_label', '防篡改檢查：')}{statusLabelMap[statusKey]}
                 {verificationResult?.status === 'valid' && verificationResult.signedByThisBrowser === false && (
                     <span style={{ fontWeight: 400, color: '#6b7280' }}>{translate('audit.integrity.other_browser', '（由其他瀏覽器的金鑰簽發）')}</span>
                 )}
