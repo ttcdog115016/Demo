@@ -403,6 +403,9 @@ export default function Step4_Result(): React.ReactElement
     const kReport = currentPrivacyModeTypeStr === 'k-anonymity' ? (apiReport as KAnonymityQualityReport) : null;
     const dpReport = currentPrivacyModeTypeStr === 'differential-privacy' ? (apiReport as DpQualityReport) : null;
     const isComplianceValidStatus = evaluateComplianceValidity(currentPrivacyModeTypeStr, apiReport, budgetLimitEpsilonValue);
+    // ★ 2026-10-02：已跑完但未達合規標準時，不提供下載（CSV／PDF），報告與按鈕字樣也不再稱「合規」
+    const isResultNonCompliantStatus = !pipelineFailedMessage && Boolean(apiReport) && !isComplianceValidStatus;
+    const nonCompliantDownloadBlockedText = translate('step4.btn.non_compliant_blocked', '未達合規標準，無法下載。請依上方建議調整設定後重新運算。');
 
     const getAttackChartOption = () => 
     {
@@ -444,6 +447,7 @@ export default function Step4_Result(): React.ReactElement
 
     const handleDownloadCSV = () => 
     {
+        if (isResultNonCompliantStatus) return; // 未達合規標準不提供下載（按鈕已停用，此處再防一次）
         if (processedCsvBlob) 
         {
             const blobDownloadUrlString = URL.createObjectURL(processedCsvBlob);
@@ -462,6 +466,7 @@ export default function Step4_Result(): React.ReactElement
 
     const handleDownloadPDF = async () =>
     {
+        if (isResultNonCompliantStatus) return; // 未達合規標準不提供 PDF 匯出
         const targetPdfPrintHtmlElement = document.getElementById('printable-audit-report');
         if (!targetPdfPrintHtmlElement) return;
         const hideGlobalLoadingMessageFunction = messageApi.loading(translate('step4.msg.pdf_compiling', '正在編譯高畫質 PDF，請稍候...'), 0);
@@ -755,11 +760,15 @@ export default function Step4_Result(): React.ReactElement
                         {translate('step4.btn.recalculate', '重新發起後端運算')}
                     </Button>
                     <Button type="default" icon={<FileDoneOutlined />} disabled={isPipelineCalculatingStatus || !!pipelineFailedMessage} onClick={handleOpenReportModal} size="large">
-                        {translate('step4.btn.view_report', '檢視與匯出憑證')}
+                        {isResultNonCompliantStatus
+                            ? translate('step4.btn.view_report_non_compliant', '檢視檢測紀錄')
+                            : translate('step4.btn.view_report', '檢視與匯出憑證')}
                     </Button>
-                    <Button type="primary" icon={<DownloadOutlined />} disabled={isPipelineCalculatingStatus || !!pipelineFailedMessage} onClick={handleDownloadCSV} size="large" style={{ background: '#4F46E5', borderColor: '#4F46E5' }}>
-                        {translate('step4.btn.download_csv', '下載脫敏 CSV')}
-                    </Button>
+                    <Tooltip title={isResultNonCompliantStatus ? nonCompliantDownloadBlockedText : undefined}>
+                        <Button type="primary" icon={<DownloadOutlined />} disabled={isPipelineCalculatingStatus || !!pipelineFailedMessage || isResultNonCompliantStatus} onClick={handleDownloadCSV} size="large" style={isResultNonCompliantStatus ? undefined : { background: '#4F46E5', borderColor: '#4F46E5' }}>
+                            {translate('step4.btn.download_csv', '下載脫敏 CSV')}
+                        </Button>
+                    </Tooltip>
                 </Space>
             </div>
 
@@ -1199,11 +1208,15 @@ export default function Step4_Result(): React.ReactElement
             )}
 
             <Modal
-                title={translate('step4.modal.title', '隱私合規與風險評估報告')}
+                title={isResultNonCompliantStatus
+                    ? translate('step4.modal.title_non_compliant', '檢測紀錄（未達合規標準）')
+                    : translate('step4.modal.title', '隱私合規與風險評估報告')}
                 open={isReportModalVisibleStatus} onCancel={() => setIsReportModalVisibleStatus(false)} width={800} styles={{ body: { maxHeight: '72vh', overflowY: 'auto', paddingRight: '6px' } }}
                 footer={[
                     <Button key="close" onClick={() => setIsReportModalVisibleStatus(false)}>{translate('step4.modal.close', '關閉')}</Button>,
-                    <Button key="download" type="primary" icon={<DownloadOutlined />} loading={isExportingPdfStatus} onClick={handleDownloadPDF} style={{ background: '#4F46E5' }}>{translate('step4.modal.export_pdf', '匯出 PDF 憑證')}</Button>
+                    <Tooltip key="download" title={isResultNonCompliantStatus ? nonCompliantDownloadBlockedText : undefined}>
+                        <Button type="primary" icon={<DownloadOutlined />} loading={isExportingPdfStatus} disabled={isResultNonCompliantStatus} onClick={handleDownloadPDF} style={isResultNonCompliantStatus ? undefined : { background: '#4F46E5' }}>{translate('step4.modal.export_pdf', '匯出 PDF 憑證')}</Button>
+                    </Tooltip>
                 ]}
             >
                 {/* ★ 使用者反映（2026-09-22）：與上方主畫面同理，這裡先前也用
@@ -1289,16 +1302,27 @@ export default function Step4_Result(): React.ReactElement
                             {/* 頂部深色品牌列，固定樣式不受畫面明／暗主題影響（比照官方風險評估報告 PDF 的
                                 固定風格），才不會印出來的稽核文件因為使用者當下切成深色模式而變色。 */}
                             <div className="pdf-page-break" style={{ background: '#1f2937', color: '#ffffff', padding: '14px 24px', fontSize: '12px', pageBreakInside: 'avoid' }}>
-                                {translate('step4.report.brand_bar', '通用去識別化與隱私保護系統 - 安全驗證與合規稽核報告')}
+                                {isResultNonCompliantStatus
+                                    ? translate('step4.report.brand_bar_non_compliant', '通用去識別化與隱私保護系統 - 安全驗證檢測紀錄')
+                                    : translate('step4.report.brand_bar', '通用去識別化與隱私保護系統 - 安全驗證與合規稽核報告')}
                             </div>
 
                             <div style={{ padding: isExportingPdfStatus ? '24px' : '24px' }}>
                                 <div className="pdf-page-break" style={{ textAlign: 'center', marginBottom: '8px', pageBreakInside: 'avoid' }}>
-                                    <h2 style={{ margin: '12px 0 4px', color: '#000000', fontSize: '21px' }}>{translate('step4.report.header', '隱私合規與風險評估報告')}</h2>
+                                    <h2 style={{ margin: '12px 0 4px', color: isResultNonCompliantStatus ? '#b91c1c' : '#000000', fontSize: '21px' }}>
+                                        {isResultNonCompliantStatus
+                                            ? translate('step4.report.header_non_compliant', '隱私風險評估檢測紀錄（未達合規標準）')
+                                            : translate('step4.report.header', '隱私合規與風險評估報告')}
+                                    </h2>
                                     <div style={{ fontSize: '12px', color: '#555555' }}>
                                         {translate('step4.report.cert_id', '報告編號:')} {auditMetadataObject.certificateId} ｜ {translate('step4.report.audit_time', '產出時間:')} {auditMetadataObject.auditTime}
                                     </div>
                                 </div>
+                                {isResultNonCompliantStatus && (
+                                    <div style={{ margin: '12px 0 4px', padding: '10px 14px', border: '1px solid #fca5a5', background: '#fef2f2', color: '#b91c1c', borderRadius: '4px', fontSize: '13px' }}>
+                                        {translate('step4.report.non_compliant_notice', '本次處理結果未達合規標準，此紀錄僅供檢視調整依據，不得作為合規證明，亦不提供去識別化資料與 PDF 下載。')}
+                                    </div>
+                                )}
 
                                 <h4 className="pdf-page-break" style={{ ...sectionHeadingStyle, marginTop: '20px', pageBreakInside: 'avoid' }}>一、 {translate('step4.report.info_title', '專案與檢測權限資訊')}</h4>
                                 {renderKeyValueTable(projectInfoRowsList, translate('step4.report.config_item_header', '設定項目'), translate('step4.report.config_detail_header', '配置細節'))}

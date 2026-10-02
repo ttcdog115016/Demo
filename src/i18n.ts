@@ -562,7 +562,9 @@ const translationResourcesDictionary = {
 				btn: {
 					recalculate: "重新發起後端運算",
 					view_report: "檢視與輸出紀錄",
-					download_csv: "下載 CSV"
+					view_report_non_compliant: "檢視檢測紀錄",
+					download_csv: "下載 CSV",
+					non_compliant_blocked: "未達合規標準，無法下載。請依上方建議調整設定後重新運算。"
 				},
 				steps: {
 					upload: { title: "切片上傳" },
@@ -610,6 +612,7 @@ const translationResourcesDictionary = {
 				},
 				modal: {
 					title: "合規檢測報告",
+					title_non_compliant: "檢測紀錄（未達合規標準）",
 					close: "關閉",
 					export_pdf: "輸出 PDF 紀錄"
 				},
@@ -620,7 +623,10 @@ const translationResourcesDictionary = {
 					//   一二三四五編號段落、樸素邊框表格），並把官方報告獨有的「隱私強化處理配置」
 					//   段落一併合併進來，讓使用者只需要看這一份、視覺風格一致的完整報告。
 					header: "隱私合規與風險評估報告",
+					header_non_compliant: "隱私風險評估檢測紀錄（未達合規標準）",
 					brand_bar: "通用去識別化與隱私保護系統 - 安全驗證與合規稽核報告",
+					brand_bar_non_compliant: "通用去識別化與隱私保護系統 - 安全驗證檢測紀錄",
+					non_compliant_notice: "本次處理結果未達合規標準，此紀錄僅供檢視調整依據，不得作為合規證明，亦不提供去識別化資料與 PDF 下載。",
 					audit_time: "產出時間:",
 					cert_id: "報告編號:",
 					info_title: "專案與檢測權限資訊",
@@ -850,6 +856,9 @@ const translationResourcesDictionary = {
 				msg_pdf_failed: "PDF 下載失敗",
 				msg_pdf_no_lib: "無法載入 PDF 轉檔套件，請檢查網路連線。",
 				report_title: "資料隱私合規與技術檢測紀錄",
+				report_title_failed: "資料隱私技術檢測紀錄（未達合規標準）",
+				report_failed: "未達合規標準",
+				export_blocked_failed: "此筆紀錄未達合規標準，不提供 PDF 匯出。",
 				report_cert_id: "紀錄編號:",
 				report_passed: "驗證合格",
 				report_track_title: "專案與執行紀錄",
@@ -1429,7 +1438,9 @@ const translationResourcesDictionary = {
 				btn: {
 					recalculate: "Recalculate",
 					view_report: "View & Export Certificate",
-					download_csv: "Download Masked CSV"
+					view_report_non_compliant: "View Assessment Record",
+					download_csv: "Download Masked CSV",
+					non_compliant_blocked: "Not compliant - downloads are disabled. Adjust the settings as suggested above and run again."
 				},
 				steps: {
 					upload: { title: "Chunk Upload" },
@@ -1481,12 +1492,16 @@ const translationResourcesDictionary = {
 				},
 				modal: {
 					title: "Privacy Audit Certificate",
+					title_non_compliant: "Assessment Record (Not Compliant)",
 					close: "Close",
 					export_pdf: "Export PDF Certificate"
 				},
 				report: {
 					header: "Privacy Compliance & Risk Assessment Report",
+					header_non_compliant: "Privacy Risk Assessment Record (Not Compliant)",
 					brand_bar: "Universal De-identification & Privacy Protection System - Security Verification & Compliance Audit Report",
+					brand_bar_non_compliant: "Universal De-identification & Privacy Protection System - Security Verification Record",
+					non_compliant_notice: "This result does not meet the compliance standard. This record is for reviewing adjustments only, is not proof of compliance, and the de-identified data and PDF cannot be downloaded.",
 					audit_time: "Generated At:",
 					cert_id: "Report ID:",
 					info_title: "Project & Audit Authorization Info",
@@ -1724,6 +1739,9 @@ const translationResourcesDictionary = {
 				msg_pdf_failed: "Failed to download PDF.",
 				msg_pdf_no_lib: "Cannot load PDF conversion library, check network.",
 				report_title: "Data Privacy Compliance & Technical Audit Certificate",
+				report_title_failed: "Data Privacy Technical Assessment Record (Not Compliant)",
+				report_failed: "Not Compliant",
+				export_blocked_failed: "This record does not meet the compliance standard; PDF export is not available.",
 				report_cert_id: "Certificate ID:",
 				report_passed: "Validation Passed",
 				report_track_title: "Project & Execution Track",

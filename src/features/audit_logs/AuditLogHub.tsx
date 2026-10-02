@@ -10,7 +10,7 @@
 import { useState, useMemo } from 'react';
 import { 
 	Card, Table, Tag, Input, Select, Button, Space, Typography, 
-	Statistic, Row, Col, Modal, theme, App as AntdApp
+	Statistic, Row, Col, Modal, theme, App as AntdApp, Tooltip
 } from 'antd';
 import { 
 	SearchOutlined, FileTextOutlined, 
@@ -157,6 +157,7 @@ export default function AuditLogHub(): React.ReactElement
 	 */
 	const handleDownloadPDF = async (): Promise<void> => 
 	{
+		if (selectedAuditLog?.status === 'failed') return; // 未達合規標準的紀錄不提供 PDF 匯出
 		const targetPrintDomElement = document.getElementById('printable-historical-report');
 
 		if (!targetPrintDomElement) 
@@ -406,9 +407,12 @@ export default function AuditLogHub(): React.ReactElement
 				}}
 				footer={[
 					<Button key="close" onClick={() => setIsReportModalVisible(false)}>{translate('audit.btn_close', '關閉')}</Button>,
-					<Button key="print" type="primary" icon={<DownloadOutlined />} loading={isPdfExporting} onClick={handleDownloadPDF} style={{ background: '#4F46E5' }}>
-						{translate('audit.btn_export_pdf', '匯出 PDF 憑證')}
-					</Button>
+					// ★ 2026-10-02：未達合規標準的紀錄不提供 PDF 匯出
+					<Tooltip key="print" title={selectedAuditLog?.status === 'failed' ? translate('audit.export_blocked_failed', '此筆紀錄未達合規標準，不提供 PDF 匯出。') : undefined}>
+						<Button type="primary" icon={<DownloadOutlined />} loading={isPdfExporting} disabled={selectedAuditLog?.status === 'failed'} onClick={handleDownloadPDF} style={selectedAuditLog?.status === 'failed' ? undefined : { background: '#4F46E5' }}>
+							{translate('audit.btn_export_pdf', '匯出 PDF 憑證')}
+						</Button>
+					</Tooltip>
 				]}
 			>
 				{selectedAuditLog && (
@@ -427,17 +431,22 @@ export default function AuditLogHub(): React.ReactElement
 						  */}
 						<div className="pdf-page-break avoid-break" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `2px solid ${token.colorPrimary}`, paddingBottom: '12px', marginBottom: '24px', pageBreakInside: 'avoid' }}>
 							<div>
-								<h2 style={{ margin: 0, color: token.colorPrimary, fontSize: '20px' }}>{translate('audit.report_title', '數據隱私合規與技術審計憑證')}</h2>
+								<h2 style={{ margin: 0, color: selectedAuditLog.status === 'failed' ? '#b91c1c' : token.colorPrimary, fontSize: '20px' }}>
+									{selectedAuditLog.status === 'failed'
+										? translate('audit.report_title_failed', '資料隱私技術檢測紀錄（未達合規標準）')
+										: translate('audit.report_title', '數據隱私合規與技術審計憑證')}
+								</h2>
 								<span style={{ fontSize: '12px', color: '#555555' }}>{translate('audit.report_cert_id', '憑證編號:')} {selectedAuditLog.certificateId}</span>
 							</div>
 
+							{/* ★ 2026-10-02：原本不論結果一律顯示「驗證合格」，改依紀錄狀態顯示 */}
 							<div style={{ textAlign: 'right' }}>
 								<span 
 									style={{ 
 										display: 'inline-block',
-										backgroundColor: '#f6ffed', 
-										border: '1px solid #b7eb8f', 
-										color: '#389e0d', 
+										backgroundColor: selectedAuditLog.status === 'failed' ? '#fef2f2' : '#f6ffed', 
+										border: selectedAuditLog.status === 'failed' ? '1px solid #fca5a5' : '1px solid #b7eb8f', 
+										color: selectedAuditLog.status === 'failed' ? '#b91c1c' : '#389e0d', 
 										padding: '6px 16px', 
 										borderRadius: '4px', 
 										fontSize: '14px', 
@@ -446,7 +455,9 @@ export default function AuditLogHub(): React.ReactElement
 										whiteSpace: 'nowrap'
 									}}
 								>
-									<span style={{ marginRight: '6px', fontSize: '15px' }}>✓</span> {translate('audit.report_passed', '驗證合格')}
+									{selectedAuditLog.status === 'failed'
+										? <><span style={{ marginRight: '6px', fontSize: '15px' }}>✕</span> {translate('audit.report_failed', '未達合規標準')}</>
+										: <><span style={{ marginRight: '6px', fontSize: '15px' }}>✓</span> {translate('audit.report_passed', '驗證合格')}</>}
 								</span>
 							</div>
 						</div>
