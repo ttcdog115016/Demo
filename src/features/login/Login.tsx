@@ -13,15 +13,14 @@ import { Card, Form, Input, Button, Checkbox, ConfigProvider, theme, App as Antd
 import { Mail, Lock, LogIn } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { useAuthStore, type UserRole } from '../../store/useAuthStore';
-import { loginWithBackend, type BackendUserRole } from '../../api/apiService';
+import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
 
 /**
  * 預設時間常數宣告 (單位: 毫秒)
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  */
-// ★ 2026-10-02：登入改為串接後端 /api/v1/auth/login，不再模擬延遲
+const LOGIN_SIMULATION_DELAY_MS = 800;
 const PAGE_NAVIGATION_DELAY_MS = 500;
 const QUICK_LOGIN_NAVIGATION_DELAY_MS = 100;
 
@@ -43,23 +42,6 @@ interface LoginFormValues
 const DEMO_ACCOUNTS = 
 {
 	'owner@test.com': { password: 'password', name: 'Data.Owner.A', role: 'data_owner' as const }
-};
-
-/**
- * ★ 2026-10-02：Demo 帳號提示與「一鍵快速登入」會繞過後端驗證，正式環境一律隱藏；
- *   僅在 .env 設定 VITE_ENABLE_DEMO_LOGIN=true 時顯示（開發／展示用）。
- */
-const IS_DEMO_LOGIN_ENABLED = import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true';
-
-/**
- * 後端角色 → 前端角色：admin→系統管理員；analyst（可讀取與處理）→資料擁有者；
- * viewer（唯讀）目前前端沒有唯讀檢視，回傳 null 由登入頁擋下並提示。
- */
-const mapBackendRoleToUserRole = (backendRole: BackendUserRole): UserRole | null =>
-{
-	if (backendRole === 'admin') return 'admin';
-	if (backendRole === 'analyst') return 'data_owner';
-	return null;
 };
 
 /**
@@ -100,8 +82,7 @@ export default function Login(): React.ReactElement
 
 	/**
 	 * 函數名稱: handleLogin
-	 * 函數功能: 處理標準登入表單送出事件：呼叫後端 /api/v1/auth/login 驗證帳密，成功後依角色寫入 AuthStore。
-	 *           啟用 Demo 模式（VITE_ENABLE_DEMO_LOGIN=true）時，Demo 帳號仍可在前端直接登入。
+	 * 函數功能: 處理標準登入表單送出事件，模擬網路延遲、比對 Demo 帳戶庫並寫入 AuthStore。
 	 * 
 	 * 輸入參數 (Input):
 	 *   - formValuesObj (LoginFormValues): 包含 email, password, remember 之表單數值物件
@@ -113,41 +94,35 @@ export default function Login(): React.ReactElement
 		
 		try 
 		{
-			const usernameText = String(formValuesObj.email || '').trim();
-			const passwordText = String(formValuesObj.password || '');
+			await new Promise(
+				(resolveSimulationDelay) => setTimeout(resolveSimulationDelay, LOGIN_SIMULATION_DELAY_MS)
+			);
 
-			const finishLogin = (displayName: string, accountText: string, userRole: UserRole): void =>
-			{
-				executeLoginAction({ name: displayName, email: accountText, role: userRole });
-				messageApi.success(translate('login.success'));
-				setTimeout(() => navigate('/', { replace: true }), PAGE_NAVIGATION_DELAY_MS);
-			};
+			const targetAccountKey = formValuesObj.email as keyof typeof DEMO_ACCOUNTS;
 
-			// Demo 模式：Demo 帳號在前端直接通過（不經後端）
-			const demoAccountConfig = IS_DEMO_LOGIN_ENABLED ? DEMO_ACCOUNTS[usernameText as keyof typeof DEMO_ACCOUNTS] : undefined;
-			if (demoAccountConfig && passwordText === demoAccountConfig.password)
+			const targetAccountConfig = DEMO_ACCOUNTS[targetAccountKey];
+
+			if (targetAccountConfig && formValuesObj.password === targetAccountConfig.password) 
 			{
-				finishLogin(demoAccountConfig.name, usernameText, demoAccountConfig.role);
-				return;
+				executeLoginAction(
+					{ name: targetAccountConfig.name, email: formValuesObj.email || '', role: 'data_owner' }
+				);
+
+				messageApi.success(
+					translate('login.success')
+				);
+
+				setTimeout(
+					() => navigate('/', { replace: true }), 
+					PAGE_NAVIGATION_DELAY_MS
+				);
+			} 
+			else 
+			{
+				messageApi.error(
+					translate('login.error')
+				);
 			}
-
-			const backendLoginResult = await loginWithBackend(usernameText, passwordText);
-			if (backendLoginResult.success)
-			{
-				const mappedUserRole = mapBackendRoleToUserRole(backendLoginResult.role);
-				if (!mappedUserRole)
-				{
-					messageApi.error(translate('login.viewerNotSupported', '此帳號為唯讀角色（viewer），目前系統尚未提供唯讀檢視，請聯絡系統管理員調整為 analyst 或 admin。'));
-					return;
-				}
-				finishLogin(backendLoginResult.username, backendLoginResult.username, mappedUserRole);
-				return;
-			}
-
-			if (backendLoginResult.reason === 'invalid_credentials') messageApi.error(translate('login.error'));
-			else if (backendLoginResult.reason === 'unreachable') messageApi.error(translate('login.networkError'));
-			else if (backendLoginResult.reason === 'unknown_role') messageApi.error(translate('login.unknownRole', '後端回傳了無法辨識的角色，請聯絡系統管理員。'));
-			else messageApi.error(translate('login.serverError', '登入服務發生錯誤，請稍後再試或聯絡系統管理員。'));
 		} 
 		catch (loginExecutionError) 
 		{
@@ -257,8 +232,7 @@ export default function Login(): React.ReactElement
 						</p>
 					</div>
 
-					{/* Demo 測試帳號提示區 (點擊可自動填入)；★ 2026-10-02：僅 Demo 模式顯示 */}
-					{IS_DEMO_LOGIN_ENABLED && (
+					{/* Demo 測試帳號提示區 (點擊可自動填入) */}
 					<Alert
 						message={<span style={{ fontSize: 13, fontWeight: 'bold' }}>{isChineseLanguageEnabled ? 'Demo 測試帳號 (點擊自動填入)' : 'Demo Account (Click to fill)'}</span>}
 						description={
@@ -278,7 +252,6 @@ export default function Login(): React.ReactElement
 							}
 						}
 					/>
-					)}
 
 					{/* 表單區塊 */}
 					<Form
@@ -351,8 +324,7 @@ export default function Login(): React.ReactElement
 							</Button>
 						</Form.Item>
 
-						{/* 快速登入按鈕；★ 2026-10-02：會繞過後端驗證，僅 Demo 模式顯示 */}
-						{IS_DEMO_LOGIN_ENABLED && (
+						{/* 快速登入按鈕 */}
 						<Form.Item style={{ marginBottom: 0 }}>
 							<Button 
 								type="default" 
@@ -372,7 +344,6 @@ export default function Login(): React.ReactElement
 								{translate('login.quickLoginBtn')}
 							</Button>
 						</Form.Item>
-						)}
 					</Form>
 
 					{/* 底部提示 */}

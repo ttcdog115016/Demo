@@ -11,8 +11,6 @@ test.describe('Privacy Toolkit 全流程端到端測試 (E2E Workflow Test)', ()
     await expect(page.getByText('PRIVACY APP')).toBeVisible();
 
     // 點擊一鍵快速登入
-    // ★ 2026-10-02：登入已串接後端，「一鍵快速登入」只在 Demo 模式顯示——
-    //   執行 E2E 前請以 VITE_ENABLE_DEMO_LOGIN=true 啟動前端（例如 set VITE_ENABLE_DEMO_LOGIN=true && npm run dev）
     const quickLoginBtn = page.getByRole('button', { name: /一鍵快速登入|One-Click Quick Login/i });
     await expect(quickLoginBtn).toBeVisible();
     await quickLoginBtn.click();
