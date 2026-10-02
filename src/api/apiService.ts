@@ -438,3 +438,42 @@ export const runReport = async (
     return { success: false, error };
   }
 };
+
+// ============================================================================
+// 身分驗證（2026-10-02 新增，串接後端 POST /api/v1/auth/login）
+// ============================================================================
+
+/** 後端 AuthManager 的角色（app/governance/auth.py）：admin／analyst／viewer */
+export type BackendUserRole = 'admin' | 'analyst' | 'viewer';
+
+export type BackendLoginResult =
+  | { success: true; username: string; role: BackendUserRole }
+  | { success: false; reason: 'invalid_credentials' | 'unreachable' | 'unknown_role' | 'error'; status?: number; error?: unknown };
+
+/**
+ * 登入：POST /api/v1/auth/login（JSON body {username, password}）
+ * 成功回 200 {username, role, message}；帳密錯誤 401。後端目前不發 token，其餘端點也未掛權限檢查，
+ * 故登入結果只用來決定前端角色與顯示名稱。帳號由部署者於後端以 CLI 建立（見功能說明文件）。
+ * 回應狀態 502／503／504 或無回應（Vite／nginx 代理連不到後端）視為「無法連線」。
+ */
+export const loginWithBackend = async (username: string, password: string): Promise<BackendLoginResult> => {
+  try {
+    const response = await axios.post<{ username: string; role: string; message?: string }>(
+      '/api/v1/auth/login',
+      { username, password }
+    );
+    const roleValue = String(response.data?.role || '').toLowerCase();
+    if (roleValue !== 'admin' && roleValue !== 'analyst' && roleValue !== 'viewer') {
+      return { success: false, reason: 'unknown_role', status: response.status };
+    }
+    return { success: true, username: response.data.username || username, role: roleValue };
+  } catch (error) {
+    const statusCode = axios.isAxiosError(error) ? error.response?.status : undefined;
+    if (statusCode === 401) return { success: false, reason: 'invalid_credentials', status: statusCode };
+    if (statusCode === undefined || statusCode === 502 || statusCode === 503 || statusCode === 504) {
+      return { success: false, reason: 'unreachable', status: statusCode, error };
+    }
+    console.error('登入 API 呼叫失敗:', error);
+    return { success: false, reason: 'error', status: statusCode, error };
+  }
+};

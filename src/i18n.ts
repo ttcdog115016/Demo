@@ -123,9 +123,9 @@ const translationResourcesDictionary = {
 			login: {
 				welcome: "歡迎回來",
 				subtitle: "請登入您的帳號以繼續使用隱私強化工具包",
-				emailLabel: "電子信箱 / 帳號",
-				emailRequired: "請輸入電子信箱！",
-				emailPlaceholder: "請輸入您的電子信箱",
+				emailLabel: "帳號",
+				emailRequired: "請輸入帳號！",
+				emailPlaceholder: "請輸入您的帳號",
 				passwordLabel: "密碼",
 				passwordRequired: "請輸入密碼！",
 				passwordPlaceholder: "請輸入您的密碼",
@@ -137,8 +137,11 @@ const translationResourcesDictionary = {
 				requestAccess: "申請使用權限",
 				success: "登入成功！正在為您準備工作區...",
 				quickSuccess: " 快速登入成功！",
-				error: "登入失敗，請檢查您的電子信箱與密碼。",
-				networkError: "無法連線至伺服器，請稍後再試。"
+				error: "帳號或密碼錯誤。",
+				networkError: "無法連線至後端服務，請確認後端已啟動後再試。",
+				viewerNotSupported: "此帳號為唯讀角色（viewer），目前系統尚未提供唯讀檢視，請聯絡系統管理員調整為 analyst 或 admin。",
+				unknownRole: "後端回傳了無法辨識的角色，請聯絡系統管理員。",
+				serverError: "登入服務發生錯誤，請稍後再試或聯絡系統管理員。"
 			},
 			dashboard: {
 				welcome_back: "歡迎回來，{{name}}",
@@ -996,9 +999,9 @@ const translationResourcesDictionary = {
 			login: {
 				welcome: "Welcome Back",
 				subtitle: "Please log in to continue using Privacy Toolkit",
-				emailLabel: "Email / Username",
-				emailRequired: "Please enter your email!",
-				emailPlaceholder: "Enter your email",
+				emailLabel: "Username",
+				emailRequired: "Please enter your username!",
+				emailPlaceholder: "Enter your username",
 				passwordLabel: "Password",
 				passwordRequired: "Please enter your password!",
 				passwordPlaceholder: "Enter your password",
@@ -1010,8 +1013,11 @@ const translationResourcesDictionary = {
 				requestAccess: "Request Access",
 				success: "Login successful! Preparing workspace...",
 				quickSuccess: " Quick login successful!",
-				error: "Login failed. Please check your credentials.",
-				networkError: "Network error. Please try again later."
+				error: "Incorrect username or password.",
+				networkError: "Cannot reach the backend service. Please make sure it is running and try again.",
+				viewerNotSupported: "This account has the read-only role (viewer), which is not supported yet. Please ask an administrator to change it to analyst or admin.",
+				unknownRole: "The backend returned an unrecognized role. Please contact an administrator.",
+				serverError: "The login service returned an error. Please try again later or contact an administrator."
 			},
 			dashboard: {
 				welcome_back: "Welcome back, {{name}}",

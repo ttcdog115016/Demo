@@ -121,6 +121,8 @@ export const registerGlobalApiErrorInterceptor = (): void => {
         async (errorObj: AxiosError) => {
             // ★ 2026-09-30：使用者按「取消運算」主動中斷的請求不是錯誤，不寫入診斷紀錄、不回報
             if (axios.isCancel(errorObj)) return Promise.reject(errorObj);
+            // ★ 2026-10-02：登入請求帶有帳密，一律不寫入診斷紀錄、不回報 Google 表單（帳密錯誤的 401 也屬正常流程）
+            if (String(errorObj.config?.url || '').includes('/auth/')) return Promise.reject(errorObj);
             try {
                 const requestConfigObj = errorObj.config;
                 const responseObj = errorObj.response;

@@ -11,6 +11,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -20,7 +21,9 @@ const RECENT_LOGS_DISPLAY_LIMIT = 5;
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { t: translate } = useTranslation();
-  const userInfo = { name: 'Data.Owner.A', role: 'DATA_OWNER' };
+  // ★ 2026-10-02：改讀登入後的使用者（原為寫死的 Data.Owner.A）
+  const authUser = useAuthStore((state) => state.user);
+  const userInfo = { name: authUser?.name || '-', role: (authUser?.role || '').toUpperCase() };
 
   // 讀取全域歷史審計紀錄 (真實紀錄，非假資料)，最新紀錄已由 addAuditLog 插入於陣列最前端
   const auditLogsList = useAuditStore((state) => state.auditLogs);
