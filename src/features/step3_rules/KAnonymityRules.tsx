@@ -162,6 +162,8 @@ export default function KAnonymityRules(): React.ReactElement
     // ★ 2026-09-30：相異值數改讀完整資料集的欄位統計快照（見 datasetProfileSnapshot），不再只看
     //   前 1000 筆預覽；相異值數被截斷（極高基數）時代表遠大於任何合理的 l，視同不限制。
     const rawColumnRolesMapForLUpper = useWorkspaceStore((state) => state.columnRoles);
+    // Step2 欄位明細（含各欄處理方式），供「敏感欄位處理方式與 l/t 檢測矛盾」即時提示使用
+    const kAnonymityFieldsSnapshotList = useWorkspaceStore((state) => state.kAnonymityFields);
     // 計算規則見 utils/lDiversityLimits.ts（已抽出並有單元測試）
     const sensitiveColumnDistinctCountInfo = useMemo(
         () => findSmallestSensitiveColumnDistinct(rawColumnRolesMapForLUpper, datasetProfileSnapshot),
@@ -582,9 +584,38 @@ export default function KAnonymityRules(): React.ReactElement
         : isMultiSensitiveColumnStatus
             ? translate(
                 'step3.multi_sensitive_column_warning',
-                { count: sensitiveColumnsCountNumber, defaultValue: `目前已設定 ${sensitiveColumnsCountNumber} 個敏感欄位：l-多樣性／t-緊密度會分別檢測這幾個欄位、須全部達標才算通過；三攻擊與 CAP 風險評估則會逐一評估每個欄位，取風險最高（最保守）的結果，不需要分次執行。` }
+                { count: sensitiveColumnsCountNumber, defaultValue: `目前已設定 ${sensitiveColumnsCountNumber} 個敏感欄位：l-多樣性／t-緊密度會分別檢測這幾個欄位、須全部達標才算通過；三攻擊與 CAP 風險評估則會逐一評估每個欄位，取風險最高（最保守）的結果，不需要分次執行；每個欄位都要完整跑一輪，執行時間約為 1 個敏感欄位時的 ${sensitiveColumnsCountNumber} 倍。` }
             )
             : '';
+
+    // ★ 2026-10-02：敏感欄位的處理方式與 l/t 檢測互相矛盾時即時提示（僅提示、不阻擋）。
+    //   對照後端 app/engines/anonymization/pipeline.py：
+    //   ① 處理方式為「移除」：該欄自輸出刪除，後端只對仍存在的敏感欄位做 l/t，等於這些欄位沒被檢測。
+    //   ② 處理方式為遮蔽／雜湊（mask、hash；畫面已不提供，但可能經由匯入設定檔帶入）：檢測對象已非
+    //      原始敏感值，後端不執行該欄檢測並直接判定 l/t「未通過」。
+    const isAnyLtCheckEnabledStatus = isEnableLDiversityStatus || isEnableTClosenessStatus;
+    const sensitiveFieldStrategyRecordsList = ((kAnonymityFieldsSnapshotList || []) as Array<Record<string, unknown>>)
+        .filter((fieldRecord) => fieldRecord.role === 'Sensitive')
+        .map((fieldRecord) => ({ name: String(fieldRecord.name || ''), strategy: String(fieldRecord.maskStrategy || 'none') }));
+    const removedSensitiveColumnNamesList = isAnyLtCheckEnabledStatus
+        ? sensitiveFieldStrategyRecordsList.filter((item) => item.strategy === 'remove').map((item) => item.name)
+        : [];
+    const maskedSensitiveColumnNamesList = isAnyLtCheckEnabledStatus
+        ? sensitiveFieldStrategyRecordsList.filter((item) => item.strategy !== 'none' && item.strategy !== 'remove').map((item) => item.name)
+        : [];
+    const formatColumnNamesText = (namesList: string[]): string => namesList.map((name) => `「${name}」`).join('、');
+    const removedSensitiveLtConflictMessageText = removedSensitiveColumnNamesList.length > 0
+        ? translate('step3.sensitive_removed_lt_conflict', {
+            columns: formatColumnNamesText(removedSensitiveColumnNamesList),
+            defaultValue: `敏感欄位 ${formatColumnNamesText(removedSensitiveColumnNamesList)} 在 Step2 的處理方式為「移除」，去識別化後不會出現在輸出資料中，l-多樣性／t-緊密度不會檢測這些欄位（只檢測其餘保留的敏感欄位）。若要納入檢測，請回到 Step2 將處理方式改為「不處理」。`
+        })
+        : '';
+    const maskedSensitiveLtConflictMessageText = maskedSensitiveColumnNamesList.length > 0
+        ? translate('step3.sensitive_masked_lt_conflict', {
+            columns: formatColumnNamesText(maskedSensitiveColumnNamesList),
+            defaultValue: `敏感欄位 ${formatColumnNamesText(maskedSensitiveColumnNamesList)} 已設定遮蔽或雜湊，檢測對象已不是原始敏感值，後端會直接判定 l-多樣性／t-緊密度「未通過」。請回到 Step2 將處理方式改為「不處理」，或關閉 l／t 檢測。`
+        })
+        : '';
 
     const kLessThanLConflictMessageText = translate('step3.error_k_less_than_l', '參數衝突：要求資料具備 {{l}} 種多樣性 (L={{l}})，但群組大小僅有 {{k}} (K={{k}})，這是數學上無法達成的。請確保 K ≥ L。', { k: currentKValue, l: currentLValue });
 
@@ -684,6 +715,13 @@ export default function KAnonymityRules(): React.ReactElement
                                     style={{ marginBottom: '12px', textAlign: 'left' }}
                                     message={sensitiveColumnWarningMessageText}
                                 />
+                            )}
+
+                            {removedSensitiveLtConflictMessageText && (
+                                <Alert type="warning" showIcon style={{ marginBottom: '12px', textAlign: 'left' }} message={removedSensitiveLtConflictMessageText} />
+                            )}
+                            {maskedSensitiveLtConflictMessageText && (
+                                <Alert type="error" showIcon style={{ marginBottom: '12px', textAlign: 'left' }} message={maskedSensitiveLtConflictMessageText} />
                             )}
 
                             {/* l-diversity 滑桿 */}

@@ -609,6 +609,20 @@ export default function KAnonymityMapping(): React.ReactElement
         //   兩種情況都能直接往下走；下方欄位設定清單上方仍保留即時的資訊提示（見下方
         //   liveSensitiveFieldsCountNumber 那段），讓使用者知道 0 個時風險評估會被略過、
         //   2 個以上時會逐一評估取最保守結果，但不會因此卡住流程。
+        // ★ 2026-10-02 使用者要求：K-匿名模式 Step2 必須至少設定 1 個敏感欄位才能進入 Step3
+        //   （上段「0 個不擋」的規則就此改為「0 個要擋」；2 個以上仍不擋）。
+        //   角色為「敏感欄位」但處理方式選「移除」者不算數：後端去識別化會把該欄自輸出刪除
+        //   （pipeline.py 角色清單只取仍存在於 df_out 的欄位），l/t 檢測與三攻擊／CAP 都拿不到它。
+        const sensitiveFieldsList = kAnonymityFieldsList.filter((fieldItemRecord) => fieldItemRecord.role === 'Sensitive');
+        const keptSensitiveFieldsCountNumber = sensitiveFieldsList.filter((fieldItemRecord) => fieldItemRecord.maskStrategy !== 'remove').length;
+        if (sensitiveFieldsList.length === 0) {
+            setStepValidationAction(false, translate('step2.error_require_sensitive', '請至少將一個欄位的角色設為「敏感欄位」（例如疾病、收入區間）才能進入下一步。'));
+            return;
+        }
+        if (keptSensitiveFieldsCountNumber === 0) {
+            setStepValidationAction(false, translate('step2.error_sensitive_all_removed', '已設定的敏感欄位處理方式皆為「移除」，去識別化後輸出資料中將沒有任何敏感欄位，l-多樣性／t-緊密度檢測與風險評估都無法執行。請至少保留一個敏感欄位（處理方式選「不處理」）。'));
+            return;
+        }
         setStepValidationAction(true, null);
     }, [kAnonymityFieldsList, kAnonymityHierarchiesList, storeColumnsList, preprocessingRulesMap, setStepValidationAction, translate]);
 
@@ -2008,15 +2022,16 @@ export default function KAnonymityMapping(): React.ReactElement
                                             let bannerBackgroundColor = isDarkModeActive ? 'rgba(82, 196, 26, 0.12)' : '#f6ffed';
 
                                             if (liveSensitiveFieldsCountNumber === 0) {
+                                                // ★ 2026-10-02：0 個敏感欄位改為阻擋下一步（見上方驗證 Effect），提示改為錯誤樣式
                                                 bannerIconElement = <WarningOutlined />;
-                                                bannerMessageText = translate('step2.sensitive_count_zero', '目前敏感欄位數量：0（執行時將略過三攻擊與 CAP 風險評估，不影響去識別化本身的資料與品質分數）');
-                                                bannerTooltipText = translate('step2.sensitive_count_tooltip_zero', '敏感欄位就是資料裡最需要保護、不希望被別人看出來的內容，例如「疾病」「薪資」。目前沒有設定任何欄位為「敏感欄位」，執行時三攻擊（推斷性）與 CAP 這兩項風險評估會被略過，但去識別化後的資料與品質分數仍會照常產生。若想看到風險評估結果，請至下方欄位表格將其中一欄的「角色」設為「敏感欄位」。');
-                                                bannerAccentColor = '#faad14';
-                                                bannerBackgroundColor = isDarkModeActive ? 'rgba(250, 173, 20, 0.12)' : '#fffbe6';
+                                                bannerMessageText = translate('step2.sensitive_count_zero_block', '目前敏感欄位數量：0（須至少設定 1 個敏感欄位才能進入下一步）');
+                                                bannerTooltipText = translate('step2.sensitive_count_tooltip_zero_block', '敏感欄位就是資料裡最需要保護、不希望被別人看出來的內容，例如「疾病」「薪資」。l-多樣性／t-緊密度檢測與三攻擊、CAP 風險評估都需要以敏感欄位為對象，請至下方欄位表格將其中一欄的「角色」設為「敏感欄位」後再進入下一步。');
+                                                bannerAccentColor = '#ff4d4f';
+                                                bannerBackgroundColor = isDarkModeActive ? 'rgba(255, 77, 79, 0.12)' : '#fff2f0';
                                             } else if (liveSensitiveFieldsCountNumber >= 2) {
                                                 bannerIconElement = <InfoCircleOutlined />;
-                                                bannerMessageText = translate('step2.sensitive_count_multi', { count: liveSensitiveFieldsCountNumber, defaultValue: `目前敏感欄位數量：${liveSensitiveFieldsCountNumber}（將逐一評估每個敏感欄位，取風險最高的保守結果）` });
-                                                bannerTooltipText = translate('step2.sensitive_count_tooltip_multi', '敏感欄位就是資料裡最需要保護、不希望被別人看出來的內容，例如「疾病」「薪資」。同時設定多個時，系統會對每一個敏感欄位各自跑一次三攻擊與 CAP 風險評估，並取所有結果中風險最高（最保守）的數字作為最終結果，不需要分次執行。');
+                                                bannerMessageText = translate('step2.sensitive_count_multi', { count: liveSensitiveFieldsCountNumber, defaultValue: `目前敏感欄位數量：${liveSensitiveFieldsCountNumber}（將逐一評估每個敏感欄位，取風險最高的保守結果；欄位越多，執行時間越長）` });
+                                                bannerTooltipText = translate('step2.sensitive_count_tooltip_multi', '敏感欄位就是資料裡最需要保護、不希望被別人看出來的內容，例如「疾病」「薪資」。同時設定多個時，系統會對每一個敏感欄位各自跑一次三攻擊與 CAP 風險評估，並取所有結果中風險最高（最保守）的數字作為最終結果，不需要分次執行。由於每個敏感欄位都要完整跑一輪，設定 N 個敏感欄位，風險評估的執行時間約為 1 個時的 N 倍。');
                                                 bannerAccentColor = '#1677ff';
                                                 bannerBackgroundColor = isDarkModeActive ? 'rgba(22, 119, 255, 0.12)' : '#e6f4ff';
                                             }

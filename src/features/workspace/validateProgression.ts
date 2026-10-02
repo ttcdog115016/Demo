@@ -119,6 +119,19 @@ export const validateProgression = (
 				return translateFunction('message.require_qi', '請至少將一個欄位標記為「間接識別碼」才能進入隱私設定！');
 			}
 
+			// ★ 2026-10-02 使用者要求：K-匿名模式必須至少設定 1 個敏感欄位才能進入隱私設定。
+			//   KAnonymityMapping.tsx 的頁面驗證已會擋，此處再擋一次，涵蓋側欄／網址直接跳轉等不經
+			//   「下一步」按鈕的路徑。處理方式為「移除」的敏感欄位不算（後端會自輸出刪除該欄）。
+			const kAnonymityFieldsSnapshotList = (currentWorkspaceStoreStateData.kAnonymityFields || []) as Array<Record<string, unknown>>;
+			const hasKeptSensitiveFieldStatus = kAnonymityFieldsSnapshotList.length > 0
+				? kAnonymityFieldsSnapshotList.some((fieldRecord) => fieldRecord.role === 'Sensitive' && fieldRecord.maskStrategy !== 'remove')
+				: assignedPrivacyRolesListArray.some((roleNameString) => roleNameString === 'Sensitive');
+
+			if (!hasKeptSensitiveFieldStatus)
+			{
+				return translateFunction('message.require_sensitive', '請至少將一個欄位標記為「敏感欄位」（且處理方式不為「移除」）才能進入隱私設定！');
+			}
+
 			// ★ 新增: 「屬性對應」頁面 (KAnonymityMapping.tsx) 本身已會計算欄位層級的細部防呆 (例如
 			//   Quasi-identifier 選擇「階層樹 (Tree)」泛化策略卻未於「泛化階層映射」設定任何有效對應、
 			//   Identifier 選擇「保留部分字元」卻未填寫保留字數、泛化參數 <= 0、預處理步驟參數缺漏等)，
