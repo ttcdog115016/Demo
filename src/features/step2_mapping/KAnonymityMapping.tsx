@@ -1777,8 +1777,10 @@ export default function KAnonymityMapping(): React.ReactElement
         {
             title: (
                 <span>
-                    {translate('step2.max_level')}
-                    <Tooltip title={translate('step2.max_level_tooltip', '選擇最多要泛化到第幾層，層級越高資料越模糊、保護越強。')}>
+                    {/* ★ 2026-10-02：依後端規格 qi_generalization_levels 為「實際採用的層級」（0＝不泛化），不是「最多泛化到第幾層」，
+                        欄位名稱由「最大層級」改為「泛化層級」並改寫說明（內部變數 genMaxLevel 名稱沿用，不影響送出格式） */}
+                    {translate('step2.max_level', '泛化層級')}
+                    <Tooltip title={translate('step2.max_level_tooltip', '實際採用的泛化層級，0 表示不泛化（保留原值）。層級越高，相同組合的資料越多、需要被刪除或遮蔽的筆數越少，但資料會變得越粗略；兩者需要取捨。')}>
                         <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} />
                     </Tooltip>
                 </span>
