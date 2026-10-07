@@ -20,14 +20,18 @@ import dayjs from 'dayjs';
 import { useWorkspaceStore, type DPField, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import { DP_COLUMN_BUDGETS_REFERENCE } from '../../config/recommendationReferenceConfig';
 import {
-	isDateTimeDpField, resolveIsDateTimeDpField, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals,
+	resolveIsDateTimeDpField, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals,
 	parseDpDateTimeBoundTimestamp, compactDpDateTimeBoundText, DP_DATETIME_BOUND_PICKER_DISPLAY_FORMAT, DP_DATETIME_BOUND_PICKER_TIME_FORMAT
 } from '../../utils/dpFieldHelpers';
-import { ensureDatasetProfile, useEnsureDatasetProfile } from '../../utils/datasetProfile';
+import { ensureDatasetProfile, useEnsureDatasetProfile, type DatasetProfile } from '../../utils/datasetProfile';
+import { inferDpFieldTypeFromProfile } from '../../utils/dpTypeInference';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
 import { parseBackendDpColumnBudgets, type BackendDpColumnBudget } from '../../utils/dpConfigImport';
 import { resolveDpFieldRiskRole, isDpFieldSelectableAsRiskSensitive } from '../../utils/riskAssessment';
+import { detectConfigPrivacyMode } from '../../utils/configModeDetect';
+import { buildDatasetColumnNameSet, isFieldNameInDataset, findFieldsNotInDataset, findDatasetColumnsNotConfigured, describeFieldsNotInDatasetError, normalizeDatasetColumnName } from '../../utils/datasetFieldConsistency';
 
+import { scaleFontSize } from '../../utils/fontScale';
 /**
  * 預設隱私參數常數宣告
  */
@@ -37,41 +41,23 @@ const DEFAULT_NUMERIC_LOWER_BOUND = 0;
 const DEFAULT_NUMERIC_UPPER_BOUND = 100;
 const DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY = 'dp-recommend-minmax-parse';
 
+// ★ 2026-10-05：使用者要求剛進入 DP Step2 時各欄位不預先選好資料型態（一律「請選擇」），
+//   改由使用者手動選擇或按「套用系統推薦設定」（會依欄位名稱＋實際資料判斷）。原本依欄位名稱
+//   關鍵字預猜型態，猜中的欄位會帶入預設邊界，與使用者實際需要的設定常不一致。
+//   （此函式僅在 Store 尚未建立 dpFields 時使用；Store 的 setFileData 亦採相同規則，見 useWorkspaceStore.ts。）
 const createInitialDPFields = (columnNameList: string[]): DPField[] => 
 {
 	return columnNameList.map(
-		(columnNameString, columnIndex) => 
-		{
-			const lowerCaseColumnName = columnNameString.toLowerCase();
-			let calculatedDefaultType: 'Numeric' | 'Categorical' | 'Text' | 'Unknown' = 'Unknown';
-
-			if (/(age|amount|fare|count|price|salary|num|duration|mins)/i.test(lowerCaseColumnName)) 
-			{
-				calculatedDefaultType = 'Numeric';
-			} 
-			else if (/(gender|type|category|status|station)/i.test(lowerCaseColumnName)) 
-			{
-				calculatedDefaultType = 'Categorical';
-			}
-
-			const isDateTimeFieldStatus = calculatedDefaultType === 'Numeric' && isDateTimeDpField(columnNameString);
-
-			return {
-				id: `${columnNameString}-${columnIndex}`,
-				fieldName: columnNameString,
-				fieldType: calculatedDefaultType,
-				enabled: true,
-				epsilon: DEFAULT_EPSILON_BUDGET,
-				delta: 1e-5,
-				// ★ 日期時間型欄位（如生日）之邊界應為日期字串而非單純數字，故與一般數值型欄位分開給預設值。
-				lowerBound: isDateTimeFieldStatus ? DEFAULT_DATETIME_LOWER_BOUND_DATE : (calculatedDefaultType === 'Numeric' ? DEFAULT_NUMERIC_LOWER_BOUND : (calculatedDefaultType === 'Categorical' ? 0 : undefined)),
-				upperBound: isDateTimeFieldStatus ? new Date().toISOString().slice(0, 10) : (calculatedDefaultType === 'Numeric' ? DEFAULT_NUMERIC_UPPER_BOUND : (calculatedDefaultType === 'Categorical' ? 1 : undefined)),
-				allowedCategories: calculatedDefaultType === 'Categorical' ? 'auto_extracted' : '',
-				outOfBoundsStrategy: 'clip',
-				minimumUnit: (calculatedDefaultType === 'Numeric' && !isDateTimeFieldStatus) ? 1 : undefined,
-				noiseStep: isDateTimeFieldStatus ? 7 : undefined
-			};
-		}
+		(columnNameString, columnIndex) => ({
+			id: `${columnNameString}-${columnIndex}`,
+			fieldName: columnNameString,
+			fieldType: 'Unknown',
+			enabled: true,
+			epsilon: DEFAULT_EPSILON_BUDGET,
+			delta: 1e-5,
+			allowedCategories: '',
+			outOfBoundsStrategy: 'clip'
+		})
 	);
 };
 
@@ -261,6 +247,39 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		//   改為與實際送出、Step3 匯出共用 utils/pipelineConfig.ts，三者保證一致。
 		buildBackendConfigDocumentFromWorkspace({ ...useWorkspaceStore.getState(), privacyMode: 'differential-privacy' }) ?? {};
 
+	// ★ 2026-10-07：欄位清單與上傳資料之一致性 (見 utils/datasetFieldConsistency.ts)
+	const datasetColumnNameSet = useMemo(() => buildDatasetColumnNameSet(datasetColumnsList), [datasetColumnsList]);
+	const fieldsNotInDatasetNamesList = useMemo(
+		() => findFieldsNotInDataset(currentDpFieldsList.map((fieldItemRecord) => fieldItemRecord.fieldName), datasetColumnsList),
+		[currentDpFieldsList, datasetColumnsList]
+	);
+	const datasetColumnsNotConfiguredList = useMemo(
+		() => findDatasetColumnsNotConfigured(currentDpFieldsList.map((fieldItemRecord) => fieldItemRecord.fieldName), datasetColumnsList),
+		[currentDpFieldsList, datasetColumnsList]
+	);
+
+	/**
+	 * 函數名稱: applyImportedDpFieldsFilteredByDataset
+	 * 函數功能: 匯入設定檔時只保留資料中存在的欄位寫入 Store；略過的欄位以警告訊息告知 (2026-10-07)。
+	 *           尚未上傳資料時不過濾。
+	 */
+	const applyImportedDpFieldsFilteredByDataset = (importedDpFieldsList: DPField[]): void =>
+	{
+		const keptDpFieldsList = importedDpFieldsList.filter((fieldItemRecord) => isFieldNameInDataset(fieldItemRecord.fieldName, datasetColumnNameSet));
+		const skippedFieldNamesList = importedDpFieldsList
+			.filter((fieldItemRecord) => !isFieldNameInDataset(fieldItemRecord.fieldName, datasetColumnNameSet))
+			.map((fieldItemRecord) => fieldItemRecord.fieldName);
+		setDpFieldsAction(keptDpFieldsList);
+		if (skippedFieldNamesList.length > 0)
+		{
+			messageApi.warning(translate('message.import_json_skipped_not_in_dataset', {
+				count: skippedFieldNamesList.length,
+				names: skippedFieldNamesList.join('、'),
+				defaultValue: `已略過 ${skippedFieldNamesList.length} 個資料中沒有的欄位：${skippedFieldNamesList.join('、')}`
+			}), 6);
+		}
+	};
+
 	const handleImportJSON = (fileChangeEventObj: React.ChangeEvent<HTMLInputElement>): void =>
 	{
 		const targetUploadedFile = fileChangeEventObj.target.files?.[0];
@@ -275,6 +294,13 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				const rawJsonString = (fileReaderEventObj.target?.result as string) || '';
 				const cleanedJsonString = rawJsonString.replace(/^[\uFEFF\u200B]+/, '').trim();
 				const parsedJsonContentData = JSON.parse(cleanedJsonString);
+
+				// ★ 2026-10-02：K-匿名設定檔不可匯入差分隱私頁面（舊版 K-匿名匯出檔含 field_attributes，先前會被當成主 JSON 匯入）
+				if (detectConfigPrivacyMode(parsedJsonContentData) === 'k-anonymity')
+				{
+					messageApi.error(translate('message.import_json_mode_mismatch_kanon', '此設定檔為「K-匿名化」模式，無法匯入差分隱私欄位設定。請改用差分隱私設定檔，或回到 Step1 切換為 K-匿名化模式後再匯入。'));
+					return;
+				}
 				
 				type DpRuleItem = {
 					id?: string; fieldName?: string; field_name?: string; field?: string;
@@ -326,7 +352,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 						privacyMode: 'differential-privacy'
 					});
 
-					setDpFieldsAction(extractedNewFieldsArray);
+					applyImportedDpFieldsFilteredByDataset(extractedNewFieldsArray);
 					messageApi.success(translate('message.import_budget_json_success', '成功匯入差分隱私 (DP) 預算設定檔！'));
 					return;
 				}
@@ -361,7 +387,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					);
 
 					// 陣列格式沒有 columns 屬性，這裡不需額外處理
-					setDpFieldsAction(parsedDpRuleArray as DPField[]);
+					applyImportedDpFieldsFilteredByDataset(parsedDpRuleArray as DPField[]);
 					messageApi.success(translate('message.import_array_json_success', '成功匯入欄位設定陣列！'));
 					return;
 				} 
@@ -489,7 +515,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					if (globalDeltaConfigValue !== undefined) useWorkspaceStore.setState({ targetDelta: globalDeltaConfigValue });
 					if (globalEpsilonConfigValue !== undefined) useWorkspaceStore.setState({ budgetLimitEpsilon: globalEpsilonConfigValue });
 
-					setDpFieldsAction(extractedNewFieldsArray);
+					applyImportedDpFieldsFilteredByDataset(extractedNewFieldsArray);
 					messageApi.success(translate('message.import_master_json_success', '成功匯入隱私設定檔！'));
 				} 
 				else 
@@ -518,7 +544,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 	//   供下方 handleApplyRecommendations（套用到全部欄位）與新增的
 	//   handleApplyRecommendationToSingleField（只套用到單一欄位）共用同一份判斷邏輯，
 	//   避免兩處各自維護一份、日後改一邊忘了改另一邊。
-	const computeRecommendedFieldSettings = (fieldItemRecord: DPField): { updatedField: DPField; isUnmatched: boolean } =>
+	const computeRecommendedFieldSettings = (fieldItemRecord: DPField, datasetProfileData?: DatasetProfile | null): { updatedField: DPField; isUnmatched: boolean } =>
 	{
 		const lowerCaseFieldNameStr = fieldItemRecord.fieldName.toLowerCase();
 
@@ -532,6 +558,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		let recommendedMinimumUnitVal = fieldItemRecord.minimumUnit;
 		let recommendedNoiseStepVal = fieldItemRecord.noiseStep;
 		let isFieldUnmatchedStatus = false;
+		let recommendedIsDateTimeVal = fieldItemRecord.isDateTime;
 
 		// ★ 新增: 欄位名稱若與「套用系統推薦設定」參考設定檔 (config_dp.json) 之欄位名稱完全相符，
 		//   優先套用該參考設定所指定之資料型態／Epsilon／Delta／敏感度等參數（使用者已確認採「精確欄位
@@ -617,10 +644,42 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			recommendedIsEnabledStatus = false;
 			recommendedFieldTypeVal = 'Text';
 		}
-		else if (recommendedFieldTypeVal === 'Unknown' || recommendedFieldTypeVal === undefined)
+		else
 		{
-			// ★ 新增: 完全比對不到任何關鍵字的欄位記錄下來，供後面決定提示訊息使用。
-			isFieldUnmatchedStatus = true;
+			// ★ 2026-10-05：欄位名稱判斷不出來時，比照 K-匿名改讀實際資料判斷型態（見 utils/dpTypeInference.ts）。
+			//   原本只要名稱沒命中就跳「無法自動判斷，請手動設定」，像 bmi、人種、教育水平都要手動選。
+			const inferredFieldTypeResult = inferDpFieldTypeFromProfile(datasetProfileData, fieldItemRecord.fieldName);
+			if (inferredFieldTypeResult)
+			{
+				recommendedFieldTypeVal = inferredFieldTypeResult.fieldType;
+				recommendedIsDateTimeVal = inferredFieldTypeResult.isDateTime;
+				recommendedIsEnabledStatus = inferredFieldTypeResult.fieldType !== 'Text';
+				if (inferredFieldTypeResult.fieldType === 'Numeric' && inferredFieldTypeResult.isDateTime)
+				{
+					recommendedLowerBoundVal = DEFAULT_DATETIME_LOWER_BOUND_DATE;
+					recommendedUpperBoundVal = new Date().toISOString().slice(0, 10);
+					recommendedNoiseStepVal = 7;
+					recommendedMinimumUnitVal = undefined;
+				}
+				else if (inferredFieldTypeResult.fieldType === 'Numeric')
+				{
+					// 實際最小／最大值由 handleApplyRecommendations／applyRealDataBoundsToSingleNumericField 接著帶入
+					recommendedLowerBoundVal = DEFAULT_NUMERIC_LOWER_BOUND;
+					recommendedUpperBoundVal = DEFAULT_NUMERIC_UPPER_BOUND;
+					recommendedMinimumUnitVal = recommendedMinimumUnitVal ?? 1;
+					recommendedNoiseStepVal = undefined;
+				}
+				else if (inferredFieldTypeResult.fieldType === 'Categorical')
+				{
+					recommendedLowerBoundVal = 0;
+					recommendedUpperBoundVal = 1;
+				}
+			}
+			else if (recommendedFieldTypeVal === 'Unknown' || recommendedFieldTypeVal === undefined)
+			{
+				// 資料集尚未掃描或整欄皆空，仍無法判斷：記錄下來，供後面決定提示訊息使用。
+				isFieldUnmatchedStatus = true;
+			}
 		}
 
 		return {
@@ -635,7 +694,8 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				allowedCategories: recommendedFieldTypeVal === 'Categorical' ? 'auto_extracted' : fieldItemRecord.allowedCategories,
 				outOfBoundsStrategy: recommendedOutOfBoundsStrategyVal,
 				minimumUnit: recommendedMinimumUnitVal,
-				noiseStep: recommendedNoiseStepVal
+				noiseStep: recommendedNoiseStepVal,
+				...(recommendedIsDateTimeVal !== undefined ? { isDateTime: recommendedIsDateTimeVal } : {})
 			},
 			isUnmatched: isFieldUnmatchedStatus
 		};
@@ -683,7 +743,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		const targetFieldItemRecord = currentDpFieldsList.find(fieldItemRecord => fieldItemRecord.id === targetFieldIdStr);
 		if (!targetFieldItemRecord) return;
 
-		const { updatedField, isUnmatched } = computeRecommendedFieldSettings(targetFieldItemRecord);
+		const { updatedField, isUnmatched } = computeRecommendedFieldSettings(targetFieldItemRecord, useWorkspaceStore.getState().datasetProfile);
 		const finalUpdatedFieldRecord = applyRealDataBoundsToSingleNumericField(updatedField);
 
 		setDpFieldsAction(
@@ -711,99 +771,102 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			return;
 		}
 
-		// ★ 修正: 記錄仍無法自動判斷類型的欄位（例如欄位名稱不在下方關鍵字範圍內），以便提示使用者手動設定，而不是像修正前那樣、畫面毫無變化卻仍顯示「已套用」。
-		const unmatchedFieldNameList: string[] = [];
-
-		const recommendedUpdatedFieldsArray = currentDpFieldsList.map(
-			(fieldItemRecord) =>
-			{
-				const { updatedField, isUnmatched } = computeRecommendedFieldSettings(fieldItemRecord);
-				if (isUnmatched) unmatchedFieldNameList.push(fieldItemRecord.fieldName);
-				return updatedField;
-			}
-		);
-
-		// ★ DP 模式不再有「敏感欄位」概念（先前假設 DP 風險評估也要求指定敏感欄位，經確認
-		//   為錯誤設定，已移除），故套用推薦設定時直接沿用比對後的欄位陣列，不另作標記。
-		const finalDpFieldsArray = recommendedUpdatedFieldsArray;
-
-		// ★ 修正: 原本不論實際上是否有欄位被變更，都固定顯示「已為所有欄位套用...」的成功訊息；若欄位名稱比對不到任何關鍵字（例如非常見命名用詞），畫面其實毫無變化卻仍顯示成功訊息，會讓使用者誤以為按鈕沒作用。改為依實際比對結果顯示對應訊息。
-		const finalizeAndApplyRecommendedFields = (fieldsArrayToApply: DPField[]): void => 
+		// ★ 2026-10-05：先取得整份資料集的欄位統計（已掃描過就直接取用），名稱判斷不出型態的欄位改讀實際資料判斷，
+		//   數值型欄位的邊界也一併取實際最小／最大值。原本只有「有數值型欄位」時才讀資料，且只用來算邊界。
+		const runRecommendationWithProfile = (datasetProfileResult: DatasetProfile | null): void =>
 		{
-			setDpFieldsAction(fieldsArrayToApply);
+			// ★ 修正: 記錄仍無法自動判斷類型的欄位（例如整欄皆空），以便提示使用者手動設定，而不是畫面毫無變化卻仍顯示「已套用」。
+			const unmatchedFieldNameList: string[] = [];
 
-			if (unmatchedFieldNameList.length === 0) 
+			const recommendedUpdatedFieldsArray = currentDpFieldsList.map(
+				(fieldItemRecord) =>
+				{
+					const { updatedField, isUnmatched } = computeRecommendedFieldSettings(fieldItemRecord, datasetProfileResult);
+					if (isUnmatched) unmatchedFieldNameList.push(fieldItemRecord.fieldName);
+					return updatedField;
+				}
+			);
+
+			// ★ 新增: 使用者要求「數值型欄位的邊界／敏感度」預設值一律改為讀取實際資料集的最大／最小值，
+			//   取代先前依關鍵字或參考設定檔 sensitivity 推算、或固定 0~100 之預設值（所有數值型欄位皆比照辦理）。
+			const fieldsWithDataDrivenBoundsArray = recommendedUpdatedFieldsArray.map(
+				(fieldItemRecord) =>
+				{
+					if (fieldItemRecord.fieldType !== 'Numeric' || !datasetProfileResult) return fieldItemRecord;
+					if (resolveIsDateTimeDpField(fieldItemRecord)) return applyRealDateTimeBounds(fieldItemRecord, datasetProfileResult.dateTimeRanges);
+
+					const columnNumericValuesArray = datasetProfileResult.numericValues[fieldItemRecord.fieldName.replace(/^[\uFEFF\u200B]+/, '').trim()] || [];
+					// ★ 若整欄找不到任何有效數值 (例如欄位實際為空或格式異常)，則保留原本 (關鍵字/參考設定檔) 算出之邊界，避免寫入無意義的 ±Infinity。
+					if (columnNumericValuesArray.length === 0) return fieldItemRecord;
+
+					// 逐筆比較求最小／最大值（大量資料時 Math.min(...陣列) 會因參數過多而 RangeError）
+					let computedMinValue = Number.POSITIVE_INFINITY;
+					let computedMaxValue = Number.NEGATIVE_INFINITY;
+					for (const numericValue of columnNumericValuesArray)
+					{
+						if (numericValue < computedMinValue) computedMinValue = numericValue;
+						if (numericValue > computedMaxValue) computedMaxValue = numericValue;
+					}
+
+					return { ...fieldItemRecord, lowerBound: Math.floor(computedMinValue), upperBound: Math.ceil(computedMaxValue) };
+				}
+			);
+
+			setDpFieldsAction(fieldsWithDataDrivenBoundsArray);
+
+			// ★ 修正: 依實際比對結果顯示對應訊息，避免畫面毫無變化卻仍顯示成功訊息。
+			if (unmatchedFieldNameList.length === 0)
 			{
 				messageApi.success(translate('message.apply_recommend_dp_success', '已成功套用智慧推薦設定！'));
-			} 
-			else if (unmatchedFieldNameList.length === recommendedUpdatedFieldsArray.length) 
+			}
+			else if (unmatchedFieldNameList.length === recommendedUpdatedFieldsArray.length)
 			{
 				messageApi.warning('系統無法自動判斷任何欄位的資料類型，請手動選擇各欄位的「資料型態」。');
-			} 
-			else 
+			}
+			else
 			{
 				messageApi.warning(`已為部分欄位套用推薦設定，以下欄位無法自動判斷，請手動設定：${unmatchedFieldNameList.join('、')}`);
 			}
 		};
 
-		// ★ 新增: 使用者要求「數值型欄位的邊界／敏感度」預設值一律改為讀取實際資料集的最大／最小值，
-		//   取代先前依關鍵字或參考設定檔 sensitivity 推算、或固定 0~100 之預設值。使用者已確認：
-		//   (1) 不分是否已被參考設定檔比對到，所有數值型欄位皆比照辦理；(2) 為求準確，重新以 Papa.parse
-		//   完整解析整份原始檔案 (不套用 Step1 上傳時的 1000 筆預覽上限 `preview` 參數)，逐欄計算實際最小/
-		//   最大值；解析為非同步過程，故先以載入提示訊息告知使用者，待解析完成後才寫入 Store 並顯示結果訊息。
 		const rawUploadedDataFileObj = useWorkspaceStore.getState().dataFile;
-		const numericFieldNamesNeedingRealBoundsList = finalDpFieldsArray.filter((fieldItemRecord) => fieldItemRecord.fieldType === 'Numeric').map((fieldItemRecord) => fieldItemRecord.fieldName);
-
-		if (!rawUploadedDataFileObj || numericFieldNamesNeedingRealBoundsList.length === 0) 
+		if (!rawUploadedDataFileObj)
 		{
-			// 無原始檔案可供重新解析 (理論上不應發生)，或無任何數值型欄位需要計算邊界，則直接套用既有邊界值。
-			finalizeAndApplyRecommendedFields(finalDpFieldsArray);
+			// 無原始檔案可供讀取（例如只匯入設定檔、未上傳資料），只能依欄位名稱判斷。
+			runRecommendationWithProfile(null);
 			return;
 		}
 
-		messageApi.loading({ content: '正在讀取資料集，計算數值型欄位的實際邊界範圍...', key: DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY, duration: 0 });
+		messageApi.loading({ content: '正在讀取資料集，判斷各欄位資料型態與數值範圍...', key: DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY, duration: 0 });
 
 		// ★ 2026-09-30：改用 utils/datasetProfile.ts 的共用掃描結果（已掃描過就直接取用，不再重新完整解析整份檔案）。
 		ensureDatasetProfile(rawUploadedDataFileObj)
 			.then((datasetProfileResult) =>
 			{
 				messageApi.destroy(DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY);
-
-				const fieldsWithDataDrivenBoundsArray = finalDpFieldsArray.map(
-					(fieldItemRecord) =>
-					{
-						if (fieldItemRecord.fieldType !== 'Numeric' || !numericFieldNamesNeedingRealBoundsList.includes(fieldItemRecord.fieldName)) return fieldItemRecord;
-						if (resolveIsDateTimeDpField(fieldItemRecord)) return applyRealDateTimeBounds(fieldItemRecord, datasetProfileResult.dateTimeRanges);
-
-						const columnNumericValuesArray = datasetProfileResult.numericValues[fieldItemRecord.fieldName.replace(/^[\uFEFF\u200B]+/, '').trim()] || [];
-						// ★ 若整欄找不到任何有效數值 (例如欄位實際為空或格式異常)，則保留原本 (關鍵字/參考設定檔) 算出之邊界，避免寫入無意義的 ±Infinity。
-						if (columnNumericValuesArray.length === 0) return fieldItemRecord;
-
-						// 逐筆比較求最小／最大值（大量資料時 Math.min(...陣列) 會因參數過多而 RangeError）
-						let computedMinValue = Number.POSITIVE_INFINITY;
-						let computedMaxValue = Number.NEGATIVE_INFINITY;
-						for (const numericValue of columnNumericValuesArray)
-						{
-							if (numericValue < computedMinValue) computedMinValue = numericValue;
-							if (numericValue > computedMaxValue) computedMaxValue = numericValue;
-						}
-
-						return { ...fieldItemRecord, lowerBound: Math.floor(computedMinValue), upperBound: Math.ceil(computedMaxValue) };
-					}
-				);
-
-				finalizeAndApplyRecommendedFields(fieldsWithDataDrivenBoundsArray);
+				runRecommendationWithProfile(datasetProfileResult);
 			})
 			.catch(() =>
 			{
 				messageApi.destroy(DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY);
-				messageApi.warning('讀取資料集計算數值範圍失敗，已套用預設邊界值，請手動確認。');
-				finalizeAndApplyRecommendedFields(finalDpFieldsArray);
+				messageApi.warning('讀取資料集失敗，只能依欄位名稱判斷型態並套用預設邊界值，請手動確認。');
+				runRecommendationWithProfile(null);
 			});
 	};
 
+	// ★ 2026-10-07：「新增自訂欄位」只能加回資料中尚未設定的欄位 (預設帶入第一個缺漏欄位，可再用下拉切換)；
+	//   全部欄位都已設定時按鈕停用。尚未上傳資料時維持原本新增空白列的行為。
 	const addField = (): void => 
 	{
+		if (datasetColumnsList.length > 0)
+		{
+			const nextColumnNameString = datasetColumnsNotConfiguredList[0];
+			if (!nextColumnNameString) return;
+			const [initialDpFieldObj] = createInitialDPFields([nextColumnNameString]);
+			setDpFieldsAction([...currentDpFieldsList, { ...initialDpFieldObj, id: `custom_${Date.now()}` }]);
+			return;
+		}
+
 		const manuallyAddedNewFieldObj: DPField = {
 			id: `custom_${Date.now()}`,
 			fieldName: '',
@@ -815,6 +878,25 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		};
 
 		setDpFieldsAction([...currentDpFieldsList, manuallyAddedNewFieldObj]);
+	};
+
+	// 一鍵移除資料中不存在的欄位
+	const removeFieldsNotInDataset = (): void =>
+	{
+		const removedFieldCount = fieldsNotInDatasetNamesList.length;
+		setDpFieldsAction(currentDpFieldsList.filter((fieldItemRecord) => isFieldNameInDataset(fieldItemRecord.fieldName, datasetColumnNameSet) || normalizeDatasetColumnName(fieldItemRecord.fieldName) === ''));
+		messageApi.success(translate('step2.removed_fields_not_in_dataset', { count: removedFieldCount, defaultValue: `已移除 ${removedFieldCount} 個資料中不存在的欄位` }));
+	};
+
+	// 一鍵補上資料中有、但設定清單尚未涵蓋的欄位：以「未啟用 DP」加入 (與補上前的實際行為相同——不加噪)，由使用者自行決定是否啟用
+	const addDatasetColumnsNotConfigured = (): void =>
+	{
+		if (datasetColumnsNotConfiguredList.length === 0) return;
+		const timestampNumber = Date.now();
+		setDpFieldsAction([
+			...currentDpFieldsList,
+			...createInitialDPFields(datasetColumnsNotConfiguredList).map((fieldItemRecord, fieldIndexNumber) => ({ ...fieldItemRecord, id: `custom_${timestampNumber}_${fieldIndexNumber}`, enabled: false }))
+		]);
 	};
 
 	/**
@@ -866,14 +948,35 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			key: 'fieldName',
 			width: 140,
 			render: (fieldNameTextValue: string, rowRecordItem: DPField) => (
-				<Tooltip title={fieldNameTextValue} placement="topLeft" mouseEnterDelay={0.3}>
-					<Input 
-						value={fieldNameTextValue} 
-						onChange={(inputChangeEvent) => updateFieldLocal(rowRecordItem.id, 'fieldName', inputChangeEvent.target.value)}
-						placeholder={translate('step2.ph_eg_salary', '例：salary')}
-						status={rowRecordItem.enabled && (!fieldNameTextValue || !fieldNameTextValue.trim()) ? 'error' : ''}
-						style={{ width: '100%', background: 'transparent', borderRadius: '6px', textOverflow: 'ellipsis' }}
-					/>
+				<Tooltip title={!isFieldNameInDataset(fieldNameTextValue, datasetColumnNameSet) ? translate('step2.field_not_in_dataset_tooltip', '上傳的資料中沒有這個欄位，執行時不會被處理。請刪除此列或改選資料中的欄位。') : fieldNameTextValue} placement="topLeft" mouseEnterDelay={0.3}>
+					{datasetColumnsList.length > 0 ? (
+						// ★ 2026-10-07：欄位名稱改為只能從上傳資料的欄位中選擇 (排除其他列已設定者)；
+						//   資料中不存在的舊名稱 (例如匯入的設定) 仍顯示並標紅。
+						<Select
+							value={fieldNameTextValue || undefined}
+							onChange={(selectedColumnNameStr: string) => updateFieldLocal(rowRecordItem.id, 'fieldName', selectedColumnNameStr)}
+							placeholder={translate('step2.select_field_name_placeholder', '選擇欄位')}
+							status={!fieldNameTextValue || !isFieldNameInDataset(fieldNameTextValue, datasetColumnNameSet) ? 'error' : ''}
+							style={{ width: '100%' }}
+							popupMatchSelectWidth={false}
+							options={[
+								...(fieldNameTextValue && !isFieldNameInDataset(fieldNameTextValue, datasetColumnNameSet)
+									? [{ value: fieldNameTextValue, label: `${fieldNameTextValue}${translate('step2.field_not_in_dataset_suffix', '（資料中無此欄位）')}`, disabled: true }]
+									: []),
+								...datasetColumnsList
+									.filter((columnNameString) => normalizeDatasetColumnName(columnNameString) === normalizeDatasetColumnName(fieldNameTextValue) || !currentDpFieldsList.some((otherFieldItemRecord) => otherFieldItemRecord.id !== rowRecordItem.id && normalizeDatasetColumnName(otherFieldItemRecord.fieldName) === normalizeDatasetColumnName(columnNameString)))
+									.map((columnNameString) => ({ value: columnNameString, label: columnNameString }))
+							]}
+						/>
+					) : (
+						<Input 
+							value={fieldNameTextValue} 
+							onChange={(inputChangeEvent) => updateFieldLocal(rowRecordItem.id, 'fieldName', inputChangeEvent.target.value)}
+							placeholder={translate('step2.ph_eg_salary', '例：salary')}
+							status={rowRecordItem.enabled && (!fieldNameTextValue || !fieldNameTextValue.trim()) ? 'error' : ''}
+							style={{ width: '100%', background: 'transparent', borderRadius: '6px', textOverflow: 'ellipsis' }}
+						/>
+					)}
 				</Tooltip>
 			),
 		},
@@ -1015,7 +1118,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			title: (
 				<Space>
 					{translate('step2.dp_risk_sensitive_col', '敏感欄位')}
-					<Tooltip title={translate('step2.dp_risk_sensitive_col_tooltip', '點選最需要保護、不希望被推斷出來的欄位（如疾病），Step4 會以它為目標執行三攻擊與 CAP 風險評估，其餘已啟用差分隱私的欄位視為攻擊者可能已知的間接識別欄位。與是否加噪無關，未啟用差分隱私的欄位也可點選；可點選多個（須為類別型或連續數值型；數值型如薪資會在 Step4 自動分級距後再評估，級距寬度可在 Step4 調整），Step4 每輪只以其中 1 個為目標評估，點選幾個就執行幾輪、取風險最高的結果。未點選時，系統會輪流以每個已啟用的類別型欄位評估、取風險最高的結果（較耗時）。')}>
+					<Tooltip title={translate('step2.dp_risk_sensitive_col_tooltip', '請選擇最不希望被別人推測出來的欄位（例如疾病），Step4 會以它為目標評估風險。可以複選，系統會逐一評估並採用風險最高的結果；若都不選，系統會自動輪流評估所有已啟用的類別型欄位（耗時較長）。')}>
 						<QuestionCircleOutlined style={{ color: token.colorTextDescription, cursor: 'help' }} />
 					</Tooltip>
 				</Space>
@@ -1044,7 +1147,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			title: (
 				<Space>
 					{translate('step2.dp_param_settings', '邊界與規則設定')}
-					<Tooltip title={translate('step2.dp_param_tooltip', '數值型欄位請填寫可能出現的最小值與最大值，例如年齡 0～120。範圍越大，系統判定的「敏感度」越高、需加入的雜訊也越多，資料會更模糊但保護力更強；範圍設太窄則可能讓超出範圍的真實值被裁剪。日期時間型欄位（如生日）請改選日期與時間（可到秒，只填日期即為當天 00:00:00）。加噪刻度與邊界溢出處理方式請至 Step3 差分隱私規則頁面設定。類別型欄位由系統自動判斷類別數量，不需手動設定。')}>
+					<Tooltip title={translate('step2.dp_param_tooltip', '必填。數值型欄位請填寫可能出現的最小值與最大值，例如年齡 0～120。範圍越大，加入的雜訊越多，保護力越強，但資料也越模糊；範圍太窄，超出範圍的真實值會被調整到範圍內，造成失真。日期時間型欄位（如生日）請選擇起訖日期（只填日期即為當天 00:00:00）。類別型欄位由系統自動判斷，不需設定。')}>
 						<QuestionCircleOutlined style={{ color: token.colorTextDescription, cursor: 'help' }} />
 					</Tooltip>
 				</Space>
@@ -1219,11 +1322,32 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 
 	return (
 		<Card variant="borderless" style={{ background: 'transparent', padding: 0 }}>
+			{fieldsNotInDatasetNamesList.length > 0 && (
+				<Alert
+					type="error"
+					showIcon
+					style={{ marginBottom: '16px', padding: '8px 16px', borderRadius: '8px' }}
+					title={describeFieldsNotInDatasetError(fieldsNotInDatasetNamesList)}
+					action={<Button size="small" danger onClick={removeFieldsNotInDataset}>{translate('step2.btn_remove_fields_not_in_dataset', '移除不存在的欄位')}</Button>}
+				/>
+			)}
+			{datasetColumnsNotConfiguredList.length > 0 && (
+				<Alert
+					type="warning"
+					showIcon
+					style={{ marginBottom: '16px', padding: '8px 16px', borderRadius: '8px' }}
+					title={translate('step2.dataset_columns_not_configured_warning_dp', {
+						names: datasetColumnsNotConfiguredList.map((columnNameString) => `「${columnNameString}」`).join('、'),
+						defaultValue: `資料中的 ${datasetColumnsNotConfiguredList.map((columnNameString) => `「${columnNameString}」`).join('、')} 尚未設定，執行時不會加噪、原樣輸出。`
+					})}
+					action={<Button size="small" onClick={addDatasetColumnsNotConfigured}>{translate('step2.btn_add_columns_not_configured', '補上缺漏欄位')}</Button>}
+				/>
+			)}
 			{!validationStatusResult.isValid && (
 				<Alert
 					title={translate('step2.incomplete_setting', '欄位設定尚未完整')}
 					description={
-						<span style={{ fontSize: '13px' }}>
+						<span style={{ fontSize: scaleFontSize(13) }}>
 							{translate('step2.incomplete_desc_prefix', '目前共有')} <strong>{validationStatusResult.errorCount}</strong> {translate('step2.incomplete_desc_suffix', '個欄位設定未完成')} 
 						</span>
 					}
@@ -1272,7 +1396,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 										description={
 											<span>
 												{translate('step2.dp_risk_sensitive_auto_prefix', 'Step4 將輪流以')}
-												<strong style={{ fontSize: 16, margin: '0 4px' }}>{autoRiskSensitiveCandidatesCount}</strong>
+												<strong style={{ fontSize: scaleFontSize(16), margin: '0 4px' }}>{autoRiskSensitiveCandidatesCount}</strong>
 												{translate('step2.dp_risk_sensitive_auto_suffix', '個類別型欄位為敏感欄位，各執行一輪三攻擊與 CAP，取風險最高的結果。')}
 												<strong>{translate('step2.dp_risk_sensitive_auto_time', { count: autoRiskSensitiveCandidatesCount, defaultValue: `執行時間約為點選 1 個敏感欄位時的 ${autoRiskSensitiveCandidatesCount} 倍。` })}</strong>
 												{translate('step2.dp_risk_sensitive_auto_hint', '建議在表格「敏感欄位」欄點選真正需要保護的欄位（例如疾病），結果較有意義，且點選幾個就只執行幾輪。')}
@@ -1300,7 +1424,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 												padding: '16px 12px',
 												overflow: 'auto',
 												maxHeight: '360px',
-												fontSize: '13px',
+												fontSize: scaleFontSize(13),
 												fontFamily: 'Consolas, Menlo, Monaco, "Courier New", monospace',
 												color: isDarkModeActive ? '#a6accd' : '#333',
 												// ★ 修正：使用者反映 JSON 預覽程式碼呈置中對齊。根因為全域 index.css 之
@@ -1323,7 +1447,9 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 									</Card>
 								)}
 
-								<Button type="dashed" block icon={<PlusOutlined />} onClick={addField} style={{ marginTop: '16px' }}>{translate('step2.btn_add_field', '新增自訂欄位')}</Button>
+								<Tooltip title={datasetColumnsList.length > 0 && datasetColumnsNotConfiguredList.length === 0 ? translate('step2.add_field_all_configured', '資料中的欄位都已設定；新增欄位只能加回資料中尚未設定的欄位。') : ''}>
+									<Button type="dashed" block icon={<PlusOutlined />} onClick={addField} disabled={datasetColumnsList.length > 0 && datasetColumnsNotConfiguredList.length === 0} style={{ marginTop: '16px' }}>{translate('step2.btn_add_field', '新增自訂欄位')}</Button>
+								</Tooltip>
 							</div>
 						)
 					}

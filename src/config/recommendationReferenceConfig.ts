@@ -26,10 +26,11 @@ export interface DPColumnBudgetReferenceItem
  * 差分隱私 (DP) 模式「套用系統推薦設定」參考設定
  * 資料來源: 使用者提供之 config_dp.json，鍵值為欄位名稱，須與資料集欄位名稱完全相符才會套用
  */
+// ★ 2026-10-05：使用者要求所有欄位 ε 預設統一為 1（原年齡 5、薪資 5、就醫次數 4，取自 config_dp.json）
 export const DP_COLUMN_BUDGETS_REFERENCE: Record<string, DPColumnBudgetReferenceItem> = {
-    "年齡": { type: "continuous", epsilon: 5.0, delta: 0.0, sensitivity: 71.0 },
-    "薪資": { type: "continuous", epsilon: 5.0, delta: 0.0, sensitivity: 125000.0 },
-    "就醫次數": { type: "continuous", epsilon: 4.0, delta: 0.0, sensitivity: 19.0 },
+    "年齡": { type: "continuous", epsilon: 1.0, delta: 0.0, sensitivity: 71.0 },
+    "薪資": { type: "continuous", epsilon: 1.0, delta: 0.0, sensitivity: 125000.0 },
+    "就醫次數": { type: "continuous", epsilon: 1.0, delta: 0.0, sensitivity: 19.0 },
     "地區": { type: "categorical", epsilon: 1.0 },
     "生日": { type: "datetime", epsilon: 1.0, delta: 0.0, sensitivity: 365.0 },
 };

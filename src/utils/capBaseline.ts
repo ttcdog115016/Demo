@@ -1,0 +1,166 @@
+/**
+ * ============================================================================
+ * 檔案名稱 (File): capBaseline.ts
+ * 模組功能 (Description): CAP「亂猜基線」與扣除基線後的 CAP 風險（前端計算，供整體風險等級使用）。
+ * ============================================================================
+ * ★ 2026-10-06 使用者反映：Step4 整體等級幾乎不可能到 L1。
+ *   後端 CAP（app/engines/risk/cap.py）＝ Σ（各間接識別等價類中，敏感值眾數的次數）÷ 總列數。
+ *   這個數字就算敏感資料跟其他欄位完全無關也不會是 0：
+ *     (1) 一律猜最常見值就有「最常見值佔比」的命中率；
+ *     (2) 等價類越小，組內眾數越容易「剛好」出現 2 次以上——例如 K=5 的群組，即使疾病完全隨機，CAP 也常有 4～5 成。
+ *   實測 input_test.csv（疾病與其他欄位無關）：間接識別分成平均 30 筆一組時 CAP≈29.8%，打亂疾病後仍≈29.9%。
+ *   直接拿 CAP 比 5%／20% 門檻，幾乎永遠是 L3。
+ *
+ *   改法：亂猜基線＝「保留處理後資料的分組不變、只把敏感欄位隨機打亂」後重算的 CAP（取數次平均）。
+ *   打亂後敏感值與間接識別欄位已無關聯，此值就是「純屬運氣也猜得中」的部分，同時涵蓋上面 (1)(2)。
+ *   扣除基線後的風險＝(CAP − 基線) ÷ (1 − 基線)，與三攻擊的正規化方式一致：0＝跟亂猜一樣，1＝每筆都猜得中。
+ *   基線以「送給 /risk/cap 的處理後資料」計算（已裁切欄位、已分級距），子群體條件比照後端 subset.py 先篩再算。
+ *   亂數用固定種子，同一份資料每次結果相同。
+ */
+import Papa from 'papaparse';
+
+/** pandas read_csv 預設視為缺值的字串（後端 CAP 的敏感值缺值不算進分子、但留在分母） */
+const PANDAS_DEFAULT_NA_VALUE_SET = new Set([
+    '', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN', '-nan', '1.#IND', '1.#QNAN',
+    '<NA>', 'N/A', 'NA', 'NULL', 'NaN', 'None', 'n/a', 'nan', 'null'
+]);
+
+/** 打亂次數（實測 7 萬筆標準差約 0.05 個百分點，3 次已足夠穩定） */
+export const CAP_SHUFFLE_REPEAT_COUNT = 3;
+const CAP_SHUFFLE_SEED = 20261006;
+
+export type CapSubgroupPayload = Record<string, { min?: number | string; max?: number | string } | string[]> | undefined;
+
+const isPandasMissingCell = (cellText: string | undefined): boolean =>
+    cellText === undefined || PANDAS_DEFAULT_NA_VALUE_SET.has(cellText);
+
+/** 值的比對鍵：缺值自成一類（後端 groupby dropna=False）；數值字串視為同一值（pandas 讀成數值時 "1" 與 "1.0" 相同） */
+const toValueKey = (cellText: string | undefined): string => {
+    if (isPandasMissingCell(cellText)) return '\u0000NA';
+    const trimmedText = (cellText as string).trim();
+    const numberValue = trimmedText === '' ? NaN : Number(trimmedText);
+    return Number.isFinite(numberValue) ? `n:${numberValue}` : `s:${cellText}`;
+};
+
+/** 子群體條件（比照後端 subset.py：類別＝isin 字串比對；區間＝轉數值後閉區間，轉不動者落選） */
+const doesRowPassSubgroup = (rowCells: string[], conditionList: { columnIndex: number; condition: NonNullable<CapSubgroupPayload>[string] }[]): boolean => {
+    for (const { columnIndex, condition } of conditionList) {
+        const cellText = rowCells[columnIndex];
+        if (Array.isArray(condition)) {
+            if (cellText === undefined || !condition.includes(cellText)) return false;
+            continue;
+        }
+        if (isPandasMissingCell(cellText)) return false;
+        const numberValue = Number(String(cellText).trim());
+        if (!Number.isFinite(numberValue)) return false;
+        if (typeof condition.min === 'number' && numberValue < condition.min) return false;
+        if (typeof condition.max === 'number' && numberValue > condition.max) return false;
+    }
+    return true;
+};
+
+/** 固定種子亂數（mulberry32） */
+const createSeededRandom = (seedValue: number) => {
+    let state = seedValue >>> 0;
+    return () => {
+        state = (state + 0x6D2B79F5) >>> 0;
+        let t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+};
+
+/** 後端 CAP 公式：Σ 各組（敏感值非缺值者）眾數次數 ÷ 總列數。groupIds／valueIds 為整數編號，valueId = -1 表示缺值 */
+const computeCapFromIds = (groupIds: Int32Array, valueIds: Int32Array, valueCount: number): number => {
+    const pairCountMap = new Map<number, number>();
+    const bestCountByGroup = new Map<number, number>();
+    for (let rowIndex = 0; rowIndex < groupIds.length; rowIndex++) {
+        const valueId = valueIds[rowIndex];
+        if (valueId < 0) continue;
+        const pairKey = groupIds[rowIndex] * valueCount + valueId;
+        const nextCount = (pairCountMap.get(pairKey) || 0) + 1;
+        pairCountMap.set(pairKey, nextCount);
+        if (nextCount > (bestCountByGroup.get(groupIds[rowIndex]) || 0)) bestCountByGroup.set(groupIds[rowIndex], nextCount);
+    }
+    let bestCountSum = 0;
+    bestCountByGroup.forEach((countValue) => { bestCountSum += countValue; });
+    return groupIds.length === 0 ? 0 : bestCountSum / groupIds.length;
+};
+
+export interface CapBaselineResult {
+    /** 亂猜基線：敏感欄位打亂後的 CAP 平均值 */
+    baseline: number;
+    /** 前端以同一公式重算的 CAP（未打亂），用來核對與後端 cap_after 是否一致 */
+    recomputedCap: number;
+    /** 參與計算的筆數（子群體篩選後） */
+    rowCount: number;
+}
+
+/**
+ * 以處理後資料計算 CAP 亂猜基線。找不到欄位、條件欄位不存在或篩選後無資料時回傳 null（等級改為不納入 CAP）。
+ */
+export const computeCapShuffleBaselineFromCsvText = (input: {
+    csvText: string;
+    quasiIdentifierColumnNames: string[];
+    sensitiveColumnName: string;
+    subgroupPayload?: CapSubgroupPayload;
+    repeatCount?: number;
+}): CapBaselineResult | null => {
+    const parsedRows = Papa.parse<string[]>(input.csvText, { skipEmptyLines: true }).data;
+    if (parsedRows.length < 2 || input.quasiIdentifierColumnNames.length === 0) return null;
+    const headerCells = parsedRows[0].map((headerText) => String(headerText).replace(/^\uFEFF/, ''));
+    const sensitiveColumnIndex = headerCells.indexOf(input.sensitiveColumnName);
+    const qiColumnIndexList = input.quasiIdentifierColumnNames.map((columnName) => headerCells.indexOf(columnName));
+    if (sensitiveColumnIndex < 0 || qiColumnIndexList.some((columnIndex) => columnIndex < 0)) return null;
+    const conditionList = Object.entries(input.subgroupPayload || {}).map(([columnName, condition]) => ({ columnIndex: headerCells.indexOf(columnName), condition }));
+    if (conditionList.some((item) => item.columnIndex < 0)) return null;
+
+    const groupIdMap = new Map<string, number>();
+    const valueIdMap = new Map<string, number>();
+    const groupIdList: number[] = [];
+    const valueIdList: number[] = [];
+    for (let rowIndex = 1; rowIndex < parsedRows.length; rowIndex++) {
+        const rowCells = parsedRows[rowIndex];
+        if (conditionList.length > 0 && !doesRowPassSubgroup(rowCells, conditionList)) continue;
+        const groupKey = qiColumnIndexList.map((columnIndex) => toValueKey(rowCells[columnIndex])).join('\u0001');
+        let groupId = groupIdMap.get(groupKey);
+        if (groupId === undefined) { groupId = groupIdMap.size; groupIdMap.set(groupKey, groupId); }
+        groupIdList.push(groupId);
+        const sensitiveCellText = rowCells[sensitiveColumnIndex];
+        if (isPandasMissingCell(sensitiveCellText)) { valueIdList.push(-1); continue; }
+        const valueKey = toValueKey(sensitiveCellText);
+        let valueId = valueIdMap.get(valueKey);
+        if (valueId === undefined) { valueId = valueIdMap.size; valueIdMap.set(valueKey, valueId); }
+        valueIdList.push(valueId);
+    }
+    if (groupIdList.length === 0) return null;
+
+    const groupIds = Int32Array.from(groupIdList);
+    const valueIds = Int32Array.from(valueIdList);
+    const valueCount = Math.max(1, valueIdMap.size);
+    const recomputedCap = computeCapFromIds(groupIds, valueIds, valueCount);
+
+    const repeatCount = Math.max(1, input.repeatCount ?? CAP_SHUFFLE_REPEAT_COUNT);
+    const randomNext = createSeededRandom(CAP_SHUFFLE_SEED);
+    const shuffledValueIds = Int32Array.from(valueIds);
+    let shuffledCapSum = 0;
+    for (let repeatIndex = 0; repeatIndex < repeatCount; repeatIndex++) {
+        for (let i = shuffledValueIds.length - 1; i > 0; i--) {
+            const j = Math.floor(randomNext() * (i + 1));
+            const swapValue = shuffledValueIds[i];
+            shuffledValueIds[i] = shuffledValueIds[j];
+            shuffledValueIds[j] = swapValue;
+        }
+        shuffledCapSum += computeCapFromIds(groupIds, shuffledValueIds, valueCount);
+    }
+    return { baseline: shuffledCapSum / repeatCount, recomputedCap, rowCount: groupIds.length };
+};
+
+/** 扣除亂猜基線後的 CAP 風險（0~1）；CAP 未評估（負數）或沒有基線時回傳 null */
+export const computeCapExcessRisk = (capValue: number | null | undefined, baselineValue: number | null | undefined): number | null => {
+    if (typeof capValue !== 'number' || !Number.isFinite(capValue) || capValue < 0) return null;
+    if (typeof baselineValue !== 'number' || !Number.isFinite(baselineValue) || baselineValue < 0) return null;
+    if (baselineValue >= 1) return 0;
+    return Math.min(1, Math.max(0, (capValue - baselineValue) / (1 - baselineValue)));
+};

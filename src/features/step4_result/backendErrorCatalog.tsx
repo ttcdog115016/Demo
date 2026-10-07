@@ -6,7 +6,9 @@
  * ★ 2026-09-30：由 Step4_Result.tsx 開頭抽出（約 210 行純資料與一個顯示函式），內容不變。
  */
 import type { ReactNode } from 'react';
+import { explainBackendErrorMessage } from './backendErrorExplain';
 
+import { scaleFontSize } from '../../utils/fontScale';
 // 後端統一錯誤回應對照表（依據 app/core/errors.py 之 ERROR_HTTP_STATUS 全表整理，
 // 而非只收錄本次交付文件列出的設定檔驗證錯誤——避免只做一半，其餘錯誤碼遇到時
 // 又退回無分類的原始文字）。後端一律回傳 { error_code, message, recommendations? }，
@@ -161,12 +163,31 @@ export const buildFriendlyErrorDisplayNode = (
         ?? '處理過程發生問題';
     const friendlyAdvice = friendlyInfo?.defaultAdvice ?? '請稍後再試一次；若持續發生，請聯絡系統管理員協助處理。';
 
+    // ★ 2026-10-05：能從後端訊息辨識出「哪個欄位、哪裡不對」時，改用「問題／建議」兩行精簡呈現
+    //   （比照後端「錯誤訊息與建議」寫法），錯誤代碼仍保留在最下方小字供回報。辨識不出來才用下方通用說明。
+    const explainedError = explainBackendErrorMessage(backendRawMessageText);
+    if (explainedError)
+    {
+        return (
+            <div>
+                <div><strong>問題：</strong>{explainedError.problem}</div>
+                <div style={{ marginTop: 4 }}><strong>建議：</strong>{explainedError.advice}</div>
+                {responseRecommendationsList.length > 0 && (
+                    <div style={{ marginTop: 4 }}><strong>補充：</strong>{responseRecommendationsList.join('；')}</div>
+                )}
+                {responseErrorCode && (
+                    <div style={{ marginTop: 8, fontSize: scaleFontSize(12), color: '#999' }}>錯誤代碼：{responseErrorCode}</div>
+                )}
+            </div>
+        );
+    }
+
     return (
         <div>
             <div>{friendlyHeadline}，本次未能完成處理。</div>
             <div style={{ marginTop: 4 }}>建議：{friendlyAdvice}</div>
             {(responseErrorCode || backendRawMessageText || responseRecommendationsList.length > 0) && (
-                <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+                <div style={{ marginTop: 8, fontSize: scaleFontSize(12), color: '#999' }}>
                     {responseErrorCode && (
                         <div>錯誤代碼：{responseErrorCode}（如需協助，請提供此代碼給系統管理員）</div>
                     )}

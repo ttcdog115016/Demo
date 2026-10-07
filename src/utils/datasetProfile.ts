@@ -22,6 +22,7 @@
  *   - dateTimeRanges：可解析為日期時間（YYYY-MM-DD[ HH:mm[:ss]]）的欄位之最早／最晚值，供 DP 日期邊界推薦
  *   - nonNumericDistinctValues：非數值的相異值（最多 MAX_NON_NUMERIC_DISTINCT_SAMPLE 個，供分級距統計）
  */
+import { createColumnValueStats, addValueToColumnStats, type ColumnValueStats } from './backendValueRules';
 import Papa from 'papaparse';
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
@@ -40,6 +41,8 @@ export interface DatasetColumnProfile {
     topValues: string[];
     numericCount: number;
     nonNumericDistinctValues: string[];
+    /** ★ 2026-10-05：與後端一致規則的數值／日期統計（缺值字串、嚴格數值、格式一致性），供 Step2 型態檢查使用 */
+    valueStats?: ColumnValueStats;
 }
 
 export interface DatasetProfile {
@@ -75,6 +78,7 @@ const scanDatasetFile = (file: File): Promise<DatasetProfile> => new Promise((re
     const numericValuesByColumn: Record<string, number[]> = {};
     const nonNumericDistinctByColumn: Record<string, Set<string>> = {};
     const dateTimeExtremaByColumn: Record<string, { minTimestamp: number; maxTimestamp: number; count: number }> = {};
+    const valueStatsByColumn: Record<string, ColumnValueStats> = {};
     let rawToCleanNameMap: Record<string, string> | null = null;
     let columnNamesList: string[] = [];
     let rowCount = 0;
@@ -93,6 +97,7 @@ const scanDatasetFile = (file: File): Promise<DatasetProfile> => new Promise((re
                     nonEmptyCountByColumn[columnName] = 0;
                     numericValuesByColumn[columnName] = [];
                     nonNumericDistinctByColumn[columnName] = new Set();
+                    valueStatsByColumn[columnName] = createColumnValueStats();
                 });
             }
             const nameMap = rawToCleanNameMap;
@@ -105,6 +110,8 @@ const scanDatasetFile = (file: File): Promise<DatasetProfile> => new Promise((re
                     const trimmedCellValue = String(rawCellValue).trim();
                     if (trimmedCellValue === '') continue;
                     nonEmptyCountByColumn[columnName]++;
+                    // 列號：第 1 列為欄位名稱（略過空白列時可能與實際列號略有差異）
+                    addValueToColumnStats(valueStatsByColumn[columnName], trimmedCellValue, rowCount + 1);
 
                     if (!cappedColumnsSet.has(columnName)) {
                         const distinctCounterMap = distinctCounterMapByColumn[columnName];
@@ -151,7 +158,8 @@ const scanDatasetFile = (file: File): Promise<DatasetProfile> => new Promise((re
                         .slice(0, MAX_TOP_VALUES_PER_COLUMN)
                         .map(([cellValue]) => cellValue),
                     numericCount: numericValuesByColumn[columnName].length,
-                    nonNumericDistinctValues: Array.from(nonNumericDistinctByColumn[columnName])
+                    nonNumericDistinctValues: Array.from(nonNumericDistinctByColumn[columnName]),
+                    valueStats: valueStatsByColumn[columnName]
                 };
                 // 與原本 datasetColumnNumericValuesMap 的規則一致：至少有 1 筆有效數值的欄位才放入
                 if (numericValuesByColumn[columnName].length > 0) numericValues[columnName] = numericValuesByColumn[columnName];

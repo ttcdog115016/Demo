@@ -27,6 +27,7 @@ import {
     type ApiErrorLogEntry,
 } from '../utils/apiErrorLogger';
 
+import { scaleFontSize } from '../utils/fontScale';
 // 提示訊息顯示時間過短會來不及點擊按鈕操作，過長則干擾使用者持續操作，取一個折衷值 (秒)
 const ERROR_NOTIFICATION_AUTO_CLOSE_SECONDS = 12;
 
@@ -86,7 +87,7 @@ export const ApiErrorWatcher = (): null => {
                         <div style={{ marginBottom: 8, wordBreak: 'break-all' }}>
                             {errorSummaryLineText && <div style={{ fontWeight: 'bold' }}>{errorSummaryLineText}</div>}
                             <div>{newLogEntryObj.message || translate('apiErrorWatcher.no_message', '(無詳細訊息)')}</div>
-                            <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 4 }}>
+                            <div style={{ fontSize: scaleFontSize(12), color: '#8c8c8c', marginTop: 4 }}>
                                 {newLogEntryObj.method} {newLogEntryObj.url}
                             </div>
                         </div>

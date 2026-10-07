@@ -5,6 +5,7 @@
 import type { AttackReport, KAnonymityQualityReport, DpQualityReport } from '../../../api/apiService';
 import type { AuditLogItem } from '../../../store/useAuditStore';
 import { countCsvDataRowsForStats } from '../../../utils/riskResultHelpers';
+import { isDpBudgetExceeded } from '../../../utils/pipelineConfig';
 
 export interface SimulationResult
 {
@@ -42,7 +43,8 @@ export const evaluateComplianceValidity = (
     }
 
     if (privacyModeTypeStr === 'differential-privacy') {
-        return (reportData as DpQualityReport).consumed_epsilon <= budgetLimitEpsilonValue;
+        // ★ 2026-10-05：容許浮點誤差，避免總預算平分後加總略超過上限（如 1.0000000000000002）被誤判未達標
+        return !isDpBudgetExceeded((reportData as DpQualityReport).consumed_epsilon, budgetLimitEpsilonValue);
     }
 
     return true;
@@ -122,6 +124,8 @@ export const buildPipelineAuditLogEntry = (input: {
     columnNames: string[];
     resolveColumnRole: (columnName: string) => { role: string; maskStrategy?: string };
     dpEnabledFieldNames: string[];
+    /** K-匿名間接識別欄位實際套用之泛化技術代碼（見 utils/kAnonymityTechLabel.ts）；未提供時不寫快照 */
+    resolveQiGeneralizationTech?: (columnName: string) => string;
 }): Omit<AuditLogItem, 'id'> => {
     const columnRoleSnapshotDict = input.columnNames.reduce((accumulatorDict, columnNameString) => {
         accumulatorDict[columnNameString] = input.resolveColumnRole(columnNameString).role;
@@ -133,6 +137,15 @@ export const buildPipelineAuditLogEntry = (input: {
         if (resolvedMaskStrategyString) accumulatorDict[columnNameString] = resolvedMaskStrategyString;
         return accumulatorDict;
     }, {} as Record<string, string>);
+
+    // ★ 2026-10-05：記錄間接識別欄位實際套用的泛化技術，憑證對照表依此顯示（原本一律寫「區間/時間泛化」）
+    const resolveQiGeneralizationTech = input.resolveQiGeneralizationTech;
+    const qiGeneralizationTechSnapshotDict = input.privacyMode === 'k-anonymity' && resolveQiGeneralizationTech
+        ? input.columnNames.reduce((accumulatorDict, columnNameString) => {
+            if (columnRoleSnapshotDict[columnNameString] === 'Quasi-identifier') accumulatorDict[columnNameString] = resolveQiGeneralizationTech(columnNameString);
+            return accumulatorDict;
+        }, {} as Record<string, string>)
+        : undefined;
 
     const formatRiskText = (riskValue: number): string => input.hasAttackReport ? `${(riskValue * 100).toFixed(1)}%` : '未評估';
 
@@ -157,6 +170,7 @@ export const buildPipelineAuditLogEntry = (input: {
         columnsSnapshot: input.columnNames,
         columnRoleSnapshot: columnRoleSnapshotDict,
         identifierMaskStrategySnapshot: identifierMaskStrategySnapshotDict,
-        dpEnabledFieldNamesSnapshot: input.dpEnabledFieldNames
+        dpEnabledFieldNamesSnapshot: input.dpEnabledFieldNames,
+        ...(qiGeneralizationTechSnapshotDict ? { qiGeneralizationTechSnapshot: qiGeneralizationTechSnapshotDict } : {})
     };
 };

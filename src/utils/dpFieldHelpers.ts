@@ -216,3 +216,76 @@ export const listDpFieldsWithBoundsFinerThanNoiseUnit = (
         const boundsUnit = findDpBoundsFinerThanNoiseUnit(field);
         return boundsUnit ? [{ fieldId: field.id, fieldName: field.fieldName, boundsUnit, noiseUnit: resolveDpDatetimeNoiseUnit(field) }] : [];
     });
+
+// ============================================================================
+// TODO【待後端確認：DP格點起算點】
+//   目前依後端現行規格：數值型從 0、時間型從 1970-01-01 起算格點，邊界向外對齊。
+//   已提議後端改為「從資料下限起算」（輸出 = 下限 + k × 刻度）；若後端採用，需移除下限對齊、
+//   改為只把上限對齊到「下限 + 整數個刻度」。詳見專案文件「【待後端確認】DP加噪格點起算點.md」。
+// ============================================================================
+/**
+ * 把連續數值型的上下限對齊加噪刻度（minimum_unit）的整數倍：下限向下取、上限向上取。
+ * ★ 2026-10-06：後端說明 minimum_unit「加噪前除以刻度化為整數，加噪後再乘回，故輸出為該單位的整數倍」，
+ *   但截斷／環繞／鏡像是在乘回之後以 clipping_bounds 處理；邊界不是刻度倍數時（例：刻度 20、下限 15），
+ *   鏡像得 2×15−0 = 30、截斷得 15，輸出就不再是刻度倍數。送出前把邊界向外對齊刻度即可避免。
+ *   邊界向外放寬，原本在範圍內的資料仍在範圍內；敏感度仍以使用者原始邊界計算（clipping_bounds 只是後處理）。
+ *   刻度未設定、≤0、非數字，或邊界非數字時回傳 null（不對齊）。
+ */
+export const alignDpBoundsToMinimumUnit = (
+    lowerBound: unknown, upperBound: unknown, minimumUnit: unknown
+): { lower: number; upper: number; changed: boolean } | null => {
+    const unitValue = Number(minimumUnit);
+    const lowerValue = Number(lowerBound);
+    const upperValue = Number(upperBound);
+    if (minimumUnit === undefined || minimumUnit === null || minimumUnit === '' || !Number.isFinite(unitValue) || unitValue <= 0) return null;
+    if (lowerBound === undefined || lowerBound === null || lowerBound === '' || upperBound === undefined || upperBound === null || upperBound === '') return null;
+    if (!Number.isFinite(lowerValue) || !Number.isFinite(upperValue)) return null;
+    // 浮點容差：避免 0.3 / 0.1 = 2.9999999999999996 被向下取成 2
+    const toleranceValue = 1e-9;
+    const decimalsCount = (() => {
+        const unitText = String(unitValue);
+        if (/e/i.test(unitText)) return 10;
+        return unitText.includes('.') ? Math.min(unitText.split('.')[1].length, 10) : 0;
+    })();
+    const roundToUnitDecimals = (value: number): number => Number(value.toFixed(decimalsCount));
+    const alignedLower = roundToUnitDecimals(Math.floor(lowerValue / unitValue + toleranceValue) * unitValue);
+    const alignedUpper = roundToUnitDecimals(Math.ceil(upperValue / unitValue - toleranceValue) * unitValue);
+    // -0 統一為 0，避免 JSON 出現 -0 或畫面顯示 -0
+    const normalizeZero = (value: number): number => (Object.is(value, -0) ? 0 : value);
+    const lower = normalizeZero(alignedLower);
+    const upper = normalizeZero(alignedUpper);
+    return { lower, upper, changed: Math.abs(lower - lowerValue) > toleranceValue || Math.abs(upper - upperValue) > toleranceValue };
+};
+
+// ============================================================================
+// TODO【待後端確認：DP格點起算點】
+//   目前依後端現行規格：數值型從 0、時間型從 1970-01-01 起算格點，邊界向外對齊。
+//   已提議後端改為「從資料下限起算」（輸出 = 下限 + k × 刻度）；若後端採用，需移除下限對齊、
+//   改為只把上限對齊到「下限 + 整數個刻度」。詳見專案文件「【待後端確認】DP加噪格點起算點.md」。
+// ============================================================================
+/**
+ * 日期時間型的上下限對齊加噪格點（noise_step × noise_unit）：下限向下取、上限向上取，回傳寫入設定檔用的邊界字串。
+ * ★ 2026-10-06：實測後端輸出的日期皆為「1970-01-01 起算」的 noise_step 個 noise_unit 的整數倍
+ *   （例：步階 7 天 → 2024-01-04、01-11、01-18、01-25 皆為星期四；步階 13 秒 → 距 1970-01-01 00:00:00 的秒數皆可被 13 整除），
+ *   即與數值型 minimum_unit 相同：先化為格點再加噪。但截斷／環繞／鏡像以 time_clipping_bounds 處理，
+ *   邊界不在格點上時（例：下限 2024-01-01）被截斷的值會落在 2024-01-01，不再是 7 天格點。比照數值型，送出前向外對齊。
+ *   時間一律以 UTC 解讀（與 parseDpDateTimeBoundTimestamp 一致，後端格點亦以無時區的 1970-01-01 起算）。
+ *   邊界無法解析、步階 ≤ 0 時回傳 null（不對齊）。
+ */
+export const alignDpDateTimeBoundsToNoiseGrid = (
+    lowerBound: unknown, upperBound: unknown, noiseUnit: DpDatetimeNoiseUnit, noiseStep: unknown
+): { lower: string; upper: string; changed: boolean } | null => {
+    const lowerTimestamp = parseDpDateTimeBoundTimestamp(lowerBound);
+    const upperTimestamp = parseDpDateTimeBoundTimestamp(upperBound);
+    if (Number.isNaN(lowerTimestamp) || Number.isNaN(upperTimestamp)) return null;
+    const stepCount = noiseStep === undefined || noiseStep === null || noiseStep === '' ? 1 : Number(noiseStep);
+    if (!Number.isFinite(stepCount) || stepCount <= 0) return null;
+    const gridMilliseconds = DP_DATETIME_NOISE_UNIT_MILLISECONDS[noiseUnit] * stepCount;
+    const alignedLowerTimestamp = Math.floor(lowerTimestamp / gridMilliseconds) * gridMilliseconds;
+    const alignedUpperTimestamp = Math.ceil(upperTimestamp / gridMilliseconds) * gridMilliseconds;
+    return {
+        lower: formatDpDateTimeBoundFromTimestamp(alignedLowerTimestamp),
+        upper: formatDpDateTimeBoundFromTimestamp(alignedUpperTimestamp),
+        changed: alignedLowerTimestamp !== lowerTimestamp || alignedUpperTimestamp !== upperTimestamp
+    };
+};

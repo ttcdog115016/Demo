@@ -1,0 +1,187 @@
+/**
+ * ============================================================================
+ * 檔案名稱 (File): plainResultSummary.ts
+ * 模組功能 (Description): Step4 結果的白話化工具：資料可用性分級、「每 100 筆約幾筆」說法、欄位處理方式分類。
+ * ============================================================================
+ * ★ 2026-10-06 使用者要求：以「沒有相關背景的公務員」能看懂為目標，保護程度與可用性都要有一句結論。
+ *   可用性門檻為前端草案（無官方標準），調整只改 UTILITY_LEVEL_THRESHOLDS 即可。
+ */
+
+export type UtilityLevelNumber = 1 | 2 | 3;
+
+export interface UtilityLevelInfo {
+    level: UtilityLevelNumber;
+    /** 高／中／低 */
+    labelText: string;
+    color: string;
+    /** 一句白話結論 */
+    verdictText: string;
+}
+
+/**
+ * 可用性分級門檻（草案，待確認）：
+ * - K-匿名：被刪除（列抑制）或被遮蔽（儲存格抑制）的比例 < 5% 高、5%～20% 中、≥ 20% 低。
+ *   20% 與 Step3「最大允許抑制率」常用上限一致。
+ * - 差分隱私：總消耗 ε > 10 雜訊少（高）、1～10 中、≤ 1 雜訊多（低），與 Step3「當前保護強度」三級對應（方向相反）。
+ */
+export const UTILITY_LEVEL_THRESHOLDS = {
+    suppressionRatio: { high: 0.05, low: 0.2 },
+    epsilon: { high: 10, low: 1 },
+} as const;
+
+const UTILITY_LEVEL_TABLE: Record<UtilityLevelNumber, Omit<UtilityLevelInfo, 'level'>> = {
+    1: { labelText: '高', color: '#16a34a', verdictText: '資料大致完整保留，適合做統計分析。' },
+    2: { labelText: '中', color: '#d97706', verdictText: '有部分資料被刪除、遮蔽或加入雜訊，分析結果可能略有偏差。' },
+    3: { labelText: '低', color: '#dc2626', verdictText: '大量資料被刪除、遮蔽或加入雜訊，分析結果可能不準確。' },
+};
+
+export const getUtilityLevelInfo = (level: UtilityLevelNumber): UtilityLevelInfo => ({ level, ...UTILITY_LEVEL_TABLE[level] });
+
+/** K-匿名：抑制比例（0~1）→ 可用性 */
+export const classifyKAnonymityUtility = (suppressionRatio: number | null | undefined): UtilityLevelInfo | null => {
+    if (typeof suppressionRatio !== 'number' || !Number.isFinite(suppressionRatio) || suppressionRatio < 0) return null;
+    const { high, low } = UTILITY_LEVEL_THRESHOLDS.suppressionRatio;
+    return getUtilityLevelInfo(suppressionRatio < high ? 1 : suppressionRatio < low ? 2 : 3);
+};
+
+/** 差分隱私：總消耗 ε → 可用性（ε 越大雜訊越少、越好用） */
+export const classifyDifferentialPrivacyUtility = (consumedEpsilon: number | null | undefined): UtilityLevelInfo | null => {
+    if (typeof consumedEpsilon !== 'number' || !Number.isFinite(consumedEpsilon) || consumedEpsilon <= 0) return null;
+    const { high, low } = UTILITY_LEVEL_THRESHOLDS.epsilon;
+    return getUtilityLevelInfo(consumedEpsilon > high ? 1 : consumedEpsilon > low ? 2 : 3);
+};
+
+/** 差分隱私雜訊多寡的白話 */
+export const describeEpsilonNoiseText = (consumedEpsilon: number): string => {
+    const { high, low } = UTILITY_LEVEL_THRESHOLDS.epsilon;
+    return consumedEpsilon > high ? '雜訊少' : consumedEpsilon > low ? '雜訊中等' : '雜訊多';
+};
+
+/** 風險比例（0~1）→「每 100 筆約 N 筆」；未評估回傳 null */
+export const formatPer100Text = (ratio: number | null | undefined): string | null => {
+    if (typeof ratio !== 'number' || !Number.isFinite(ratio) || ratio < 0) return null;
+    const per100Value = ratio * 100;
+    if (per100Value < 1) return '每 100 筆不到 1 筆';
+    return `每 100 筆約 ${Math.round(per100Value)} 筆`;
+};
+
+/** 欄位處理方式的三大類（給一般使用者看） */
+export type ColumnTreatmentBucket = 'kept' | 'blurred' | 'removed';
+
+export interface ColumnTreatmentItem {
+    columnName: string;
+    bucket: ColumnTreatmentBucket;
+    /** 白話說明，例如「改成數值區間」 */
+    plainText: string;
+    /** 處理後的範例值（呼叫端另外填入），例如「30-39」 */
+    exampleText?: string;
+}
+
+export const COLUMN_TREATMENT_BUCKET_LABEL: Record<ColumnTreatmentBucket, string> = {
+    kept: '保留原值',
+    blurred: '變模糊',
+    removed: '移除或遮蔽',
+};
+
+/** K-匿名泛化技術代碼 → 白話（對應 utils/kAnonymityTechLabel.ts 的代碼） */
+const GENERALIZATION_PLAIN_TEXT_MAP: Record<string, string> = {
+    custom_bins: '改成數值區間',
+    rounding: '數值改成較粗的單位',
+    time_rounding: '日期改成較粗的單位（如只留年或月）',
+    time_range: '日期改成區間',
+    tree: '改成較大的分類',
+    keep_prefix: '只保留開頭幾個字',
+    keep_suffix: '只保留結尾幾個字',
+    length: '只保留字數',
+};
+
+/**
+ * 判斷單一欄位的處理方式。
+ * @param input.role 畫面欄位角色（Identifier／Quasi-identifier／Sensitive／…）
+ * @param input.maskStrategy 遮蔽策略（remove／none／舊版 hash 等）
+ * @param input.isActuallyDeidentified K-匿名：是否確實會被後端處理
+ * @param input.generalizationTechKey K-匿名間接識別欄位的泛化技術代碼
+ * @param input.isDpNoised 差分隱私：是否已加噪
+ */
+export const resolveColumnTreatment = (input: {
+    columnName: string;
+    privacyMode: string | null | undefined;
+    role: string;
+    maskStrategy?: string;
+    isActuallyDeidentified: boolean;
+    generalizationTechKey?: string;
+    isDpNoised: boolean;
+}): ColumnTreatmentItem => {
+    const { columnName } = input;
+    // 差分隱私只有「加噪／不加噪」（與合規報告欄位對照表一致）
+    if (input.privacyMode === 'differential-privacy') {
+        return input.isDpNoised
+            ? { columnName, bucket: 'blurred', plainText: '加入隨機雜訊（數值會有小幅偏差）' }
+            : { columnName, bucket: 'kept', plainText: '保留原值' };
+    }
+    if (input.maskStrategy === 'remove') {
+        return { columnName, bucket: 'removed', plainText: '已移除' };
+    }
+    if (input.role === 'Identifier' && input.isActuallyDeidentified) {
+        return { columnName, bucket: 'removed', plainText: '已遮蔽' };
+    }
+    if (input.role === 'Quasi-identifier' && input.isActuallyDeidentified && input.generalizationTechKey && GENERALIZATION_PLAIN_TEXT_MAP[input.generalizationTechKey]) {
+        return { columnName, bucket: 'blurred', plainText: GENERALIZATION_PLAIN_TEXT_MAP[input.generalizationTechKey] };
+    }
+    return { columnName, bucket: 'kept', plainText: '保留原值' };
+};
+
+export type ReleaseDecisionTone = 'success' | 'warning' | 'error' | 'info';
+
+export interface ReleaseDecision {
+    /** 一句話結論，例如「可以提供」 */
+    headline: string;
+    /** 下一步建議 */
+    adviceText: string;
+    tone: ReleaseDecisionTone;
+}
+
+/**
+ * ★ 2026-10-06 白話版：把保護程度與可用性合成「這份資料能不能給出去、下一步做什麼」。
+ *   riskLevel：1~3（L1~L3），null＝未做風險評估；utilityLevel：1 高、2 中、3 低，null＝無法判斷。
+ */
+export const resolveReleaseDecision = (input: {
+    riskLevel: 1 | 2 | 3 | null;
+    utilityLevel: UtilityLevelNumber | null;
+    privacyMode: string | null | undefined;
+}): ReleaseDecision => {
+    const isDp = input.privacyMode === 'differential-privacy';
+    const strengthenAdvice = isDp
+        ? '可回上一步把隱私預算 ε 調小（雜訊加多一點），再按「重新計算」。'
+        : '可回上一步把年齡、地區等欄位分得更粗，或把 K 值調高，再按「重新計算」。';
+    const relaxAdvice = isDp
+        ? '如果要拿來做分析，可回上一步把隱私預算 ε 調大一些（雜訊少一點），再按「重新計算」。'
+        : '如果要拿來做分析，可回上一步把 K 值調低或把欄位分得細一點，再按「重新計算」。';
+    if (input.riskLevel === null) {
+        return { headline: '處理完成（未做風險評估）', adviceText: '尚未設定敏感欄位，因此無法判斷保護程度。建議回上一步設定敏感欄位後重新計算。', tone: 'info' };
+    }
+    if (input.riskLevel === 3) {
+        return { headline: '不建議提供', adviceText: `被認出或被猜出敏感資料的機會偏高。${strengthenAdvice}`, tone: 'error' };
+    }
+    if (input.riskLevel === 2) {
+        return { headline: '建議調整後再提供', adviceText: `仍有一定的被認出風險。${strengthenAdvice}`, tone: 'warning' };
+    }
+    if (input.utilityLevel === 3) {
+        return { headline: '可以提供，但資料可能不好用', adviceText: `保護程度足夠，但刪除、遮蔽或雜訊較多。${relaxAdvice}`, tone: 'warning' };
+    }
+    if (input.utilityLevel === 2) {
+        return { headline: '可以提供', adviceText: '保護程度足夠。部分資料已刪除、遮蔽或加入雜訊，分析時請留意。可下載處理後的資料與報告。', tone: 'success' };
+    }
+    return { headline: '可以提供', adviceText: '保護程度足夠，資料也大致完整。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
+};
+
+/** 從處理後資料找一個範例值（略過空白與抑制符號「*」），給「變模糊」的欄位顯示「例：30-39」 */
+export const pickExampleValue = (rows: Record<string, unknown>[], columnName: string): string | undefined => {
+    for (const row of rows) {
+        const cellValue = row[columnName];
+        if (cellValue === undefined || cellValue === null) continue;
+        const cellText = String(cellValue).trim();
+        if (cellText !== '' && cellText !== '*') return cellText.length > 20 ? `${cellText.slice(0, 20)}…` : cellText;
+    }
+    return undefined;
+};

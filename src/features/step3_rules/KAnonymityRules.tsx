@@ -17,6 +17,7 @@ import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { findSmallestSensitiveColumnDistinct, computeEffectiveMaxLValue, isLValueExceedingSensitiveDistinct } from '../../utils/lDiversityLimits';
 
+import { scaleFontSize, scaleChartFontSize } from '../../utils/fontScale';
 /**
  * ============================================================================
  * 預設臨界點常數宣告 (Magic Numbers Constants)
@@ -37,6 +38,16 @@ const DEFAULT_T_VALUE = 0.15;              // 系統預設 T 趨近性基準值
 const MIN_SUPPRESSION_PERCENT = 0;         // 最小抑制率百分比 (與後端 validate_percent_param 下限一致)
 const MAX_SUPPRESSION_PERCENT = 100;       // 最大允許抑制率百分比 (與後端 validate_percent_param 上限一致)
 const SUPPRESSION_PENALTY_THRESHOLD = 12;  // 計算 Pareto 懲罰之抑制率門檻 (%)
+// ★ 2026-10-04 暫時隱藏「計算範圍（指定準識別欄位組合）」：
+//   1. 後端引擎有實作此能力（run_k_anonymity 的 k_qi_subset 參數，對應規格 2.1(4)「整體 k 或
+//      依指定準識別欄位組合計算」），但 API 未開放：期中原始碼（2026-08-26）的 deid_router.py
+//      呼叫時未傳入 k_qi_subset，設定檔 schema 也沒有此欄位；v2（09-09）操作說明、openapi.json
+//      與 v3（09-14）範例設定檔皆未提及。
+//   2. 前端的欄位組合只存在本元件的 useState，從未送進設定檔，使用者怎麼選都不影響結果。
+//   3. 前端允許設定多組組合，但後端 k_qi_subset 一次只接受一組欄位。
+//   恢復方式：待後端在 API／設定檔開放 k_qi_subset 後，把下列常數改回 true，並將組合改為
+//   「單一一組」、寫入 k_anonymity 設定區塊送出（注意：子集只會放寬分組條件、降低抑制量）。
+const SHOW_QI_COMBINATION_SCOPE = false;
 
 /**
  * ECharts 繪圖工具提示 (Tooltip) 參數型別介面
@@ -461,6 +472,7 @@ export default function KAnonymityRules(): React.ReactElement
             backgroundColor: 'transparent',
             tooltip: { 
                 trigger: 'item', 
+                textStyle: { fontSize: scaleChartFontSize(14, token.fontSize) },
                 formatter: (tooltipParamsObj: TooltipParams) => 
                 {
                     if (tooltipParamsObj.name === translate('step3.current_setting')) 
@@ -468,7 +480,7 @@ export default function KAnonymityRules(): React.ReactElement
                         return `<div style="font-weight:bold;margin-bottom:4px;color:#faad14;">${translate('step3.chart_eval')}</div>
                                 ${translate('step3.chart_utility')}${tooltipParamsObj.value[0]}%<br/>
                                 ${translate('step3.chart_privacy')}${tooltipParamsObj.value[1]}%<br/>
-                                <span style="font-size: 11px; color: #8c8c8c;">${translate('step3.chart_distance')}${(optimalXCoordinateValue - penalizedXCoordinateValue).toFixed(1)}%</span>`;
+                                <span style="font-size: calc(11px * var(--font-scale, 1)); color: #8c8c8c;">${translate('step3.chart_distance')}${(optimalXCoordinateValue - penalizedXCoordinateValue).toFixed(1)}%</span>`;
                     }
 
                     return tooltipParamsObj.seriesName === translate('step3.chart_pareto_front') 
@@ -478,14 +490,14 @@ export default function KAnonymityRules(): React.ReactElement
             grid: { top: '15%', left: '8%', right: '15%', bottom: '12%', containLabel: true },
             xAxis: { 
                 type: 'value', min: 0, max: 100, name: translate('step3.chart_x_axis'), nameLocation: 'center', nameGap: 30, 
-                nameTextStyle: { color: token.colorTextSecondary, fontWeight: 500 }, 
-                axisLabel: { formatter: '{value} %', color: token.colorTextDescription }, 
+                nameTextStyle: { color: token.colorTextSecondary, fontWeight: 500, fontSize: scaleChartFontSize(12, token.fontSize) }, 
+                axisLabel: { formatter: '{value} %', color: token.colorTextDescription, fontSize: scaleChartFontSize(12, token.fontSize) }, 
                 splitLine: { lineStyle: { color: token.colorSplit } }, axisLine: { lineStyle: { color: token.colorBorder } } 
             },
             yAxis: {
                 type: 'value', min: 0, max: 100, name: translate('step3.chart_y_axis'), nameLocation: 'center', nameGap: 40, nameRotate: 0,
-                nameTextStyle: { color: token.colorTextSecondary, fontWeight: 500 },
-                axisLabel: { formatter: '{value} %', color: token.colorTextDescription },
+                nameTextStyle: { color: token.colorTextSecondary, fontWeight: 500, fontSize: scaleChartFontSize(12, token.fontSize) },
+                axisLabel: { formatter: '{value} %', color: token.colorTextDescription, fontSize: scaleChartFontSize(12, token.fontSize) },
                 splitLine: { lineStyle: { color: token.colorSplit } }, axisLine: { lineStyle: { color: token.colorBorder } }
             },
             series: [
@@ -513,8 +525,8 @@ export default function KAnonymityRules(): React.ReactElement
                     markPoint: {
                         symbol: 'circle',
                         data: [
-                            { coord: [15, 95], name: translate('step3.extreme_privacy'), itemStyle: { color: '#722ed1' }, symbolSize: 8, label: { show: true, position: 'top', formatter: translate('step3.extreme_privacy'), color: token.colorTextDescription, fontSize: 11 } }, 
-                            { coord: [100, 15], name: translate('step3.extreme_utility'), itemStyle: { color: '#13c2c2' }, symbolSize: 8, label: { show: true, position: 'right', offset: [6, 0], formatter: translate('step3.extreme_utility'), color: token.colorTextDescription, fontSize: 11 } }
+                            { coord: [15, 95], name: translate('step3.extreme_privacy'), itemStyle: { color: '#722ed1' }, symbolSize: 8, label: { show: true, position: 'top', formatter: translate('step3.extreme_privacy'), color: token.colorTextDescription, fontSize: scaleChartFontSize(11, token.fontSize) } }, 
+                            { coord: [100, 15], name: translate('step3.extreme_utility'), itemStyle: { color: '#13c2c2' }, symbolSize: 8, label: { show: true, position: 'right', offset: [6, 0], formatter: translate('step3.extreme_utility'), color: token.colorTextDescription, fontSize: scaleChartFontSize(11, token.fontSize) } }
                         ]
                     }
                 },
@@ -653,13 +665,14 @@ export default function KAnonymityRules(): React.ReactElement
                             </Row>
                             {isKValueInvalidStatus && (
                                 <div style={{ marginBottom: '10px', marginTop: '-2px' }}>
-                                    <span style={{ color: token.colorError, fontSize: '12px' }}><WarningOutlined style={{ marginRight: 4 }} />{kValueInlineErrorMessageText}</span>
+                                    <span style={{ color: token.colorError, fontSize: scaleFontSize(12) }}><WarningOutlined style={{ marginRight: 4 }} />{kValueInlineErrorMessageText}</span>
                                 </div>
                             )}
 
-                            {/* 運算範圍選擇 */}
+                            {/* 運算範圍選擇（暫時隱藏，見檔案上方 SHOW_QI_COMBINATION_SCOPE 說明） */}
+                            {SHOW_QI_COMBINATION_SCOPE && (<>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: calculationModeType === 'custom' ? '8px' : '16px' }}>
-                                <span style={{ color: token.colorTextSecondary, fontSize: '12px', minWidth: '70px' }}>
+                                <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(12), minWidth: '70px' }}>
                                     {translate('step3.calc_scope')}
                                     <Tooltip title={translate('step3.calc_scope_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
                                 </span>
@@ -705,6 +718,7 @@ export default function KAnonymityRules(): React.ReactElement
                                 </div>
                             )}
                             
+                            </>)}
                             {(isMissingSensitiveColumnStatus || isMultiSensitiveColumnStatus) && (
                                 // ★ 使用者反映（2026-09-22）：多個敏感欄位不再是「設定錯誤」（見上方說明），
                                 //   改用 info 樣式呈現「會怎麼評估」；0 個敏感欄位則仍是值得留意的情況
@@ -743,7 +757,7 @@ export default function KAnonymityRules(): React.ReactElement
                                 <Col span={6}><InputNumber disabled={!isEnableLDiversityStatus} min={MIN_L_VALUE} max={effectiveMaxLValue} value={currentLValue} onChange={handleLValueChange} status={isKLessThanLStatus || isLExceedsSensitiveDistinctStatus ? 'error' : undefined} style={{ width: '100%' }} /></Col>
                             </Row>
                             {isEnableLDiversityStatus && (
-                                <div style={{ marginBottom: '10px', marginTop: '-4px', fontSize: '12px', color: isLExceedsSensitiveDistinctStatus ? token.colorError : token.colorTextDescription }}>
+                                <div style={{ marginBottom: '10px', marginTop: '-4px', fontSize: scaleFontSize(12), color: isLExceedsSensitiveDistinctStatus ? token.colorError : token.colorTextDescription }}>
                                     {sensitiveColumnDistinctCountInfo
                                         ? translate('step3.l_max_hint_sensitive', '可設上限 {{max}}（敏感欄位「{{column}}」有 {{count}} 種不同的值，且 L 不可大於 K）', { max: effectiveMaxLValue, column: sensitiveColumnDistinctCountInfo.columnName, count: sensitiveColumnDistinctCountInfo.distinctCount })
                                         : translate('step3.l_max_hint_default', '尚未設定敏感欄位或尚未載入資料，暫以 {{max}} 為上限；設定敏感欄位後會依其實際相異值數調整。', { max: effectiveMaxLValue })}
@@ -751,7 +765,7 @@ export default function KAnonymityRules(): React.ReactElement
                             )}
                             {isKLessThanLStatus && (
                                 <div style={{ marginBottom: '14px', marginTop: '-2px' }}>
-                                    <span style={{ color: token.colorError, fontSize: '12px' }}><WarningOutlined style={{ marginRight: 4 }} />{kLessThanLConflictMessageText}</span>
+                                    <span style={{ color: token.colorError, fontSize: scaleFontSize(12) }}><WarningOutlined style={{ marginRight: 4 }} />{kLessThanLConflictMessageText}</span>
                                 </div>
                             )}
 
@@ -776,7 +790,7 @@ export default function KAnonymityRules(): React.ReactElement
                             </Row>
                             {isTValueInvalidStatus && (
                                 <div style={{ marginBottom: '6px' }}>
-                                    <span style={{ color: token.colorError, fontSize: '12px' }}><WarningOutlined style={{ marginRight: 4 }} />{tValueInlineErrorMessageText}</span>
+                                    <span style={{ color: token.colorError, fontSize: scaleFontSize(12) }}><WarningOutlined style={{ marginRight: 4 }} />{tValueInlineErrorMessageText}</span>
                                 </div>
                             )}
 
@@ -788,7 +802,7 @@ export default function KAnonymityRules(): React.ReactElement
                                 
                                 <Row align="middle" style={{ marginBottom: '16px' }}>
                                     <Col span={7}>
-                                        <span style={{ color: token.colorTextSecondary, fontSize: '13px' }}>{translate('step3.suppress_method')}</span>
+                                        <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.suppress_method')}</span>
                                         <Tooltip title={translate('step3.suppress_method_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
                                     </Col>
                                     <Col span={17}><Select value={currentSuppressionMethodTypeStr} onChange={handleSuppressionMethodChange} size="small" style={{ width: '100%' }} options={[{ value: 'row_suppression', label: translate('step3.row_suppression') }, { value: 'cell_suppression', label: translate('step3.cell_suppression') }]} /></Col>
@@ -801,7 +815,7 @@ export default function KAnonymityRules(): React.ReactElement
                                 {(currentSuppressionMethodTypeStr === 'cell' || currentSuppressionMethodTypeStr === 'cell_suppression') && (
                                     <Row align="middle" style={{ marginBottom: '16px' }}>
                                         <Col span={7}>
-                                            <span style={{ color: token.colorTextSecondary, fontSize: '13px' }}>{translate('step3.cell_fill_method')}</span>
+                                            <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.cell_fill_method')}</span>
                                             <Tooltip title={translate('step3.cell_fill_method_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
                                         </Col>
                                         <Col span={17}><Select value={currentCellFillMethodTypeStr} onChange={handleCellFillMethodChange} size="small" style={{ width: '100%' }} options={[{ value: 'star', label: translate('step3.cell_fill_star') }, { value: 'missing', label: translate('step3.cell_fill_missing') }]} /></Col>
@@ -813,14 +827,14 @@ export default function KAnonymityRules(): React.ReactElement
                                 {(currentSuppressionMethodTypeStr === 'cell' || currentSuppressionMethodTypeStr === 'cell_suppression') && filteredQuasiIdentifierColumnsList.length > 0 && (
                                     <Row align="top" style={{ marginBottom: '16px' }} data-testid="cell-fill-values-by-column">
                                         <Col span={7}>
-                                            <span style={{ color: token.colorTextSecondary, fontSize: '13px' }}>{translate('step3.cell_fill_value_by_column', '逐欄填值（選填）')}</span>
+                                            <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.cell_fill_value_by_column', '逐欄填值（選填）')}</span>
                                             <Tooltip title={translate('step3.cell_fill_value_by_column_tooltip', '值抑制時，可以替個別「間接識別碼」欄位指定要填入的文字，例如地區填「臺灣」、職業填「其他」，讓輸出資料比「*」或空白更容易閱讀。留空的欄位沿用上面選的填法。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
                                         </Col>
                                         <Col span={17}>
                                             <Space direction="vertical" size={6} style={{ width: '100%' }}>
                                                 {filteredQuasiIdentifierColumnsList.map((columnNameString: string) => (
                                                     <Space.Compact key={columnNameString} size="small" style={{ width: '100%' }}>
-                                                        <span style={{ width: '40%', display: 'inline-flex', alignItems: 'center', padding: '0 8px', fontSize: '12px', color: token.colorText, border: `1px solid ${token.colorBorder}`, borderRight: 'none', borderRadius: '4px 0 0 4px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} title={columnNameString}>{columnNameString}</span>
+                                                        <span style={{ width: '40%', display: 'inline-flex', alignItems: 'center', padding: '0 8px', fontSize: scaleFontSize(12), color: token.colorText, border: `1px solid ${token.colorBorder}`, borderRight: 'none', borderRadius: '4px 0 0 4px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} title={columnNameString}>{columnNameString}</span>
                                                         <Input
                                                             size="small"
                                                             allowClear
@@ -840,7 +854,7 @@ export default function KAnonymityRules(): React.ReactElement
                                 {/* ★ 核心修正：使用 Space.Compact 替代 addonAfter，消滅 Ant Design 棄用警告 */}
                                 <Row align="middle" style={{ marginBottom: '4px' }}>
                                     <Col span={7}>
-                                        <span style={{ color: token.colorTextSecondary, fontSize: '13px' }}>{translate('step3.suppress_limit')}</span>
+                                        <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.suppress_limit')}</span>
                                         <Tooltip title={translate('step3.suppress_limit_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
                                     </Col>
                                     <Col span={11}><Slider min={MIN_SUPPRESSION_PERCENT} max={MAX_SUPPRESSION_PERCENT} value={maxSuppressionPercentageValue} onChange={handleMaxSuppressionChange} style={{ margin: '0 8px 0 0' }} /></Col>
@@ -856,14 +870,14 @@ export default function KAnonymityRules(): React.ReactElement
                                                 style={{ width: '100%' }} 
                                                 size="small" 
                                             />
-                                            <span className="ant-input-group-addon" style={{ fontSize: '12px', padding: '0 6px', display: 'flex', alignItems: 'center' }}>%</span>
+                                            <span className="ant-input-group-addon" style={{ fontSize: scaleFontSize(12), padding: '0 6px', display: 'flex', alignItems: 'center' }}>%</span>
                                         </Space.Compact>
                                     </Col>
                                 </Row>
 
                                 <Row align="middle">
                                     <Col span={7}>
-                                        <span style={{ color: token.colorTextSecondary, fontSize: '13px' }}>{translate('step3.exceed_behavior')}</span>
+                                        <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.exceed_behavior')}</span>
                                         <Tooltip title={translate('step3.exceed_behavior_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
                                     </Col>
                                     <Col span={17}>

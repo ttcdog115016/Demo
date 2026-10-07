@@ -4,7 +4,7 @@
  * 2026-09-30 自 Step4_Result.tsx 的 runFullPipeline 原封不動搬出（函式本體未改寫，
  * 只把元件內的 state 改成參數傳入），讓組裝結果可單獨測試。各段落的 ★ 註解保留原本的修正脈絡。
  */
-import { mapOutOfBoundsStrategyToBackend, resolveIsDateTimeDpField, resolveDpDatetimeNoiseUnit, DP_DATETIME_NOISE_UNIT_MILLISECONDS, parseDpDateTimeBoundTimestamp } from './dpFieldHelpers';
+import { mapOutOfBoundsStrategyToBackend, alignDpBoundsToMinimumUnit, alignDpDateTimeBoundsToNoiseGrid, resolveIsDateTimeDpField, resolveDpDatetimeNoiseUnit, DP_DATETIME_NOISE_UNIT_MILLISECONDS, parseDpDateTimeBoundTimestamp } from './dpFieldHelpers';
 import { TEMPORAL_GRANULARITY_UNITS } from './temporalGranularity';
 import { buildQiLevelValue } from './kAnonymityConfigImport';
 
@@ -417,6 +417,11 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
                         if (!Number.isNaN(lowerDateTimestamp) && !Number.isNaN(upperDateTimestamp)) {
                             baseBudgetConfig.sensitivity = Math.round((upperDateTimestamp - lowerDateTimestamp) / DP_DATETIME_NOISE_UNIT_MILLISECONDS[resolveDpDatetimeNoiseUnit(field)]);
                             baseBudgetConfig.time_clipping_bounds = [String(field.lowerBound), String(field.upperBound)];
+                            // TODO【待後端確認：DP格點起算點】（見 dpFieldHelpers.ts alignDpDateTimeBoundsToNoiseGrid）
+                            // ★ 2026-10-06：邊界向外對齊加噪格點（noise_step 個 noise_unit，自 1970-01-01 起算），避免截斷／環繞／鏡像後
+                            //   日期離開格點（見 alignDpDateTimeBoundsToNoiseGrid）。敏感度仍以使用者原始邊界計算（上一行之前）。
+                            const alignedDateTimeBounds = alignDpDateTimeBoundsToNoiseGrid(field.lowerBound, field.upperBound, resolveDpDatetimeNoiseUnit(field), field.noiseStep);
+                            if (alignedDateTimeBounds) baseBudgetConfig.time_clipping_bounds = [alignedDateTimeBounds.lower, alignedDateTimeBounds.upper];
                         }
                     }
                     applyExplicitDpSensitivity(baseBudgetConfig, field.sensitivity);
@@ -428,6 +433,11 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
                     if (hasValidBoundsStatus) {
                         baseBudgetConfig.sensitivity = Number(field.upperBound) - Number(field.lowerBound);
                         baseBudgetConfig.clipping_bounds = [Number(field.lowerBound), Number(field.upperBound)];
+                        // TODO【待後端確認：DP格點起算點】（見 dpFieldHelpers.ts alignDpBoundsToMinimumUnit）
+                        // ★ 2026-10-06：邊界向外對齊加噪刻度，避免截斷／鏡像後輸出不是刻度倍數（見 alignDpBoundsToMinimumUnit）。
+                        //   敏感度維持以使用者原始邊界計算（上一行），clipping_bounds 只是加噪後的後處理。
+                        const alignedBounds = alignDpBoundsToMinimumUnit(field.lowerBound, field.upperBound, field.minimumUnit ?? 1);
+                        if (alignedBounds) baseBudgetConfig.clipping_bounds = [alignedBounds.lower, alignedBounds.upper];
                     }
                     applyExplicitDpSensitivity(baseBudgetConfig, field.sensitivity);
                     baseBudgetConfig.minimum_unit = field.minimumUnit ?? 1;
@@ -487,6 +497,16 @@ export const sumDpConsumedBudgets = (dpFields: DpStoreField[] | null | undefined
         (accumulator, budgetItem) => ({ totalEpsilon: accumulator.totalEpsilon + budgetItem.epsilon, totalDelta: accumulator.totalDelta + budgetItem.delta }),
         { totalEpsilon: 0, totalDelta: 0 }
     );
+
+/**
+ * ★ 2026-10-05：判斷消耗的總 ε 是否「真的」超過上限（容許浮點誤差）。
+ *   套用「高隱私」時把總預算 1 平均分給 9 個欄位（每欄 1/9），逐欄加回去在 JavaScript 是
+ *   1.0000000000000002，直接用 > 比較會判定超支，Step3 無法前往下一步；後端以相同方式加總時，
+ *   Step4 也會因 consumed_epsilon <= 上限 不成立而誤判未達標。改為容許上限的十億分之一誤差。
+ */
+const DP_BUDGET_COMPARE_RELATIVE_TOLERANCE = 1e-9;
+export const isDpBudgetExceeded = (consumedEpsilon: number, budgetLimitEpsilon: number): boolean =>
+    consumedEpsilon > budgetLimitEpsilon + Math.max(Math.abs(budgetLimitEpsilon), 1) * DP_BUDGET_COMPARE_RELATIVE_TOLERANCE;
 
 /** 後端未回報告時的預設消耗值（與實際送出的 column_budgets 一致）；沒有任何 ε 時退回 1.0 */
 export const computeDpTotalBudgets = (dpFields: DpStoreField[] | null | undefined, targetDelta?: number | null): { totalEpsilonBudget: number; totalDeltaBudget: number } => {

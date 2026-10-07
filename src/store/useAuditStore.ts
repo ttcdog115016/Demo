@@ -37,6 +37,7 @@ export interface AuditLogItem
 	columnRoleSnapshot: Record<string, string>;       // 簽發當下各欄位最終隱私角色快照 (如 Identifier/Quasi-identifier/DP Sensitive/Retained/Non-sensitive)
 	identifierMaskStrategySnapshot: Record<string, string>; // 簽發當下 Identifier 欄位實際套用之遮蔽策略快照 ('hash' | 'remove')，用以區分套用技術對照表顯示「完全遮蔽」或「直接移除」
 	dpEnabledFieldNamesSnapshot: string[];            // 簽發當下已啟用差分隱私之欄位名稱清單快照
+	qiGeneralizationTechSnapshot?: Record<string, string>; // ★ 2026-10-05：K-匿名間接識別欄位實際套用之泛化技術代碼快照（見 utils/kAnonymityTechLabel.ts）；舊紀錄無此欄位，顯示退回「區間/時間泛化」
 	integrity?: AuditIntegrityRecord;                 // ★ 2026-10-02：防篡改指紋（SHA-256）與數位簽章（ECDSA P-256），見 utils/auditIntegrity.ts；舊紀錄無此欄位
 }
 
@@ -64,6 +65,27 @@ interface AuditState
 }
 
 /**
+ * 函數名稱: generateAuditLogId
+ * 函數功能: 產生審計紀錄的唯一 ID。
+ * ★ 2026-10-02：crypto.randomUUID() 只在安全連線（HTTPS 或 localhost）才存在；Demo 改用內網 IP
+ *   （例如 http://172.20.10.2:5173）連線時會拋出「crypto.randomUUID is not a function」，
+ *   導致 Step4 去識別化流程在寫入稽核紀錄時失敗。改為：有 randomUUID 就用；否則以
+ *   crypto.getRandomValues（非安全連線也可用）組出 RFC 4122 v4 格式；兩者皆無時退回時間戳＋亂數。
+ */
+const generateAuditLogId = (): string => {
+    const cryptoApi = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+    if (cryptoApi && typeof cryptoApi.randomUUID === 'function') return cryptoApi.randomUUID();
+    if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {
+        const randomBytes = cryptoApi.getRandomValues(new Uint8Array(16));
+        randomBytes[6] = (randomBytes[6] & 0x0f) | 0x40; // version 4
+        randomBytes[8] = (randomBytes[8] & 0x3f) | 0x80; // variant 10xx
+        const hex = Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+    return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+};
+
+/**
  * 全域歷史審計軌跡 Store 實例 (useAuditStore)
  * 規範對照: 符合規範 i) 全域變數/狀態詳細註記
  */
@@ -82,7 +104,7 @@ export const useAuditStore = create<AuditState>(
 						// 自動生成 UUID 唯一碼並插入清單最前端 (最新的紀錄顯示在最上面)
 						// 規範對照: 符合規範 g) 確保每次呼叫皆產生合理不衝突之 ID 鍵值
 						auditLogs: [
-							{ ...auditLogEntryData, id: crypto.randomUUID() }, 
+							{ ...auditLogEntryData, id: generateAuditLogId() }, 
 							...currentStoreStateData.auditLogs
 						]
 					}

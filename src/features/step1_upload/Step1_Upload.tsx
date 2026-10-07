@@ -7,14 +7,16 @@
  * ============================================================================
  */
 
-import { useState } from 'react';
-import { Card, Upload, Table, Alert, Button, Space, Typography, Popconfirm, theme, App as AntdApp, Radio, Row, Col, Spin, Tooltip } from 'antd';
+import { useState, type ReactNode } from 'react';
+import { Card, Upload, Table, Alert, Button, Space, Typography, Popconfirm, theme, App as AntdApp, Radio, Row, Col, Spin, Tooltip, Modal } from 'antd';
 import { InboxOutlined, FileExcelOutlined, DeleteOutlined, CheckCircleFilled, SafetyCertificateOutlined, CodeSandboxOutlined, QuestionCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { detectCsvBytesEncoding, decodeCsvBytesToText, detectByteOrderMark, CSV_ENCODING_DETECTION_SAMPLE_BYTES } from '../../utils/csvEncodingDetect';
+import { findEncodingCorruption, findReplacementCharInfo, findHeaderProblems, findStructureProblem, cleanCsvHeaderLine, findSpecialCharacterCells, findTypedColumnOutliers, stripSpecialCharacters, BLOCKING_HEADER_PROBLEM_KINDS, type HeaderProblem, type SpecialCharacterScanResult, type TypedColumnOutlier } from '../../utils/csvUploadValidation';
 
 const { Dragger } = Upload;
 
@@ -34,6 +36,22 @@ const { Text, Title } = Typography;
 const MAX_FILE_SIZE_LIMIT_MB = 2048;
 const MAX_COLUMN_COUNT = 50;
 const PARSE_PREVIEW_ROW_LIMIT = 1000;
+
+// ★ 2026-10-05：解碼完成後、寫入 store 前的上傳參數（CSV 與 Excel 共用）
+interface FinalizeUploadParams {
+    /** 已正確解碼的 CSV 文字 */
+    csvText: string;
+    /** 使用者選的原始檔案（可原樣送出時使用）；Excel 轉出的 CSV 為 null */
+    originalFile: File | null;
+    /** 送往後端的檔名 */
+    uploadFileName: string;
+    /** 顯示用檔名（使用者上傳的原始檔名） */
+    displayFileName: string;
+    /** 偵測到的編碼（Excel 為 'xlsx'） */
+    detectedEncoding: string;
+    /** 編碼本來就是後端可直接讀取的 UTF-8，且內容未經改寫時，可原樣送出原始檔案 */
+    canUploadOriginalBytes: boolean;
+}
 const UI_CARD_PREVIEW_ROW_LIMIT = 5;
 const BYTES_PER_MEGABYTE = 1048576; // 1024 * 1024
 
@@ -76,8 +94,7 @@ const BYTES_PER_MEGABYTE = 1048576; // 1024 * 1024
  *   最常見的編碼皆能準確偵測，仍是相較「其他編碼一律誤判為 Big5」的明顯改善。
  * ============================================================================
  */
-const CSV_ENCODING_DETECTION_SAMPLE_BYTES = 65536; // 只取檔案開頭 64KB 做編碼偵測樣本，避免大檔案 (最大 2GB) 因偵測而拖慢效能
-const MULTIBYTE_TAIL_TRIM_BYTES = 4; // 樣本尾端可能剛好截斷一個多位元組字元，偵測時先去掉最後幾個位元組，避免因切割位置不巧而誤判為不合法編碼
+// CSV_ENCODING_DETECTION_SAMPLE_BYTES／detectCsvBytesEncoding／decodeCsvBytesToText 已移至 src/utils/csvEncodingDetect.ts
 
 // ★ 修正: 使用者反映 Big5 檔案上傳後，Step4 後端有機率回傳 ERR_CONFIG_DATA_MISMATCH
 //   (「預算設定引用了資料中不存在的欄位」)。根因：Big5 原本被列在此名單中，偵測到 Big5 時
@@ -107,56 +124,6 @@ const MULTIBYTE_TAIL_TRIM_BYTES = 4; // 樣本尾端可能剛好截斷一個多�
 //   utf-8 或 utf-8-sig 哪個分支，解出來的欄位名稱都保證乾淨，不再有這個落差。
 const BACKEND_NATIVELY_SUPPORTED_CSV_ENCODINGS = new Set(['utf-8']);
 
-// 除了 UTF-8／Big5 之外，常見的中文／Windows 匯出編碼候選清單 (依「較常見、較不易與其他候選混淆」排序)，
-// 依序嘗試解碼，第一個不拋出例外的即採用；windows-1252 為單位元組編碼、任何位元組皆可解出字元，
-// 故實務上作為「其餘候選皆不合法時」的最終備援
-const FALLBACK_LEGACY_ENCODING_CANDIDATES = ['big5', 'gbk', 'shift-jis', 'windows-1252'];
-
-/**
- * 函數名稱: detectCsvBytesEncoding
- * 函數功能: 依 BOM 判斷與「嚴格解碼」(fatal: true) 逐一嘗試候選編碼，偵測位元組陣列的真實文字編碼。
- */
-const detectCsvBytesEncoding = (fullBytesArray: Uint8Array): string => {
-    if (fullBytesArray.length >= 3 && fullBytesArray[0] === 0xEF && fullBytesArray[1] === 0xBB && fullBytesArray[2] === 0xBF) {
-        return 'utf-8-bom';
-    }
-
-    const sampleForDetectionArray = fullBytesArray.subarray(0, Math.min(fullBytesArray.length, CSV_ENCODING_DETECTION_SAMPLE_BYTES));
-    const safeSampleArray = sampleForDetectionArray.subarray(0, Math.max(0, sampleForDetectionArray.length - MULTIBYTE_TAIL_TRIM_BYTES));
-
-    try {
-        new TextDecoder('utf-8', { fatal: true }).decode(safeSampleArray);
-        return 'utf-8';
-    } catch {
-        // 不是合法 UTF-8，繼續往下嘗試常見的中文／Windows 舊式編碼
-    }
-
-    for (const candidateEncodingLabel of FALLBACK_LEGACY_ENCODING_CANDIDATES) {
-        try {
-            new TextDecoder(candidateEncodingLabel, { fatal: true }).decode(safeSampleArray);
-            return candidateEncodingLabel;
-        } catch {
-            // 繼續嘗試下一個候選編碼
-        }
-    }
-
-    return 'unknown';
-};
-
-/**
- * 函數名稱: decodeCsvBytesToText
- * 函數功能: 依偵測到的編碼標籤，將完整檔案位元組解碼為文字字串；偵測不到已知編碼時，
- *           寬鬆以 UTF-8 解碼作為保底 (可能出現少數替代字元 �，但至少不會讓流程整個卡住)。
- */
-const decodeCsvBytesToText = (fullBytesArray: Uint8Array, detectedEncodingLabel: string): string => {
-    if (detectedEncodingLabel === 'utf-8-bom') {
-        return new TextDecoder('utf-8').decode(fullBytesArray.subarray(3));
-    }
-    if (detectedEncodingLabel === 'unknown') {
-        return new TextDecoder('utf-8').decode(fullBytesArray);
-    }
-    return new TextDecoder(detectedEncodingLabel).decode(fullBytesArray);
-};
 
 /**
  * 函數名稱: Step1_Upload
@@ -246,9 +213,131 @@ export default function Step1_Upload(): React.ReactElement
     
     // 元件區域狀態宣告 (符合規範 g)
     const [isFileUploading, setIsFileUploading] = useState<boolean>(false); // 上傳/解析中之載入狀態開關
+    // ★ 2026-10-05：第 3 級（特殊字元）與上傳時推斷之第 2 級（數值／日期欄位異常值）待使用者確認的上傳
+    const [pendingContentReview, setPendingContentReview] = useState<{ params: FinalizeUploadParams; specialChars: SpecialCharacterScanResult | null; outliers: TypedColumnOutlier[] } | null>(null);
 
     // 判斷當前是否已有載入完成之資料集 (依據欄位陣列是否存在且長度大於 0) (符合規範 g)
     const isDatasetLoadedStatus = datasetColumnsList && datasetColumnsList.length > 0;
+
+    // ★ 2026-10-05：欄位名稱有前後空白或看不見的字元時自動清理標題列（只改標題列，資料不動），
+    //   並以清理後的內容送往後端。原因：前端設定檔一律使用 trim 後的欄位名稱，但後端照檔案原樣比對，
+    //   實測「␣姓名」必定回傳 422 ERR_CONFIG_DATA_MISMATCH。清理後才會是一致的名稱。
+    const cleanHeaderAndNotify = (csvTextContent: string): { csvText: string; wasHeaderCleaned: boolean } =>
+    {
+        const headerParseResult = Papa.parse<string[]>(csvTextContent, { preview: 1 });
+        // 標題列有未成對引號時不清理，留給下方結構檢查報錯（否則整份內容會被當成一個欄位名稱改寫）
+        if (headerParseResult.errors.some((errorItem) => errorItem.type === 'Quotes')) return { csvText: csvTextContent, wasHeaderCleaned: false };
+        const rawHeaderFieldsList = (headerParseResult.data[0] || []).map((cellValue) => String(cellValue ?? ''));
+        const { cleanedCsvText, changedColumns } = cleanCsvHeaderLine(csvTextContent, rawHeaderFieldsList);
+        if (changedColumns.length > 0)
+        {
+            messageApi.info({
+                content: translate('step1.header_auto_cleaned', {
+                    count: changedColumns.length,
+                    examples: changedColumns.slice(0, 3).map((changeItem) => `「${changeItem.fromLabel}」→「${changeItem.to}」`).join('、')
+                }),
+                duration: 8
+            });
+        }
+        return { csvText: cleanedCsvText, wasHeaderCleaned: changedColumns.length > 0 };
+    };
+
+    // ★ 2026-10-05：內容檢查通過（或使用者確認）後，清理標題列、寫入 store 並解析預覽。
+    const finalizeUpload = (params: FinalizeUploadParams): void =>
+    {
+        const { csvText: csvTextForUpload, wasHeaderCleaned } = cleanHeaderAndNotify(params.csvText);
+        const originalFileToReuse = params.canUploadOriginalBytes && !wasHeaderCleaned ? params.originalFile : null;
+        const fileObjectToUpload = originalFileToReuse
+            ?? new File([new TextEncoder().encode(csvTextForUpload)], params.uploadFileName, { type: 'text/csv' });
+
+        setDataFileAction(fileObjectToUpload);
+
+        // ★ 新增：記錄本次上傳診斷快照，供發生 API 錯誤時一併附上回報
+        setLastUploadDiagnosticsAction({
+            fileName: params.displayFileName,
+            detectedEncoding: params.detectedEncoding,
+            wasReencoded: !originalFileToReuse
+        });
+
+        if (params.detectedEncoding !== 'xlsx' && !BACKEND_NATIVELY_SUPPORTED_CSV_ENCODINGS.has(params.detectedEncoding))
+        {
+            messageApi.info(
+                translate('step1.encoding_auto_converted', { encoding: params.detectedEncoding.toUpperCase(), defaultValue: `偵測到檔案編碼為 ${params.detectedEncoding.toUpperCase()}，已自動轉換為 UTF-8 後上傳` })
+            );
+        }
+
+        // 資料預覽表格一併採用實際要送出的內容，確保「畫面預覽」與「實際送給後端處理的內容」一致。
+        runPapaParseOnCsvText(csvTextForUpload, params.displayFileName);
+    };
+
+    // ★ 2026-10-05：依嚴重程度分三級（使用者確認）：
+    //   第 1 級（編碼毀損、檔案結構、欄位名稱）→ 直接擋下（見 rejectUploadWithMessage 各呼叫處）。
+    //   第 2 級（數值／日期欄位中有無法轉換的值）→ 上傳時欄位型態未定，以內容推斷並在此列出；
+    //            真正阻擋在 Step2 使用者設為數值／日期時（validateProgression.ts）。
+    //   第 3 級（其他欄位含特殊字元）→ 列出清單，由使用者選擇取消／移除後上傳／仍要上傳。
+    const reviewContentThenFinalize = (params: FinalizeUploadParams): void =>
+    {
+        // 第 1 級問題（結構錯亂、欄位名稱保留字／空白／重複）優先：直接交給 finalize 的解析檢查報錯，不先跳確認視窗
+        const previewParseResult = Papa.parse<Record<string, unknown>>(params.csvText, { header: true, skipEmptyLines: true, preview: PARSE_PREVIEW_ROW_LIMIT });
+        const rawHeaderCellsForReview = ((Papa.parse<string[]>(params.csvText, { preview: 1 }).data[0]) || []).map((cellValue) => String(cellValue ?? ''));
+        const hasBlockingHeaderProblemStatus = findHeaderProblems(rawHeaderCellsForReview.map((headerName) => headerName.trim()))
+            .some((problemItem) => BLOCKING_HEADER_PROBLEM_KINDS.has(problemItem.kind));
+        if (hasBlockingHeaderProblemStatus || findStructureProblem(previewParseResult.errors, previewParseResult.meta.fields?.length ?? 0, previewParseResult.data))
+        {
+            finalizeUpload(params);
+            return;
+        }
+        const specialChars = findSpecialCharacterCells(params.csvText);
+        const outliers = findTypedColumnOutliers(params.csvText);
+        if (!specialChars && outliers.length === 0)
+        {
+            finalizeUpload(params);
+            return;
+        }
+        setIsFileUploading(false);
+        setPendingContentReview({ params, specialChars, outliers });
+    };
+
+    const handleContentReviewCancel = (): void =>
+    {
+        setPendingContentReview(null);
+        messageApi.info(translate('step1.content_review_cancelled', '已取消上傳。'));
+    };
+
+    const handleContentReviewStrip = (): void =>
+    {
+        if (!pendingContentReview) return;
+        const { csvText: strippedCsvText, changedCellCount } = stripSpecialCharacters(pendingContentReview.params.csvText);
+        const reviewParams = pendingContentReview.params;
+        setPendingContentReview(null);
+        setIsFileUploading(true);
+        messageApi.success(translate('step1.special_chars_removed', { count: changedCellCount }));
+        finalizeUpload({ ...reviewParams, csvText: strippedCsvText, canUploadOriginalBytes: false });
+    };
+
+    const handleContentReviewProceed = (): void =>
+    {
+        if (!pendingContentReview) return;
+        const reviewParams = pendingContentReview.params;
+        setPendingContentReview(null);
+        setIsFileUploading(true);
+        finalizeUpload(reviewParams);
+    };
+
+    // ★ 2026-10-05：上傳檢查不通過時共用：關閉載入動畫、清掉已暫存的檔案，並以「問題／建議」兩行
+    //   精簡顯示（比照後端「錯誤訊息與建議」寫法）。
+    const renderProblemAdviceNode = (problemText: ReactNode, adviceText: string): ReactNode => (
+        <div style={{ textAlign: 'left', maxWidth: 560 }}>
+            <div><strong>{translate('step1.label_problem', '問題：')}</strong>{problemText}</div>
+            <div style={{ marginTop: 2 }}><strong>{translate('step1.label_advice', '建議：')}</strong>{adviceText}</div>
+        </div>
+    );
+    const rejectUploadWithMessage = (problemText: ReactNode, adviceText: string): void =>
+    {
+        setIsFileUploading(false);
+        clearFileDataAction();
+        messageApi.error({ content: renderProblemAdviceNode(problemText, adviceText), duration: 10 });
+    };
 
     /**
      * 函數名稱: runPapaParseOnCsvText
@@ -268,6 +357,49 @@ export default function Step1_Upload(): React.ReactElement
                     // 解析成功之處理邏輯
                     const parsedColumnsListArray = parseResultsObj.meta.fields || [];
                     const rawDataRowsArray = parseResultsObj.data as Record<string, unknown>[];
+
+                    // ★ 2026-10-05：檔案結構與標題列檢查（詳見 utils/csvUploadValidation.ts 檔頭說明）。
+                    //   有問題時清空已暫存的檔案、不寫入資料，避免錯位或會造成崩潰的資料流到 Step2～Step4。
+                    const structureProblem = findStructureProblem(parseResultsObj.errors, parsedColumnsListArray.length, rawDataRowsArray);
+                    if (structureProblem)
+                    {
+                        if (structureProblem.kind === 'unclosed_quote')
+                            rejectUploadWithMessage(translate('step1.unclosed_quote_problem', { line: structureProblem.lineNumber ?? '?' }), translate('step1.unclosed_quote_advice'));
+                        else
+                            rejectUploadWithMessage(translate('step1.header_mismatch_problem', { header: structureProblem.headerFieldCount, rows: structureProblem.typicalRowFieldCount }), translate('step1.header_mismatch_advice'));
+                        return;
+                    }
+
+                    const rawHeaderFieldsList = ((Papa.parse<string[]>(csvTextContent, { preview: 1 }).data[0]) || []).map((cellValue) => String(cellValue ?? ''));
+                    const headerProblemsList = findHeaderProblems(rawHeaderFieldsList);
+                    const blockingHeaderProblemsList = headerProblemsList.filter((problemItem) => BLOCKING_HEADER_PROBLEM_KINDS.has(problemItem.kind));
+                    if (blockingHeaderProblemsList.length > 0)
+                    {
+                        // 同類問題合併成一句：第 1、2 欄（「constructor」、「toString」）是系統保留名稱
+                        const describeProblemGroup = (problemKind: HeaderProblem['kind']): string | null => {
+                            const groupItems = blockingHeaderProblemsList.filter((problemItem) => problemItem.kind === problemKind).slice(0, 5);
+                            if (groupItems.length === 0) return null;
+                            const columnNumbersText = groupItems.map((problemItem) => problemItem.columnNumber).join('、');
+                            const namesText = groupItems.map((problemItem) => `「${problemItem.columnLabel}」`).join('、');
+                            if (problemKind === 'reserved_name') return translate('step1.header_reserved', { col: columnNumbersText, name: namesText });
+                            if (problemKind === 'empty_name') return translate('step1.header_empty', { col: columnNumbersText });
+                            return translate('step1.header_duplicate', { col: columnNumbersText, name: namesText });
+                        };
+                        const headerProblemSentence = (['reserved_name', 'empty_name', 'duplicate_name'] as const).map(describeProblemGroup).filter(Boolean).join('；') + '。';
+                        rejectUploadWithMessage(headerProblemSentence, translate('step1.header_invalid_advice'));
+                        return;
+                    }
+                    const invisibleHeaderProblemsList = headerProblemsList.filter((problemItem) => problemItem.kind === 'invisible_or_space');
+                    if (invisibleHeaderProblemsList.length > 0)
+                    {
+                        messageApi.warning({
+                            content: renderProblemAdviceNode(
+                                translate('step1.header_invisible_problem', { names: invisibleHeaderProblemsList.slice(0, 5).map((problemItem) => `「${problemItem.columnLabel}」`).join('、') }),
+                                translate('step1.header_invisible_advice')
+                            ),
+                            duration: 8
+                        });
+                    }
 
                     // 防呆處理：驗證解析出之欄位數量是否超出 MAX_COLUMN_COUNT 上限
                     if (parsedColumnsListArray.length > MAX_COLUMN_COUNT)
@@ -376,23 +508,15 @@ export default function Step1_Upload(): React.ReactElement
                         return;
                     }
 
-                    const convertedCsvTextContent = XLSX.utils.sheet_to_csv(parsedWorkbook.Sheets[firstSheetNameString]);
-                    const convertedCsvFileNameString = targetFileObj.name.replace(/\.(xlsx|xls)$/i, '.csv');
-
-                    // 送給後端與後續流程 (Step4_Result.tsx 以 `.text()` 讀取) 一律採轉換後的 CSV 內容，
-                    // 不再保留原始 Excel 二進位，確保「畫面預覽」與「實際送給後端的內容」兩者一致。
-                    setDataFileAction(
-                        new File([new TextEncoder().encode(convertedCsvTextContent)], convertedCsvFileNameString, { type: 'text/csv' })
-                    );
-
-                    // ★ 新增：記錄本次上傳診斷快照，供發生 API 錯誤時一併附上回報
-                    setLastUploadDiagnosticsAction({
-                        fileName: targetFileObj.name,
+                    // 送給後端與後續流程一律採轉換後的 CSV 內容（不保留原始 Excel 二進位），確保畫面預覽與送出內容一致。
+                    reviewContentThenFinalize({
+                        csvText: XLSX.utils.sheet_to_csv(parsedWorkbook.Sheets[firstSheetNameString]),
+                        originalFile: null,
+                        uploadFileName: targetFileObj.name.replace(/\.(xlsx|xls)$/i, '.csv'),
+                        displayFileName: targetFileObj.name,
                         detectedEncoding: 'xlsx',
-                        wasReencoded: true
+                        canUploadOriginalBytes: false
                     });
-
-                    runPapaParseOnCsvText(convertedCsvTextContent, targetFileObj.name);
                 })
                 .catch((excelParseErrorObj: Error) =>
                 {
@@ -411,37 +535,43 @@ export default function Step1_Upload(): React.ReactElement
             .then((fullArrayBufferData) =>
             {
                 const fullBytesArray = new Uint8Array(fullArrayBufferData);
+
+                // ★ 2026-10-05：編碼混用／毀損檢查。檔案以 UTF-8（或 Big5）為主、但混入少量其他編碼的
+                //   位元組時，原本嚴格解碼全部失敗會退到 windows-1252（或把 Big5 誤判成 GBK），整份
+                //   檔案變成亂碼且照樣送往後端。改為辨識出「主要編碼 + 少數壞掉的位置」並阻擋上傳。
+                if (!detectByteOrderMark(fullBytesArray))
+                {
+                    const detectionSampleBytesArray = fullBytesArray.subarray(0, Math.min(fullBytesArray.length, CSV_ENCODING_DETECTION_SAMPLE_BYTES));
+                    const encodingCorruptionInfo = findEncodingCorruption(detectionSampleBytesArray, detectionSampleBytesArray.length < fullBytesArray.length);
+                    if (encodingCorruptionInfo)
+                    {
+                        rejectUploadWithMessage(translate('step1.encoding_mixed_problem', { encoding: encodingCorruptionInfo.baseEncoding.toUpperCase(), count: encodingCorruptionInfo.invalidCharCount, line: encodingCorruptionInfo.firstInvalidLineNumber }), translate('step1.encoding_mixed_advice'));
+                        return;
+                    }
+                }
+
                 const detectedEncodingLabel = detectCsvBytesEncoding(fullBytesArray);
                 const decodedCsvTextContent = decodeCsvBytesToText(fullBytesArray, detectedEncodingLabel);
 
-                const isEncodingAlreadyBackendCompatible = BACKEND_NATIVELY_SUPPORTED_CSV_ENCODINGS.has(detectedEncodingLabel);
-
-                // 後端已支援的編碼：原始檔案原樣送出，不做任何轉換 (維持原本位元組內容與行為)。
-                // 其餘編碼：以偵測到的編碼解碼出的正確文字，重新編碼為 UTF-8 位元組，包成新的
-                // File 物件取代原始檔案送出，確保後端一定落在其判斷式的第一順位 (utf-8) 正確解出。
-                const fileObjectToUpload = isEncodingAlreadyBackendCompatible
-                    ? targetFileObj
-                    : new File([new TextEncoder().encode(decodedCsvTextContent)], targetFileObj.name, { type: 'text/csv' });
-
-                setDataFileAction(fileObjectToUpload);
-
-                // ★ 新增：記錄本次上傳診斷快照，供發生 API 錯誤時一併附上回報
-                setLastUploadDiagnosticsAction({
-                    fileName: targetFileObj.name,
-                    detectedEncoding: detectedEncodingLabel,
-                    wasReencoded: !isEncodingAlreadyBackendCompatible
-                });
-
-                if (!isEncodingAlreadyBackendCompatible)
+                // ★ 2026-10-05：偵測只取前 64KB；毀損位置在更後面時，UTF-8 寬鬆解碼會靜默產生替代字元 (�)。
+                if (detectedEncodingLabel === 'utf-8' || detectedEncodingLabel === 'utf-8-bom' || detectedEncodingLabel === 'unknown')
                 {
-                    messageApi.info(
-                        translate('step1.encoding_auto_converted', { encoding: detectedEncodingLabel.toUpperCase(), defaultValue: `偵測到檔案編碼為 ${detectedEncodingLabel.toUpperCase()}，已自動轉換為 UTF-8 後上傳` })
-                    );
+                    const replacementCharInfo = findReplacementCharInfo(decodedCsvTextContent);
+                    if (replacementCharInfo)
+                    {
+                        rejectUploadWithMessage(translate('step1.encoding_mixed_problem', { encoding: 'UTF-8', count: replacementCharInfo.count, line: replacementCharInfo.firstLineNumber }), translate('step1.encoding_mixed_advice'));
+                        return;
+                    }
                 }
 
-                // 資料預覽表格一併採用偵測到的正確編碼解碼出的文字內容，確保「畫面預覽」與
-                // 「實際送給後端處理的內容」兩者一致，不會有一邊正常、一邊亂碼的狀況。
-                runPapaParseOnCsvText(decodedCsvTextContent, targetFileObj.name);
+                reviewContentThenFinalize({
+                    csvText: decodedCsvTextContent,
+                    originalFile: targetFileObj,
+                    uploadFileName: targetFileObj.name,
+                    displayFileName: targetFileObj.name,
+                    detectedEncoding: detectedEncodingLabel,
+                    canUploadOriginalBytes: BACKEND_NATIVELY_SUPPORTED_CSV_ENCODINGS.has(detectedEncodingLabel)
+                });
             })
             .catch((encodingDetectErrorObj: Error) =>
             {
@@ -487,6 +617,56 @@ export default function Step1_Upload(): React.ReactElement
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* ★ 2026-10-05：上傳內容確認（第 2 級推斷結果＋第 3 級特殊字元） */}
+            <Modal
+                open={!!pendingContentReview}
+                title={translate('step1.content_review_title', '資料內容需要確認')}
+                onCancel={handleContentReviewCancel}
+                maskClosable={false}
+                width={640}
+                footer={[
+                    <Button key="cancel" onClick={handleContentReviewCancel}>{translate('step1.content_review_btn_cancel', '取消上傳')}</Button>,
+                    ...(pendingContentReview?.specialChars
+                        ? [<Button key="strip" type="primary" onClick={handleContentReviewStrip}>{translate('step1.content_review_btn_strip', '移除特殊字元後上傳')}</Button>]
+                        : []),
+                    <Button key="proceed" type={pendingContentReview?.specialChars ? 'default' : 'primary'} onClick={handleContentReviewProceed}>{translate('step1.content_review_btn_proceed', '仍要上傳')}</Button>
+                ]}
+            >
+                {pendingContentReview && pendingContentReview.outliers.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                        <Typography.Text strong>{translate('step1.outliers_title', '數值／日期欄位中有無法轉換的值')}</Typography.Text>
+                        <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
+                            {pendingContentReview.outliers.map((outlierItem) => (
+                                <li key={outlierItem.columnName}>
+                                    {translate('step1.outlier_item', {
+                                        column: outlierItem.columnName,
+                                        type: outlierItem.kind === 'numeric' ? translate('step1.type_numeric', '數值') : translate('step1.type_date', '日期'),
+                                        count: outlierItem.badCount,
+                                        examples: outlierItem.examples.map((exampleItem) => translate('step1.outlier_example', { line: exampleItem.lineNumber, value: exampleItem.cellValue })).join('、')
+                                    })}
+                                </li>
+                            ))}
+                        </ul>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{translate('step1.outliers_note', '這些欄位若在「屬性分類」設為數值或日期，將無法進入下一步；若本來就要當類別使用，可直接上傳。')}</Typography.Text>
+                    </div>
+                )}
+                {pendingContentReview?.specialChars && (
+                    <div>
+                        <Typography.Text strong>{translate('step1.special_chars_problem', { count: pendingContentReview.specialChars.cellCount, chars: pendingContentReview.specialChars.foundCharacters.join(' ') })}</Typography.Text>
+                        <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
+                            {pendingContentReview.specialChars.examples.map((exampleItem) => (
+                                <li key={`${exampleItem.lineNumber}-${exampleItem.columnName}`}>
+                                    {translate('step1.special_chars_example', { line: exampleItem.lineNumber, column: exampleItem.columnName, value: exampleItem.cellValue })}
+                                </li>
+                            ))}
+                            {pendingContentReview.specialChars.cellCount > pendingContentReview.specialChars.examples.length && (
+                                <li>{translate('step1.special_chars_more', { count: pendingContentReview.specialChars.cellCount - pendingContentReview.specialChars.examples.length })}</li>
+                            )}
+                        </ul>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{translate('step1.special_chars_note', '「移除特殊字元後上傳」只會刪掉上列字元，其餘內容不變；完整的 Email 與百分比不受影響。')}</Typography.Text>
+                    </div>
+                )}
+            </Modal>
             
             {/* 依據 isDatasetLoadedStatus 條件渲染：未載入時顯示上傳區塊，已載入時顯示資料預覽與模式選擇 */}
             {!isDatasetLoadedStatus ? (

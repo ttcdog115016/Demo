@@ -8,7 +8,6 @@
  */
 
 import { create } from 'zustand';
-import { isDateTimeDpField, DEFAULT_DATETIME_LOWER_BOUND_DATE } from '../utils/dpFieldHelpers';
 import type { DatasetProfile } from '../utils/datasetProfile';
 
 /**
@@ -22,8 +21,6 @@ const DEFAULT_T_CLOSENESS_VALUE = 0.15;
 const DEFAULT_MAX_SUPPRESSION_PERCENT = 5;
 const DEFAULT_EPSILON_BUDGET = 1.0;
 const DEFAULT_DELTA_BUDGET = 1e-5;
-const DEFAULT_NUMERIC_LOWER_BOUND = 0;
-const DEFAULT_NUMERIC_UPPER_BOUND = 100;
 const DEFAULT_SIMULATE_QUERY_COUNT = 1;
 const DEFAULT_BUDGET_LIMIT_EPSILON = 20;
 const DEFAULT_TARGET_DELTA = 0.0001;
@@ -239,58 +236,24 @@ interface WorkspaceState
     resetWorkspace: () => void;
 }
 
+// ★ 2026-10-05：使用者要求剛進入差分隱私 Step2 時各欄位不預先選好資料型態（一律「請選擇」），
+//   由使用者手動選擇或按「套用系統推薦設定」（依欄位名稱＋實際資料判斷，見 DifferentialPrivacyMapping.tsx
+//   computeRecommendedFieldSettings 與 utils/dpTypeInference.ts）。原本上傳時依欄位名稱關鍵字預猜型態，
+//   猜中的欄位直接帶入預設邊界（如數值 0～100），使用者容易沒注意到就沿用。
+//   （10-04 修正「預猜為類別型的欄位缺少自動萃取標記、按下一步被擋」的問題，因不再預猜而一併消失。）
 const createInitialDPFields = (datasetColumnsListArray: string[]): DPField[] => 
 {
     return datasetColumnsListArray.map(
-        (columnNameString, columnIndexNumber) => 
-        {
-            const lowerCaseColumnNameString = columnNameString.toLowerCase();
-            let calculatedDefaultTypeStr: 'Numeric' | 'Categorical' | 'Text' | 'Unknown' = 'Unknown';
-
-            // ★ 修正: 原本只比對英文關鍵字，中文命名的欄位（如「年齡」「薪資」）完全比對不到，導致上傳資料後的初始資料型態一律猜測為未知；此處加入常見中文關鍵字以涵蓋中文命名的資料集，與「套用系統推薦設定」按鈕使用相同的關鍵字範圍。
-            // ★ 修正: 使用者更正——生日應歸類為「數值」而非「文字」，故將 birthday/生日 等關鍵字
-            //   移至下方數值型判斷區間，不再與姓名／電話等身分類欄位放在一起。
-            if (/(age|amount|fare|count|price|salary|num|duration|mins|income|credit|ratio|score|birthday|birth_date|dob|年齡|薪資|收入|所得|金額|費用|分數|次數|時長|比率|信用|價格|生日|出生日期)/i.test(lowerCaseColumnNameString)) 
-            {
-                calculatedDefaultTypeStr = 'Numeric';
-            } 
-            else if (/(gender|type|category|status|station|disease|zipcode|city|region|job|occupation|marital|marriage|性別|類型|類別|疾病|郵遞區號|地區|城市|縣市|國家|職業|婚姻狀況|婚姻)/i.test(lowerCaseColumnNameString)) 
-            {
-                calculatedDefaultTypeStr = 'Categorical';
-            }
-            // ★ 新增: 原本此函式只會猜測「數值」或「類別」，從未猜測過「文字」，導致姓名等
-            //   身分類欄位在剛上傳資料時一律顯示「請選擇」(未知)，即使按下「套用系統推薦設定」按鈕後
-            //   會正確判斷為文字型也一樣——兩者判斷範圍不一致。此處加入相同的身分類關鍵字，讓初始猜測
-            //   與推薦按鈕的判斷結果一致。
-            else if (/(id|name|phone|email|姓名|電話|手機|信箱|電子郵件|身分證|統一編號|地址)/i.test(lowerCaseColumnNameString)) 
-            {
-                calculatedDefaultTypeStr = 'Text';
-            }
-
-            const isDateTimeFieldStatus = calculatedDefaultTypeStr === 'Numeric' && isDateTimeDpField(columnNameString);
-
-            return {
-                id: `${columnNameString}-${columnIndexNumber}`,
-                fieldName: columnNameString,
-                fieldType: calculatedDefaultTypeStr,
-                // ★ 修正: 使用者反映剛進入 DP 模式 Step2 時，姓名／身分證號等文字型（身分類）欄位的
-                //   「套用差分隱私」開關一律顯示「啟用」，但這類欄位本來就不該加雜訊，應預設「停用」。
-                //   原本這裡不分資料型態一律寫死 enabled: true，與「套用系統推薦設定」按鈕
-                //   (fieldType === 'Text' 時 enabled = false) 及匯入 JSON 設定檔
-                //   (DifferentialPrivacyMapping.tsx 的 enabled: mappedFieldTypeValue !== 'Text')
-                //   兩處的判斷邏輯都不一致，才會出現「一進畫面就顯示啟用，按推薦設定後才變回停用」的落差。
-                enabled: calculatedDefaultTypeStr !== 'Text',
-                epsilon: DEFAULT_EPSILON_BUDGET,
-                delta: DEFAULT_DELTA_BUDGET,
-                // ★ 日期時間型欄位（如生日）之邊界應為日期字串而非單純數字，故與一般數值型欄位分開給預設值。
-                lowerBound: isDateTimeFieldStatus ? DEFAULT_DATETIME_LOWER_BOUND_DATE : (calculatedDefaultTypeStr === 'Numeric' ? DEFAULT_NUMERIC_LOWER_BOUND : undefined),
-                upperBound: isDateTimeFieldStatus ? new Date().toISOString().slice(0, 10) : (calculatedDefaultTypeStr === 'Numeric' ? DEFAULT_NUMERIC_UPPER_BOUND : undefined),
-                allowedCategories: '',
-                outOfBoundsStrategy: 'clip',
-                minimumUnit: (calculatedDefaultTypeStr === 'Numeric' && !isDateTimeFieldStatus) ? 1 : undefined,
-                noiseStep: isDateTimeFieldStatus ? 7 : undefined
-            };
-        }
+        (columnNameString, columnIndexNumber) => ({
+            id: `${columnNameString}-${columnIndexNumber}`,
+            fieldName: columnNameString,
+            fieldType: 'Unknown',
+            enabled: true,
+            epsilon: DEFAULT_EPSILON_BUDGET,
+            delta: DEFAULT_DELTA_BUDGET,
+            allowedCategories: '',
+            outOfBoundsStrategy: 'clip'
+        })
     );
 };
 

@@ -10,6 +10,9 @@
 import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
 import { resolveDpFieldRiskRole, isDpFieldSelectableAsRiskSensitive } from '../../utils/riskAssessment';
+import { resolveIsDateTimeDpField } from '../../utils/dpFieldHelpers';
+import { findDeclaredTypeConflicts, type DeclaredTypedColumn } from '../../utils/columnTypeConsistency';
+import { findFieldsNotInDataset, countBlankFieldNames, describeFieldsNotInDatasetError, describeBlankFieldNamesError } from '../../utils/datasetFieldConsistency';
 
 /**
  * 預設步驟驗證門檻常數宣告
@@ -105,6 +108,26 @@ export const validateProgression = (
 	// ============================================================================
 	if (targetStepIndexValue >= STEP_INDEX_RULES_REQUIREMENT) 
 	{
+		// ★ 2026-10-07：Step2 欄位清單須與上傳資料一致（規則見 utils/datasetFieldConsistency.ts）。
+		//   頁面本身已顯示錯誤並提供「移除不存在的欄位」；此處再擋一次，涵蓋側欄／網址直接跳轉。
+		//   放在 QI／敏感欄位檢查之前：不存在的欄位也會被同步進 columnRoles，可能讓 QI 檢查誤判通過。
+		const configuredFieldNamesList: unknown[] = currentPrivacyModeTypeStr === 'k-anonymity'
+			? ((currentWorkspaceStoreStateData.kAnonymityFields || []) as Array<Record<string, unknown>>).map((fieldRecord) => fieldRecord.name)
+			: (currentDpFieldsListArray || []).map((dpFieldItemRecord) => dpFieldItemRecord.fieldName);
+		if (currentPrivacyModeTypeStr === 'k-anonymity')
+		{
+			const blankFieldNameCount = countBlankFieldNames(configuredFieldNamesList);
+			if (blankFieldNameCount > 0)
+			{
+				return translateFunction('step2.blank_field_name_error', describeBlankFieldNamesError(blankFieldNameCount));
+			}
+		}
+		const fieldsNotInDatasetNamesList = findFieldsNotInDataset(configuredFieldNamesList, datasetColumnsListArray);
+		if (fieldsNotInDatasetNamesList.length > 0)
+		{
+			return describeFieldsNotInDatasetError(fieldsNotInDatasetNamesList);
+		}
+
 		if (currentPrivacyModeTypeStr === 'k-anonymity') 
 		{
 			// 針對 K-Anonymity 模式：提取所有欄位目前被分配的角色清單
@@ -220,6 +243,29 @@ export const validateProgression = (
 			// ★ 邊界範圍是否涵蓋實際資料數值 (例如年齡邊界設為 0~1，但真實資料介於 20~80)，
 			// 改回僅在 DifferentialPrivacyMapping.tsx 頁面內顯示橘色警告提示，不在此處阻擋跳轉——
 			// 加噪前仍會依邊界裁剪，使用者可自行評估是否要擴大邊界範圍或維持現狀，不視為硬性錯誤。
+		}
+
+		// ★ 2026-10-05 第 2 級檢查：設為數值／日期的欄位，實際資料中不可有無法轉換的值（否則後端必定 422）。
+		//   K-匿名：間接識別碼與敏感欄位（會被實際運算的欄位）；差分隱私：已啟用的連續數值型（含日期時間）。
+		const declaredTypedColumnsList: DeclaredTypedColumn[] = currentPrivacyModeTypeStr === 'k-anonymity'
+			? ((currentWorkspaceStoreStateData.kAnonymityFields || []) as Array<Record<string, unknown>>)
+				.filter((fieldRecord) => (fieldRecord.role === 'Quasi-identifier' || fieldRecord.role === 'Sensitive') && (fieldRecord.type === 'numeric' || fieldRecord.type === 'temporal'))
+				.map((fieldRecord) => ({ columnName: String(fieldRecord.name || ''), kind: fieldRecord.type === 'temporal' ? 'date' as const : 'numeric' as const }))
+			: (currentDpFieldsListArray || [])
+				.filter((dpFieldItemRecord) => dpFieldItemRecord.enabled && dpFieldItemRecord.fieldType === 'Numeric')
+				.map((dpFieldItemRecord) => ({ columnName: dpFieldItemRecord.fieldName, kind: resolveIsDateTimeDpField(dpFieldItemRecord) ? 'date' as const : 'numeric' as const }));
+		const declaredTypeConflictsList = findDeclaredTypeConflicts(declaredTypedColumnsList, currentWorkspaceStoreStateData.datasetProfile);
+		if (declaredTypeConflictsList.length > 0)
+		{
+			const firstConflict = declaredTypeConflictsList[0];
+			const typeLabel = firstConflict.kind === 'numeric' ? translateFunction('message.type_label_numeric', '數值') : translateFunction('message.type_label_date', '日期');
+			const examplesText = firstConflict.examples.map((value) => `「${value}」`).join('、');
+			const otherColumnsText = declaredTypeConflictsList.length > 1
+				? translateFunction('message.type_conflict_others', { names: declaredTypeConflictsList.slice(1).map((conflictItem) => `「${conflictItem.columnName}」`).join('、') })
+				: '';
+			return firstConflict.badCount !== undefined
+				? translateFunction('message.type_conflict_counted', { column: firstConflict.columnName, type: typeLabel, count: firstConflict.badCount, examples: examplesText, others: otherColumnsText })
+				: translateFunction('message.type_conflict', { column: firstConflict.columnName, type: typeLabel, examples: examplesText, others: otherColumnsText });
 		}
 	}
 

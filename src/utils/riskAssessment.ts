@@ -421,9 +421,15 @@ export const mergeWorstCaseAttackReport = (
     };
 };
 
-/** CAP：cap_before／cap_after 各自取最大值；其餘欄位取 cap_after 最高的那一輪 */
+/**
+ * CAP：cap_before／cap_after 各自取最大值；其餘欄位取「最危險」的那一輪。
+ * ★ 2026-10-06：有前端算的扣除基線值（cap_after_excess）時以它比較——各敏感欄位的亂猜基線不同，
+ *   cap_after 最高的欄位不一定是超出亂猜最多的；基線與扣除值一律跟著最危險那一輪走。
+ */
+const resolveCapSeverity = (report: CapReport): number =>
+    typeof report.cap_after_excess === 'number' ? report.cap_after_excess : report.cap_after;
 export const mergeWorstCaseCapReport = (worstCaseReport: CapReport | null, thisRoundReport: CapReport): CapReport => {
-    const isThisRoundNewWorstCapCase: boolean = !worstCaseReport || thisRoundReport.cap_after > worstCaseReport.cap_after;
+    const isThisRoundNewWorstCapCase: boolean = !worstCaseReport || resolveCapSeverity(thisRoundReport) > resolveCapSeverity(worstCaseReport);
     return {
         ...(isThisRoundNewWorstCapCase ? thisRoundReport : worstCaseReport!),
         cap_before: Math.max(worstCaseReport?.cap_before ?? -Infinity, thisRoundReport.cap_before),

@@ -7,8 +7,8 @@
  * ============================================================================
  */
 
-import React from 'react';
-import { Card, Table, Select, Input, InputNumber, Button, Typography, theme, Space, Alert, Tooltip } from 'antd';
+import React, { useEffect, useRef } from 'react';
+import { Card, Table, Input, InputNumber, Button, Typography, theme, Space, Alert, Tooltip } from 'antd';
 import { ToolOutlined, SafetyOutlined, ArrowRightOutlined, LockOutlined, PlusCircleOutlined, MinusCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -17,8 +17,10 @@ import { applyPreprocessSteps } from '../../utils/preprocessSteps';
 import { useAuthStore } from '../../store/useAuthStore';
 
 import KAnonymityMapping from './KAnonymityMapping';
+import AdaptivePopupSelect, { type DropdownPopupMode } from './AdaptivePopupSelect';
 import DifferentialPrivacyMapping from './DifferentialPrivacyMapping';
 
+import { scaleFontSize } from '../../utils/fontScale';
 const { Text } = Typography;
 
 /**
@@ -32,50 +34,33 @@ const DEFAULT_SLICE_COUNT = 1;
 const DEFAULT_ANCHOR_KEEP_COUNT = 0;
 
 /**
- * 下拉選單彈出方向固定設定 (僅允許向下展開)
- * 規範對照: 修正「缺失值處理」與「Cleansing Strategy」欄位下拉選單因預設向上翻轉 (flip)
- *           而與表格標題列重疊、造成跑版之顯示問題。adjustX 保留為 true 以允許水平微調，
- *           adjustY 設為 false 以停用向上翻轉，確保選單固定往下展開。
+ * 表格下拉選單展開方式規則 (2026-10-07 調整，元件實作見 AdaptivePopupSelect.tsx)
+ * 共通: 選單一律掛載於表格內部捲動區內，只在表格範圍內顯示，不會蓋到表格以外的版面。
+ * - 欄位數 ≤ COMPACT_TABLE_MAX_ROW_COUNT (5)：「精簡模式」—— 表格捲動區保留固定最小高度
+ *   (PREPROCESS_TABLE_SCROLL_HEIGHT_PX) 作為選單空間；開啟選單時即時量測上下方空間，
+ *   往空間大的一側展開，清單高度不超過該空間 (選項過多時於選單內捲動)。
+ * - 欄位數 > 5：倒數 DROPDOWN_UPWARD_TAIL_ROW_COUNT (5) 列向上展開，其餘向下展開；
+ *   但該列上方不足 DROPDOWN_UPWARD_MIN_ROWS_ABOVE (3) 列時 (例如欄位數為 6、7 時
+ *   最上面幾列)，上方空間不夠放選單，仍維持向下展開。
  */
-const SELECT_DROPDOWN_DOWNWARD_ONLY_PLACEMENTS = {
-    bottomLeft: {
-        points: ['tl', 'bl'],
-        offset: [0, 4],
-        overflow: { adjustX: true, adjustY: false }
-    }
-};
+const COMPACT_TABLE_MAX_ROW_COUNT = 5;
+const DROPDOWN_UPWARD_TAIL_ROW_COUNT = 5;
+const DROPDOWN_UPWARD_MIN_ROWS_ABOVE = 3;
+const PREPROCESS_TABLE_SCROLL_HEIGHT_PX = 250;
 
 /**
- * 函數名稱: resolveTableScrollAreaAsPopupContainer
- * 函數功能: 讓下拉選單改為掛載於表格自身可捲動的內容區塊 (`.ant-table-body`) 內，
- *           而非預設掛載於 document.body，並確保該容器具備正確的定位基準。
- * 規範對照: 修正「資料預先處理」表格因設定 `scroll={{ y: 250 }}` 產生內部捲動區後，
- *           使用滑鼠滾輪捲動表格內容時，下拉選單會浮貼在畫面上、蓋住表格自身固定
- *           標題列 (甚至頁面標題)，造成跑版的問題。
- *           第一次修正僅將掛載容器改為 `.ant-table-body`，但該容器預設 position: static，
- *           導致掛載其中的選單因找不到已定位祖先而相對於更外層定位，位置嚴重偏移，
- *           問題依然存在；本次額外於此明確賦予該容器 position: relative 才徹底修正。
- *           找不到該容器時 (理論上不會發生) 則退回 document.body。
+ * 函數名稱: resolveDropdownPopupModeForRow
+ * 函數功能: 依列索引與總列數決定該列下拉選單之展開方式。
  */
-const resolveTableScrollAreaAsPopupContainer = (triggerDomNode: HTMLElement): HTMLElement =>
+const resolveDropdownPopupModeForRow = (rowIndexNumber: number, totalRowCount: number): DropdownPopupMode =>
 {
-    const tableScrollAreaElement = triggerDomNode.closest('.ant-table-body') as HTMLElement | null;
-    if (!tableScrollAreaElement)
+    if (totalRowCount <= COMPACT_TABLE_MAX_ROW_COUNT)
     {
-        return document.body;
+        return 'compact';
     }
-
-    // 關鍵修正: AntD 表格內部捲動容器 (.ant-table-body) 本身預設為 position: static，
-    // 並非已定位 (positioned) 的祖先元素。若不處理，掛載於其內部、以 position: absolute
-    // 呈現的下拉選單，會因找不到最近的已定位祖先，而相對於更外層 (甚至整個頁面) 定位，
-    // 導致選單顯示位置嚴重偏移、飄到畫面上方蓋住標題列 (即使已改掛載於此容器內)。
-    // 因此在此明確賦予該容器 position: relative，建立正確的定位基準。
-    if (window.getComputedStyle(tableScrollAreaElement).position === 'static')
-    {
-        tableScrollAreaElement.style.position = 'relative';
-    }
-
-    return tableScrollAreaElement;
+    const isTailRowStatus = rowIndexNumber >= totalRowCount - DROPDOWN_UPWARD_TAIL_ROW_COUNT;
+    const hasEnoughRowsAboveStatus = rowIndexNumber >= DROPDOWN_UPWARD_MIN_ROWS_ABOVE;
+    return isTailRowStatus && hasEnoughRowsAboveStatus ? 'topLeft' : 'bottomLeft';
 };
 
 /**
@@ -89,6 +74,7 @@ interface MappingRecord
     steps: PreprocessingRule[];      // 該欄位依序執行之預處理策略清單 (至少 1 筆，由上而下依序套用)
     missingValueRule: MissingValueRule; // 該欄位之缺失值處理規則 (與 steps 互斥並存)
     sampleValue: string;             // 預覽樣本數據數值
+    dropdownPopupMode: DropdownPopupMode; // 該列下拉選單展開方式 (見 resolveDropdownPopupModeForRow)
 }
 
 // 欄位尚未設定任何策略時之預設策略清單 (符合規範 e) 避免使用不易理解之數字/字面量)
@@ -162,8 +148,10 @@ export default function Step2_Mapping(): React.ReactElement
      */
     const getFieldPreprocessSteps = (targetColumnNameStr: string): PreprocessingRule[] =>
     {
-        const existingStepsArray = preprocessingRulesMap[targetColumnNameStr];
-        return existingStepsArray && existingStepsArray.length > 0 ? existingStepsArray : DEFAULT_PREPROCESS_STEP_LIST;
+        // ★ 2026-10-05：欄位名稱為 constructor／toString 等時，直接取 map[名稱] 會拿到物件內建函式而崩潰；
+        //   改為只讀取自身屬性並確認是陣列。
+        const existingStepsArray = Object.prototype.hasOwnProperty.call(preprocessingRulesMap, targetColumnNameStr) ? preprocessingRulesMap[targetColumnNameStr] : undefined;
+        return Array.isArray(existingStepsArray) && existingStepsArray.length > 0 ? existingStepsArray : DEFAULT_PREPROCESS_STEP_LIST;
     };
 
     /**
@@ -171,7 +159,7 @@ export default function Step2_Mapping(): React.ReactElement
      * 函數功能: 取得指定欄位目前之缺失值處理規則；若尚未設定，則退回「不處理」。
      */
     const getFieldMissingValueRule = (targetColumnNameStr: string): MissingValueRule =>
-        missingValueRulesMap[targetColumnNameStr] || DEFAULT_MISSING_VALUE_RULE;
+        (Object.prototype.hasOwnProperty.call(missingValueRulesMap, targetColumnNameStr) ? missingValueRulesMap[targetColumnNameStr] : undefined) || DEFAULT_MISSING_VALUE_RULE;
 
     /**
      * 預處理動作參數欄位定義 (依動作種類決定所需之控制項類型與預設值)
@@ -293,13 +281,13 @@ export default function Step2_Mapping(): React.ReactElement
                     key: 'seedMode', type: 'select', label: translate('step2.param_hash_seed_mode', '鹽值 (Salt)'), defaultValue: 'none',
                     options: [
                         { value: 'none', label: translate('step2.hash_seed_none', '不添加鹽值') },
-                        { value: 'fixed', label: translate('step2.hash_seed_fixed', '固定種子') },
+                        { value: 'fixed', label: translate('step2.hash_seed_fixed', '自訂鹽值') },
                         // ★ 2026-10-02：「目前時間戳」改為「系統隨機鹽值」（時間戳可被猜測），舊設定的 'timestamp' 仍可讀取並視同隨機鹽值
                         { value: 'random', label: translate('step2.hash_seed_random', '系統隨機鹽值') }
                     ],
                     optionHintMap: {
                         none: translate('step2.hint_hash_seed_none', '效果：直接對原始值雜湊，同一個值永遠得到相同結果。適用情境：需跨批次比對同一個值（如流水號、代碼）時使用；但對手機、身分證字號等值域較小的欄位，仍有被查表反推的風險。'),
-                        fixed: translate('step2.hint_hash_seed_fixed', '效果：雜湊前加上一組固定字串（種子），同一種子下同一個值仍會得到相同結果。適用情境：需兼顧「跨批次比對」與「防止查表反推」時使用；種子須自行妥善保管，一旦外流即失去防護效果。'),
+                        fixed: translate('step2.hint_hash_seed_fixed', '效果：以您輸入的鹽值一起計算雜湊，同一個鹽值下，相同的值會得到相同結果。適用情境：需要「跨批次比對」又要「防止被查表反推」時使用；鹽值建議至少 16 個字元並妥善保管，一旦外流就會失去保護效果。'),
                         random: translate('step2.hint_hash_seed_random', '效果：系統自動產生一組無法猜測的隨機鹽值，本次操作內同一個值結果相同，重新整理頁面後即換新、不會保存。適用情境：只需遮蔽本批資料、不需要跨批次比對時使用，安全性最高，但無法與其他批次比對同一筆資料。')
                     }
                 },
@@ -343,7 +331,7 @@ export default function Step2_Mapping(): React.ReactElement
         forward: translate('step2.hint_fill_forward', '效果：用同一欄位「前一筆」資料的數值填補缺失。適用情境：資料具時間先後順序、且數值變化不大時（如感測器讀數）使用。'),
         backward: translate('step2.hint_fill_backward', '效果：用「後一筆」資料的數值回填缺失值。適用情境：時間序列資料、且後續數值可代表當下狀態時使用。'),
         interpolate: translate('step2.hint_fill_interpolate', '效果：依前後兩筆數值，以線性方式推算出中間的缺失值。適用情境：數值呈連續變化趨勢（如溫度、股價）時使用。'),
-        mean: translate('step2.hint_fill_mean', '效果：以該欄位所有已知數值的平均值填補缺失。適用情境：數值分布集中、無明顯時間關聯，且想避免極端值影響整體分析時使用。')
+        mean: translate('step2.hint_fill_mean', '效果：以該欄位所有已知數值的平均值填補缺失。適用情境：數值分布集中、沒有明顯極端值，且與時間順序無關時使用；若有極端值（例如少數特別高的薪資），平均值會被拉高或拉低，填入的數值會失真，請改用其他方式。')
     };
 
     const preprocessActionHintMap: Record<string, string> = {
@@ -502,12 +490,26 @@ export default function Step2_Mapping(): React.ReactElement
         });
     };
 
+    // 精簡模式 (欄位數 ≤ 5)：表格內容不足捲動高度時，替表格捲動區保留固定最小高度，
+    // 讓下拉選單有空間在表格範圍內展開，不會蓋到表格以外的版面。
+    const preprocessTableWrapperRef = useRef<HTMLDivElement>(null);
+    const isCompactPreprocessTableStatus = datasetColumnsList.length <= COMPACT_TABLE_MAX_ROW_COUNT;
+    useEffect(() =>
+    {
+        const tableScrollAreaElement = preprocessTableWrapperRef.current?.querySelector('.ant-table-body') as HTMLElement | null;
+        if (tableScrollAreaElement)
+        {
+            tableScrollAreaElement.style.minHeight = isCompactPreprocessTableStatus ? `${PREPROCESS_TABLE_SCROLL_HEIGHT_PX}px` : '';
+        }
+    }, [isCompactPreprocessTableStatus, datasetColumnsList.length]);
+
     // 轉換 Ant Design Table 呈現用之數據清單 (符合規範 g)
     const mappingTableDataList: MappingRecord[] = datasetColumnsList.map(
-        (columnNameString) =>
+        (columnNameString, columnIndexNumber) =>
         (
             {
                 key: columnNameString,
+                dropdownPopupMode: resolveDropdownPopupModeForRow(columnIndexNumber, datasetColumnsList.length),
                 name: columnNameString,
                 steps: getFieldPreprocessSteps(columnNameString),
                 missingValueRule: getFieldMissingValueRule(columnNameString),
@@ -520,12 +522,12 @@ export default function Step2_Mapping(): React.ReactElement
      * 函數名稱: renderPreprocessParamControl
      * 函數功能: 依據參數欄位定義之類型 (select／number／text)，渲染對應之表單控制項。
      */
-    const renderPreprocessParamControl = (paramFieldDefItem: PreprocessParamFieldDef, currentParamsDict: Record<string, string | number>, onValueChange: (newValueData: string | number) => void): React.ReactElement =>
+    const renderPreprocessParamControl = (paramFieldDefItem: PreprocessParamFieldDef, currentParamsDict: Record<string, string | number>, onValueChange: (newValueData: string | number) => void, dropdownPopupModeValue: DropdownPopupMode = 'bottomLeft'): React.ReactElement =>
     {
         if (paramFieldDefItem.type === 'select')
         {
             return (
-                <Select
+                <AdaptivePopupSelect
                     size="small"
                     value={String(currentParamsDict[paramFieldDefItem.key] ?? paramFieldDefItem.defaultValue)}
                     onChange={(selectedValueStr) => onValueChange(selectedValueStr)}
@@ -538,9 +540,7 @@ export default function Step2_Mapping(): React.ReactElement
                             ? (optionItem) => renderSelectOptionWithHint(optionItem.label, paramFieldDefItem.optionHintMap?.[String(optionItem.data.value)])
                             : undefined
                     }
-                    placement="bottomLeft"
-                    builtinPlacements={SELECT_DROPDOWN_DOWNWARD_ONLY_PLACEMENTS}
-                    getPopupContainer={resolveTableScrollAreaAsPopupContainer}
+                    popupMode={dropdownPopupModeValue}
                 />
             );
         }
@@ -623,7 +623,7 @@ export default function Step2_Mapping(): React.ReactElement
             width: '15%',
             render: (_: unknown, rowRecordItem: MappingRecord) => (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <Select
+                    <AdaptivePopupSelect
                         size="small"
                         value={rowRecordItem.missingValueRule.strategy}
                         onChange={(selectedStrategyStr) => handleMissingValueStrategyChange(rowRecordItem.name, selectedStrategyStr)}
@@ -631,9 +631,7 @@ export default function Step2_Mapping(): React.ReactElement
                         style={{ width: '100%' }}
                         options={missingValueStrategyOptionList}
                         optionRender={(optionItem) => renderSelectOptionWithHint(optionItem.label, missingValueStrategyHintMap[String(optionItem.data.value)])}
-                        placement="bottomLeft"
-                        builtinPlacements={SELECT_DROPDOWN_DOWNWARD_ONLY_PLACEMENTS}
-                        getPopupContainer={resolveTableScrollAreaAsPopupContainer}
+                        popupMode={rowRecordItem.dropdownPopupMode}
                     />
 
                     {rowRecordItem.missingValueRule.strategy === 'constant' && (
@@ -648,7 +646,7 @@ export default function Step2_Mapping(): React.ReactElement
                     )}
 
                     {rowRecordItem.missingValueRule.strategy === 'fill' && (
-                        <Select
+                        <AdaptivePopupSelect
                             size="small"
                             value={rowRecordItem.missingValueRule.fillMethod ?? 'mean'}
                             onChange={(selectedFillMethodStr) => handleMissingValueParamChange(rowRecordItem.name, 'fillMethod', selectedFillMethodStr)}
@@ -656,9 +654,7 @@ export default function Step2_Mapping(): React.ReactElement
                             style={{ width: '100%' }}
                             options={fillMethodOptionList}
                             optionRender={(optionItem) => renderSelectOptionWithHint(optionItem.label, fillMethodHintMap[String(optionItem.data.value)])}
-                            placement="bottomLeft"
-                            builtinPlacements={SELECT_DROPDOWN_DOWNWARD_ONLY_PLACEMENTS}
-                            getPopupContainer={resolveTableScrollAreaAsPopupContainer}
+                            popupMode={rowRecordItem.dropdownPopupMode}
                         />
                     )}
                 </div>
@@ -685,7 +681,7 @@ export default function Step2_Mapping(): React.ReactElement
                             return (
                                 <div key={stepIndexNumber} style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: stepRowMinHeightPx }}>
                                     <Tooltip title={isStepLockedByPriorHashStatus ? translate('step2.strategy_locked_by_hash', '此步驟前方已套用「雜湊」，雜湊為不可逆之最終處理，其後不可再串接其他策略。') : ''}>
-                                        <Select
+                                        <AdaptivePopupSelect
                                             value={stepItemRecord.action}
                                             onChange={(selectedDropdownAction) => handleStepActionChange(rowRecordItem.name, stepIndexNumber, selectedDropdownAction)}
                                             disabled={!isUserAllowedToEditRulesStatus || isStepLockedByPriorHashStatus}
@@ -695,9 +691,7 @@ export default function Step2_Mapping(): React.ReactElement
                                                     .map((actionDefItem) => ({ value: actionDefItem.value, label: actionDefItem.label }))
                                             }
                                             optionRender={(optionItem) => renderSelectOptionWithHint(optionItem.label, preprocessActionHintMap[String(optionItem.data.value)])}
-                                            placement="bottomLeft"
-                                            builtinPlacements={SELECT_DROPDOWN_DOWNWARD_ONLY_PLACEMENTS}
-                                            getPopupContainer={resolveTableScrollAreaAsPopupContainer}
+                                            popupMode={rowRecordItem.dropdownPopupMode}
                                         />
                                     </Tooltip>
 
@@ -749,7 +743,8 @@ export default function Step2_Mapping(): React.ReactElement
                                                 {renderPreprocessParamControl(
                                                     paramFieldDefItem,
                                                     stepItemRecord.params,
-                                                    (newValueData) => handleStepParamChange(rowRecordItem.name, stepIndexNumber, paramFieldDefItem.key, newValueData)
+                                                    (newValueData) => handleStepParamChange(rowRecordItem.name, stepIndexNumber, paramFieldDefItem.key, newValueData),
+                                                    rowRecordItem.dropdownPopupMode
                                                 )}
                                             </div>
                                         )
@@ -782,7 +777,7 @@ export default function Step2_Mapping(): React.ReactElement
                     return (
                         <Space style={{ display: 'flex', flexWrap: 'wrap' }}>
                             <Text type="secondary" delete>{originalSampleTextValue}</Text>
-                            <ArrowRightOutlined style={{ color: token.colorWarning, fontSize: 12 }} />
+                            <ArrowRightOutlined style={{ color: token.colorWarning, fontSize: scaleFontSize(12) }} />
                             <Text style={{ color: token.colorWarning, fontWeight: 600 }}>{missingPreviewTextStr}</Text>
                         </Space>
                     );
@@ -795,7 +790,7 @@ export default function Step2_Mapping(): React.ReactElement
                 return (
                     <Space style={{ display: 'flex', flexWrap: 'wrap' }}>
                         <Text type="secondary" delete={isContentModifiedStatus}>{originalSampleTextValue}</Text>
-                        {isContentModifiedStatus && <ArrowRightOutlined style={{ color: token.colorPrimary, fontSize: 12 }} />}
+                        {isContentModifiedStatus && <ArrowRightOutlined style={{ color: token.colorPrimary, fontSize: scaleFontSize(12) }} />}
                         {isContentModifiedStatus && <Text style={{ color: token.colorPrimary, fontWeight: 600 }}>{processedSampleTextValue}</Text>}
                     </Space>
                 );
@@ -827,7 +822,9 @@ export default function Step2_Mapping(): React.ReactElement
                     title={translate('step2.preprocess_backend_pending_title', '此功能後端開發中')}
                     description={translate('step2.preprocess_backend_pending_desc', '目前設定僅供預覽，不會套用到去識別化結果。')}
                 />
-                <Table dataSource={mappingTableDataList} columns={preprocessTableColumnsConfig} pagination={false} size="small" bordered={false} rowKey="key" scroll={{ y: 250 }} style={{ background: isDarkModeActive ? '#141414' : '#fafafa', borderRadius: 8, border: `1px solid ${token.colorBorderSecondary}` }} />
+                <div ref={preprocessTableWrapperRef}>
+                <Table dataSource={mappingTableDataList} columns={preprocessTableColumnsConfig} pagination={false} size="small" bordered={false} rowKey="key" scroll={{ y: PREPROCESS_TABLE_SCROLL_HEIGHT_PX }} style={{ background: isDarkModeActive ? '#141414' : '#fafafa', borderRadius: 8, border: `1px solid ${token.colorBorderSecondary}` }} />
+                </div>
             </Card>
 
             {/* 第二階段：隱私強化技術設定 */}

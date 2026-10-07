@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, Table, Select, Button, Input, InputNumber, Segmented, theme, Tabs, Space, Popconfirm, Tooltip, TimePicker, App as AntdApp, Alert } from 'antd';
 import {
-    UploadOutlined, DeleteOutlined, PlusOutlined,
+    UploadOutlined, DeleteOutlined, PlusOutlined, MinusOutlined,
     SaveOutlined, DatabaseOutlined, SisternodeOutlined,
     CodeOutlined, ThunderboltOutlined, QuestionCircleOutlined, CopyOutlined,
     EyeOutlined, EyeInvisibleOutlined, CheckCircleOutlined, WarningOutlined, InfoCircleOutlined
@@ -20,18 +20,23 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
+import { findHierarchyTableProblems, describeHierarchyRowProblem } from '../../utils/hierarchyTableValidation';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
 import { resolveImportedLtSettings, normalizeImportedQiLevel, buildQiLevelValue, extractImportedCellFillValues } from '../../utils/kAnonymityConfigImport';
 import { TEMPORAL_GRANULARITY_UNITS, TEMPORAL_DEFAULT_GRANULARITY_LEVEL, temporalUnitOfLevel, resolveImportedTemporalLevel } from '../../utils/temporalGranularity';
 import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, findNumericMinMax, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
+import { detectConfigPrivacyMode } from '../../utils/configModeDetect';
+import { buildDatasetColumnNameSet, isFieldNameInDataset, findFieldsNotInDataset, findDatasetColumnsNotConfigured, countBlankFieldNames, describeFieldsNotInDatasetError, describeBlankFieldNamesError, normalizeDatasetColumnName } from '../../utils/datasetFieldConsistency';
 
+import { scaleFontSize } from '../../utils/fontScale';
 // ★ 2026-10-02：使用者要求「後端處理報告明細」及其相關功能一律不顯示。「最大層級」的「評估至／試算層級」
 //   （qi_generalization_levels 的上限，只用於後端報告的試算建議、不影響實際輸出）一併隱藏；
 //   匯入設定檔帶入的上限仍會保留並照原樣送出。日後恢復時改回 true（並同時開啟 Step4_Result.tsx 的
 //   SHOW_BACKEND_REPORT_DETAILS）。
-const SHOW_LEVEL_RANGE_TRIAL = false;
+// （匯出供單元測試依此開關判斷畫面是否應顯示試算提示，不影響元件行為）
+export const SHOW_LEVEL_RANGE_TRIAL = false;
 
 /**
  * ============================================================================
@@ -43,6 +48,8 @@ const DEFAULT_MASK_KEEP_CHARS = 2;
 const DEFAULT_GENERALIZATION_PARAM = 10;
 const DEFAULT_MAX_GENERALIZATION_LEVEL = 2;
 const MIN_HIERARCHY_COLUMN_COUNT = 2;
+// ★ 2026-10-05：類別階層對照表最多泛化層級數（不含原始值欄）
+const MAX_HIERARCHY_LEVEL_COUNT = 10;
 // ★ 新增：使用者反映「數值區間化」缺少初步自動填入，故提供「系統推薦設定」——依實際資料
 // 最小/最大值，選擇「平均分配」(指定區間數量，等寬切分) 或「最小單位」(指定單位寬度，
 // 自動疊加至涵蓋最大值) 兩種模式，自動產生 customBins 陣列供使用者後續手動微調。
@@ -413,6 +420,45 @@ const buildSpecCompliantPreviewJSON = (fieldsList: FieldDef[], hierarchiesList: 
         kAnonymityHierarchies: hierarchiesList
     }) ?? {};
 
+// ★ 2026-10-05：輸入長度上限（使用者要求，避免輸入過長造成畫面錯誤）。
+//   泛化階層對照之原始值／各層分類名稱、數值與時間自訂區間之顯示標籤：15 字
+//   （實際資料集類別值最長約 3～5 字，15 字已足夠）；欄位名稱：50 字。
+const HIERARCHY_CELL_MAX_LENGTH = 15;
+const CUSTOM_BIN_LABEL_MAX_LENGTH = 15;
+const FIELD_NAME_MAX_LENGTH = 50;
+
+/**
+ * 函數名稱: buildInitialKAnonymityFieldForColumn
+ * 函數功能: 依資料欄位名稱與 Store 中既有之型態／角色，建立該欄位之預設 K-匿名設定列。
+ *           (初始化欄位清單、「新增定義欄位」、「補上缺漏欄位」三處共用。)
+ */
+const buildInitialKAnonymityFieldForColumn = (columnNameString: string, storeColumnTypesMap: Record<string, string>, storeColumnRolesMap: Record<string, string>): FieldDef => {
+    const typeValueStr = storeColumnTypesMap[columnNameString];
+    let mappedFieldTypeValue = 'string';
+    
+    if (typeValueStr === '數值' || typeValueStr === 'numeric') mappedFieldTypeValue = 'numeric';
+    else if (typeValueStr === '時間' || typeValueStr === 'temporal') mappedFieldTypeValue = 'temporal';
+    else if (typeValueStr === '類別' || typeValueStr === 'categorical') mappedFieldTypeValue = 'categorical';
+
+    const initialRoleValue = storeColumnRolesMap[columnNameString] || 'Non-sensitive';
+
+    return {
+        id: `field_${Math.random().toString(36).substr(2, 9)}`,
+        name: columnNameString,
+        type: mappedFieldTypeValue,
+        role: initialRoleValue,
+        // 規範對照: 依 Open-PETs API 驗證標準，identifier 之預設策略為 hash，其餘角色為 none
+        maskStrategy: DEFAULT_MASK_STRATEGY_BY_ROLE[initialRoleValue] || 'none',
+        maskKeepChars: DEFAULT_MASK_KEEP_CHARS,
+        maskChar: '*',
+        hashType: 'SHA256', 
+        genStrategy: resolveDefaultGenStrategyForType(mappedFieldTypeValue),
+        genParam: mappedFieldTypeValue === 'string' ? DEFAULT_MASK_KEEP_CHARS : DEFAULT_GENERALIZATION_PARAM,
+        genMaxLevel: DEFAULT_MAX_GENERALIZATION_LEVEL,
+        genDirection: 'front' as const
+    };
+};
+
 let globalCachedKAnonymityFields: FieldDef[] | null = null;
 let globalCachedKAnonymityHierarchies: HierarchyTable[] | null = null;
 let globalCachedColumnsKeyString: string = '';
@@ -524,6 +570,21 @@ export default function KAnonymityMapping(): React.ReactElement
             return;
         }
 
+        // ★ 2026-10-07：欄位清單須與上傳資料一致。資料中不存在的欄位 (匯入設定檔或手動新增) 在 Step4
+        //   組設定檔時會被直接丟掉，但這裡的敏感欄位數、QI 判斷仍會把它算進去，造成畫面設定與實際
+        //   送出不一致；尚未選擇欄位名稱的空白列同理。兩者皆阻擋下一步。規則見 utils/datasetFieldConsistency.ts。
+        const configuredFieldNamesList = kAnonymityFieldsList.map((fieldItemRecord) => fieldItemRecord.name);
+        const blankFieldNameCount = storeColumnsList.length > 0 ? countBlankFieldNames(configuredFieldNamesList) : 0;
+        if (blankFieldNameCount > 0) {
+            setStepValidationAction(false, translate('step2.blank_field_name_error', describeBlankFieldNamesError(blankFieldNameCount)));
+            return;
+        }
+        const fieldsNotInDatasetNamesList = findFieldsNotInDataset(configuredFieldNamesList, storeColumnsList);
+        if (fieldsNotInDatasetNamesList.length > 0) {
+            setStepValidationAction(false, describeFieldsNotInDatasetError(fieldsNotInDatasetNamesList));
+            return;
+        }
+
         let validationErrorMessageString = null;
 
         for (const fieldItemRecord of kAnonymityFieldsList) {
@@ -542,6 +603,15 @@ export default function KAnonymityMapping(): React.ReactElement
 
                     if (!hasValidTreeMappingStatus) {
                         validationErrorMessageString = `欄位 [${fieldItemRecord.name}] 選擇「階層樹 (Tree)」泛化，請至「泛化階層映射」分頁設定至少一組有效的對應關係。`;
+                        break;
+                    }
+
+                    // ★ 2026-10-06：逐列防呆（原始值空白、中間層空白、原始值重複、未填到選用層級），
+                    //   規則見 utils/hierarchyTableValidation.ts。畫面上對應格子會標紅框。
+                    const hierarchyRowProblemsList = findHierarchyTableProblems(targetHierarchyTableRecord!.mappings, fieldItemRecord.genMaxLevel);
+                    if (hierarchyRowProblemsList.length > 0) {
+                        const otherProblemsText = hierarchyRowProblemsList.length > 1 ? `（另有 ${hierarchyRowProblemsList.length - 1} 處問題，已用紅框標示）` : '';
+                        validationErrorMessageString = `「泛化階層對照」分頁的「${fieldItemRecord.name}」對照表：${describeHierarchyRowProblem(hierarchyRowProblemsList[0], fieldItemRecord.genMaxLevel)}${otherProblemsText}。請修正後再進入下一步。`;
                         break;
                     }
                 } else if (fieldItemRecord.genStrategy === 'custom_bins' || fieldItemRecord.genStrategy === 'time_range') {
@@ -619,7 +689,7 @@ export default function KAnonymityMapping(): React.ReactElement
         //   （上段「0 個不擋」的規則就此改為「0 個要擋」；2 個以上仍不擋）。
         //   角色為「敏感欄位」但處理方式選「移除」者不算數：後端去識別化會把該欄自輸出刪除
         //   （pipeline.py 角色清單只取仍存在於 df_out 的欄位），l/t 檢測與三攻擊／CAP 都拿不到它。
-        const sensitiveFieldsList = kAnonymityFieldsList.filter((fieldItemRecord) => fieldItemRecord.role === 'Sensitive');
+        const sensitiveFieldsList = kAnonymityFieldsList.filter((fieldItemRecord) => fieldItemRecord.role === 'Sensitive' && isFieldNameInDataset(fieldItemRecord.name, buildDatasetColumnNameSet(storeColumnsList)));
         const keptSensitiveFieldsCountNumber = sensitiveFieldsList.filter((fieldItemRecord) => fieldItemRecord.maskStrategy !== 'remove').length;
         if (sensitiveFieldsList.length === 0) {
             setStepValidationAction(false, translate('step2.error_require_sensitive', '請至少將一個欄位的角色設為「敏感欄位」（例如疾病、收入區間）才能進入下一步。'));
@@ -637,32 +707,7 @@ export default function KAnonymityMapping(): React.ReactElement
         const currentColumnNamesKeyString = JSON.stringify(storeColumnsList);
 
         if (storeColumnsList.length > 0 && globalCachedColumnsKeyString !== currentColumnNamesKeyString) {
-            const constructedInitialFieldsList = storeColumnsList.map((columnNameString) => {
-                const typeValueStr = storeColumnTypesMap[columnNameString];
-                let mappedFieldTypeValue = 'string';
-                
-                if (typeValueStr === '數值' || typeValueStr === 'numeric') mappedFieldTypeValue = 'numeric';
-                else if (typeValueStr === '時間' || typeValueStr === 'temporal') mappedFieldTypeValue = 'temporal';
-                else if (typeValueStr === '類別' || typeValueStr === 'categorical') mappedFieldTypeValue = 'categorical';
-
-                const initialRoleValue = storeColumnRolesMap[columnNameString] || 'Non-sensitive';
-
-                return {
-                    id: `field_${Math.random().toString(36).substr(2, 9)}`,
-                    name: columnNameString,
-                    type: mappedFieldTypeValue,
-                    role: initialRoleValue,
-                    // 規範對照: 依 Open-PETs API 驗證標準，identifier 之預設策略為 hash，其餘角色為 none
-                    maskStrategy: DEFAULT_MASK_STRATEGY_BY_ROLE[initialRoleValue] || 'none',
-                    maskKeepChars: DEFAULT_MASK_KEEP_CHARS,
-                    maskChar: '*',
-                    hashType: 'SHA256', 
-                    genStrategy: resolveDefaultGenStrategyForType(mappedFieldTypeValue),
-                    genParam: mappedFieldTypeValue === 'string' ? DEFAULT_MASK_KEEP_CHARS : DEFAULT_GENERALIZATION_PARAM,
-                    genMaxLevel: DEFAULT_MAX_GENERALIZATION_LEVEL,
-                    genDirection: 'front' as const
-                };
-            });
+            const constructedInitialFieldsList = storeColumnsList.map((columnNameString) => buildInitialKAnonymityFieldForColumn(columnNameString, storeColumnTypesMap, storeColumnRolesMap));
 
             globalCachedColumnsKeyString = currentColumnNamesKeyString;
             globalCachedKAnonymityFields = constructedInitialFieldsList;
@@ -849,6 +894,12 @@ export default function KAnonymityMapping(): React.ReactElement
                 const cleanedJsonString = rawJsonString.replace(/^\uFEFF/, '').trim();
                 const parsedJsonContentData = JSON.parse(cleanedJsonString);
 
+                // ★ 2026-10-02：差分隱私設定檔不可匯入 K-匿名頁面（先前會退回讀取 field_attributes 而「成功匯入」）
+                if (detectConfigPrivacyMode(parsedJsonContentData) === 'differential-privacy') {
+                    messageApi.error(translate('message.import_json_mode_mismatch_dp', '此設定檔為「差分隱私」模式，無法匯入 K-匿名化欄位設定。請改用 K-匿名化設定檔，或回到 Step1 切換為差分隱私模式後再匯入。'));
+                    return;
+                }
+
                 // ★ 相容 Open-PETs API v1.2.0「大包」格式：交付包 config_kanon.json 把 k、l、t、
                 //   suppression_method、columns、generalization_hierarchies／matrices、
                 //   qi_generalization_levels 全部包在同一個 k_anonymity 區塊底下，而不是舊版匯出格式
@@ -985,7 +1036,11 @@ export default function KAnonymityMapping(): React.ReactElement
                 const updatedKAnonymityFieldsList: FieldDef[] = [];
                 const updatedColumnRolesMap: Record<string, string> = {};
                 const updatedColumnTypesMap: Record<string, string> = {};
-                const importedColumnNamesList: string[] = Object.keys(importedAttributesMap);
+                // ★ 2026-10-07：已上傳資料時，只匯入資料中存在的欄位；其餘略過並於匯入後提示。
+                const allImportedColumnNamesList: string[] = Object.keys(importedAttributesMap);
+                const importDatasetColumnNameSet = buildDatasetColumnNameSet(storeColumnsList);
+                const importedColumnNamesList: string[] = allImportedColumnNamesList.filter((columnNameString) => isFieldNameInDataset(columnNameString, importDatasetColumnNameSet));
+                const skippedImportedColumnNamesList: string[] = allImportedColumnNamesList.filter((columnNameString) => !isFieldNameInDataset(columnNameString, importDatasetColumnNameSet));
                 const unrecognizedStrategyColumnNamesList: string[] = [];
 
                 importedColumnNamesList.forEach((columnNameString) => {
@@ -1167,6 +1222,14 @@ export default function KAnonymityMapping(): React.ReactElement
                 setKAnonymityHierarchiesList(updatedHierarchiesListArray);
 
                 messageApi.success(translate('message.import_json_success', '成功匯入 JSON 設定並更新欄位對應！'));
+
+                if (skippedImportedColumnNamesList.length > 0) {
+                    messageApi.warning(translate('message.import_json_skipped_not_in_dataset', {
+                        count: skippedImportedColumnNamesList.length,
+                        names: skippedImportedColumnNamesList.join('、'),
+                        defaultValue: `已略過 ${skippedImportedColumnNamesList.length} 個資料中沒有的欄位：${skippedImportedColumnNamesList.join('、')}`
+                    }), 6);
+                }
 
                 if (unrecognizedStrategyColumnNamesList.length > 0) {
                     messageApi.warning(
@@ -1459,7 +1522,46 @@ export default function KAnonymityMapping(): React.ReactElement
         );
     };
 
-    const addField = (): void => setKAnonymityFieldsList([...kAnonymityFieldsList, { id: `field_${Date.now()}`, name: '', type: 'string', role: 'Quasi-identifier', maskStrategy: 'none', maskKeepChars: DEFAULT_MASK_KEEP_CHARS, maskChar: '*', hashType: 'SHA256', genStrategy: 'prefix', genParam: DEFAULT_GENERALIZATION_PARAM, genMaxLevel: STRING_PREFIX_STRATEGY_DEFAULT_LEVEL, genDirection: 'front' }]);
+    // ★ 2026-10-07：欄位清單與上傳資料之一致性 (見 utils/datasetFieldConsistency.ts)
+    const datasetColumnNameSet = useMemo(() => buildDatasetColumnNameSet(storeColumnsList), [storeColumnsList]);
+    const fieldsNotInDatasetNamesList = useMemo(
+        () => findFieldsNotInDataset(kAnonymityFieldsList.map((fieldItemRecord) => fieldItemRecord.name), storeColumnsList),
+        [kAnonymityFieldsList, storeColumnsList]
+    );
+    const datasetColumnsNotConfiguredList = useMemo(
+        () => findDatasetColumnsNotConfigured(kAnonymityFieldsList.map((fieldItemRecord) => fieldItemRecord.name), storeColumnsList),
+        [kAnonymityFieldsList, storeColumnsList]
+    );
+
+    // ★ 2026-10-07：「新增定義欄位」只能加回資料中尚未設定的欄位 (預設帶入第一個缺漏欄位，可再用下拉切換)；
+    //   全部欄位都已設定時按鈕停用。尚未上傳資料 (理論上不會進到 Step2) 時維持原本新增空白列的行為。
+    const addField = (): void => {
+        if (storeColumnsList.length > 0) {
+            const nextColumnNameString = datasetColumnsNotConfiguredList[0];
+            if (!nextColumnNameString) return;
+            setKAnonymityFieldsList([...kAnonymityFieldsList, buildInitialKAnonymityFieldForColumn(nextColumnNameString, storeColumnTypesMap, storeColumnRolesMap)]);
+            return;
+        }
+    setKAnonymityFieldsList([...kAnonymityFieldsList, { id: `field_${Date.now()}`, name: '', type: 'string', role: 'Quasi-identifier', maskStrategy: 'none', maskKeepChars: DEFAULT_MASK_KEEP_CHARS, maskChar: '*', hashType: 'SHA256', genStrategy: 'prefix', genParam: DEFAULT_GENERALIZATION_PARAM, genMaxLevel: STRING_PREFIX_STRATEGY_DEFAULT_LEVEL, genDirection: 'front' }]);
+    };
+
+    // 一鍵移除資料中不存在的欄位 (連同其階層對照表)
+    const removeFieldsNotInDataset = (): void => {
+        const removedFieldNameSet = new Set(fieldsNotInDatasetNamesList);
+        setKAnonymityFieldsList(kAnonymityFieldsList.filter((fieldItemRecord) => isFieldNameInDataset(fieldItemRecord.name, datasetColumnNameSet) || normalizeDatasetColumnName(fieldItemRecord.name) === ''));
+        setKAnonymityHierarchiesList((previousHierarchiesListArray) => previousHierarchiesListArray.filter((hierarchyItemRecord) => !removedFieldNameSet.has(normalizeDatasetColumnName(hierarchyItemRecord.fieldName))));
+        messageApi.success(translate('step2.removed_fields_not_in_dataset', { count: removedFieldNameSet.size, defaultValue: `已移除 ${removedFieldNameSet.size} 個資料中不存在的欄位` }));
+    };
+
+    // 一鍵補上資料中有、但設定清單尚未涵蓋的欄位 (以預設設定加入)
+    const addDatasetColumnsNotConfigured = (): void => {
+        if (datasetColumnsNotConfiguredList.length === 0) return;
+        setKAnonymityFieldsList([
+            ...kAnonymityFieldsList,
+            ...datasetColumnsNotConfiguredList.map((columnNameString) => buildInitialKAnonymityFieldForColumn(columnNameString, storeColumnTypesMap, storeColumnRolesMap))
+        ]);
+    };
+
 
     const removeField = (targetFieldIdStr: string): void => {
         const fieldObjectToRemove = kAnonymityFieldsList.find(fieldItemRecord => fieldItemRecord.id === targetFieldIdStr);
@@ -1603,14 +1705,36 @@ export default function KAnonymityMapping(): React.ReactElement
             render: (fieldNameTextValue: string, rowRecordItem: FieldDef) => {
                 const isDuplicatedFieldNameStatus = (duplicateFieldNameCountMap[fieldNameTextValue.trim()] || 0) >= 2;
                 return (
-                    <Tooltip title={isDuplicatedFieldNameStatus ? translate('step2.duplicate_field_name_tooltip', '名稱重複：系統依名稱比對設定，重複的名稱會導致角色／型態等設定被誤判，請修改其中一個名稱或刪除多餘的列。') : fieldNameTextValue} placement="topLeft" mouseEnterDelay={0.3}>
-                        <Input
-                            value={fieldNameTextValue}
-                            onChange={(inputChangeEvent) => handleFieldChange(rowRecordItem.id, 'name', inputChangeEvent.target.value)}
-                            placeholder="e.g. age"
-                            status={isDuplicatedFieldNameStatus ? 'error' : undefined}
-                            style={{ width: '100%', textOverflow: 'ellipsis' }}
-                        />
+                    <Tooltip title={isDuplicatedFieldNameStatus ? translate('step2.duplicate_field_name_tooltip', '名稱重複：系統依名稱比對設定，重複的名稱會導致角色／型態等設定被誤判，請修改其中一個名稱或刪除多餘的列。') : !isFieldNameInDataset(fieldNameTextValue, datasetColumnNameSet) ? translate('step2.field_not_in_dataset_tooltip', '上傳的資料中沒有這個欄位，執行時不會被處理。請刪除此列或改選資料中的欄位。') : fieldNameTextValue} placement="topLeft" mouseEnterDelay={0.3}>
+                        {storeColumnsList.length > 0 ? (
+                            // ★ 2026-10-07：欄位名稱改為只能從上傳資料的欄位中選擇 (排除其他列已設定者)，
+                            //   不能再自由輸入資料中不存在的名稱。資料中不存在的舊名稱 (例如匯入的設定) 仍顯示並標紅。
+                            <Select
+                                value={fieldNameTextValue || undefined}
+                                onChange={(selectedColumnNameStr: string) => handleFieldChange(rowRecordItem.id, 'name', selectedColumnNameStr)}
+                                placeholder={translate('step2.select_field_name_placeholder', '選擇欄位')}
+                                status={isDuplicatedFieldNameStatus || !isFieldNameInDataset(fieldNameTextValue, datasetColumnNameSet) ? 'error' : undefined}
+                                style={{ width: '100%' }}
+                                popupMatchSelectWidth={false}
+                                options={[
+                                    ...(fieldNameTextValue && !isFieldNameInDataset(fieldNameTextValue, datasetColumnNameSet)
+                                        ? [{ value: fieldNameTextValue, label: `${fieldNameTextValue}${translate('step2.field_not_in_dataset_suffix', '（資料中無此欄位）')}`, disabled: true }]
+                                        : []),
+                                    ...storeColumnsList
+                                        .filter((columnNameString) => normalizeDatasetColumnName(columnNameString) === normalizeDatasetColumnName(fieldNameTextValue) || !kAnonymityFieldsList.some((otherFieldItemRecord) => otherFieldItemRecord.id !== rowRecordItem.id && normalizeDatasetColumnName(otherFieldItemRecord.name) === normalizeDatasetColumnName(columnNameString)))
+                                        .map((columnNameString) => ({ value: columnNameString, label: columnNameString }))
+                                ]}
+                            />
+                        ) : (
+                            <Input
+                                value={fieldNameTextValue}
+                                maxLength={FIELD_NAME_MAX_LENGTH}
+                                onChange={(inputChangeEvent) => handleFieldChange(rowRecordItem.id, 'name', inputChangeEvent.target.value.slice(0, FIELD_NAME_MAX_LENGTH))}
+                                placeholder="e.g. age"
+                                status={isDuplicatedFieldNameStatus ? 'error' : undefined}
+                                style={{ width: '100%', textOverflow: 'ellipsis' }}
+                            />
+                        )}
                     </Tooltip>
                 );
             },
@@ -1632,10 +1756,10 @@ export default function KAnonymityMapping(): React.ReactElement
             dataIndex: 'role', width: 190,
             render: (privacyRoleTextValue: string, rowRecordItem: FieldDef) => (
                 <Select value={privacyRoleTextValue} onChange={(dropdownSelectedValue) => handleFieldChange(rowRecordItem.id, 'role', dropdownSelectedValue)} style={{ width: '100%' }}>
-                    <Select.Option value="Identifier"><span>{translate('step2.opt_identifier')}<Tooltip title={translate('step2.opt_identifier_tooltip', '本身就能直接指出特定個人，例如姓名、身分證字號，通常需完全去除或遮蔽。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} /></Tooltip></span></Select.Option>
-                    <Select.Option value="Quasi-identifier"><span>{translate('step2.opt_quasi')}<Tooltip title={translate('step2.opt_quasi_tooltip', '單獨看不會洩漏身分，但與其他欄位組合後可能被用來重新識別出個人，例如年齡、地區，需要泛化或模糊化。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} /></Tooltip></span></Select.Option>
-                    <Select.Option value="Sensitive"><span>{translate('step2.opt_sensitive')}<Tooltip title={translate('step2.opt_sensitive_tooltip', '極具分析價值，無法進行隱私強化技術，將完整保留並用於風險分析')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} /></Tooltip></span></Select.Option>
-                    <Select.Option value="Non-sensitive"><span>{translate('step2.opt_non_sensitive')}<Tooltip title={translate('step2.opt_non_sensitive_tooltip', '不屬於敏感資料、重新識別風險較低的一般欄位，通常可以保留不做特別處理。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} /></Tooltip></span></Select.Option>
+                    <Select.Option value="Identifier"><span>{translate('step2.opt_identifier')}<Tooltip title={translate('step2.opt_identifier_tooltip', '本身就能直接指出特定個人，例如姓名、身分證字號，會從輸出資料中整欄刪除。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} /></Tooltip></span></Select.Option>
+                    <Select.Option value="Quasi-identifier"><span>{translate('step2.opt_quasi')}<Tooltip title={translate('step2.opt_quasi_tooltip', '單獨看不會洩漏身分，但與其他欄位組合後可能被用來重新識別出個人，例如年齡、地區，需要泛化或模糊化。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} /></Tooltip></span></Select.Option>
+                    <Select.Option value="Sensitive"><span>{translate('step2.opt_sensitive')}<Tooltip title={translate('step2.opt_sensitive_tooltip', '最需要保護的內容（例如疾病），本身不做處理、完整保留，作為風險評估的保護對象。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} /></Tooltip></span></Select.Option>
+                    <Select.Option value="Non-sensitive"><span>{translate('step2.opt_non_sensitive')}<Tooltip title={translate('step2.opt_non_sensitive_tooltip', '不屬於敏感資料、重新識別風險較低的一般欄位，通常可以保留不做特別處理。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} /></Tooltip></span></Select.Option>
                 </Select>
             ),
         },
@@ -1655,7 +1779,7 @@ export default function KAnonymityMapping(): React.ReactElement
                     <span>
                         {labelNode}
                         <Tooltip title={tooltipText}>
-                            <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} />
+                            <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} />
                         </Tooltip>
                     </span>
                 );
@@ -1757,7 +1881,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                         ]}
                                     />
                                     <Tooltip title={translate('step2.string_prefix_level_note', '保留字數請至右側「保留字數」欄位設定，此處參數設定不影響結果')}>
-                                        <QuestionCircleOutlined style={{ color: token.colorTextDescription, cursor: 'help', fontSize: 14 }} />
+                                        <QuestionCircleOutlined style={{ color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(14) }} />
                                     </Tooltip>
                                 </Space>
                             );
@@ -1843,10 +1967,10 @@ export default function KAnonymityMapping(): React.ReactElement
                                     />
                                 </Space.Compact>
                                 <Tooltip title={translate('step2.level_range_tooltip', '選填。資料仍會依照目前選的層級處理；這裡可以再選一個更高的層級做「試算」，系統會估算改用那個層級時，有多少比例的資料因為太特殊、需要被刪除或遮蔽，結果列在結果頁下方「後端處理報告明細」的調整建議中，幫你判斷要不要把層級再調高。不填就不試算。')}>
-                                    <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} />
+                                    <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} />
                                 </Tooltip>
                                 {isCategoricalLevelRangeActiveStatus && (
-                                    <div style={{ fontSize: 11, color: token.colorTextDescription, marginTop: 2 }}>
+                                    <div style={{ fontSize: scaleFontSize(11), color: token.colorTextDescription, marginTop: 2 }}>
                                         {translate('step2.level_range_hint', { min: rowRecordItem.genMaxLevel, max: rowRecordItem.genLevelRangeUpper, defaultValue: `依層級 ${rowRecordItem.genMaxLevel} 處理；另試算層級 ${rowRecordItem.genLevelRangeUpper}` })}
                                     </div>
                                 )}
@@ -1880,7 +2004,7 @@ export default function KAnonymityMapping(): React.ReactElement
                         return (
                             <div>
                                 <Space size={6} align="center">
-                                    <span style={{ fontSize: 12, color: token.colorTextDescription, whiteSpace: 'nowrap' }}>
+                                    <span style={{ fontSize: scaleFontSize(12), color: token.colorTextDescription, whiteSpace: 'nowrap' }}>
                                         {translate('step2.keep_chars_label', '保留字數')}
                                     </span>
                                     <InputNumber
@@ -1892,7 +2016,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                         style={{ width: 80 }}
                                     />
                                 </Space>
-                                <div style={{ fontSize: 11, color: currentKeepCharsCountValue >= 3 ? '#faad14' : token.colorTextDescription, marginTop: 2 }}>
+                                <div style={{ fontSize: scaleFontSize(11), color: currentKeepCharsCountValue >= 3 ? '#faad14' : token.colorTextDescription, marginTop: 2 }}>
                                     {/* ★ 使用者反映：原本這句只寫「即從第 N+1 字開始去識別化」，讀起來像是「不管
                                         資料多短，前 N 字一定會維持原樣」的保證，容易讓人誤會——但後端規則是
                                         「原始字數 ≤ 保留字數」時一律整格全遮蔽（≤ 是含等於，不是只有「不夠 N 字」
@@ -1928,7 +2052,7 @@ export default function KAnonymityMapping(): React.ReactElement
                             <Segmented size="small" options={segmentedLevelOptionList} value={rowRecordItem.genMaxLevel} onChange={(selectedSegmentedLevelValue) => handleFieldChange(rowRecordItem.id, 'genMaxLevel', selectedSegmentedLevelValue as number)} block />
                             {isTemporalLevelRangeSupportedStatus && temporalRangeUpperOptionList.length > 0 && (
                                 <Space size={6} align="center" style={{ marginTop: 4 }}>
-                                    <span style={{ fontSize: 11, color: token.colorTextDescription, whiteSpace: 'nowrap' }}>
+                                    <span style={{ fontSize: scaleFontSize(11), color: token.colorTextDescription, whiteSpace: 'nowrap' }}>
                                         {translate('step2.level_range_upper_label', '評估至')}
                                         <Tooltip title={translate('step2.level_range_tooltip', '選填。資料仍會依照目前選的層級處理；這裡可以再選一個更高的層級做「試算」，系統會估算改用那個層級時，有多少比例的資料因為太特殊、需要被刪除或遮蔽，結果列在結果頁下方「後端處理報告明細」的調整建議中，幫你判斷要不要把層級再調高。不填就不試算。')}>
                                             <QuestionCircleOutlined style={{ marginLeft: 4, cursor: 'help' }} />
@@ -1958,8 +2082,56 @@ export default function KAnonymityMapping(): React.ReactElement
     const addHierarchyTable = (): void => setKAnonymityHierarchiesList([...kAnonymityHierarchiesList, { id: `h_${Date.now()}`, fieldName: '', mappings: [['', '']] }]);
     const removeHierarchyTable = (targetHierarchyTableIdStr: string): void => setKAnonymityHierarchiesList(kAnonymityHierarchiesList.filter(hierarchyItemRecord => hierarchyItemRecord.id !== targetHierarchyTableIdStr));
     const updateHierarchyField = (targetHierarchyTableIdStr: string, newFieldNameString: string): void => setKAnonymityHierarchiesList(kAnonymityHierarchiesList.map(hierarchyItemRecord => hierarchyItemRecord.id === targetHierarchyTableIdStr ? { ...hierarchyItemRecord, fieldName: newFieldNameString } : hierarchyItemRecord));
-    const addMappingRow = (targetHierarchyTableIdStr: string): void => setKAnonymityHierarchiesList(kAnonymityHierarchiesList.map(hierarchyItemRecord => { if (hierarchyItemRecord.id === targetHierarchyTableIdStr) { const columnCountValue = hierarchyItemRecord.mappings.length > 0 ? hierarchyItemRecord.mappings[0].length : 2; return { ...hierarchyItemRecord, mappings: [...hierarchyItemRecord.mappings, Array(columnCountValue).fill('')] }; } return hierarchyItemRecord; }));
-    const updateMappingCell = (targetHierarchyTableIdStr: string, targetRowIndexNumber: number, targetColIndexNumber: number, newCellValueString: string): void => setKAnonymityHierarchiesList(kAnonymityHierarchiesList.map(hierarchyItemRecord => { if (hierarchyItemRecord.id === targetHierarchyTableIdStr) { const newMappingsArrayData = [...hierarchyItemRecord.mappings]; const newRowArrayData = [...newMappingsArrayData[targetRowIndexNumber]]; newRowArrayData[targetColIndexNumber] = newCellValueString; if (targetColIndexNumber === newRowArrayData.length - 1 && newCellValueString !== '') newMappingsArrayData.forEach(mappingRowArray => mappingRowArray.push('')); newMappingsArrayData[targetRowIndexNumber] = newRowArrayData; return { ...hierarchyItemRecord, mappings: newMappingsArrayData }; } return hierarchyItemRecord; }));
+    const addMappingRow = (targetHierarchyTableIdStr: string): void => setKAnonymityHierarchiesList(kAnonymityHierarchiesList.map(hierarchyItemRecord => { if (hierarchyItemRecord.id === targetHierarchyTableIdStr) { const columnCountValue = Math.max(...hierarchyItemRecord.mappings.map(mappingRowArray => mappingRowArray.length), MIN_HIERARCHY_COLUMN_COUNT); return { ...hierarchyItemRecord, mappings: [...hierarchyItemRecord.mappings, Array(columnCountValue).fill('')] }; } return hierarchyItemRecord; }));
+    // ★ 2026-10-05 修正（使用者回報「泛化階層對照輸入值過長後整頁空白」）：
+    //   (1) 原寫法以閉包中的 kAnonymityHierarchiesList 計算新狀態，連續快速輸入時會以舊狀態覆蓋新狀態；
+    //       改用函式型更新 (prev => next)，每次都以最新狀態為基礎。
+    //   (2) 原寫法在最後一欄輸入時以 mappingRowArray.push('') 直接「改寫」既有列陣列（同一份陣列也被
+    //       模組快取 globalCachedKAnonymityHierarchies 與 Zustand store 引用），屬於直接突變 React 狀態；
+    //       改為產生新陣列。
+    //   (3) 單格輸入長度上限 HIERARCHY_CELL_MAX_LENGTH，超過即截斷（輸入框同時設 maxLength）。
+    //   (4) 使用者回報 Bug：原設計在「最後一欄」輸入時會自動替所有列再加一欄，於是在右下角輸入值
+    //       就一直冒出新的泛化層級（泛化 5、6、7…）。改為輸入時不自動加欄，層級數改由表格下方
+    //       「新增泛化層級／移除最後一層」按鈕明確控制（見 addHierarchyLevelColumn／removeLastHierarchyLevelColumn）。
+    const updateMappingCell = (targetHierarchyTableIdStr: string, targetRowIndexNumber: number, targetColIndexNumber: number, newCellValueString: string): void => {
+        const safeCellValueString = (newCellValueString ?? '').slice(0, HIERARCHY_CELL_MAX_LENGTH);
+        setKAnonymityHierarchiesList(previousHierarchiesListArray => previousHierarchiesListArray.map(hierarchyItemRecord => {
+            if (hierarchyItemRecord.id !== targetHierarchyTableIdStr) return hierarchyItemRecord;
+            if (!hierarchyItemRecord.mappings[targetRowIndexNumber]) return hierarchyItemRecord;
+            const newMappingsArrayData = hierarchyItemRecord.mappings.map((mappingRowArray, rowIndexNumber) => {
+                if (rowIndexNumber !== targetRowIndexNumber) return mappingRowArray;
+                const copiedRowArray = [...mappingRowArray];
+                // 列長度不足（例如欄數由其他列決定）時補空字串，避免產生稀疏陣列
+                while (copiedRowArray.length <= targetColIndexNumber) copiedRowArray.push('');
+                copiedRowArray[targetColIndexNumber] = safeCellValueString;
+                return copiedRowArray;
+            });
+            return { ...hierarchyItemRecord, mappings: newMappingsArrayData };
+        }));
+    };
+
+    // 取得某張對照表目前的欄數（原始值 + 各泛化層級），至少 MIN_HIERARCHY_COLUMN_COUNT
+    const getHierarchyColumnCount = (hierarchyItemRecord: HierarchyTable): number =>
+        Math.max(...hierarchyItemRecord.mappings.map(mappingRowArray => mappingRowArray.length), MIN_HIERARCHY_COLUMN_COUNT);
+
+    // ★ 2026-10-05：明確新增一個泛化層級（所有列補齊到相同欄數後再加一欄），上限 MAX_HIERARCHY_LEVEL_COUNT 層
+    const addHierarchyLevelColumn = (targetHierarchyTableIdStr: string): void => setKAnonymityHierarchiesList(previousHierarchiesListArray => previousHierarchiesListArray.map(hierarchyItemRecord => {
+        if (hierarchyItemRecord.id !== targetHierarchyTableIdStr) return hierarchyItemRecord;
+        const currentColumnCount = getHierarchyColumnCount(hierarchyItemRecord);
+        if (currentColumnCount - 1 >= MAX_HIERARCHY_LEVEL_COUNT) return hierarchyItemRecord;
+        const nextColumnCount = currentColumnCount + 1;
+        return { ...hierarchyItemRecord, mappings: hierarchyItemRecord.mappings.map(mappingRowArray => [...mappingRowArray, ...Array(Math.max(nextColumnCount - mappingRowArray.length, 0)).fill('')]) };
+    }));
+
+    // ★ 2026-10-05：移除最後一個泛化層級（至少保留 1 層）
+    const removeLastHierarchyLevelColumn = (targetHierarchyTableIdStr: string): void => setKAnonymityHierarchiesList(previousHierarchiesListArray => previousHierarchiesListArray.map(hierarchyItemRecord => {
+        if (hierarchyItemRecord.id !== targetHierarchyTableIdStr) return hierarchyItemRecord;
+        const currentColumnCount = getHierarchyColumnCount(hierarchyItemRecord);
+        if (currentColumnCount <= MIN_HIERARCHY_COLUMN_COUNT) return hierarchyItemRecord;
+        const nextColumnCount = currentColumnCount - 1;
+        return { ...hierarchyItemRecord, mappings: hierarchyItemRecord.mappings.map(mappingRowArray => mappingRowArray.slice(0, nextColumnCount)) };
+    }));
+
     const removeMappingRow = (targetHierarchyTableIdStr: string, targetRowIndexNumber: number): void => setKAnonymityHierarchiesList(kAnonymityHierarchiesList.map(hierarchyItemRecord => hierarchyItemRecord.id === targetHierarchyTableIdStr ? { ...hierarchyItemRecord, mappings: hierarchyItemRecord.mappings.filter((_, mappingRowIndex) => mappingRowIndex !== targetRowIndexNumber) } : hierarchyItemRecord));
 
     const liveJsonPreviewDataObject = buildSpecCompliantPreviewJSON(kAnonymityFieldsList, kAnonymityHierarchiesList);
@@ -2016,6 +2188,28 @@ export default function KAnonymityMapping(): React.ReactElement
                                         </Space>
                                     </div>
 
+                                    {fieldsNotInDatasetNamesList.length > 0 && (
+                                        <Alert
+                                            type="error"
+                                            showIcon
+                                            style={{ marginBottom: '12px' }}
+                                            title={describeFieldsNotInDatasetError(fieldsNotInDatasetNamesList)}
+                                            action={<Button size="small" danger onClick={removeFieldsNotInDataset}>{translate('step2.btn_remove_fields_not_in_dataset', '移除不存在的欄位')}</Button>}
+                                        />
+                                    )}
+                                    {datasetColumnsNotConfiguredList.length > 0 && (
+                                        <Alert
+                                            type="warning"
+                                            showIcon
+                                            style={{ marginBottom: '12px' }}
+                                            title={translate('step2.dataset_columns_not_configured_warning', {
+                                                names: datasetColumnsNotConfiguredList.map((columnNameString) => `「${columnNameString}」`).join('、'),
+                                                defaultValue: `資料中的 ${datasetColumnsNotConfiguredList.map((columnNameString) => `「${columnNameString}」`).join('、')} 尚未設定，執行時會當作「非敏感欄位」原樣保留。`
+                                            })}
+                                            action={<Button size="small" onClick={addDatasetColumnsNotConfigured}>{translate('step2.btn_add_columns_not_configured', '補上缺漏欄位')}</Button>}
+                                        />
+                                    )}
+
                                     {
                                         // ★ 使用者反映（2026-09-22）：Step4 執行端已改版——0 個敏感欄位時會顯示警告
                                         //   但不阻擋、直接略過三攻擊與 CAP；2 個以上時會比照差分隱私模式，對每個
@@ -2023,13 +2217,14 @@ export default function KAnonymityMapping(): React.ReactElement
                                         //   單純的「合法／不合法」二分。這裡的即時提示同步改為三種狀態，文字內容
                                         //   跟著 Step4 實際會發生的事情走，不再說「須恰好設定 1 個」（已不成立）。
                                         (() => {
+                                            // ★ 2026-10-07：只計算資料中實際存在的欄位 (不存在的欄位執行時會被丟掉)
                                             const liveSensitiveFieldsCountNumber = kAnonymityFieldsList.filter(
-                                                (fieldItemRecord) => fieldItemRecord.role === 'Sensitive'
+                                                (fieldItemRecord) => fieldItemRecord.role === 'Sensitive' && isFieldNameInDataset(fieldItemRecord.name, datasetColumnNameSet)
                                             ).length;
 
                                             let bannerIconElement = <CheckCircleOutlined />;
                                             let bannerMessageText = translate('step2.sensitive_count_ok', { count: liveSensitiveFieldsCountNumber, defaultValue: `目前敏感欄位數量：${liveSensitiveFieldsCountNumber}（風險評估將針對此欄位進行）` });
-                                            let bannerTooltipText = translate('step2.sensitive_count_tooltip_ok', '敏感欄位就是資料裡最需要保護、不希望被別人看出來的內容，例如「疾病」「薪資」。已設定 1 個，執行時會針對這個欄位進行三攻擊與 CAP 風險評估。');
+                                            let bannerTooltipText = translate('step2.sensitive_count_tooltip_ok', '敏感欄位是最需要保護、不希望被別人看出來的內容（例如疾病、薪資）。目前已設定 1 個，執行時會以它進行風險評估。');
                                             let bannerAccentColor = '#52c41a';
                                             let bannerBackgroundColor = isDarkModeActive ? 'rgba(82, 196, 26, 0.12)' : '#f6ffed';
 
@@ -2037,13 +2232,13 @@ export default function KAnonymityMapping(): React.ReactElement
                                                 // ★ 2026-10-02：0 個敏感欄位改為阻擋下一步（見上方驗證 Effect），提示改為錯誤樣式
                                                 bannerIconElement = <WarningOutlined />;
                                                 bannerMessageText = translate('step2.sensitive_count_zero_block', '目前敏感欄位數量：0（須至少設定 1 個敏感欄位才能進入下一步）');
-                                                bannerTooltipText = translate('step2.sensitive_count_tooltip_zero_block', '敏感欄位就是資料裡最需要保護、不希望被別人看出來的內容，例如「疾病」「薪資」。l-多樣性／t-緊密度檢測與三攻擊、CAP 風險評估都需要以敏感欄位為對象，請至下方欄位表格將其中一欄的「角色」設為「敏感欄位」後再進入下一步。');
+                                                bannerTooltipText = translate('step2.sensitive_count_tooltip_zero_block', '敏感欄位是最需要保護、不希望被別人看出來的內容（例如疾病、薪資），l-多樣性、t-緊密度與風險評估都需要用到它。請在下方表格將其中一欄的「角色」設為「敏感欄位」，再進入下一步。');
                                                 bannerAccentColor = '#ff4d4f';
                                                 bannerBackgroundColor = isDarkModeActive ? 'rgba(255, 77, 79, 0.12)' : '#fff2f0';
                                             } else if (liveSensitiveFieldsCountNumber >= 2) {
                                                 bannerIconElement = <InfoCircleOutlined />;
                                                 bannerMessageText = translate('step2.sensitive_count_multi', { count: liveSensitiveFieldsCountNumber, defaultValue: `目前敏感欄位數量：${liveSensitiveFieldsCountNumber}（將逐一評估每個敏感欄位，取風險最高的保守結果；欄位越多，執行時間越長）` });
-                                                bannerTooltipText = translate('step2.sensitive_count_tooltip_multi', '敏感欄位就是資料裡最需要保護、不希望被別人看出來的內容，例如「疾病」「薪資」。同時設定多個時，系統會對每一個敏感欄位各自跑一次三攻擊與 CAP 風險評估，並取所有結果中風險最高（最保守）的數字作為最終結果，不需要分次執行。由於每個敏感欄位都要完整跑一輪，設定 N 個敏感欄位，風險評估的執行時間約為 1 個時的 N 倍。');
+                                                bannerTooltipText = translate('step2.sensitive_count_tooltip_multi', '敏感欄位是最需要保護、不希望被別人看出來的內容（例如疾病、薪資）。設定多個時，系統會逐一評估並採用風險最高的結果，不需要分次執行；設定 N 個，評估時間約為 N 倍。');
                                                 bannerAccentColor = '#1677ff';
                                                 bannerBackgroundColor = isDarkModeActive ? 'rgba(22, 119, 255, 0.12)' : '#e6f4ff';
                                             }
@@ -2057,7 +2252,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                         marginBottom: '12px',
                                                         padding: '6px 12px',
                                                         borderRadius: '6px',
-                                                        fontSize: 13,
+                                                        fontSize: scaleFontSize(13),
                                                         background: bannerBackgroundColor,
                                                         border: `1px solid ${bannerAccentColor}`,
                                                         color: bannerAccentColor
@@ -2136,7 +2331,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                     padding: '16px 12px',
                                                     overflow: 'auto',
                                                     maxHeight: '360px',
-                                                    fontSize: '13px',
+                                                    fontSize: scaleFontSize(13),
                                                     fontFamily: 'Consolas, Menlo, Monaco, "Courier New", monospace',
                                                     color: isDarkModeActive ? '#a6accd' : '#333',
                                                     // ★ 修正：使用者反映 JSON 預覽程式碼呈置中對齊。根因為全域 index.css 之
@@ -2159,7 +2354,9 @@ export default function KAnonymityMapping(): React.ReactElement
                                         </Card>
                                     )}
 
-                                    <Button type="dashed" block icon={<PlusOutlined />} onClick={addField} style={{ marginTop: '16px' }}>{translate('step2.btn_add_field')}</Button>
+                                    <Tooltip title={storeColumnsList.length > 0 && datasetColumnsNotConfiguredList.length === 0 ? translate('step2.add_field_all_configured', '資料中的欄位都已設定；新增欄位只能加回資料中尚未設定的欄位。') : ''}>
+                                        <Button type="dashed" block icon={<PlusOutlined />} onClick={addField} disabled={storeColumnsList.length > 0 && datasetColumnsNotConfiguredList.length === 0} style={{ marginTop: '16px' }}>{translate('step2.btn_add_field')}</Button>
+                                    </Tooltip>
                                 </div>
                             )
                         },
@@ -2168,7 +2365,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                 <span style={{ padding: '0 8px' }}>
                                     <SisternodeOutlined /> {translate('step2.tab_hierarchy')}
                                     <Tooltip title={translate('step2.tab_hierarchy_tooltip', '未在範圍設定內的資料，將以 * 取代。')}>
-                                        <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} />
+                                        <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} />
                                     </Tooltip>
                                 </span>
                             ),
@@ -2203,7 +2400,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                     <Space>
                                                         <span style={{ color: token.colorTextSecondary }}>{translate('step2.related_field')}</span>
                                                         <span style={{ fontWeight: 600 }}>{customBinsFieldItemRecord.name}</span>
-                                                        <span style={{ fontSize: '12px', color: token.colorPrimary, border: `1px solid ${token.colorPrimaryBorder}`, borderRadius: '4px', padding: '0 6px' }}>
+                                                        <span style={{ fontSize: scaleFontSize(12), color: token.colorPrimary, border: `1px solid ${token.colorPrimaryBorder}`, borderRadius: '4px', padding: '0 6px' }}>
                                                             {isTemporalRangeFieldStatus ? translate('step2.opt_time_range', '時間區間') : translate('step2.opt_custom_bins_editable', '自訂數值區間')}
                                                         </span>
                                                     </Space>
@@ -2221,11 +2418,11 @@ export default function KAnonymityMapping(): React.ReactElement
                                                             border: `1px dashed ${token.colorPrimaryBorder}`, borderRadius: '6px'
                                                         }}
                                                     >
-                                                        <Space size={4} style={{ color: token.colorPrimary, fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap' }}>
+                                                        <Space size={4} style={{ color: token.colorPrimary, fontWeight: 600, fontSize: scaleFontSize(13), whiteSpace: 'nowrap' }}>
                                                             <ThunderboltOutlined />
                                                             {translate('step2.bin_autofill_title', '系統推薦設定')}
                                                             <Tooltip title={translate('step2.bin_autofill_tooltip', '依此欄位實際資料的最小／最大值，自動計算區間邊界作為初步設定，產生後仍可手動調整每一列。')}>
-                                                                <QuestionCircleOutlined style={{ color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} />
+                                                                <QuestionCircleOutlined style={{ color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} />
                                                             </Tooltip>
                                                         </Space>
 
@@ -2241,7 +2438,7 @@ export default function KAnonymityMapping(): React.ReactElement
 
                                                         {getBinAutoFillSettingsForField(customBinsFieldItemRecord.id).mode === 'even' ? (
                                                             <Space size={4}>
-                                                                <span style={{ fontSize: '12px', color: token.colorTextSecondary, whiteSpace: 'nowrap' }}>{translate('step2.bin_autofill_count_label', '區間數量')}</span>
+                                                                <span style={{ fontSize: scaleFontSize(12), color: token.colorTextSecondary, whiteSpace: 'nowrap' }}>{translate('step2.bin_autofill_count_label', '區間數量')}</span>
                                                                 <InputNumber
                                                                     size="small"
                                                                     min={MIN_AUTO_BIN_COUNT}
@@ -2253,7 +2450,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                             </Space>
                                                         ) : (
                                                             <Space size={4}>
-                                                                <span style={{ fontSize: '12px', color: token.colorTextSecondary, whiteSpace: 'nowrap' }}>{translate('step2.bin_autofill_unit_label', '最小單位寬度')}</span>
+                                                                <span style={{ fontSize: scaleFontSize(12), color: token.colorTextSecondary, whiteSpace: 'nowrap' }}>{translate('step2.bin_autofill_unit_label', '最小單位寬度')}</span>
                                                                 <InputNumber
                                                                     size="small"
                                                                     min={0.01}
@@ -2280,9 +2477,9 @@ export default function KAnonymityMapping(): React.ReactElement
                                                 )}
 
                                                 <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', padding: '0 8px' }}>
-                                                    <div style={{ width: '140px', color: token.colorTextSecondary, fontSize: '12px' }}>{isTemporalRangeFieldStatus ? translate('step2.time_range_start', '起始時間 (含)') : translate('step2.bin_min', '下限 (含)')}</div>
-                                                    <div style={{ width: '140px', color: token.colorTextSecondary, fontSize: '12px' }}>{isTemporalRangeFieldStatus ? translate('step2.time_range_end', '結束時間 (不含)') : translate('step2.bin_max', '上限 (不含)')}</div>
-                                                    <div style={{ flex: 1, color: token.colorTextSecondary, fontSize: '12px' }}>{translate('step2.bin_label', '顯示標籤')}</div>
+                                                    <div style={{ width: '140px', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>{isTemporalRangeFieldStatus ? translate('step2.time_range_start', '起始時間 (含)') : translate('step2.bin_min', '下限 (含)')}</div>
+                                                    <div style={{ width: '140px', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>{isTemporalRangeFieldStatus ? translate('step2.time_range_end', '結束時間 (不含)') : translate('step2.bin_max', '上限 (不含)')}</div>
+                                                    <div style={{ flex: 1, color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>{translate('step2.bin_label', '顯示標籤')}</div>
                                                     <div style={{ width: '60px' }}></div>
                                                 </div>
 
@@ -2332,7 +2529,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                                 if (binItemRecord.max !== null && binItemRecord.max !== undefined && binItemRecord.max <= columnRealMinValue) return null;
                                                                 return (
                                                                     <Tooltip title={translate('step2.bin_extended_to_zero_tooltip', '實際資料最小值為 {{min}}，為避免日後出現更小的數值落在所有區間之外，此區間下限已自動向下延伸至 0（0 ～ {{min}} 併入本區間，不另增加區間數）。', { min: columnRealMinValue })}>
-                                                                        <span style={{ alignSelf: 'center', whiteSpace: 'nowrap', fontSize: '12px', color: token.colorWarningText, cursor: 'help' }}>
+                                                                        <span style={{ alignSelf: 'center', whiteSpace: 'nowrap', fontSize: scaleFontSize(12), color: token.colorWarningText, cursor: 'help' }}>
                                                                             {translate('step2.bin_extended_to_zero_note', '※ 含 0～{{min}}', { min: columnRealMinValue })}
                                                                         </span>
                                                                     </Tooltip>
@@ -2347,7 +2544,8 @@ export default function KAnonymityMapping(): React.ReactElement
                                                                     status={!binItemRecord.label?.trim() ? 'error' : undefined}
                                                                     placeholder={isTemporalRangeFieldStatus ? translate('step2.time_range_label_placeholder', '例：凌晨') : translate('step2.bin_label_placeholder', '例：30歲以下')}
                                                                     value={binItemRecord.label}
-                                                                    onChange={(inputChangeEvent) => updateCustomBinField(customBinsFieldItemRecord.id, binIndexNumber, 'label', inputChangeEvent.target.value)}
+                                                                    maxLength={CUSTOM_BIN_LABEL_MAX_LENGTH}
+                                                                    onChange={(inputChangeEvent) => updateCustomBinField(customBinsFieldItemRecord.id, binIndexNumber, 'label', inputChangeEvent.target.value.slice(0, CUSTOM_BIN_LABEL_MAX_LENGTH))}
                                                                 />
                                                             </Tooltip>
                                                             <Space style={{ width: '60px', justifyContent: 'center' }}>
@@ -2375,7 +2573,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                             style={{ marginBottom: '16px' }}
                                             message={translate('step2.hierarchy_tree_guide_title', '自訂階層樹怎麼填？')}
                                             description={
-                                                <div style={{ fontSize: '12.5px', lineHeight: 1.8 }}>
+                                                <div style={{ fontSize: scaleFontSize(12.5), lineHeight: 1.8 }}>
                                                     <div>{translate('step2.hierarchy_tree_guide_p1', '每一列代表資料集中「一個實際存在的原始值」由細到粗的泛化路徑。「原始值」欄請填寫與資料集內容完全一致的值（含全形/半形、大小寫、空格），系統依此逐字比對；「泛化第 1 層」「泛化第 2 層」……則依序填入這個值在該層要被取代成的較粗類別，層級越高應填越粗略的分類。')}</div>
                                                     <div style={{ marginTop: 6 }}>
                                                         {translate('step2.hierarchy_tree_guide_p2_prefix', '例如「地區」欄位：')}
@@ -2409,22 +2607,27 @@ export default function KAnonymityMapping(): React.ReactElement
                                         (hierarchyTableRecordItem) =>
                                         {
                                             const columnCountCalculatedValue = Math.max(...hierarchyTableRecordItem.mappings.map(mappingRowArray => mappingRowArray.length), MIN_HIERARCHY_COLUMN_COUNT);
+                                            // ★ 2026-10-06：逐列防呆結果（標紅框＋表格下方列出問題）
+                                            const associatedTreeFieldRecord = kAnonymityFieldsList.find((fieldItemRecord) => fieldItemRecord.name === hierarchyTableRecordItem.fieldName && fieldItemRecord.genStrategy === 'tree');
+                                            const selectedTreeLevelValue = associatedTreeFieldRecord ? associatedTreeFieldRecord.genMaxLevel : undefined;
+                                            const hierarchyTableProblemsList = findHierarchyTableProblems(hierarchyTableRecordItem.mappings, selectedTreeLevelValue);
+                                            const problemCellKeySet = new Set(hierarchyTableProblemsList.map((problemItem) => `${problemItem.rowNumber - 1}:${problemItem.columnIndex}`));
 
                                             return (
                                                 <Card key={hierarchyTableRecordItem.id} size="small" styles={{ header: { background: isDarkModeActive ? '#1f1f1f' : '#f5f5f5', borderBottom: `1px solid ${token.colorBorderSecondary}` } }} style={{ border: `1px solid ${token.colorBorderSecondary}`, boxShadow: 'none' }} title={ <Space> <span style={{ color: token.colorTextSecondary }}>{translate('step2.related_field')}</span> <Select value={hierarchyTableRecordItem.fieldName || undefined} onChange={(dropdownSelectedValue) => updateHierarchyField(hierarchyTableRecordItem.id, dropdownSelectedValue)} placeholder={translate('step2.ph_select_qi')} style={{ width: '250px' }} options={kAnonymityFieldsList.filter(fieldItemRecord => fieldItemRecord.role === 'Quasi-identifier' && !(fieldItemRecord.type === 'numeric' && fieldItemRecord.genStrategy === 'rounding')).map(fieldItemRecord => ({ label: fieldItemRecord.name, value: fieldItemRecord.name }))} /> </Space> } extra={<Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeHierarchyTable(hierarchyTableRecordItem.id)} />} >
                                                     <div style={{ overflowX: 'auto', paddingBottom: '8px' }}>
                                                         <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', padding: '0 8px' }}>
-                                                            <div style={{ flex: 1, minWidth: '150px', color: token.colorTextSecondary, fontSize: '12px' }}>
+                                                            <div style={{ flex: 1, minWidth: '150px', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>
                                                                 {translate('step2.original_value')}
                                                                 <Tooltip title={translate('step2.original_value_tooltip', '請填入資料集中實際出現的原始值，須完全一致（含全形/半形、大小寫、空格）；不一致將視為未涵蓋此值，執行時會被取代成「*」。')}>
-                                                                    <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} />
+                                                                    <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} />
                                                                 </Tooltip>
                                                             </div>
                                                             {Array.from({ length: columnCountCalculatedValue - 1 }).map((_, levelIndexLoopVar) => (
-                                                                <div key={levelIndexLoopVar} style={{ flex: 1, minWidth: '150px', color: token.colorTextSecondary, fontSize: '12px' }}>
+                                                                <div key={levelIndexLoopVar} style={{ flex: 1, minWidth: '150px', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>
                                                                     {translate('step2.generalize_level', { level: levelIndexLoopVar + 1 })}
                                                                     <Tooltip title={translate('step2.generalize_level_tooltip', '欄位的「泛化層級」設定達到此層時，這個原始值會被取代成這裡填寫的較粗分類；建議層級越高，填寫越粗略的分類。')}>
-                                                                        <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: 12 }} />
+                                                                        <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} />
                                                                     </Tooltip>
                                                                 </div>
                                                             ))}
@@ -2443,6 +2646,8 @@ export default function KAnonymityMapping(): React.ReactElement
                                                                                 ? translate('step2.hierarchy_cell_placeholder_original', '原始值，如：大安區')
                                                                                 : translate('step2.hierarchy_cell_placeholder_level', '較粗分類，如：臺北市')}
                                                                             value={mappingRowArray[columnIndexNumber] || ''}
+                                                                            status={problemCellKeySet.has(`${rowIndexNumber}:${columnIndexNumber}`) ? 'error' : undefined}
+                                                                            maxLength={HIERARCHY_CELL_MAX_LENGTH}
                                                                             onChange={(inputChangeEvent) => updateMappingCell(hierarchyTableRecordItem.id, rowIndexNumber, columnIndexNumber, inputChangeEvent.target.value)}
                                                                         />
                                                                     ))}
@@ -2455,7 +2660,29 @@ export default function KAnonymityMapping(): React.ReactElement
                                                         )}
                                                     </div>
 
-                                                    <Button type="link" icon={<PlusOutlined />} onClick={() => addMappingRow(hierarchyTableRecordItem.id)} style={{ paddingLeft: 0 }}>{translate('step2.btn_add_mapping')}</Button>
+                                                    {hierarchyTableProblemsList.length > 0 && (
+                                                        <div style={{ color: token.colorError, fontSize: scaleFontSize(12), margin: '0 0 4px' }}>
+                                                            {hierarchyTableProblemsList.slice(0, 5).map((problemItem) => (
+                                                                <div key={`${problemItem.kind}-${problemItem.rowNumber}`}>• {describeHierarchyRowProblem(problemItem, selectedTreeLevelValue)}</div>
+                                                            ))}
+                                                            {hierarchyTableProblemsList.length > 5 && <div>• …另有 {hierarchyTableProblemsList.length - 5} 處</div>}
+                                                        </div>
+                                                    )}
+                                                    <Space size={4} wrap>
+                                                        <Button type="link" icon={<PlusOutlined />} onClick={() => addMappingRow(hierarchyTableRecordItem.id)} style={{ paddingLeft: 0 }}>{translate('step2.btn_add_mapping')}</Button>
+                                                        <Button type="link" icon={<PlusOutlined />} disabled={columnCountCalculatedValue - 1 >= MAX_HIERARCHY_LEVEL_COUNT} onClick={() => addHierarchyLevelColumn(hierarchyTableRecordItem.id)}>{translate('step2.btn_add_hierarchy_level', '新增泛化層級')}</Button>
+                                                        {(() => {
+                                                            const lastLevelHasValueStatus = hierarchyTableRecordItem.mappings.some(mappingRowArray => (mappingRowArray[columnCountCalculatedValue - 1] || '').trim() !== '');
+                                                            const removeLevelButton = (
+                                                                <Button type="link" danger icon={<MinusOutlined />} disabled={columnCountCalculatedValue <= MIN_HIERARCHY_COLUMN_COUNT} onClick={lastLevelHasValueStatus ? undefined : () => removeLastHierarchyLevelColumn(hierarchyTableRecordItem.id)}>
+                                                                    {translate('step2.btn_remove_hierarchy_level', '移除最後一層')}
+                                                                </Button>
+                                                            );
+                                                            return lastLevelHasValueStatus && columnCountCalculatedValue > MIN_HIERARCHY_COLUMN_COUNT
+                                                                ? <Popconfirm title={translate('step2.confirm_remove_hierarchy_level', '最後一層已有填寫內容，確定要移除？')} onConfirm={() => removeLastHierarchyLevelColumn(hierarchyTableRecordItem.id)}>{removeLevelButton}</Popconfirm>
+                                                                : removeLevelButton;
+                                                        })()}
+                                                    </Space>
                                                 </Card>
                                             );
                                         }

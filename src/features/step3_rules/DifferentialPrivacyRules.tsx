@@ -21,11 +21,12 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
 import {
-	resolveIsDateTimeDpField, resolveInputNumberStepByDecimals, resolveDpDatetimeNoiseUnit, applyDpDatetimeNoiseUnit, findDpBoundsFinerThanNoiseUnit,
+	resolveIsDateTimeDpField, resolveInputNumberStepByDecimals, alignDpBoundsToMinimumUnit, alignDpDateTimeBoundsToNoiseGrid, resolveDpDatetimeNoiseUnit, applyDpDatetimeNoiseUnit, findDpBoundsFinerThanNoiseUnit,
 	DP_DATETIME_NOISE_UNITS, type DpDatetimeNoiseUnit, resolveDpNoiseStepMax, isDpNoiseStepOutOfRange
 } from '../../utils/dpFieldHelpers';
-import { computeDefaultDpSensitivity, computeDpConsumedBudgetsByField, sumDpConsumedBudgets } from '../../utils/pipelineConfig';
+import { computeDefaultDpSensitivity, computeDpConsumedBudgetsByField, sumDpConsumedBudgets, isDpBudgetExceeded } from '../../utils/pipelineConfig';
 
+import { scaleFontSize, scaleChartFontSize } from '../../utils/fontScale';
 const { Text } = Typography;
 
 /**
@@ -305,7 +306,8 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 	const isBudgetDangerAlertStatus = budgetUsagePercentageValue >= DANGER_BUDGET_USAGE_PERCENT_THRESHOLD;
 	const isBudgetWarningAlertStatus = budgetUsagePercentageValue >= WARNING_BUDGET_USAGE_PERCENT_THRESHOLD && !isBudgetDangerAlertStatus;
 	// ★ budgetUsagePercentageValue 已用 Math.min 封頂於 100，無法區分「即將耗盡」與「已實際超支」，故另以原始總量比對判斷
-	const isBudgetExceededStatus = totalEquivalentEpsilonSumValue > safeBudgetLimitThresholdValue;
+	// ★ 2026-10-05：容許浮點誤差（例如總預算 1 平分 9 欄，加回去為 1.0000000000000002），見 isDpBudgetExceeded
+	const isBudgetExceededStatus = isDpBudgetExceeded(totalEquivalentEpsilonSumValue, safeBudgetLimitThresholdValue);
 
 	useEffect(
 		() => 
@@ -341,7 +343,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 				return;
 			}
 
-			if (totalEquivalentEpsilonSumValue > safeBudgetLimitThresholdValue) 
+			if (isBudgetExceededStatus) 
 			{
 				setStepValidationAction(false, translate('step3_dp.error_budget_exceeded', '消耗的總隱私預算已超過設定上限，請調降各欄位的 ε。'));
 				return;
@@ -350,7 +352,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 			setStepValidationAction(true, null);
 		}, 
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- translateNoiseUnit 僅包裝 translate，已列入依賴
-		[globalTargetDeltaValue, activeDpFieldsList, totalEquivalentEpsilonSumValue, safeBudgetLimitThresholdValue, setStepValidationAction, translate]
+		[globalTargetDeltaValue, activeDpFieldsList, isBudgetExceededStatus, setStepValidationAction, translate]
 	);
 
 	const getDPEchartsOption = (): Record<string, unknown> => 
@@ -366,10 +368,10 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 		return {
 			backgroundColor: 'transparent',
 			tooltip: { trigger: 'axis', axisPointer: { type: 'line', lineStyle: { color: token.colorBorder, type: 'dashed' } } },
-			legend: { data: [translate('step3_dp.chart_original', '原始分佈'), translate('step3_dp.chart_noisy', '加噪後分佈')], textStyle: { color: token.colorTextSecondary }, top: '0%', icon: 'circle' },
+			legend: { data: [translate('step3_dp.chart_original', '原始分佈'), translate('step3_dp.chart_noisy', '加噪後分佈')], textStyle: { color: token.colorTextSecondary, fontSize: scaleChartFontSize(12, token.fontSize) }, top: '0%', icon: 'circle' },
 			grid: { top: '15%', left: '5%', right: '5%', bottom: '12%', containLabel: true },
-			xAxis: { type: 'category', boundaryGap: false, data: ['20K', '30K', '40K', '50K', '60K', '70K', '80K', '90K', '100K'], name: translate('step3_dp.chart_x_axis', '數值區間'), nameLocation: 'center', nameGap: 30, nameTextStyle: { color: token.colorTextSecondary, fontWeight: 500 }, axisLabel: { color: token.colorTextDescription }, axisLine: { lineStyle: { color: token.colorBorder } } },
-			yAxis: { type: 'value', name: translate('step3_dp.chart_y_axis', '密度/頻率'), nameLocation: 'end', nameTextStyle: { color: token.colorTextSecondary }, axisLabel: { show: false }, splitLine: { lineStyle: { color: token.colorSplit } }, axisLine: { show: false } },
+			xAxis: { type: 'category', boundaryGap: false, data: ['20K', '30K', '40K', '50K', '60K', '70K', '80K', '90K', '100K'], name: translate('step3_dp.chart_x_axis', '數值區間'), nameLocation: 'center', nameGap: 30, nameTextStyle: { color: token.colorTextSecondary, fontWeight: 500, fontSize: scaleChartFontSize(12, token.fontSize) }, axisLabel: { color: token.colorTextDescription, fontSize: scaleChartFontSize(12, token.fontSize) }, axisLine: { lineStyle: { color: token.colorBorder } } },
+			yAxis: { type: 'value', name: translate('step3_dp.chart_y_axis', '密度/頻率'), nameLocation: 'end', nameTextStyle: { color: token.colorTextSecondary, fontSize: scaleChartFontSize(12, token.fontSize) }, axisLabel: { show: false }, splitLine: { lineStyle: { color: token.colorSplit } }, axisLine: { show: false } },
 			series: [
 				{ name: translate('step3_dp.chart_original', '原始分佈'), type: 'line', smooth: true, color: isDarkModeActiveStatus ? '#434343' : '#d9d9d9', data: originalDensityDistributionArray, areaStyle: { opacity: 0.05 }, lineStyle: { width: 1.5, type: 'dashed' }, showSymbol: false }, 
 				{ name: translate('step3_dp.chart_noisy', '加噪後分佈'), type: 'line', smooth: true, color: token.colorPrimary, data: noisyDensityDistributionArray, areaStyle: { opacity: isDarkModeActiveStatus ? 0.2 : 0.25 }, lineStyle: { width: 3.5 }, showSymbol: false, itemStyle: { ShadowBlur: 12, ShadowColor: token.colorPrimary } }
@@ -378,12 +380,12 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 	};
 
 	const conversionTableColumnsConfig = [
-		{ title: translate('step3_dp.col_field', '欄位名稱'), dataIndex: 'fieldName', key: 'fieldName', render: (fieldNameTextString: string) => <Text strong style={{ fontSize: 13 }}>{fieldNameTextString}</Text> },
+		{ title: translate('step3_dp.col_field', '欄位名稱'), dataIndex: 'fieldName', key: 'fieldName', render: (fieldNameTextString: string) => <Text strong style={{ fontSize: scaleFontSize(13) }}>{fieldNameTextString}</Text> },
 		{ 
 			title: translate('step3_dp.col_original', '原始設定'), 
 			key: 'original', 
 			render: (_: unknown, convertedRecordItem: ConvertedField) => (
-				<div style={{ fontSize: 12, color: token.colorTextSecondary }}>
+				<div style={{ fontSize: scaleFontSize(12), color: token.colorTextSecondary }}>
 					ε: {(convertedRecordItem.epsilon ?? DEFAULT_EPSILON_BUDGET).toFixed(2)} {convertedRecordItem.mode === 'default-delta' && convertedRecordItem.fieldType === 'Numeric' && ` | δ: ${translate('step3_dp.delta_from_global', '全域')}`}{convertedRecordItem.mode === 'epsilon-delta' && ` | δ: ${formatFloatValueAsScientificNotation(convertedRecordItem.delta ?? DEFAULT_DELTA_BUDGET, FIELD_DELTA_INPUT_MIN_BOUND, FIELD_DELTA_INPUT_MAX_BOUND)}`}
 				</div>
 			)
@@ -393,7 +395,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 			dataIndex: 'equivalentEpsilon', 
 			key: 'equivalentEpsilon', 
 			align: 'right' as const,
-			render: (equivalentEpsilonDataValue: number) => <Text strong style={{ color: '#722ed1', fontSize: 14 }}>{formatFloatValueAsScientificNotation(equivalentEpsilonDataValue, FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}</Text> 
+			render: (equivalentEpsilonDataValue: number) => <Text strong style={{ color: '#722ed1', fontSize: scaleFontSize(14) }}>{formatFloatValueAsScientificNotation(equivalentEpsilonDataValue, FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}</Text> 
 		}
 	];
 
@@ -441,7 +443,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 									style={{ width: '150px' }}
 								/>
 							</div>
-							<Text type="secondary" style={{ fontSize: 13, lineHeight: 1.5, textAlign: 'left' }}>
+							<Text type="secondary" style={{ fontSize: scaleFontSize(13), lineHeight: 1.5, textAlign: 'left' }}>
 								{translate('step3_dp.global_delta_desc', '這是一個很小的數字，代表隱私保護「萬一失效」的最大可接受機率。只有欄位選擇 (ε, δ)-DP 模式時才會用到此設定，一般維持預設值即可。')}
 							</Text>
 						</div>
@@ -479,7 +481,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 									style={{ width: '150px' }}
 								/>
 							</div>
-							<Text type="secondary" style={{ fontSize: 13, lineHeight: 1.5, textAlign: 'left' }}>
+							<Text type="secondary" style={{ fontSize: scaleFontSize(13), lineHeight: 1.5, textAlign: 'left' }}>
 								{translate('step3_dp.budget_limit_desc', '所有欄位使用的隱私預算（ε）加總，不可超過這個數字；超過時系統會提出風險警告。')}
 							</Text>
 						</div>
@@ -494,8 +496,8 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 				extra={
 					<Space size={8}>
 						<Space size={4}>
-							<ThunderboltOutlined style={{ fontSize: 12, color: token.colorTextTertiary }} />
-							<Text type="secondary" style={{ fontSize: 12, fontWeight: 500 }}>{translate('step3_dp.preset_label', '快速套用：')}</Text>
+							<ThunderboltOutlined style={{ fontSize: scaleFontSize(12), color: token.colorTextTertiary }} />
+							<Text type="secondary" style={{ fontSize: scaleFontSize(12), fontWeight: 500 }}>{translate('step3_dp.preset_label', '快速套用：')}</Text>
 						</Space>
 						{PRIVACY_LEVEL_PRESET_LIST.map(
 							(presetItemRecord) => (
@@ -576,7 +578,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 											<Text strong style={{ display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
 												{activeFieldItemRecord.fieldName}
 											</Text>
-											<Text type="secondary" style={{ fontSize: '12px' }}>{activeFieldItemRecord.fieldType || 'QI'}</Text>
+											<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>{activeFieldItemRecord.fieldType || 'QI'}</Text>
 										</div>
 										<Tooltip title={translate('step3_dp.field_epsilon_tooltip', 'ε 越小雜訊越多、保護越強，但資料越不精確。')}>
 											<QuestionCircleOutlined style={{ color: token.colorTextDescription, cursor: 'help', flexShrink: 0 }} />
@@ -653,7 +655,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 
 								{activeFieldItemRecord.fieldType === 'Numeric' && (
 									<div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: 'calc(25% + 12px)' }}>
-										<Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(12), flexShrink: 0 }}>
 											{resolveIsDateTimeDpField(activeFieldItemRecord) ? translate('step3_dp.noise_unit_label', '雜訊單位') : translate('step3_dp.minimum_unit_label', '加噪刻度 (Minimum Unit)')}
 										</Text>
 										{resolveIsDateTimeDpField(activeFieldItemRecord) ? (
@@ -668,7 +670,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 													style={{ width: '90px' }}
 													options={DP_DATETIME_NOISE_UNITS.map((noiseUnitValue) => ({ value: noiseUnitValue, label: translateNoiseUnit(noiseUnitValue) }))}
 												/>
-												<Text type="secondary" style={{ fontSize: 12, marginLeft: '12px', flexShrink: 0 }}>
+												<Text type="secondary" style={{ fontSize: scaleFontSize(12), marginLeft: '12px', flexShrink: 0 }}>
 													{translate('step3_dp.noise_step_unit_label', '加噪步階 ({{unit}})', { unit: translateNoiseUnit(resolveDpDatetimeNoiseUnit(activeFieldItemRecord)) })}
 												</Text>
 												{/* ★ 2026-10-02：步階上限依雜訊單位（秒、分 ≤ 59，時 ≤ 23，天不限），超過顯示紅框並阻擋下一步 */}
@@ -698,7 +700,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 											/>
 										)}
 
-										<Text type="secondary" style={{ fontSize: 12, marginLeft: '12px', flexShrink: 0 }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(12), marginLeft: '12px', flexShrink: 0 }}>
 											{translate('step3_dp.out_of_bounds_strategy_short', '邊界溢出處理')}
 										</Text>
 										<Select
@@ -717,9 +719,9 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 
 										{/* ★ 2026-10-01：敏感度可自訂（對應 config_dp.json 之 sensitivity）。留空時以邊界寬度計算
 										    （數值型為上限 − 下限、日期型為相差時間，以雜訊單位計），也就是先前固定的做法；匯入的設定檔有指定時沿用。 */}
-										<Text type="secondary" style={{ fontSize: 12, marginLeft: '12px', flexShrink: 0 }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(12), marginLeft: '12px', flexShrink: 0 }}>
 											{translate('step3_dp.sensitivity_label', '敏感度')}
-											<Tooltip title={translate('step3_dp.sensitivity_tooltip', '加噪幅度 ≈ 敏感度 ÷ ε。留空時以邊界寬度計算（數值型為上限減下限，日期型為兩日期相差的時間，以所選雜訊單位計），涵蓋邊界內任意變動、保護力最強，但雜訊也最大；調小可保留較多資料細節，但隱私保證隨之減弱。匯入的設定檔有指定敏感度時會沿用。')}>
+											<Tooltip title={translate('step3_dp.sensitivity_tooltip', '留空時，系統會依邊界寬度自動計算，保護力最強，但雜訊也最大；調小可以保留較多資料細節，但保護力會跟著降低。')}>
 												<QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} />
 											</Tooltip>
 										</Text>
@@ -743,6 +745,48 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 									</div>
 								)}
 
+								{/* TODO【待後端確認：DP格點起算點】：後端若改為從下限起算，此提示需改寫 */}
+								{/* ★ 2026-10-06：上下限不是加噪刻度的倍數時，送出前會向外對齊刻度（見 alignDpBoundsToMinimumUnit），
+								    否則截斷／鏡像後輸出會離開刻度（例：刻度 20、下限 15 → 鏡像得 30、50）。提示使用者實際使用的範圍。 */}
+								{activeFieldItemRecord.fieldType === 'Numeric' && !resolveIsDateTimeDpField(activeFieldItemRecord) && (() => {
+									const alignedBounds = alignDpBoundsToMinimumUnit(activeFieldItemRecord.lowerBound, activeFieldItemRecord.upperBound, activeFieldItemRecord.minimumUnit ?? 1);
+									if (!alignedBounds || !alignedBounds.changed) return null;
+									return (
+										<div style={{ paddingLeft: 'calc(25% + 12px)' }} data-testid="dp-bounds-aligned-hint">
+											<Alert
+												type="info"
+												showIcon
+												style={{ padding: '4px 12px', fontSize: scaleFontSize(12) }}
+												title={translate('step3_dp.bounds_aligned_to_unit_hint', 'Step2 的上下限 {{lower}}～{{upper}} 不是加噪刻度 {{unit}} 的倍數，為確保輸出皆為 {{unit}} 的倍數，超出範圍的處理將改以 {{alignedLower}}～{{alignedUpper}} 為界（敏感度仍依原上下限計算）。', {
+													lower: activeFieldItemRecord.lowerBound, upper: activeFieldItemRecord.upperBound, unit: activeFieldItemRecord.minimumUnit ?? 1,
+													alignedLower: alignedBounds.lower, alignedUpper: alignedBounds.upper
+												})}
+											/>
+										</div>
+									);
+								})()}
+
+								{/* TODO【待後端確認：DP格點起算點】：後端若改為從下限起算，此提示需改寫 */}
+								{/* ★ 2026-10-06：日期時間型同理：加噪結果落在「1970-01-01 起每 N 個雜訊單位」的格點上，上下限不在格點時送出前向外對齊。 */}
+								{activeFieldItemRecord.fieldType === 'Numeric' && resolveIsDateTimeDpField(activeFieldItemRecord) && (() => {
+									const noiseUnitOfField = resolveDpDatetimeNoiseUnit(activeFieldItemRecord);
+									const alignedDateTimeBounds = alignDpDateTimeBoundsToNoiseGrid(activeFieldItemRecord.lowerBound, activeFieldItemRecord.upperBound, noiseUnitOfField, activeFieldItemRecord.noiseStep);
+									if (!alignedDateTimeBounds || !alignedDateTimeBounds.changed) return null;
+									const stepText = `${activeFieldItemRecord.noiseStep ?? 1} ${translateNoiseUnit(noiseUnitOfField)}`;
+									return (
+										<div style={{ paddingLeft: 'calc(25% + 12px)' }} data-testid="dp-datetime-bounds-aligned-hint">
+											<Alert
+												type="info"
+												showIcon
+												style={{ padding: '4px 12px', fontSize: scaleFontSize(12) }}
+												title={translate('step3_dp.datetime_bounds_aligned_hint', '加噪結果以每 {{step}} 為一格（自 1970-01-01 起算），Step2 的上下限不在格點上，超出範圍的處理將改以 {{alignedLower}}～{{alignedUpper}} 為界，確保輸出都在格點上（敏感度仍依原上下限計算）。', {
+													step: stepText, alignedLower: alignedDateTimeBounds.lower, alignedUpper: alignedDateTimeBounds.upper
+												})}
+											/>
+										</div>
+									);
+								})()}
+
 								{/* ★ 2026-10-01：Step2 邊界可選到秒，但雜訊單位預設為天；邊界比雜訊單位細時提醒，
 								    否則敏感度與加噪都以天計、邊界的時間部分被四捨五入，使用者不易察覺。 */}
 								{activeFieldItemRecord.fieldType === 'Numeric' && resolveIsDateTimeDpField(activeFieldItemRecord) && (() => {
@@ -755,7 +799,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 											<Alert
 												type="warning"
 												showIcon
-												style={{ padding: '4px 12px', fontSize: 12 }}
+												style={{ padding: '4px 12px', fontSize: scaleFontSize(12) }}
 												title={translate('step3_dp.noise_unit_coarser_warning', 'Step2 的上下限細到「{{boundsUnit}}」，但雜訊單位是「{{noiseUnit}}」：敏感度與加噪都以{{noiseUnit}}計，邊界的時間部分會四捨五入。如要以{{boundsUnit}}加噪，請把雜訊單位改為「{{boundsUnit}}」。', { boundsUnit: boundsUnitText, noiseUnit: currentNoiseUnitText })}
 												action={
 													<Button size="small" onClick={() => changeFieldNoiseUnit(activeFieldItemRecord, boundsFinestUnit)}>
@@ -788,7 +832,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 								<DashboardOutlined style={{ marginRight: 8, color: '#faad14' }} />
 								{translate('step3_dp.card2_title', '3. 隱私預算中心')}
 								<Tooltip title={translate('step3_dp.budget_center_tooltip', '此處顯示目前所有欄位的 ε 加總，佔您設定之預算上限的比例。顏色越紅代表用量越接近上限；一旦實際超過上限將無法進入下一步，建議調降部分欄位的 ε，或提高預算上限。用量夠低時不會顯示紅色警示。')}>
-									<QuestionCircleOutlined style={{ marginLeft: 8, color: token.colorTextDescription, cursor: 'help', fontSize: 14 }} />
+									<QuestionCircleOutlined style={{ marginLeft: 8, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(14) }} />
 								</Tooltip>
 							</span>
 						}
@@ -817,7 +861,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 										//   內緣，看起來很擠。antd 預設字級是依環的寬度自動換算（220px 環
 										//   約 39px 字），這裡改為明確指定較小的字級，讓文字跟環之間留出
 										//   明顯間距，不再依賴自動換算值。
-										<span style={{ color: isBudgetDangerAlertStatus ? '#cf1322' : isBudgetWarningAlertStatus ? '#d48806' : '#52c41a', fontSize: 26, lineHeight: 1.2 }}>
+										<span style={{ color: isBudgetDangerAlertStatus ? '#cf1322' : isBudgetWarningAlertStatus ? '#d48806' : '#52c41a', fontSize: scaleFontSize(26), lineHeight: 1.2 }}>
 											{formatFloatValueAsScientificNotation(totalEquivalentEpsilonSumValue, FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}
 										</span>
 									)
@@ -833,13 +877,13 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 							/>
 
 							<div style={{ marginTop: 28 }}>
-								<Text type="secondary" style={{ fontSize: 14, display: 'block', marginBottom: 8 }}>
+								<Text type="secondary" style={{ fontSize: scaleFontSize(14), display: 'block', marginBottom: 8 }}>
 									{translate('step3_dp.accumulated_cost', { limit: safeBudgetLimitThresholdValue, defaultValue: `總預算消耗 / 預算上限 (${safeBudgetLimitThresholdValue})` })}
 								</Text>
 
 								<Tag
 									color={isBudgetDangerAlertStatus ? 'error' : isBudgetWarningAlertStatus ? 'warning' : 'success'}
-									style={{ fontSize: 16, padding: '4px 16px', borderRadius: 4, fontWeight: 'bold' }}
+									style={{ fontSize: scaleFontSize(16), padding: '4px 16px', borderRadius: 4, fontWeight: 'bold' }}
 								>
 									{isBudgetExceededStatus ? translate('step3_dp.budget_exceeded', '⚠️ 危險：預算已超支') : isBudgetDangerAlertStatus ? translate('step3_dp.budget_danger', '預算透支風險') : isBudgetWarningAlertStatus ? translate('step3_dp.budget_warning', '預算水位偏低') : translate('step3_dp.budget_safe', '預算水位安全')}
 								</Tag>
@@ -860,11 +904,11 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 							footer={
 								() => 
 								(
-									<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, padding: '8px 4px 0 4px' }}>
+									<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: scaleFontSize(15), padding: '8px 4px 0 4px' }}>
 										<Text strong>{translate('step3_dp.single_equivalent', '本次消耗預算:')}</Text>
-										<Text strong style={{ color: '#722ed1', fontSize: 18 }}>
+										<Text strong style={{ color: '#722ed1', fontSize: scaleFontSize(18) }}>
 											ε = {formatFloatValueAsScientificNotation(totalEquivalentEpsilonSumValue, FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}
-											{totalConsumedDeltaSumValue > 0 && <span style={{ fontSize: 14, marginLeft: 12 }}>δ = {formatFloatValueAsScientificNotation(totalConsumedDeltaSumValue, FIELD_DELTA_INPUT_MIN_BOUND, FIELD_DELTA_INPUT_MAX_BOUND)}</span>}
+											{totalConsumedDeltaSumValue > 0 && <span style={{ fontSize: scaleFontSize(14), marginLeft: 12 }}>δ = {formatFloatValueAsScientificNotation(totalConsumedDeltaSumValue, FIELD_DELTA_INPUT_MIN_BOUND, FIELD_DELTA_INPUT_MAX_BOUND)}</span>}
 										</Text>
 									</div>
 								)
@@ -889,15 +933,15 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 					>
 						<div style={{ display: 'flex', gap: '48px', marginBottom: '8px', padding: '0 16px' }}>
 							<Statistic 
-								title={<Text type="secondary" style={{ fontSize: 14 }}>{translate('step3_dp.unified_eps', '本次總消耗 ε')}</Text>} 
+								title={<Text type="secondary" style={{ fontSize: scaleFontSize(14) }}>{translate('step3_dp.unified_eps', '本次總消耗 ε')}</Text>} 
 								value={totalEquivalentEpsilonSumValue}
-								prefix={<CalculatorOutlined style={{ fontSize: 24, marginRight: 8, color: token.colorPrimary }} />}
-								formatter={(formatterOutputValue) => <span style={{ fontSize: 42, fontWeight: 'bold', color: token.colorPrimary }}>{formatFloatValueAsScientificNotation(Number(formatterOutputValue), FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}</span>}
+								prefix={<CalculatorOutlined style={{ fontSize: scaleFontSize(24), marginRight: 8, color: token.colorPrimary }} />}
+								formatter={(formatterOutputValue) => <span style={{ fontSize: scaleFontSize(42), fontWeight: 'bold', color: token.colorPrimary }}>{formatFloatValueAsScientificNotation(Number(formatterOutputValue), FIELD_EPSILON_INPUT_MIN_BOUND, FIELD_EPSILON_INPUT_MAX_BOUND)}</span>}
 							/>
 
 							<Statistic
 								title={
-									<Text type="secondary" style={{ fontSize: 14 }}>
+									<Text type="secondary" style={{ fontSize: scaleFontSize(14) }}>
 										{translate('step3_dp.protection_level', '當前保護強度')}
 										<Tooltip
 											title={
@@ -914,8 +958,8 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 									</Text>
 								}
 								value={totalEquivalentEpsilonSumValue <= HIGH_SECURITY_EPSILON_THRESHOLD ? translate('step3_dp.level_high', '高強度 (High)') : totalEquivalentEpsilonSumValue <= MEDIUM_SECURITY_EPSILON_THRESHOLD ? translate('step3_dp.level_medium', '中強度 (Medium)') : translate('step3_dp.level_low', '低強度 (Low)')} 
-								prefix={<LockOutlined style={{ fontSize: 28, marginRight: 8, color: totalEquivalentEpsilonSumValue <= HIGH_SECURITY_EPSILON_THRESHOLD ? '#722ed1' : totalEquivalentEpsilonSumValue <= MEDIUM_SECURITY_EPSILON_THRESHOLD ? '#13c2c2' : '#fa8c16' }} />} 
-								formatter={(formatterOutputValue) => <span style={{ fontSize: 42, fontWeight: 'bold', color: totalEquivalentEpsilonSumValue <= HIGH_SECURITY_EPSILON_THRESHOLD ? '#722ed1' : totalEquivalentEpsilonSumValue <= MEDIUM_SECURITY_EPSILON_THRESHOLD ? '#13c2c2' : '#fa8c16' }}>{formatterOutputValue}</span>}
+								prefix={<LockOutlined style={{ fontSize: scaleFontSize(28), marginRight: 8, color: totalEquivalentEpsilonSumValue <= HIGH_SECURITY_EPSILON_THRESHOLD ? '#722ed1' : totalEquivalentEpsilonSumValue <= MEDIUM_SECURITY_EPSILON_THRESHOLD ? '#13c2c2' : '#fa8c16' }} />} 
+								formatter={(formatterOutputValue) => <span style={{ fontSize: scaleFontSize(42), fontWeight: 'bold', color: totalEquivalentEpsilonSumValue <= HIGH_SECURITY_EPSILON_THRESHOLD ? '#722ed1' : totalEquivalentEpsilonSumValue <= MEDIUM_SECURITY_EPSILON_THRESHOLD ? '#13c2c2' : '#fa8c16' }}>{formatterOutputValue}</span>}
 							/>
 						</div>
 

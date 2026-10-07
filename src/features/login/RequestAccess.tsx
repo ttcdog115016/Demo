@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useUIStore } from '../../store/useUIStore';
 
+import { scaleFontSize } from '../../utils/fontScale';
 /**
  * 預設時間常數宣告 (單位: 毫秒)
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
@@ -152,11 +153,11 @@ export default function RequestAccess(): React.ReactElement
 							</div>
 						</div>
 
-						<h2 style={{ color: isDarkModeActive ? '#e2e8f0' : '#334155', fontSize: 20, fontWeight: 500, margin: '0 0 8px 0' }}>
+						<h2 style={{ color: isDarkModeActive ? '#e2e8f0' : '#334155', fontSize: scaleFontSize(20), fontWeight: 500, margin: '0 0 8px 0' }}>
 							{translate('request_access.title', '申請使用權限')}
 						</h2>
 
-						<p style={{ color: isDarkModeActive ? '#94a3b8' : '#64748b', margin: 0, fontSize: 14 }}>
+						<p style={{ color: isDarkModeActive ? '#94a3b8' : '#64748b', margin: 0, fontSize: scaleFontSize(14) }}>
 							{translate('request_access.subtitle', '請填寫您的資料，管理員審核通過後將發送通知信。')}
 						</p>
 					</div>

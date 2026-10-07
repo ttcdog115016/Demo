@@ -29,9 +29,11 @@ export interface PipelineRunnerInput {
     actualProcessedColumnsList: string[];
     /** 畫面判定的欄位角色（與結果頁標籤一致） */
     getCalculatedRole: (columnName: string) => { role: string; maskStrategy?: string };
+    /** K-匿名間接識別欄位實際套用之泛化技術代碼（寫入稽核憑證快照） */
+    resolveQiGeneralizationTech?: (columnName: string) => string;
 }
 
-export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRole }: PipelineRunnerInput) =>
+export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRole, resolveQiGeneralizationTech }: PipelineRunnerInput) =>
 {
     const { t: translate } = useTranslation();
     const { message: messageApi } = AntdApp.useApp();
@@ -378,7 +380,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             ]);
 
             try {
-                await new Promise(resolve => setTimeout(resolve, 800));
+                // ★ 2026-10-06：移除原本純展示用的 800ms 等待，直接進入處理階段
                 setCalculationProgressValue(30);
                 setCurrentPipelinePhaseType('processing');
                 setSystemSimulationLogsList(prev => [...prev, translate('step4.log.generate_config', '[{{time}}] ⚙️ 產生 JSON 設定檔 (Config) 並請求 Docker 後端...', { time: formatCurrentTimeForLogString() })]);
@@ -554,6 +556,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     isComplianceValid: pipelineComplianceValidStatus,
                     columnNames: actualProcessedColumnsList,
                     resolveColumnRole: getCalculatedRole,
+                    resolveQiGeneralizationTech,
                     dpEnabledFieldNames: (currentDpFieldsListArray || []).filter((field: DpStoreField) => field.enabled).map((field: DpStoreField) => field.fieldName)
                 });
                 // ★ 2026-10-02：簽發前計算防篡改指紋（憑證內容＋原始檔／輸出檔 SHA-256）並以 ECDSA 簽章（見 utils/auditIntegrity.ts）；
@@ -604,7 +607,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             }
 
         },
-        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentParametersHashString, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
+        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentParametersHashString, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, resolveQiGeneralizationTech, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
     );
 
     // ★ 2026-10-01（第 16 項）：自動執行只在「使用者可調整的參數」（currentParametersHashString）改變、且這組

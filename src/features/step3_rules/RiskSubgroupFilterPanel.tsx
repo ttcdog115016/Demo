@@ -43,6 +43,7 @@ import { useWorkspaceStore, type RiskSubgroupCondition } from '../../store/useWo
 import { useEnsureDatasetProfile, MAX_TOP_VALUES_PER_COLUMN } from '../../utils/datasetProfile';
 import { resolveColumnKindForSubgroup, isColumnTemporalForSubgroup } from '../../utils/riskSubgroupHelpers';
 
+import { scaleFontSize } from '../../utils/fontScale';
 const { Text } = Typography;
 
 // 完整掃描資料集時，單一欄位最多快取幾個相異值 (依出現次數由高到低排序後截斷)，避免誤把
@@ -135,10 +136,10 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
                     <Tooltip
                         title={
                             <div>
-                                <div>{translate('step3_subgroup.tooltip_p1', '不設定的話，風險評估會用「全部資料」來算；設定之後，只會針對你圈出的這群人來算。')}</div>
-                                <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p2', '這裡的設定不會改變去識別化後產生的資料，只是讓風險評估這個步驟聚焦在你關心的那群人身上。')}</div>
-                                <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p3', '數字／日期欄位：填最小值、最大值（可只填一邊）。類別欄位：直接從清單勾選，不用手打。')}</div>
-                                <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p4', '同時設定好幾個欄位時，要「全部條件都符合」才算是這群人。')}</div>
+                                <div>{translate('step3_subgroup.tooltip_p1', '不設定時，風險評估會以「全部資料」計算；設定後，只針對您指定的這群人計算。')}</div>
+                                <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p2', '這裡的設定不會改變去識別化後的輸出資料，只是讓風險評估聚焦在您關心的族群。')}</div>
+                                <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p3', '數值／日期欄位：填寫最小值、最大值（可只填一邊）。類別欄位：直接從清單勾選即可。')}</div>
+                                <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p4', '同時設定多個欄位時，須「全部條件都符合」才會算入這個族群。')}</div>
                             </div>
                         }
                     >
@@ -169,7 +170,7 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
                 「某地區的罕見疾病患者」）解釋：整體資料的風險可能很低，但其中一小群人的風險
                 可能高出很多，這裡就是用來「只看這一小群人」的風險。原本 hover 才看得到的
                 tooltip 內容則簡化用字、保留較細節的操作說明。 */}
-            <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+            <div style={{ fontSize: scaleFontSize(12), color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
                 {translate(
                     'step3_subgroup.why_hint',
                     '整體資料看起來風險很低，不代表其中某一小群人也一樣安全——例如某地區的罕見疾病患者，人數少、特徵少，反而更容易被認出來。想確認「這一小群人」風不風險，可以在這裡設條件，只針對他們評估。不設定就是評估「全部資料」。'
@@ -240,7 +241,7 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
                                             notFoundContent={translate('step3_subgroup.categorical_no_options', '此欄位在資料集中找不到任何可用值')}
                                         />
                                         {isUniqueValuesTruncatedStatus && (
-                                            <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+                                            <div style={{ fontSize: scaleFontSize(11), color: '#999', marginTop: 2 }}>
                                                 {translate('step3_subgroup.categorical_truncated_hint', '此欄位相異值較多，僅列出最常見的前 1000 個。')}
                                             </div>
                                         )}
@@ -256,7 +257,7 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
                             </div>
                         );
                     })}
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
                         {translate('step3_subgroup.multi_column_hint', '同時設定多個欄位時，須「同時符合」所有欄位的條件才算入選（交集）。')}
                     </Text>
                 </Space>

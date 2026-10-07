@@ -11,7 +11,9 @@ import type { DatasetProfile } from '../../../utils/datasetProfile';
 import type { DpStoreField } from '../../../utils/pipelineConfig';
 import { buildBackendSubgroupPayload } from '../../../utils/riskSubgroupHelpers';
 import { applySensitiveBinningToCsvText } from '../../../utils/sensitiveBinning';
+import { ENABLE_RISK_UPLOAD_COLUMN_TRIMMING, projectCsvTextToColumns, pruneKAnonymityBlockToColumns, formatMegabytesText } from '../../../utils/riskUploadTrimming';
 import { extractCapRequestFailureReasonText, buildCapUnavailableReceipt } from '../../../utils/riskResultHelpers';
+import { computeCapShuffleBaselineFromCsvText, computeCapExcessRisk } from '../../../utils/capBaseline';
 import {
     resolveKAnonymityRiskColumns, selectKAnonymitySensitiveCandidates, describeKAnonymityHighCardinalityHandling,
     buildKAnonymityRiskColumnsForCandidate, buildKAnonymityConfigBlockForRisk, selectDifferentialPrivacySensitiveCandidates,
@@ -94,6 +96,38 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
     const resolvedRiskSubgroupPayload = buildBackendSubgroupPayload(riskSubgroupFiltersMapDict);
     const riskDatasetNameText = currentDatasetFileNameString || 'dataset';
 
+    // ★ 2026-10-06 上傳瘦身：三攻擊與 CAP 只上傳會用到的欄位（見 utils/riskUploadTrimming.ts）。
+    //   null＝不裁切（功能關閉或尚未決定欄位）。
+    let riskUploadKeepColumnNames: Set<string> | null = null;
+    // 送風險評估的資料：先裁切欄位、再套用敏感欄位級距（原始資料與去識別化資料用同一套規則）
+    const buildRiskUploadCsvText = (sourceCsvText: string): string => {
+        const projectedCsvText = riskUploadKeepColumnNames
+            ? projectCsvTextToColumns(sourceCsvText, riskUploadKeepColumnNames).csvText
+            : sourceCsvText;
+        return applySensitiveBinningToCsvText(projectedCsvText, riskEvaluationBinWidthMap);
+    };
+    const isRiskUploadTransformNeeded = (): boolean =>
+        riskUploadKeepColumnNames !== null || Object.keys(riskEvaluationBinWidthMap).length > 0;
+    const resolveRiskUploadKeepColumnNames = (requiredColumnNames: Iterable<string>): Set<string> | null => {
+        if (!ENABLE_RISK_UPLOAD_COLUMN_TRIMMING) return null;
+        const keepColumnNameSet = new Set(requiredColumnNames);
+        Object.keys(resolvedRiskSubgroupPayload || {}).forEach((columnName) => keepColumnNameSet.add(columnName));
+        return keepColumnNameSet.size > 0 ? keepColumnNameSet : null;
+    };
+    const prepareRiskOriginalDataFile = () => {
+        if (!isRiskUploadTransformNeeded()) return;
+        const riskUploadCsvText = buildRiskUploadCsvText(cleanedCsvText);
+        riskOriginalDataFile = new File([riskUploadCsvText], 'input_dataset.csv', { type: 'text/csv;charset=utf-8' });
+        if (riskUploadKeepColumnNames && riskOriginalDataFile.size < safeDataFile.size) {
+            appendPipelineLog(`📦 風險評估只上傳用到的 ${riskUploadKeepColumnNames.size} 個欄位，每次上傳 ${formatMegabytesText(safeDataFile.size)} MB → ${formatMegabytesText(riskOriginalDataFile.size)} MB`);
+        }
+    };
+
+    // 只有 1 輪時不顯示輪次，避免看起來像在比較多組
+    const logAttackRoundStart = (roundIndex: number, roundCount: number) => appendPipelineLog(roundCount > 1
+        ? `⏳ 三攻擊風險評估運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`
+        : '⏳ 三攻擊風險評估運算中…');
+
     let attackReportResult: AttackReport | null = null;
     let capReportResult: CapReport | null = null;
     let finalRiskColumnsMap: RiskColumnsMap = {};
@@ -120,13 +154,11 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             forceRunHighCardinality: forceRunHighCardinalitySensitiveFieldsStatus
         });
         Object.assign(riskEvaluationBinWidthMap, kAnonCandidateSelection.binWidthMap);
-        if (Object.keys(riskEvaluationBinWidthMap).length > 0) {
-            riskOriginalDataFile = new File(
-                [applySensitiveBinningToCsvText(cleanedCsvText, riskEvaluationBinWidthMap)],
-                'input_dataset.csv',
-                { type: 'text/csv;charset=utf-8' }
-            );
+        // 只需要間接識別＋敏感欄位（riskColumnsMap 本來就只收這兩種）；沒有候選欄位時不會送出請求，不必裁切
+        if (kAnonCandidateSelection.effectiveCandidateColumnNames.length > 0) {
+            riskUploadKeepColumnNames = resolveRiskUploadKeepColumnNames(Object.keys(riskColumnsMap));
         }
+        prepareRiskOriginalDataFile();
         setHighCardinalitySensitiveWarningInfo(kAnonCandidateSelection.highCardinalityInfo);
         finalHighCardinalitySensitiveWarningInfo = kAnonCandidateSelection.highCardinalityInfo;
         describeKAnonymityHighCardinalityHandling(kAnonCandidateSelection.highCardinalityInfo).forEach(appendPipelineLog);
@@ -152,11 +184,15 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             // 全部候選都被判定為高唯一值時，上方已記錄對應訊息，這裡不再重複
             finalRiskColumnsMap = riskColumnsMap;
         } else {
-            const kAnonConfigBlockForRisk = buildKAnonymityConfigBlockForRisk((configObject as Record<string, unknown>).k_anonymity, riskEvaluationBinWidthMap);
+            const kAnonConfigBlockWithBinning = buildKAnonymityConfigBlockForRisk((configObject as Record<string, unknown>).k_anonymity, riskEvaluationBinWidthMap);
+            // 資料只剩部分欄位時，設定檔也只能宣告這些欄位（後端找不到宣告的欄位會報錯）
+            const kAnonConfigBlockForRisk = riskUploadKeepColumnNames
+                ? pruneKAnonymityBlockToColumns(kAnonConfigBlockWithBinning, riskUploadKeepColumnNames)
+                : kAnonConfigBlockWithBinning;
             const kAnonAttackRoundsResult = await runWorstCaseAttackRounds({
                 candidateColumnNames: effectiveSensitiveCandidateColumnNamesList,
                 buildColumnsForCandidate: buildKAnonRiskColumnsMapForCandidate,
-                onRoundStart: (roundIndex, roundCount) => appendPipelineLog(`⏳ 三攻擊風險評估運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`),
+                onRoundStart: logAttackRoundStart,
                 runRound: async (columnsForThisRound, candidateSensitiveFieldName) => {
                     const riskConfigFile = createJsonConfigFile(buildRiskAttackConfigObject({
                         version: 'step4_risk_k_anonymity', dataset: riskDatasetNameText, columns: columnsForThisRound,
@@ -181,13 +217,6 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
         });
         // 點選為敏感的連續數值欄位（如薪資）先分級距：原始資料在這裡轉換，去識別化結果在下方 CAP 段落以同一套級距轉換
         Object.assign(riskEvaluationBinWidthMap, dpCandidateSelection.binWidthMap);
-        if (Object.keys(riskEvaluationBinWidthMap).length > 0) {
-            riskOriginalDataFile = new File(
-                [applySensitiveBinningToCsvText(cleanedCsvText, riskEvaluationBinWidthMap)],
-                'input_dataset.csv',
-                { type: 'text/csv;charset=utf-8' }
-            );
-        }
         const dpConfigBlockForRisk = buildDifferentialPrivacyConfigBlockForRisk(
             (configObject as Record<string, unknown>).differential_privacy, dpCandidateSelection.categoricalOverrideColumnNames
         );
@@ -207,11 +236,22 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
         capCandidateColumnNamesList = dpCandidateSelection.effectiveCandidateColumnNames;
         buildCapRiskColumnsMapForCandidateFn = buildDpRiskColumnsMapForCandidate;
 
+        // 需要的欄位＝各輪 columns 的聯集＋設定檔 column_budgets 宣告的欄位（後端要求宣告的欄位存在於資料中）
+        if (dpCandidateSelection.effectiveCandidateColumnNames.length > 0) {
+            const dpRequiredColumnNameSet = new Set<string>();
+            dpCandidateSelection.effectiveCandidateColumnNames.forEach((candidateSensitiveFieldName) =>
+                Object.keys(buildDpRiskColumnsMapForCandidate(candidateSensitiveFieldName)).forEach((columnName) => dpRequiredColumnNameSet.add(columnName)));
+            const dpColumnBudgetsMap = ((dpConfigBlockForRisk as Record<string, unknown> | undefined)?.column_budgets || {}) as Record<string, unknown>;
+            Object.keys(dpColumnBudgetsMap).forEach((columnName) => dpRequiredColumnNameSet.add(columnName));
+            riskUploadKeepColumnNames = resolveRiskUploadKeepColumnNames(dpRequiredColumnNameSet);
+        }
+        prepareRiskOriginalDataFile();
+
         // 候選被篩到 0 個時迴圈不執行、attackReportResult 維持 null，等同略過三攻擊／CAP
         const dpAttackRoundsResult = await runWorstCaseAttackRounds({
             candidateColumnNames: dpCandidateSelection.effectiveCandidateColumnNames,
             buildColumnsForCandidate: buildDpRiskColumnsMapForCandidate,
-            onRoundStart: (roundIndex, roundCount) => appendPipelineLog(`⏳ 三攻擊風險評估運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`),
+            onRoundStart: logAttackRoundStart,
             runRound: async (columnsForThisRound, candidateSensitiveFieldName) => {
                 const riskConfigFile = createJsonConfigFile(buildRiskAttackConfigObject({
                     version: 'step4_risk_dp', dataset: riskDatasetNameText, columns: columnsForThisRound,
@@ -240,9 +280,37 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
     if (finalCsvBlobData && !isRiskCandidateListEmptyStatus) {
         try {
             // 有敏感欄位自動分級距時，CAP 的原始與去識別化兩份資料都要用同一套級距轉換
-            const processedFileForCap = Object.keys(riskEvaluationBinWidthMap).length > 0
-                ? new File([applySensitiveBinningToCsvText(await readProcessedCsvTextOnce(), riskEvaluationBinWidthMap)], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' })
+            // 有敏感欄位自動分級距或欄位裁切時，去識別化資料也套用與原始資料相同的轉換
+            // ★ 2026-10-06：另保留送出的處理後資料文字，供前端計算 CAP 亂猜基線（見 utils/capBaseline.ts）
+            const processedCapCsvText = isRiskUploadTransformNeeded()
+                ? buildRiskUploadCsvText(await readProcessedCsvTextOnce())
+                : await readProcessedCsvTextOnce();
+            const processedFileForCap = isRiskUploadTransformNeeded()
+                ? new File([processedCapCsvText], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' })
                 : new File([finalCsvBlobData], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' });
+            const attachCapBaseline = (capReport: CapReport, capColumnsMap: RiskColumnsMap, sensitiveColumnName: string | undefined): CapReport => {
+                if (!sensitiveColumnName || capReport.cap_after < 0) return capReport;
+                const baselineResult = computeCapShuffleBaselineFromCsvText({
+                    csvText: processedCapCsvText,
+                    quasiIdentifierColumnNames: Object.entries(capColumnsMap).filter(([, columnSpec]) => columnSpec.role === 'quasi_identifier').map(([columnName]) => columnName),
+                    sensitiveColumnName,
+                    subgroupPayload: resolvedRiskSubgroupPayload
+                });
+                if (baselineResult && Math.abs(baselineResult.recomputedCap - capReport.cap_after) > 0.005) {
+                    // 前端重算與後端不一致（例如 CSV 解析差異）時只記在主控台，不影響畫面
+                    console.warn(`CAP 亂猜基線：前端重算 CAP ${baselineResult.recomputedCap.toFixed(4)} 與後端 cap_after ${capReport.cap_after} 不一致`);
+                }
+                const baselineValue = baselineResult ? baselineResult.baseline : null;
+                return {
+                    ...capReport,
+                    cap_sensitive_column: sensitiveColumnName,
+                    cap_baseline_after: baselineValue,
+                    cap_after_excess: computeCapExcessRisk(capReport.cap_after, baselineValue)
+                };
+            };
+            // 後端只評設定檔中的第一個敏感欄位（cap_mode.py：sensitive_cols[0]）
+            const resolveFirstSensitiveColumnName = (capColumnsMap: RiskColumnsMap): string | undefined =>
+                Object.entries(capColumnsMap).find(([, columnSpec]) => columnSpec.role === 'sensitive')?.[0];
             const runCapRequest = (capColumnsMap: RiskColumnsMap) => runRiskCap(
                 riskOriginalDataFile, processedFileForCap,
                 createJsonConfigFile(buildCapConfigObject({ dataset: riskDatasetNameText, columns: capColumnsMap, subgroup: resolvedRiskSubgroupPayload }), 'cap_config.json'),
@@ -254,8 +322,16 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
                 capReportResult = await runWorstCaseCapRounds({
                     candidateColumnNames: capCandidateColumnNamesList,
                     buildColumnsForCandidate: buildCapRiskColumnsMapForCandidateFn,
-                    onRoundStart: (roundIndex, roundCount) => appendPipelineLog(`⏳ CAP 前後對比運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`),
-                    runRound: (capColumnsMap) => runCapRequest(capColumnsMap),
+                    // 只有 1 輪時不顯示輪次，避免看起來像在比較多組
+                    onRoundStart: (roundIndex, roundCount) => appendPipelineLog(roundCount > 1
+                        ? `⏳ CAP 前後對比運算中（第 ${roundIndex + 1}/${roundCount} 輪）...`
+                        : '⏳ CAP 前後對比運算中…'),
+                    runRound: async (capColumnsMap, candidateSensitiveFieldName) => {
+                        const capResponse = await runCapRequest(capColumnsMap);
+                        return capResponse.success && capResponse.report
+                            ? { ...capResponse, report: attachCapBaseline(capResponse.report, capColumnsMap, resolveFirstSensitiveColumnName(capColumnsMap) || candidateSensitiveFieldName) }
+                            : capResponse;
+                    },
                     onRoundFailed: (roundIndex, candidateSensitiveFieldName, reasonText, errorPayload) => {
                         console.error(`CAP 前後對比（以「${candidateSensitiveFieldName}」為敏感欄位）失敗:`, errorPayload);
                         appendPipelineLog(`⚠️ CAP 第 ${roundIndex + 1} 輪（敏感欄位「${candidateSensitiveFieldName}」）失敗，已略過該輪：${reasonText}`);
@@ -264,7 +340,7 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             } else {
                 const capResponse = await runCapRequest(finalRiskColumnsMap);
                 if (!capResponse.success || !capResponse.report) throw (capResponse.error || new Error('CAP 前後對比 API 請求未成功'));
-                capReportResult = capResponse.report;
+                capReportResult = attachCapBaseline(capResponse.report, finalRiskColumnsMap, resolveFirstSensitiveColumnName(finalRiskColumnsMap));
             }
 
             setCapReportData(capReportResult);
@@ -272,6 +348,9 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             console.log('📩 /api/v1/risk/cap 原始回應內容:', capReportResult);
             if (capReportResult && capReportResult.cap_before >= 0 && capReportResult.cap_after >= 0) {
                 appendPipelineLog(`✅ CAP 前後對比完成（處理前 ${(capReportResult.cap_before * 100).toFixed(1)}% → 處理後 ${(capReportResult.cap_after * 100).toFixed(1)}%）`);
+                if (typeof capReportResult.cap_baseline_after === 'number' && typeof capReportResult.cap_after_excess === 'number') {
+                    appendPipelineLog(`ℹ️ 敏感欄位「${capReportResult.cap_sensitive_column}」亂猜基線（打亂敏感欄位後的 CAP）${(capReportResult.cap_baseline_after * 100).toFixed(1)}%，扣除後的猜中風險 ${(capReportResult.cap_after_excess * 100).toFixed(1)}%`);
+                }
             } else if (capReportResult) {
                 appendPipelineLog(`⚠️ CAP 前後對比未能評估：${capReportResult.message}`);
             }

@@ -279,6 +279,13 @@ export interface CapReport {
   n_original: number;
   n_processed: number;
   message: string;
+  // ★ 2026-10-06 以下為前端自行計算、後端不會回傳（見 utils/capBaseline.ts）：
+  /** 亂猜基線：處理後資料中最常見敏感值的佔比（CAP 的下限） */
+  cap_baseline_after?: number | null;
+  /** 扣除亂猜基線後的 CAP 風險 (cap_after − 基線) ÷ (1 − 基線)，用於整體風險等級 */
+  cap_after_excess?: number | null;
+  /** 這份 CAP 是以哪個敏感欄位評估的（多輪取最大值時記錄最高的那一輪） */
+  cap_sensitive_column?: string;
 }
 
 export interface RiskAttackResponse {

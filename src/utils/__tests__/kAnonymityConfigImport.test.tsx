@@ -24,7 +24,7 @@ vi.mock('antd', async () => {
     return { ...actual, App: MockApp };
 });
 
-import KAnonymityMapping from '../../features/step2_mapping/KAnonymityMapping';
+import KAnonymityMapping, { SHOW_LEVEL_RANGE_TRIAL } from '../../features/step2_mapping/KAnonymityMapping';
 import KAnonymityRules from '../../features/step3_rules/KAnonymityRules';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { buildBackendConfigDocumentFromWorkspace } from '../pipelineConfig';
@@ -102,7 +102,13 @@ describe('qi_generalization_levels 層級範圍 [最小, 最大]', () => {
         expect(fieldsByName.職業).toMatchObject({ genMaxLevel: 1, genLevelRangeUpper: 3 });
         expect(fieldsByName.地區).toMatchObject({ genMaxLevel: 2 });
         expect(fieldsByName.地區).not.toHaveProperty('genLevelRangeUpper');
-        expect(container.textContent).toContain('依層級 1 處理；另試算層級 3');
+        // 「評估至／試算層級」提示依 SHOW_LEVEL_RANGE_TRIAL 開關顯示（2026-10-02 起隱藏）；
+        //   隱藏時確認不會出現，開關改回 true 時改為確認有顯示。
+        if (SHOW_LEVEL_RANGE_TRIAL) {
+            expect(container.textContent).toContain('依層級 1 處理；另試算層級 3');
+        } else {
+            expect(container.textContent).not.toContain('另試算層級');
+        }
 
         const exportedConfig = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: Record<string, Record<string, unknown>> };
         expect(exportedConfig.k_anonymity.qi_generalization_levels).toEqual({ 地區: 2, 職業: [1, 3], 生日: 5 });
