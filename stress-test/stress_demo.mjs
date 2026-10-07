@@ -137,8 +137,11 @@ const request = (opts, method, urlPath, { body, contentType, accept } = {}) => n
 
 const errorDetail = (res) => {
     if (res.error) return res.error;
-    const text = res.body.toString('utf8').slice(0, 400).replace(/\s+/g, ' ');
-    return `HTTP ${res.status} ${text}`;
+    const raw = res.body.toString('utf8');
+    const htmlTitle = /<title>([^<]*)<\/title>/i.exec(raw)?.[1];
+    const text = (htmlTitle || raw.slice(0, 300)).replace(/\s+/g, ' ').trim();
+    const hint = { 502: '（通道或代理收到後端斷線）', 524: '（Cloudflare 等後端回應超過 100 秒）', 530: '（Cloudflare 連不到本機通道）' }[res.status] || '';
+    return `HTTP ${res.status}${hint} ${text}`;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -206,8 +209,10 @@ const runUser = async (ctx, userId, mode, phaseLabel) => {
     const step = async (name, fn) => {
         if (failed) return null;
         const r = await fn();
-        const ok = !r.error && r.status >= 200 && r.status < 300 && (r.check ? r.check() : true);
-        const entry = { name, status: r.status, ms: Math.round(r.ms), bytes: r.body?.length || 0, ok, detail: ok ? (r.note || '') : (r.checkMsg || errorDetail(r)) };
+        const httpOk = !r.error && r.status >= 200 && r.status < 300;
+        const ok = httpOk && (r.check ? r.check() : true);
+        // HTTP 本身失敗時顯示狀態碼與回應內容；只有 HTTP 成功但內容不符時才顯示 checkMsg
+        const entry = { name, status: r.status, ms: Math.round(r.ms), bytes: r.body?.length || 0, ok, detail: ok ? (r.note || '') : (httpOk ? r.checkMsg : errorDetail(r)) };
         steps.push(entry);
         log(`${ok ? '✓' : '✗'} ${name.padEnd(26)} ${String(entry.status).padStart(3)}  ${(entry.ms / 1000).toFixed(2)}s  ${entry.detail}`);
         if (!ok) failed = `${name}: ${entry.detail}`;

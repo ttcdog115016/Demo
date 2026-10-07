@@ -460,6 +460,7 @@ Vite/React 預設模板殘留的展示頁樣式（`.counter`、`.hero`、`#next-
 - **參數驗證 `useEffect`**：K≥2、K≤資料筆數、（啟用 l-diversity 時）K≥L、（啟用 t-closeness 時）0<T<1；全通過才 `setStepValidation(true,null)`。
 - `enableLDiversity`/`enableTCloseness`：獨立開關，關閉時對應參數不送給後端（避免未指定敏感欄位時後端永遠回傳未通過）。
 - **QI 威脅組合**：`quasiIdentifierColumnsArray` 篩出角色為 QI 的欄位；`addCombination`/`removeCombination`/`updateCombination` 管理多組自訂欄位子集（**目前僅前端本地 state，未接入匯出流程**，重新整理會遺失）。
+  - **2026-10-04 起暫時隱藏**：以常數 `SHOW_QI_COMBINATION_SCOPE = false` 關閉整個「計算範圍」區塊（state 與函式保留）。原因：組合從未送進設定檔，選了也不影響結果。後端引擎雖有 `k_qi_subset`（規格 2.1(4)「依指定準識別欄位組合計算」，一次只接受一組），但期中原始碼的 API（`deid_router.py`）未傳入、設定檔 schema 無此欄位，v2／v3 交付包文件也未提及。待後端開放後把常數改回 `true`，並改為單一一組、寫入 `k_anonymity` 區塊送出。
 - `getKAnonymityChartOption()`：計算 Pareto 邊界曲線（40點，凸曲線公式）+ 綜合隱私評分（K佔50%/L佔25%/T佔25%）+ 抑制率懲罰，產生 ECharts 長條圖設定。
 - **抑制策略下拉選單**：「抑制方式」（`row_suppression` 列抑制 / `cell_suppression` 儲存格抑制）；「最大允許抑制率」滑桿（0~50%）；「超限處置」（停止並報錯 / 自動放寬K值 / 強制抑制）。
 
