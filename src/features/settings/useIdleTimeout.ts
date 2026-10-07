@@ -135,7 +135,7 @@ export const useIdleTimeout = (timeoutMinutesConfig: number = DEFAULT_IDLE_TIMEO
 						console.log(`[閒置偵測] 已閒置超過 ${effectiveTimeoutMinutesValue} 分鐘，觸發強制登出！`);
 
 						// 執行全域 AuthStore 之登出程序以清除 Session
-						executeLogoutAction();
+						executeLogoutAction('idle');
 
 						// 彈出 UI 系統提示告知使用者已被登出 (符合變數撰寫規範 g 異常回饋)
 						messageApi.warning('由於您已閒置過久，系統已自動將您登出。');

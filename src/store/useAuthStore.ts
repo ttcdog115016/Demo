@@ -8,6 +8,11 @@
  */
 
 import { create } from 'zustand';
+import { logSystemEvent } from './useSystemLogStore';
+import { getRoleDisplayName } from '../utils/roleLabel';
+
+// 登出原因：manual 使用者自行登出 | idle 閒置逾時 | maintenance 維護模式強制登出
+export type LogoutReason = 'manual' | 'idle' | 'maintenance';
 
 /**
  * 使用者系統角色型別定義
@@ -24,6 +29,7 @@ interface User
 	name: string;   // 使用者顯示名稱
 	email: string;  // 使用者電子郵件帳號
 	role: UserRole; // 使用者系統角色
+	mustChangePassword?: boolean; // 須先變更密碼才能使用系統（管理員重設／新帳號／密碼過期）
 }
 
 /**
@@ -60,7 +66,7 @@ interface AuthState
 	 * 
 	 * 規範對照: 符合規範 b) 函數開頭註記, c) 確保透過正規 Action 修改全域變數
 	 */
-	logout: () => void;
+	logout: (logoutReasonType?: LogoutReason) => void;
 
 	/**
 	 * 函數名稱: setUserRole
@@ -90,19 +96,36 @@ export const useAuthStore = create<AuthState>(
 			user: null,
 			
 			// 實作登入 Action：寫入狀態與使用者物件
-			login: (userSessionData) => setStoreStateAction({ isAuthenticated: true, user: userSessionData }),
+			login: (userSessionData) => 
+			{
+				setStoreStateAction({ isAuthenticated: true, user: userSessionData });
+				logSystemEvent('INFO', `使用者登入成功（角色：${getRoleDisplayName(userSessionData.role)}）`, userSessionData.name);
+			},
 			
 			// 實作登出 Action：清空狀態與使用者物件
-			logout: () => setStoreStateAction({ isAuthenticated: false, user: null }),
+			logout: (logoutReasonType = 'manual') => setStoreStateAction(
+				(currentStoreStateData) => 
+				{
+					const loggedOutUserNameString = currentStoreStateData.user?.name ?? 'System';
+					if (logoutReasonType === 'idle') logSystemEvent('WARN', '閒置逾時，系統自動登出', loggedOutUserNameString);
+					else if (logoutReasonType === 'maintenance') logSystemEvent('WARN', '系統維護模式啟用中，強制登出', loggedOutUserNameString);
+					else logSystemEvent('INFO', '使用者登出', loggedOutUserNameString);
+					return { isAuthenticated: false, user: null };
+				}
+			),
 			
 			// 實作角色切換 Action：防呆處理，確保使用者存在才更新角色屬性
 			setUserRole: (targetUserRoleType) => setStoreStateAction(
 				(currentStoreStateData) => 
-				(
-					{ 
-						user: currentStoreStateData.user ? { ...currentStoreStateData.user, role: targetUserRoleType } : null 
+				{
+					if (currentStoreStateData.user && currentStoreStateData.user.role !== targetUserRoleType)
+					{
+						logSystemEvent('INFO', `切換測試角色：${getRoleDisplayName(currentStoreStateData.user.role)} → ${getRoleDisplayName(targetUserRoleType)}`, currentStoreStateData.user.name);
 					}
-				)
+					return { 
+						user: currentStoreStateData.user ? { ...currentStoreStateData.user, role: targetUserRoleType } : null 
+					};
+				}
 			),
 		}
 	)

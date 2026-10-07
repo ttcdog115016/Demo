@@ -15,7 +15,8 @@
  * 各支 API 函式。
  * ============================================================================
  */
-import axios, { type AxiosError } from 'axios';
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { logSystemEvent } from '../store/useSystemLogStore';
 import { recordApiError } from '../utils/apiErrorLogger';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
 
@@ -107,6 +108,21 @@ const summarizeRequestPayloadForLogging = async (requestDataValue: unknown): Pro
 
 let isGlobalApiErrorInterceptorRegistered = false;
 
+// ★ 2026-10-07：系統維運日誌——記錄每次後端 API 呼叫的結果與耗時
+type TimedAxiosRequestConfig = InternalAxiosRequestConfig & { systemLogStartedAtMs?: number };
+
+const describeApiCallForSystemLog = (requestConfigObj: TimedAxiosRequestConfig | undefined): { label: string; elapsedText: string } => {
+    const methodNameString = (requestConfigObj?.method || 'GET').toUpperCase();
+    const urlPathString = requestConfigObj?.url || '(未知路徑)';
+    const elapsedSecondsValue = requestConfigObj?.systemLogStartedAtMs
+        ? (Date.now() - requestConfigObj.systemLogStartedAtMs) / 1000
+        : undefined;
+    return {
+        label: `${methodNameString} ${urlPathString}`,
+        elapsedText: elapsedSecondsValue !== undefined ? `，耗時 ${elapsedSecondsValue.toFixed(1)} 秒` : '',
+    };
+};
+
 /**
  * 函數名稱: registerGlobalApiErrorInterceptor
  * 函數功能: 掛載全域 axios 錯誤攔截器；具備重複呼叫防護 (React StrictMode 下
@@ -116,11 +132,31 @@ export const registerGlobalApiErrorInterceptor = (): void => {
     if (isGlobalApiErrorInterceptorRegistered) return;
     isGlobalApiErrorInterceptorRegistered = true;
 
+    axios.interceptors.request.use((requestConfigObj) => {
+        (requestConfigObj as TimedAxiosRequestConfig).systemLogStartedAtMs = Date.now();
+        return requestConfigObj;
+    });
+
     axios.interceptors.response.use(
-        (successResponseObj) => successResponseObj,
+        (successResponseObj) => {
+            const { label, elapsedText } = describeApiCallForSystemLog(successResponseObj.config as TimedAxiosRequestConfig);
+            logSystemEvent('INFO', `後端 API 呼叫成功（HTTP ${successResponseObj.status}${elapsedText}）`, label);
+            return successResponseObj;
+        },
         async (errorObj: AxiosError) => {
             // ★ 2026-09-30：使用者按「取消運算」主動中斷的請求不是錯誤，不寫入診斷紀錄、不回報
-            if (axios.isCancel(errorObj)) return Promise.reject(errorObj);
+            if (axios.isCancel(errorObj)) {
+                logSystemEvent('INFO', '使用者取消運算，請求已中斷', describeApiCallForSystemLog(errorObj.config as TimedAxiosRequestConfig | undefined).label);
+                return Promise.reject(errorObj);
+            }
+            {
+                const { label, elapsedText } = describeApiCallForSystemLog(errorObj.config as TimedAxiosRequestConfig | undefined);
+                const httpStatusValue = errorObj.response?.status;
+                const failureDescriptionString = httpStatusValue
+                    ? `後端 API 呼叫失敗（HTTP ${httpStatusValue}${elapsedText}）`
+                    : `後端 API 無回應或連線中斷（${errorObj.message}${elapsedText}）`;
+                logSystemEvent(httpStatusValue !== undefined && httpStatusValue < 500 ? 'WARN' : 'ERROR', failureDescriptionString, label);
+            }
             try {
                 const requestConfigObj = errorObj.config;
                 const responseObj = errorObj.response;

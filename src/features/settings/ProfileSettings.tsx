@@ -14,8 +14,11 @@ import { UserOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
+import { useAccountStore } from '../../store/useAccountStore';
+import { logSystemEvent } from '../../store/useSystemLogStore';
 import { useUIStore } from '../../store/useUIStore';
 
+import { scaleFontSize } from '../../utils/fontScale';
 const { Title, Text } = Typography;
 
 /**
@@ -59,7 +62,7 @@ export default function ProfileSettings(): React.ReactElement
 	);
 	
 	// 擴充型別讀取與切換密碼過期狀態之輔助 Action (符合規範 g)
-	const isPasswordExpiredStatus = (currentUserSession as unknown as { isPasswordExpired?: boolean })?.isPasswordExpired || false; // 當前密碼是否已過期
+	const isPasswordExpiredStatus = currentUserSession?.mustChangePassword || false; // 須先變更密碼（新帳號／管理員重設／密碼過期）
 
 	/**
 	 * 函數名稱: setPasswordExpired
@@ -75,7 +78,7 @@ export default function ProfileSettings(): React.ReactElement
 			(currentStoreState) => 
 			(
 				{
-					user: currentStoreState.user ? { ...currentStoreState.user, isPasswordExpired: isExpired } as typeof currentStoreState.user : null
+					user: currentStoreState.user ? { ...currentStoreState.user, mustChangePassword: isExpired } : null
 				}
 			)
 		);
@@ -242,12 +245,38 @@ export default function ProfileSettings(): React.ReactElement
 	 */
 	const handleUpdatePassword = (): void => 
 	{
+		// ★ 2026-10-07：改為實際驗證「目前密碼」並寫入帳號資料庫 (useAccountStore)
+		const passwordFormValuesObj = passwordFormInstance.getFieldsValue() as { oldPassword?: string; newPassword?: string };
 		setIsSubmitting(true);
-		
+
 		setTimeout(
 			() => 
 			{
 				setIsSubmitting(false);
+
+				const changeResult = useAccountStore.getState().changeOwnPassword(
+					currentUserSession?.email || '', passwordFormValuesObj.oldPassword || '', passwordFormValuesObj.newPassword || ''
+				);
+
+				if (!changeResult.ok)
+				{
+					if (changeResult.reason === 'wrong_password')
+					{
+						passwordFormInstance.setFields([{ name: 'oldPassword', errors: [translate('profile.wrong_current_password', '目前密碼不正確')] }]);
+					}
+					else if (changeResult.reason === 'same_password')
+					{
+						passwordFormInstance.setFields([{ name: 'newPassword', errors: [translate('profile.same_password', '新密碼不可與目前密碼相同')] }]);
+					}
+					else
+					{
+						messageApi.error(translate('profile.account_not_found', '找不到此帳號的資料，請重新登入後再試。'));
+					}
+					logSystemEvent('WARN', '變更密碼失敗（目前密碼錯誤或新舊密碼相同）', currentUserSession?.name || 'System');
+					return;
+				}
+
+				logSystemEvent('INFO', '使用者自行變更密碼', currentUserSession?.name || 'System');
 
 				messageApi.success(
 					translate('profile.password_changed', '密碼已成功變更！請妥善保管新密碼。')
@@ -272,7 +301,7 @@ export default function ProfileSettings(): React.ReactElement
 				title={
 					<Space>
 						<UserOutlined style={{ color: token.colorPrimary }} />
-						<span style={{ fontSize: '18px', fontWeight: 'bold' }}>
+						<span style={{ fontSize: scaleFontSize(18), fontWeight: 'bold' }}>
 							{translate('profile.title', '個人資料與安全設定')}
 						</span>
 					</Space>
@@ -367,24 +396,24 @@ export default function ProfileSettings(): React.ReactElement
 											/>
 
 											<div style={{ display: 'flex', justifyContent: 'space-between' }}>
-												<Text type="secondary" style={{ fontSize: '12px' }}>{translate('profile.password_strength', '密碼強度')}</Text>
-												<Text style={{ fontSize: '12px', fontWeight: 'bold', color: getStrengthColor(currentPasswordStrengthScore) }}>
+												<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>{translate('profile.password_strength', '密碼強度')}</Text>
+												<Text style={{ fontSize: scaleFontSize(12), fontWeight: 'bold', color: getStrengthColor(currentPasswordStrengthScore) }}>
 													{getStrengthLabel(currentPasswordStrengthScore)}
 												</Text>
 											</div>
 										</div>
 									)}
 
-									<div style={{ fontSize: '12px', color: token.colorTextSecondary, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-										<Text type="secondary" style={{ fontSize: '12px' }}>
+									<div style={{ fontSize: scaleFontSize(12), color: token.colorTextSecondary, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
 											{translate('profile.password_hint_1', '• 長度與複雜度：目標至少 12 個字元，並交織大小寫、數字及符號。')}
 										</Text>
 
-										<Text type="secondary" style={{ fontSize: '12px' }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
 											{translate('profile.password_hint_2', '• 易記性：建議使用對您有意義的「長句助記詞」(如生動的單字組合)。')}
 										</Text>
 
-										<Text type="secondary" style={{ fontSize: '12px' }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
 											{translate('profile.password_hint_3', '• 獨特性：請確保此密碼為本系統專屬，勿與其他平台共用。')}
 										</Text>
 									</div>
@@ -395,7 +424,7 @@ export default function ProfileSettings(): React.ReactElement
 									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
 									{ min: MIN_PASSWORD_LENGTH_LIMIT, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') }, 
 									{
-										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#\-_+=])[A-Za-z\d@$!%*?&#\-_+=]{12,}$/, 
+										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#\-_+=])[A-Za-z\d@$!%*?&#\-_+=]+$/, 
 										message: translate('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
 									},
 									({ getFieldValue }) => (

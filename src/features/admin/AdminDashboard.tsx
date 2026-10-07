@@ -21,7 +21,10 @@ import {
 
 import { useUIStore } from '../../store/useUIStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { logSystemEvent } from '../../store/useSystemLogStore';
 
+import { scaleFontSize } from '../../utils/fontScale';
 /**
  * 預設系統安全常數宣告
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
@@ -130,6 +133,8 @@ export default function AdminDashboard(): React.ReactElement
 			enablePasswordExpiry: isChecked
 		});
 
+		logSystemEvent('INFO', `密碼過期輪替政策：${isChecked ? '啟用' : '停用'}`, useAuthStore.getState().user?.name ?? 'Admin');
+
 		messageApi.success(
 			translate('admin.setting_updated', '安全性設定已成功更新！')
 		);
@@ -157,6 +162,8 @@ export default function AdminDashboard(): React.ReactElement
 				passwordExpiryDays: inputDaysValue
 			});
 
+			logSystemEvent('INFO', `密碼有效天數上限改為 ${inputDaysValue} 天`, useAuthStore.getState().user?.name ?? 'Admin');
+
 			messageApi.success(
 				translate('admin.setting_updated', '安全性設定已成功更新！')
 			);
@@ -172,7 +179,7 @@ export default function AdminDashboard(): React.ReactElement
 
 	return (
 		<div style={{ padding: '12px' }}>
-			<h2 style={{ color: themeColorsConfig.textMain, marginBottom: '8px', fontSize: '24px' }}>
+			<h2 style={{ color: themeColorsConfig.textMain, marginBottom: '8px', fontSize: scaleFontSize(24) }}>
 				{translate('admin.dashboard_title', '系統管理大廳 (Admin Dashboard)')}
 			</h2>
 
@@ -194,17 +201,17 @@ export default function AdminDashboard(): React.ReactElement
 						}
 					>
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-							<div style={{ color: themeColorsConfig.textMuted, fontSize: '14px' }}>
+							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
 								{translate('admin.uptime', '伺服器運行時間 (Uptime)')}
 							</div>
 
-							<div style={{ color: themeColorsConfig.textMain, fontSize: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+							<div style={{ color: themeColorsConfig.textMain, fontSize: scaleFontSize(24), display: 'flex', alignItems: 'center', gap: '8px' }}>
 								<DesktopOutlined style={{ color: '#52c41a' }} />
 								<span>99.99%</span>
 							</div>
 						</div>
 
-						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: '13px' }}>
+						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(13) }}>
 							{translate('admin.uptime_desc', '連續運行 45 天 12 小時')}
 						</div>
 					</Card>
@@ -223,17 +230,17 @@ export default function AdminDashboard(): React.ReactElement
 						}
 					>
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-							<div style={{ color: themeColorsConfig.textMuted, fontSize: '14px' }}>
+							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
 								{translate('admin.failed_logins', '24H 異常登入嘗試')}
 							</div>
 
-							<div style={{ color: '#faad14', fontSize: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+							<div style={{ color: '#faad14', fontSize: scaleFontSize(24), display: 'flex', alignItems: 'center', gap: '8px' }}>
 								<WarningOutlined />
 								<span>3</span>
 							</div>
 						</div>
 
-						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: '13px' }}>
+						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(13) }}>
 							{translate('admin.failed_logins_desc', '來自 2 個不同的外部 IP')}
 						</div>
 					</Card>
@@ -252,18 +259,18 @@ export default function AdminDashboard(): React.ReactElement
 						}
 					>
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-							<div style={{ color: themeColorsConfig.textMuted, fontSize: '14px' }}>
+							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
 								{translate('admin.active_users', '活躍使用者 (Active Users)')}
 							</div>
 
-							<div style={{ color: themeColorsConfig.textMain, fontSize: '24px', display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+							<div style={{ color: themeColorsConfig.textMain, fontSize: scaleFontSize(24), display: 'flex', alignItems: 'baseline', gap: '8px' }}>
 								<TeamOutlined style={{ color: '#1890ff', alignSelf: 'center' }} />
 								<span>2</span>
-								<span style={{ fontSize: '16px' }}>/ 12</span>
+								<span style={{ fontSize: scaleFontSize(16) }}>/ 12</span>
 							</div>
 						</div>
 
-						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: '13px' }}>
+						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(13) }}>
 							{translate('admin.active_users_desc', '目前線上：Admin.Test, Data.Owner.A')}
 						</div>
 					</Card>
@@ -298,7 +305,7 @@ export default function AdminDashboard(): React.ReactElement
 									{translate('admin.enable_expiry', '強制密碼過期輪替')}
 								</div>
 
-								<div style={{ color: themeColorsConfig.textMuted, fontSize: '12px' }}>
+								<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(12) }}>
 									{translate('admin.enable_expiry_desc', '開啟後，所有帳號必須在設定的週期內變更密碼。')}
 								</div>
 							</div>
@@ -328,7 +335,7 @@ export default function AdminDashboard(): React.ReactElement
 									{translate('admin.expiry_days', '密碼有效天數')}
 								</div>
 
-								<div style={{ color: themeColorsConfig.textMuted, fontSize: '12px' }}>
+								<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(12) }}>
 									{translate('admin.expiry_days_desc', '建議企業內部安全規範設定為 90 天。')}
 								</div>
 							</div>
@@ -366,12 +373,12 @@ export default function AdminDashboard(): React.ReactElement
 			>
 				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
 					<div>
-						<h3 style={{ margin: 0, color: themeColorsConfig.textMain, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+						<h3 style={{ margin: 0, color: themeColorsConfig.textMain, fontSize: scaleFontSize(18), display: 'flex', alignItems: 'center', gap: '8px' }}>
 							<SettingOutlined style={{ color: '#1890ff' }} />
 							{translate('admin.console_entry_title', '系統偏好與後台管理 (Admin Console)')}
 						</h3>
 
-						<p style={{ margin: '8px 0 0 0', color: themeColorsConfig.textMuted, fontSize: '14px' }}>
+						<p style={{ margin: '8px 0 0 0', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
 							{translate('admin.console_entry_desc', '集中管理使用者帳號、檢視系統維運日誌，並設定連線逾時與維護模式等全域安全參數。')}
 						</p>
 					</div>

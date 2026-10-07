@@ -2,7 +2,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// ★ 2026-10-07：把建置時間寫進程式，登入頁底部會顯示，方便確認瀏覽器載入的是不是最新版
+const BUILD_TIME_LABEL = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
+
 export default defineConfig({
+  define: {
+    __APP_BUILD_TIME__: JSON.stringify(BUILD_TIME_LABEL),
+  },
   plugins: [
     react(),
   ],

@@ -1,17 +1,23 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Row, Col, Typography, Button, Table, Tag, Space, Badge, Progress } from 'antd';
+import { Card, Row, Col, Typography, Button, Table, Tag, Space, Badge, Progress, theme } from 'antd';
 import {
     PlusOutlined,
     ArrowRightOutlined,
     CheckCircleOutlined,
     CloseCircleOutlined,
-    ClockCircleOutlined
+    ClockCircleOutlined,
+    CloseOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { useAnnouncementStore, isAnnouncementVisibleToRole, getAnnouncementUserKey } from '../../store/useAnnouncementStore';
+import { getRoleDisplayName } from '../../utils/roleLabel';
+import { AnnouncementListItem } from '../../components/AnnouncementListItem';
 
+import { scaleFontSize } from '../../utils/fontScale';
 const { Title, Text, Paragraph } = Typography;
 
 // 儀表板「最近處理紀錄」表格最多顯示之筆數
@@ -19,8 +25,24 @@ const RECENT_LOGS_DISPLAY_LIMIT = 5;
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { token: themeToken } = theme.useToken();
   const { t: translate } = useTranslation();
-  const userInfo = { name: 'Data.Owner.A', role: 'DATA_OWNER' };
+  // ★ 2026-10-07：改讀登入中的使用者，不再寫死；角色以「Data Owner」顯示而非 DATA_OWNER
+  const currentUserSession = useAuthStore((state) => state.user);
+  const userInfo = { name: currentUserSession?.name ?? 'Data.Owner.A', role: getRoleDisplayName(currentUserSession?.role ?? 'data_owner') };
+
+  // ★ 2026-10-07：Admin 發布之「重要」公告，以可關閉橫幅顯示於首頁（一般公告只在右上角鈴鐺）
+  const allAnnouncementsList = useAnnouncementStore((state) => state.announcements);
+  const dismissedBannerIdsByUserDict = useAnnouncementStore((state) => state.dismissedBannerIdsByUser);
+  const dismissBannerAction = useAnnouncementStore((state) => state.dismissBanner);
+  const markAnnouncementsAsReadAction = useAnnouncementStore((state) => state.markAsRead);
+  const announcementUserKeyString = getAnnouncementUserKey(currentUserSession);
+  const dismissedBannerIdsList = dismissedBannerIdsByUserDict[announcementUserKeyString] ?? [];
+  const importantBannerAnnouncementsList = allAnnouncementsList.filter(announcementItem =>
+    announcementItem.level === 'important'
+    && isAnnouncementVisibleToRole(announcementItem, currentUserSession?.role ?? 'data_owner')
+    && !dismissedBannerIdsList.includes(announcementItem.id)
+  );
 
   // 讀取全域歷史審計紀錄 (真實紀錄，非假資料)，最新紀錄已由 addAuditLog 插入於陣列最前端
   const auditLogsList = useAuditStore((state) => state.auditLogs);
@@ -90,6 +112,32 @@ export const Dashboard: React.FC = () => {
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
       <Space direction="vertical" size="large" style={{ display: 'flex', width: '100%' }}>
         
+        {/* --- 0. 重要系統公告（可關閉；關閉同時視為已讀） --- */}
+        {importantBannerAnnouncementsList.map((announcementItem) => (
+          <div
+            key={announcementItem.id}
+            style={{ border: `1px solid ${themeToken.colorWarningBorder}`, background: themeToken.colorWarningBg, borderRadius: '12px' }}
+          >
+            <AnnouncementListItem
+              item={announcementItem}
+              isExpanded
+              trailing={
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CloseOutlined />}
+                  aria-label={translate('dashboard.dismiss_announcement', '關閉公告')}
+                  title={translate('dashboard.dismiss_announcement', '關閉公告')}
+                  onClick={() => {
+                    dismissBannerAction(announcementUserKeyString, announcementItem.id);
+                    markAnnouncementsAsReadAction(announcementUserKeyString, [announcementItem.id]);
+                  }}
+                />
+              }
+            />
+          </div>
+        ))}
+
         {/* --- 1. 歡迎與狀態區塊 --- */}
         <div>
           <Title level={2} style={{ margin: 0 }}>{translate('dashboard.welcome_back', '歡迎回來，{{name}}', { name: userInfo.name })}</Title>
@@ -111,7 +159,7 @@ export const Dashboard: React.FC = () => {
                 styles={{ body: { height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '32px' } }}
             >
               <Title level={3} style={{ marginTop: 0 }}>{translate('dashboard.new_task_title', '建立新的去識別化任務')}</Title>
-              <Paragraph type="secondary" style={{ fontSize: '16px', marginBottom: '24px', lineHeight: '1.8' }}>
+              <Paragraph type="secondary" style={{ fontSize: scaleFontSize(16), marginBottom: '24px', lineHeight: '1.8' }}>
                 {translate('dashboard.new_task_desc', '支援 CSV, Excel 格式。系統將引導您進行屬性分類與隱私設定，並在本地端安全處理您的資料，確保原始機敏資料絕不外流。')}
               </Paragraph>
               <div>
@@ -120,7 +168,7 @@ export const Dashboard: React.FC = () => {
                     size="large"
                     icon={<PlusOutlined />}
                     onClick={() => navigate('/workspace?step=1')}
-                    style={{ borderRadius: '8px', padding: '0 24px', height: '48px', fontSize: '16px' }}
+                    style={{ borderRadius: '8px', padding: '0 24px', height: '48px', fontSize: scaleFontSize(16) }}
                   >
                     {translate('dashboard.new_task_btn', '新增去識別化任務')}
                   </Button>
@@ -136,7 +184,7 @@ export const Dashboard: React.FC = () => {
                 styles={{ body: { padding: '24px' } }}
             >
               <Title level={1} style={{ marginTop: 0, marginBottom: '24px', color: '#1677ff' }}>
-                  {monthlyTaskStatistics.totalCountValue} <Text type="secondary" style={{ fontSize: '16px', fontWeight: 'normal' }}>{translate('dashboard.unit_count', '件')}</Text>
+                  {monthlyTaskStatistics.totalCountValue} <Text type="secondary" style={{ fontSize: scaleFontSize(16), fontWeight: 'normal' }}>{translate('dashboard.unit_count', '件')}</Text>
               </Title>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>

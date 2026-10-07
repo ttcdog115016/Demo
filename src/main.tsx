@@ -20,12 +20,21 @@ import './i18n';
 // ★ 2026-09-30：移除 Vercel Toolbar——本專案部署於 Docker／nginx 與 cloudflared，不在 Vercel 上，
 //   該工具列原本被強制掛載（連正式環境也載入外部元件並輸出 console 訊息），已連同套件一併移除。
 import App from './App.tsx';
+import AppErrorBoundary from './components/AppErrorBoundary';
 
 // ★ 新增：全域 API 錯誤診斷攔截器。必須在任何 API 呼叫發生前掛載，故於進入點最早期
 // (App 掛載渲染前) 就執行註冊，確保之後全站任何一支 axios 呼叫失敗時都會被記錄下來，
 // 供測試人員一鍵匯出診斷紀錄回報 (見 apiErrorInterceptor.ts／apiErrorLogger.ts)。
 import { registerGlobalApiErrorInterceptor } from './api/apiErrorInterceptor';
+import { logSystemEvent } from './store/useSystemLogStore';
+import { ensureSeedAccounts } from './store/useAccountStore';
 registerGlobalApiErrorInterceptor();
+
+// ★ 2026-10-07：帳號資料庫（前端 Demo 版）第一次使用時建立預設帳號
+ensureSeedAccounts();
+
+// ★ 2026-10-07：系統維運日誌——記錄前端頁面載入（含重新整理）
+logSystemEvent('INFO', `前端頁面載入（${window.location.host}）`);
 
 /**
  * ============================================================================
@@ -52,7 +61,10 @@ if (rootContainerHtmlElement)
 	createRoot(rootContainerHtmlElement).render(
 		<StrictMode>
 			{/* 全域主應用程式組件：負責掛載路由、主題與狀態管理 */}
-			<App />
+			{/* ★ 2026-10-05：全域錯誤邊界，避免任何渲染例外直接讓整頁變空白 */}
+			<AppErrorBoundary>
+				<App />
+			</AppErrorBoundary>
 		</StrictMode>
 	);
 }

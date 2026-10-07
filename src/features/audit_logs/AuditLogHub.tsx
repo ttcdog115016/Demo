@@ -18,10 +18,13 @@ import {
 	 FilterOutlined, DownloadOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { getRoleDisplayName } from '../../utils/roleLabel';
 
 import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
 import AuditIntegrityPanel from '../../components/AuditIntegrityPanel';
+import { getKAnonymityGeneralizationTechLabel } from '../../utils/kAnonymityTechLabel';
 
+import { scaleFontSize } from '../../utils/fontScale';
 /**
  * 預設常數宣告
  * 規範對照: 符合規範 e) 避免魔術數字 (Magic Number)
@@ -270,7 +273,7 @@ export default function AuditLogHub(): React.ReactElement
 			title: translate('audit.col_file_name', '處置檔案名稱'),
 			dataIndex: 'fileName',
 			key: 'fileName',
-			render: (fileNameTextString: string) => <Text style={{ fontSize: '13px' }}>{fileNameTextString}</Text>,
+			render: (fileNameTextString: string) => <Text style={{ fontSize: scaleFontSize(13) }}>{fileNameTextString}</Text>,
 		},
 		{
 			title: translate('audit.col_privacy_mode', '保護模式'),
@@ -287,8 +290,8 @@ export default function AuditLogHub(): React.ReactElement
 			key: 'operator',
 			render: (_: unknown, auditLogRecordItem: AuditLogItem) => (
 				<div>
-					<Text strong style={{ fontSize: '13px', display: 'block' }}>{auditLogRecordItem.operator}</Text>
-					<Tag style={{ fontSize: '10px', margin: 0 }}>{auditLogRecordItem.operatorRole.toUpperCase()}</Tag>
+					<Text strong style={{ fontSize: scaleFontSize(13), display: 'block' }}>{auditLogRecordItem.operator}</Text>
+					<Tag style={{ fontSize: scaleFontSize(10), margin: 0 }}>{getRoleDisplayName(auditLogRecordItem.operatorRole)}</Tag>
 				</div>
 			),
 		},
@@ -317,7 +320,7 @@ export default function AuditLogHub(): React.ReactElement
 			title: translate('audit.col_audit_time', '審計時間'),
 			dataIndex: 'auditTime',
 			key: 'auditTime',
-			render: (auditTimeStringValue: string) => <Text type="secondary" style={{ fontSize: '12px' }}>{auditTimeStringValue}</Text>,
+			render: (auditTimeStringValue: string) => <Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>{auditTimeStringValue}</Text>,
 		},
 		{
 			title: translate('audit.col_action', '操作與調閱'),
@@ -431,12 +434,12 @@ export default function AuditLogHub(): React.ReactElement
 						  */}
 						<div className="pdf-page-break avoid-break" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `2px solid ${token.colorPrimary}`, paddingBottom: '12px', marginBottom: '24px', pageBreakInside: 'avoid' }}>
 							<div>
-								<h2 style={{ margin: 0, color: selectedAuditLog.status === 'failed' ? '#b91c1c' : token.colorPrimary, fontSize: '20px' }}>
+								<h2 style={{ margin: 0, color: selectedAuditLog.status === 'failed' ? '#b91c1c' : token.colorPrimary, fontSize: scaleFontSize(20) }}>
 									{selectedAuditLog.status === 'failed'
 										? translate('audit.report_title_failed', '資料隱私技術檢測紀錄（未達合規標準）')
 										: translate('audit.report_title', '數據隱私合規與技術審計憑證')}
 								</h2>
-								<span style={{ fontSize: '12px', color: '#555555' }}>{translate('audit.report_cert_id', '憑證編號:')} {selectedAuditLog.certificateId}</span>
+								<span style={{ fontSize: scaleFontSize(12), color: '#555555' }}>{translate('audit.report_cert_id', '憑證編號:')} {selectedAuditLog.certificateId}</span>
 							</div>
 
 							{/* ★ 2026-10-02：原本不論結果一律顯示「驗證合格」，改依紀錄狀態顯示 */}
@@ -449,15 +452,15 @@ export default function AuditLogHub(): React.ReactElement
 										color: selectedAuditLog.status === 'failed' ? '#b91c1c' : '#389e0d', 
 										padding: '6px 16px', 
 										borderRadius: '4px', 
-										fontSize: '14px', 
+										fontSize: scaleFontSize(14), 
 										fontWeight: 'bold',
 										lineHeight: '20px',
 										whiteSpace: 'nowrap'
 									}}
 								>
 									{selectedAuditLog.status === 'failed'
-										? <><span style={{ marginRight: '6px', fontSize: '15px' }}>✕</span> {translate('audit.report_failed', '未達合規標準')}</>
-										: <><span style={{ marginRight: '6px', fontSize: '15px' }}>✓</span> {translate('audit.report_passed', '驗證合格')}</>}
+										? <><span style={{ marginRight: '6px', fontSize: scaleFontSize(15) }}>✕</span> {translate('audit.report_failed', '未達合規標準')}</>
+										: <><span style={{ marginRight: '6px', fontSize: scaleFontSize(15) }}>✓</span> {translate('audit.report_passed', '驗證合格')}</>}
 								</span>
 							</div>
 						</div>
@@ -468,10 +471,10 @@ export default function AuditLogHub(): React.ReactElement
 						<div className="pdf-page-break avoid-break" style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', marginBottom: '24px', border: `1px solid #d9d9d9`, pageBreakInside: 'avoid' }}>
 							<h4 style={{ marginTop: 0, color: '#000000', marginBottom: '8px' }}>{translate('audit.report_track_title', '專案與執行軌跡')}</h4>
 
-							<Row gutter={[16, 8]} style={{ fontSize: '13px', color: '#555555' }}>
+							<Row gutter={[16, 8]} style={{ fontSize: scaleFontSize(13), color: '#555555' }}>
 								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_file_name', '資料檔案：')}</b> {selectedAuditLog.fileName}</Col>
 								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_tech', '套用技術：')}</b> {selectedAuditLog.privacyMode.toUpperCase()}</Col>
-								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_operator', '執行人員：')}</b> {selectedAuditLog.operator} ({selectedAuditLog.operatorRole.toUpperCase()})</Col>
+								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_operator', '執行人員：')}</b> {selectedAuditLog.operator} ({getRoleDisplayName(selectedAuditLog.operatorRole)})</Col>
 								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_time', '簽發時間：')}</b> {selectedAuditLog.auditTime}</Col>
 							</Row>
 						</div>
@@ -482,7 +485,7 @@ export default function AuditLogHub(): React.ReactElement
 						<div className="pdf-page-break avoid-break" style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', marginBottom: '32px', border: `1px solid #d9d9d9`, pageBreakInside: 'avoid', clear: 'both' }}>
 							<h4 style={{ marginTop: 0, color: '#000000', marginBottom: '8px' }}>{translate('audit.report_risk_title', '殘餘風險與量測結果')}</h4>
 
-							<Row gutter={[16, 8]} style={{ fontSize: '13px', color: '#555555' }}>
+							<Row gutter={[16, 8]} style={{ fontSize: scaleFontSize(13), color: '#555555' }}>
 								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_singling', '指認性風險 (Singling Out):')}</b> <span>{selectedAuditLog.singlingRisk}</span></Col>
 								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_linkability', '連結性風險 (Linkability):')}</b> <span>{selectedAuditLog.linkabilityRisk}</span></Col>
 								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_inference', '推斷性風險 (Inference):')}</b> <span>{selectedAuditLog.inferenceRisk}</span></Col>
@@ -568,7 +571,7 @@ export default function AuditLogHub(): React.ReactElement
 											}
 											else if (calculatedRoleName === 'Quasi-identifier' && selectedAuditLog.privacyMode === 'k-anonymity')
 											{
-												selectedStrategyDescription = translate('audit.tech_generalization', '區間/時間泛化');
+												selectedStrategyDescription = getKAnonymityGeneralizationTechLabel(selectedAuditLog.qiGeneralizationTechSnapshot?.[targetColumnNameString], translate);
 											}
 											else if (selectedAuditLog.privacyMode === 'differential-privacy' && isDpFieldEnabled)
 											{
@@ -633,7 +636,7 @@ export default function AuditLogHub(): React.ReactElement
 												}
 												else if (calculatedRoleName === 'Quasi-identifier' && selectedAuditLog.privacyMode === 'k-anonymity')
 												{
-													selectedStrategyDescription = translate('audit.tech_generalization', '區間/時間泛化');
+													selectedStrategyDescription = getKAnonymityGeneralizationTechLabel(selectedAuditLog.qiGeneralizationTechSnapshot?.[targetColumnNameString], translate);
 												}
 												else if (selectedAuditLog.privacyMode === 'differential-privacy' && isDpFieldEnabled)
 												{
@@ -661,7 +664,7 @@ export default function AuditLogHub(): React.ReactElement
 						<AuditIntegrityPanel
 							entry={selectedAuditLog}
 							className="pdf-page-break avoid-break"
-							style={{ textAlign: 'left', marginTop: '24px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: '12px', color: '#888888', pageBreakInside: 'avoid', lineHeight: 1.7 }}
+							style={{ textAlign: 'left', marginTop: '24px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: scaleFontSize(12), color: '#888888', pageBreakInside: 'avoid', lineHeight: 1.7 }}
 						/>
 					</div>
 				)}

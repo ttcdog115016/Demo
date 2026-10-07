@@ -38,12 +38,13 @@
        規範對照: 消除像素 (px) 等魔術數字，集中管理以利後續 RWD 維護
        ============================================================================ */
     --font-size-base: 18px;
-    --font-size-base-mobile: 16px;
-    --font-size-h1: 56px;
-    --font-size-h1-mobile: 36px;
-    --font-size-h2: 24px;
-    --font-size-h2-mobile: 20px;
-    --font-size-code: 15px;
+    --font-scale: 1; /* 由 App 依「字體大小」偏好設定覆寫（中＝1） */
+    --font-size-base-mobile: calc(var(--font-size-base) - 2px);
+    --font-size-h1: calc(56px * var(--font-scale));
+    --font-size-h1-mobile: calc(36px * var(--font-scale));
+    --font-size-h2: calc(24px * var(--font-scale));
+    --font-size-h2-mobile: calc(20px * var(--font-scale));
+    --font-size-code: calc(15px * var(--font-scale));
     
     --spacing-margin-h1: 32px 0;
     --spacing-margin-h1-mobile: 20px 0;
@@ -257,4 +258,56 @@ code
 .ant-layout-sider-dark ::-webkit-scrollbar-thumb:hover 
 {
     background: rgba(255, 255, 255, 0.4);
+}
+
+
+/* ★ 帳號與權限管理：齒輪「管理」下拉選單的捲動展開動畫（選單由上往下捲開，項目依序滑入） */
+.user-manage-dropdown .ant-dropdown-menu
+{
+    animation: userManageMenuRollDown 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.user-manage-dropdown .ant-dropdown-menu > li
+{
+    animation: userManageItemSlideIn 0.28s ease-out both;
+}
+
+.user-manage-dropdown .ant-dropdown-menu > li:nth-child(1) { animation-delay: 0.04s; }
+.user-manage-dropdown .ant-dropdown-menu > li:nth-child(2) { animation-delay: 0.09s; }
+.user-manage-dropdown .ant-dropdown-menu > li:nth-child(3) { animation-delay: 0.14s; }
+.user-manage-dropdown .ant-dropdown-menu > li:nth-child(4) { animation-delay: 0.19s; }
+.user-manage-dropdown .ant-dropdown-menu > li:nth-child(5) { animation-delay: 0.24s; }
+
+@keyframes userManageMenuRollDown
+{
+    from { clip-path: inset(0 0 100% 0 round 8px); }
+    to   { clip-path: inset(0 0 0 0 round 8px); }
+}
+
+@keyframes userManageItemSlideIn
+{
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce)
+{
+    .user-manage-dropdown .ant-dropdown-menu,
+    .user-manage-dropdown .ant-dropdown-menu > li
+    {
+        animation: none;
+    }
+}
+
+/* ★ 系統公告列（鈴鐺面板／首頁橫幅／Admin 列表共用）：可點擊時滑過加底色 */
+.announcement-list-item[role="button"]
+{
+    transition: background-color 0.15s ease;
+}
+
+.announcement-list-item[role="button"]:hover,
+.announcement-list-item[role="button"]:focus-visible
+{
+    background-color: rgba(127, 127, 127, 0.12);
+    outline: none;
 }

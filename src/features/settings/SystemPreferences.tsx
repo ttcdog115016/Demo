@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
 	Card, Switch, Select, Segmented, Space, Divider, theme, Typography,
-	Tabs, Table, Tag, Button, Form, InputNumber, Alert, Modal, Input, App as AntdApp, Dropdown
+	Tabs, Table, Tag, Button, Form, InputNumber, Alert, Modal, Input, App as AntdApp, Dropdown, Checkbox
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -25,15 +25,26 @@ import {
 	SafetyCertificateOutlined,
 	PlusOutlined,
 	KeyOutlined,
-	MoreOutlined,
+	EditOutlined,
+	DeleteOutlined,
+	NotificationOutlined,
+	UnlockOutlined,
+	StopOutlined,
+	CheckCircleOutlined,
 	ExclamationCircleFilled
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
+import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
+import { useAccountStore, isAccountLocked, type AccountRecord, type AccountRole } from '../../store/useAccountStore';
+import { useAnnouncementStore, type AnnouncementItem, type AnnouncementLevel, type AnnouncementAudience } from '../../store/useAnnouncementStore';
+import { AnnouncementListItem } from '../../components/AnnouncementListItem';
+import { ANNOUNCEMENT_ICON_OPTIONS } from '../../utils/announcementDisplay';
 import { useUIStore, type FontSizeLevel } from '../../store/useUIStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
+import { scaleFontSize } from '../../utils/fontScale';
 const { Text, Title } = Typography;
 
 /**
@@ -54,15 +65,8 @@ const MAX_PASSWORD_EXPIRY_DAYS = 365;
  * 系統使用者紀錄資料結構
  * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
  */
-interface UserRecord 
-{
-	id: string;        // 使用者唯一識別碼 (如 U001)
-	name: string;      // 使用者顯示名稱
-	email: string;     // 使用者電子郵件
-	role: string;      // 系統角色 ('admin' | 'data_owner')
-	status: string;    // 帳號狀態 ('active' | 'disabled')
-	lastLogin: string; // 最後登入時間字串
-}
+// ★ 2026-10-07：帳號改由帳號資料庫 (useAccountStore) 提供，不再是畫面內的假資料
+type UserRecord = AccountRecord;
 
 /**
  * 安全與環境參數表單數值介面
@@ -156,7 +160,7 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 				title={
 					<Space>
 						<SettingOutlined style={{ color: token.colorPrimary }} />
-						<span style={{ fontSize: '16px', fontWeight: 600 }}>{translate('preferences.title', '系統偏好設定')}</span>
+						<span style={{ fontSize: scaleFontSize(16), fontWeight: 600 }}>{translate('preferences.title', '系統偏好設定')}</span>
 					</Space>
 				}
 				variant="borderless"
@@ -173,12 +177,12 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
 					<Space size="middle">
 						<div style={{ backgroundColor: token.colorFillAlter, padding: '10px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDarkModeActive ? '#fadb14' : '#fa8c16' }}>
-							{isDarkModeActive ? <MoonOutlined style={{ fontSize: '18px' }} /> : <SunOutlined style={{ fontSize: '18px' }} />}
+							{isDarkModeActive ? <MoonOutlined style={{ fontSize: scaleFontSize(18) }} /> : <SunOutlined style={{ fontSize: scaleFontSize(18) }} />}
 						</div>
 
 						<div style={{ display: 'flex', flexDirection: 'column' }}>
-							<Text strong style={{ fontSize: '15px' }}>{translate('preferences.dark_mode', '深色模式')}</Text>
-							<Text type="secondary" style={{ fontSize: '13px' }}>{translate('preferences.dark_mode_desc', '切換深色/淺色主題外觀')}</Text>
+							<Text strong style={{ fontSize: scaleFontSize(15) }}>{translate('preferences.dark_mode', '深色模式')}</Text>
+							<Text type="secondary" style={{ fontSize: scaleFontSize(13) }}>{translate('preferences.dark_mode_desc', '切換深色/淺色主題外觀')}</Text>
 						</div>
 					</Space>
 
@@ -191,12 +195,12 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
 					<Space size="middle">
 						<div style={{ backgroundColor: token.colorFillAlter, padding: '10px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: token.colorPrimary }}>
-							<GlobalOutlined style={{ fontSize: '18px' }} />
+							<GlobalOutlined style={{ fontSize: scaleFontSize(18) }} />
 						</div>
 
 						<div style={{ display: 'flex', flexDirection: 'column' }}>
-							<Text strong style={{ fontSize: '15px' }}>{translate('preferences.language', '系統語系')}</Text>
-							<Text type="secondary" style={{ fontSize: '13px' }}>{translate('preferences.language_desc', '選擇您偏好的語言介面')}</Text>
+							<Text strong style={{ fontSize: scaleFontSize(15) }}>{translate('preferences.language', '系統語系')}</Text>
+							<Text type="secondary" style={{ fontSize: scaleFontSize(13) }}>{translate('preferences.language_desc', '選擇您偏好的語言介面')}</Text>
 						</div>
 					</Space>
 
@@ -219,12 +223,12 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
 					<Space size="middle">
 						<div style={{ backgroundColor: token.colorFillAlter, padding: '10px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: token.colorPrimary }}>
-							<FontSizeOutlined style={{ fontSize: '18px' }} />
+							<FontSizeOutlined style={{ fontSize: scaleFontSize(18) }} />
 						</div>
 
 						<div style={{ display: 'flex', flexDirection: 'column' }}>
-							<Text strong style={{ fontSize: '15px' }}>{translate('preferences.font_size', '字體大小')}</Text>
-							<Text type="secondary" style={{ fontSize: '13px' }}>{translate('preferences.font_size_desc', '調整系統介面文字顯示大小')}</Text>
+							<Text strong style={{ fontSize: scaleFontSize(15) }}>{translate('preferences.font_size', '字體大小')}</Text>
+							<Text type="secondary" style={{ fontSize: scaleFontSize(13) }}>{translate('preferences.font_size_desc', '調整系統介面文字顯示大小')}</Text>
 						</div>
 					</Space>
 
@@ -275,6 +279,15 @@ export default function SystemPreferences(): React.ReactElement
 	);
 
 	const currentUserRoleName = currentUserSession?.role || 'admin';
+	const operatorNameString = currentUserSession?.name || 'Admin';
+
+	// ★ 2026-10-07：系統維運日誌改為動態資料（見 useSystemLogStore.ts）
+	const systemLogEntriesList = useSystemLogStore((state) => state.logs);
+	const clearSystemLogsAction = useSystemLogStore((state) => state.clearLogs);
+	const [systemLogLevelFilter, setSystemLogLevelFilter] = useState<'ALL' | SystemLogLevel>('ALL');
+	const filteredSystemLogEntriesList = systemLogLevelFilter === 'ALL'
+		? systemLogEntriesList
+		: systemLogEntriesList.filter(logEntryItem => logEntryItem.level === systemLogLevelFilter);
 
 	// 安全參數狀態與 Action 讀取 (符合規範 g, i)
 	const workspaceStoreState = useWorkspaceStore(
@@ -334,6 +347,13 @@ export default function SystemPreferences(): React.ReactElement
 		envSecurityFormInstance.validateFields().then(
 			(formValuesObj: EnvSecurityValues) => 
 			{
+				const nextMaintenanceModeStatus = !!formValuesObj.maintenanceMode;
+				if (nextMaintenanceModeStatus !== isMaintenanceModeActive)
+				{
+					logSystemEvent('WARN', nextMaintenanceModeStatus ? '啟用系統維護模式（Data Owner 將無法使用系統）' : '關閉系統維護模式', operatorNameString);
+				}
+				logSystemEvent('INFO', `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘、登入失敗上限 ${formValuesObj.maxFailedLogins} 次、密碼過期${formValuesObj.enablePasswordExpiry ? ` ${formValuesObj.passwordExpiryDays} 天` : '停用'}`, operatorNameString);
+
 				updateSecuritySettingsAction({
 					sessionTimeout: Number(formValuesObj.sessionTimeout),
 					maxFailedLogins: Number(formValuesObj.maxFailedLogins),
@@ -350,13 +370,15 @@ export default function SystemPreferences(): React.ReactElement
 	};
 
 	// 使用者清單模擬狀態 (符合規範 g)
-	const [userRecordList, setUserRecordList] = useState<UserRecord[]>(
-		[
-			{ id: 'U001', name: 'Admin.Test', email: 'admin@company.com', role: 'admin', status: 'active', lastLogin: '2026-07-30 09:12:00' },
-			{ id: 'U002', name: 'Data.Owner.A', email: 'owner_a@company.com', role: 'data_owner', status: 'active', lastLogin: '2026-07-29 15:30:22' },
-			{ id: 'U003', name: 'Data.Owner.B', email: 'owner_b@company.com', role: 'data_owner', status: 'disabled', lastLogin: '2026-06-15 10:00:00' },
-		]
-	);
+	const userRecordList = useAccountStore((state) => state.accounts);
+	const accountStoreActions = useAccountStore.getState();
+	const currentOperatorEmailString = currentUserSession?.email || '';
+	// 每 30 秒重算一次，讓「鎖定中」狀態到期後自動恢復顯示
+	const [nowTimestampMs, setNowTimestampMs] = useState<number>(() => Date.now());
+	useEffect(() => {
+		const refreshTimerId = window.setInterval(() => setNowTimestampMs(Date.now()), 30000);
+		return () => window.clearInterval(refreshTimerId);
+	}, []);
 
 	// Modal 與編輯狀態宣告 (符合規範 g)
 	const [isUserModalVisible, setIsUserModalVisible] = useState<boolean>(false);
@@ -370,6 +392,126 @@ export default function SystemPreferences(): React.ReactElement
 	const [resetPwdTargetUserObj, setResetPwdTargetUserObj] = useState<UserRecord | null>(null);
 
 	const [resetPwdFormInstance] = Form.useForm();
+
+	// ★ 2026-10-07：系統公告（右上角鈴鐺／Data Owner 首頁重要橫幅的資料來源）
+	const [announcementFormInstance] = Form.useForm<{ icon: string; title: string; content: string; level: AnnouncementLevel; audience: AnnouncementAudience; shouldRenotify?: boolean }>();
+	const [editingAnnouncementItem, setEditingAnnouncementItem] = useState<AnnouncementItem | null>(null); // 非 null 時表單為「修改」模式
+	const updateAnnouncementAction = useAnnouncementStore((state) => state.updateAnnouncement);
+	const announcementFormDefaultValues = { icon: ANNOUNCEMENT_ICON_OPTIONS[0].value, level: 'normal' as AnnouncementLevel, audience: 'all' as AnnouncementAudience, shouldRenotify: true };
+	const announcementsList = useAnnouncementStore((state) => state.announcements);
+	const publishAnnouncementAction = useAnnouncementStore((state) => state.publishAnnouncement);
+	const removeAnnouncementAction = useAnnouncementStore((state) => state.removeAnnouncement);
+
+	const announcementAudienceLabelDict: Record<AnnouncementAudience, string> = {
+		all: translate('admin.announce_audience_all', '所有使用者'),
+		data_owner: 'Data Owner',
+		admin: 'Admin',
+	};
+
+	/**
+	 * 函數名稱: handlePublishAnnouncement
+	 * 函數功能: 驗證並發布系統公告，寫入系統維運日誌後清空表單。
+	 */
+	const handlePublishAnnouncement = (): void =>
+	{
+		announcementFormInstance.validateFields().then((formValuesObj) =>
+		{
+			if (editingAnnouncementItem)
+			{
+				updateAnnouncementAction(editingAnnouncementItem.id, {
+					icon: formValuesObj.icon,
+					title: formValuesObj.title.trim(),
+					content: (formValuesObj.content || '').trim(),
+					level: formValuesObj.level,
+					audience: formValuesObj.audience,
+				}, formValuesObj.shouldRenotify !== false);
+				logSystemEvent('INFO', `修改系統公告：「${formValuesObj.title.trim()}」${formValuesObj.shouldRenotify !== false ? '（重新通知使用者）' : ''}`, operatorNameString);
+				messageApi.success(translate('admin.announce_updated', '公告已更新'));
+				handleCancelEditAnnouncement();
+				return;
+			}
+
+			publishAnnouncementAction({
+				icon: formValuesObj.icon,
+				title: formValuesObj.title.trim(),
+				content: (formValuesObj.content || '').trim(),
+				level: formValuesObj.level,
+				audience: formValuesObj.audience,
+				createdBy: operatorNameString,
+			});
+			logSystemEvent('INFO', `發布系統公告：「${formValuesObj.title.trim()}」（${formValuesObj.level === 'important' ? '重要' : '一般'}，對象：${announcementAudienceLabelDict[formValuesObj.audience]}）`, operatorNameString);
+			messageApi.success(translate('admin.announce_published', '公告已發布'));
+			announcementFormInstance.resetFields();
+		});
+	};
+
+	/**
+	 * 函數名稱: handleStartEditAnnouncement / handleCancelEditAnnouncement
+	 * 函數功能: 將選定公告載入上方表單進入「修改」模式；取消則清空表單回到「發布」模式。
+	 */
+	const handleStartEditAnnouncement = (targetAnnouncementItem: AnnouncementItem): void =>
+	{
+		setEditingAnnouncementItem(targetAnnouncementItem);
+		announcementFormInstance.setFieldsValue({
+			icon: targetAnnouncementItem.icon || (targetAnnouncementItem.level === 'important' ? '⚠️' : '📢'),
+			title: targetAnnouncementItem.title,
+			content: targetAnnouncementItem.content,
+			level: targetAnnouncementItem.level,
+			audience: targetAnnouncementItem.audience,
+			shouldRenotify: true,
+		});
+	};
+
+	const handleCancelEditAnnouncement = (): void =>
+	{
+		setEditingAnnouncementItem(null);
+		announcementFormInstance.resetFields();
+	};
+
+	/**
+	 * 函數名稱: showRemoveAnnouncementConfirm
+	 * 函數功能: 二次確認後撤下公告。
+	 */
+	const showRemoveAnnouncementConfirm = (targetAnnouncementItem: AnnouncementItem): void =>
+	{
+		modalApi.confirm({
+			title: translate('admin.announce_remove_title', '撤下公告'),
+			icon: <ExclamationCircleFilled />,
+			content: translate('admin.announce_remove_desc', '撤下後，所有使用者的通知與首頁橫幅都不會再顯示此公告。'),
+			okText: translate('admin.btn_confirm', '確認'),
+			okType: 'danger',
+			cancelText: translate('admin.btn_cancel', '取消'),
+			onOk()
+			{
+				removeAnnouncementAction(targetAnnouncementItem.id);
+				logSystemEvent('INFO', `撤下系統公告：「${targetAnnouncementItem.title}」`, operatorNameString);
+			},
+		});
+	};
+
+	const announcementTableColumnsConfig = [
+		{
+			title: translate('admin.announce_column', '公告'), key: 'announcement',
+			render: (_: unknown, announcementItem: AnnouncementItem) => <AnnouncementListItem item={announcementItem} />
+		},
+		{
+			title: translate('admin.announce_level', '重要程度'), dataIndex: 'level', key: 'level', width: '100px', align: 'center' as const,
+			render: (levelValue: AnnouncementLevel) => levelValue === 'important'
+				? <Tag color="orange" style={{ margin: 0 }}>{translate('admin.announce_level_important', '重要')}</Tag>
+				: <Tag style={{ margin: 0 }}>{translate('admin.announce_level_normal', '一般')}</Tag>
+		},
+		{ title: translate('admin.announce_audience', '對象'), dataIndex: 'audience', key: 'audience', width: '120px', render: (audienceValue: AnnouncementAudience) => announcementAudienceLabelDict[audienceValue] },
+		{ title: translate('admin.announce_by', '發布者'), dataIndex: 'createdBy', key: 'createdBy', width: '130px' },
+		{
+			title: translate('admin.col_action', '操作'), key: 'action', width: '100px', align: 'center' as const,
+			render: (_: unknown, announcementItem: AnnouncementItem) => (
+				<Space size={0}>
+					<Button type="text" icon={<EditOutlined />} title={translate('admin.announce_edit', '修改公告')} aria-label={translate('admin.announce_edit', '修改公告')} onClick={() => handleStartEditAnnouncement(announcementItem)} />
+					<Button type="text" danger icon={<DeleteOutlined />} title={translate('admin.announce_remove_title', '撤下公告')} aria-label={translate('admin.announce_remove_title', '撤下公告')} onClick={() => showRemoveAnnouncementConfirm(announcementItem)} />
+				</Space>
+			)
+		},
+	];
 
 	/**
 	 * 函數名稱: handleAddUser
@@ -401,7 +543,7 @@ export default function SystemPreferences(): React.ReactElement
 	{
 		setEditingUserRecordObj(targetUserRecordObj);
 
-		userFormInstance.setFieldsValue(targetUserRecordObj);
+		userFormInstance.setFieldsValue({ name: targetUserRecordObj.name, email: targetUserRecordObj.email, role: targetUserRecordObj.role });
 
 		setIsUserModalVisible(true);
 	};
@@ -416,9 +558,15 @@ export default function SystemPreferences(): React.ReactElement
 	 */
 	const handleDeleteUser = (targetUserIdStr: string): void => 
 	{
-		setUserRecordList(
-			userRecordList.filter(userRecordItem => userRecordItem.id !== targetUserIdStr)
-		);
+		const deletedUserRecordObj = userRecordList.find(userRecordItem => userRecordItem.id === targetUserIdStr);
+		if (deletedUserRecordObj && deletedUserRecordObj.email === currentOperatorEmailString)
+		{
+			messageApi.error(translate('admin.msg_cannot_delete_self', '不能刪除自己目前登入的帳號'));
+			return;
+		}
+		logSystemEvent('WARN', `刪除帳號：${deletedUserRecordObj?.name ?? targetUserIdStr}`, operatorNameString);
+
+		accountStoreActions.deleteAccount(targetUserIdStr);
 
 		messageApi.success(
 			translate('admin.msg_user_deleted', '使用者已成功刪除')
@@ -459,13 +607,18 @@ export default function SystemPreferences(): React.ReactElement
 	const handleSaveUser = (): void => 
 	{
 		userFormInstance.validateFields().then(
-			(userFormValuesObj) => 
+			(userFormValuesObj: { name: string; email: string; role: AccountRole; initialPassword?: string }) => 
 			{
 				if (editingUserRecordObj) 
 				{
-					setUserRecordList(
-						userRecordList.map(userRecordItem => userRecordItem.id === editingUserRecordObj.id ? { ...userRecordItem, ...userFormValuesObj } : userRecordItem)
-					);
+					const updateResult = accountStoreActions.updateAccount(editingUserRecordObj.id, { name: userFormValuesObj.name, email: userFormValuesObj.email, role: userFormValuesObj.role });
+					if (!updateResult.ok)
+					{
+						userFormInstance.setFields([{ name: 'email', errors: [translate('admin.email_duplicate', '此 Email 已被其他帳號使用')] }]);
+						return;
+					}
+
+					logSystemEvent('INFO', `編輯帳號資料：${editingUserRecordObj.name}`, operatorNameString);
 
 					messageApi.success(
 						translate('admin.msg_user_updated', '使用者資料已更新')
@@ -473,17 +626,22 @@ export default function SystemPreferences(): React.ReactElement
 				} 
 				else 
 				{
-					const newUserRecordObj: UserRecord = {
-						id: `U00${userRecordList.length + 1}`,
-						...userFormValuesObj,
-						status: 'active',
-						lastLogin: '-'
-					};
+					const addResult = accountStoreActions.addAccount({
+						name: userFormValuesObj.name,
+						email: userFormValuesObj.email,
+						role: userFormValuesObj.role,
+						password: userFormValuesObj.initialPassword || '',
+					});
+					if (!addResult.ok)
+					{
+						userFormInstance.setFields([{ name: 'email', errors: [translate('admin.email_duplicate', '此 Email 已被其他帳號使用')] }]);
+						return;
+					}
 
-					setUserRecordList([...userRecordList, newUserRecordObj]);
+					logSystemEvent('INFO', `新增帳號：${userFormValuesObj.name}（${userFormValuesObj.email}）`, operatorNameString);
 
 					messageApi.success(
-						translate('admin.msg_user_added', '已成功新增使用者')
+						translate('admin.msg_user_added_with_pwd', '已新增使用者。請將初始密碼交給對方，對方首次登入時須變更密碼。')
 					);
 				}
 
@@ -504,14 +662,30 @@ export default function SystemPreferences(): React.ReactElement
 	const handleToggleStatus = (targetUserIdStr: string, currentStatusValue: string): void => 
 	{
 		const newStatusResultString = currentStatusValue === 'active' ? 'disabled' : 'active';
+		const toggledUserRecordObj = userRecordList.find(userRecordItem => userRecordItem.id === targetUserIdStr);
+		if (newStatusResultString === 'disabled' && toggledUserRecordObj?.email === currentOperatorEmailString)
+		{
+			messageApi.error(translate('admin.msg_cannot_disable_self', '不能停用自己目前登入的帳號'));
+			return;
+		}
+		logSystemEvent(newStatusResultString === 'disabled' ? 'WARN' : 'INFO', `${newStatusResultString === 'disabled' ? '停用' : '啟用'}帳號：${toggledUserRecordObj?.name ?? targetUserIdStr}`, operatorNameString);
 
-		setUserRecordList(
-			userRecordList.map(userRecordItem => userRecordItem.id === targetUserIdStr ? { ...userRecordItem, status: newStatusResultString } : userRecordItem)
-		);
+		accountStoreActions.setAccountStatus(targetUserIdStr, newStatusResultString);
 
 		messageApi.success(
 			translate('admin.msg_status_updated', '帳號狀態已更新')
 		);
+	};
+
+	/**
+	 * 函數名稱: handleUnlockUser
+	 * 函數功能: 提前解除因登入失敗過多而鎖定的帳號。
+	 */
+	const handleUnlockUser = (targetUserRecordObj: UserRecord): void =>
+	{
+		accountStoreActions.unlockAccount(targetUserRecordObj.id);
+		logSystemEvent('INFO', `解除帳號鎖定：${targetUserRecordObj.name}`, operatorNameString);
+		messageApi.success(translate('admin.msg_unlocked', '已解除鎖定'));
 	};
 
 	/**
@@ -543,6 +717,10 @@ export default function SystemPreferences(): React.ReactElement
 		resetPwdFormInstance.validateFields().then(
 			() => 
 			{
+				if (!resetPwdTargetUserObj) return;
+				accountStoreActions.resetPassword(resetPwdTargetUserObj.id, String(resetPwdFormInstance.getFieldValue('newPassword') || ''));
+				logSystemEvent('WARN', `管理員重設密碼：${resetPwdTargetUserObj.name}（下次登入須變更密碼）`, operatorNameString);
+
 				messageApi.success(
 					translate('admin.msg_pwd_reset_success', `已成功重設 ${resetPwdTargetUserObj?.name} 的密碼`)
 				);
@@ -552,13 +730,37 @@ export default function SystemPreferences(): React.ReactElement
 		);
 	};
 
-	// 模擬系統維運日誌清單 (符合規範 g)
-	const systemOperationLogsList = [
-		{ id: 'L1001', time: '2026-07-30 10:50:12', level: 'INFO', event: 'System booted successfully', ip: '127.0.0.1' },
-		{ id: 'L1002', time: '2026-07-30 09:12:05', level: 'WARN', event: 'Failed login attempt (Invalid Password)', ip: '192.168.1.105' },
-		{ id: 'L1003', time: '2026-07-29 23:00:00', level: 'INFO', event: 'Automated DB backup completed', ip: 'System' },
-		{ id: 'L1004', time: '2026-07-28 14:20:00', level: 'ERROR', event: 'Connection timeout to Auth Server', ip: '10.0.0.5' },
-	];
+	/**
+	 * 函數名稱: formatSystemLogTimestamp
+	 * 函數功能: 將 epoch 毫秒轉成本地時間 YYYY-MM-DD HH:mm:ss。
+	 */
+	const formatSystemLogTimestamp = (timestampMsValue: number): string =>
+	{
+		const dateObj = new Date(timestampMsValue);
+		const padTwoDigits = (numberValue: number): string => String(numberValue).padStart(2, '0');
+		return `${dateObj.getFullYear()}-${padTwoDigits(dateObj.getMonth() + 1)}-${padTwoDigits(dateObj.getDate())} ${padTwoDigits(dateObj.getHours())}:${padTwoDigits(dateObj.getMinutes())}:${padTwoDigits(dateObj.getSeconds())}`;
+	};
+
+	/**
+	 * 函數名稱: showClearSystemLogsConfirm
+	 * 函數功能: 二次確認後清除所有系統維運日誌，並留下一筆「已清除」紀錄。
+	 */
+	const showClearSystemLogsConfirm = (): void =>
+	{
+		modalApi.confirm({
+			title: translate('admin.syslog_clear_title', '清除系統維運日誌'),
+			icon: <ExclamationCircleFilled />,
+			content: translate('admin.syslog_clear_desc', '確定要清除此瀏覽器中的所有系統維運日誌嗎？此操作無法復原。'),
+			okText: translate('admin.btn_confirm', '確認'),
+			okType: 'danger',
+			cancelText: translate('admin.btn_cancel', '取消'),
+			onOk()
+			{
+				clearSystemLogsAction();
+				logSystemEvent('WARN', '系統維運日誌已被清除', operatorNameString);
+			},
+		});
+	};
 
 	// 使用者表格欄位定義 (符合規範 g, h)
 	const userTableColumnsConfig = [
@@ -578,51 +780,75 @@ export default function SystemPreferences(): React.ReactElement
 			title: translate('admin.col_status', '帳號狀態'), 
 			dataIndex: 'status', 
 			key: 'status',
-			render: (statusNameString: string) => (
-				<Tag color={statusNameString === 'active' ? 'success' : 'error'}>
-					{statusNameString.toUpperCase()}
-				</Tag>
+			render: (statusNameString: string, userRecordItem: UserRecord) => (
+				<Space size={4} wrap>
+					{isAccountLocked(userRecordItem, nowTimestampMs)
+						? <Tag color="warning" style={{ margin: 0 }}>{translate('admin.status_locked', 'LOCKED')}</Tag>
+						: <Tag color={statusNameString === 'active' ? 'success' : 'error'} style={{ margin: 0 }}>{statusNameString.toUpperCase()}</Tag>}
+					{userRecordItem.mustChangePassword && (
+						<Tag color="processing" style={{ margin: 0 }}>{translate('admin.status_must_change_pwd', '待變更密碼')}</Tag>
+					)}
+				</Space>
 			)
 		},
-		{ title: translate('admin.col_last_login', '最後登入時間'), dataIndex: 'lastLogin', key: 'lastLogin' },
+		{
+			title: translate('admin.col_last_login', '最後登入時間'), dataIndex: 'lastLoginAt', key: 'lastLoginAt',
+			render: (lastLoginAtMsValue: number | null) => lastLoginAtMsValue ? formatSystemLogTimestamp(lastLoginAtMsValue) : <Text type="secondary">{translate('admin.never_logged_in', '尚未登入')}</Text>
+		},
 		{ 
 			title: translate('admin.col_action', '操作'), 
 			key: 'action',
 			width: '100px', 
+			align: 'center' as const,
 			render: (_: unknown, userRecordItem: UserRecord) => 
 			{
+				// ★ 調整：原本「編輯權限」連結與右側「⋮」選單分開，現整合為單一「管理」下拉選單
+				const isUserActiveStatus = userRecordItem.status === 'active';
 				const menuDropdownItemsConfig: MenuProps['items'] = [
 					{
+						key: 'edit',
+						icon: <EditOutlined />,
+						label: translate('admin.action_edit_profile', '編輯帳號資料'),
+						onClick: () => handleEditUser(userRecordItem)
+					},
+					{
 						key: 'reset_pwd',
+						icon: <KeyOutlined />,
 						label: translate('admin.action_reset_pwd', '重設密碼'),
 						onClick: () => handleOpenResetPwd(userRecordItem)
 					},
+					...(isAccountLocked(userRecordItem, nowTimestampMs) ? [{
+						key: 'unlock',
+						icon: <UnlockOutlined />,
+						label: translate('admin.action_unlock', '解除鎖定'),
+						onClick: () => handleUnlockUser(userRecordItem)
+					}] : []),
 					{
 						key: 'toggle_status',
-						label: userRecordItem.status === 'active' ? translate('admin.action_disable', '停用') : translate('admin.action_enable', '啟用'),
+						icon: isUserActiveStatus ? <StopOutlined /> : <CheckCircleOutlined />,
+						label: isUserActiveStatus ? translate('admin.action_disable', '停用帳號') : translate('admin.action_enable', '啟用帳號'),
 						onClick: () => handleToggleStatus(userRecordItem.id, userRecordItem.status)
 					},
 					{ type: 'divider' },
 					{
 						key: 'delete',
-						label: translate('admin.action_delete', '刪除'),
+						icon: <DeleteOutlined />,
+						label: translate('admin.action_delete', '刪除帳號'),
 						danger: true,
 						onClick: () => showDeleteConfirm(userRecordItem.id)
 					}
 				];
 
 				return (
-					<Space size="small">
-						<Button type="link" size="small" style={{ padding: '0 4px' }} onClick={() => handleEditUser(userRecordItem)}>
-							{translate('admin.action_edit', '編輯')}
-						</Button>
-						
-						<Dropdown menu={{ items: menuDropdownItemsConfig }} trigger={['click']} placement="bottomRight">
-							<Button type="text" size="small">
-								<MoreOutlined />
-							</Button>
-						</Dropdown>
-					</Space>
+					<Dropdown menu={{ items: menuDropdownItemsConfig }} trigger={['click']} placement="bottomRight" rootClassName="user-manage-dropdown">
+						<Button
+							type="text"
+							shape="circle"
+							icon={<SettingOutlined style={{ fontSize: '16px' }} />}
+							title={translate('admin.action_manage', '管理')}
+							aria-label={translate('admin.action_manage', '管理')}
+						/>
+					</Dropdown>
 				);
 			}
 		},
@@ -630,7 +856,7 @@ export default function SystemPreferences(): React.ReactElement
 
 	// 系統日誌表格欄位定義 (符合規範 g, h)
 	const logTableColumnsConfig = [
-		{ title: translate('admin.col_time', '時間'), dataIndex: 'time', key: 'time', width: '180px' },
+		{ title: translate('admin.col_time', '時間'), dataIndex: 'timestamp', key: 'timestamp', width: '180px', render: (timestampMsValue: number) => formatSystemLogTimestamp(timestampMsValue) },
 		{ 
 			title: translate('admin.col_level', '層級'), 
 			dataIndex: 'level', 
@@ -644,7 +870,7 @@ export default function SystemPreferences(): React.ReactElement
 			}
 		},
 		{ title: translate('admin.col_event', '系統事件'), dataIndex: 'event', key: 'event' },
-		{ title: translate('admin.col_ip', '來源 IP'), dataIndex: 'ip', key: 'ip', width: '150px' },
+		{ title: translate('admin.col_source', '來源'), dataIndex: 'source', key: 'source', width: '260px', ellipsis: true },
 	];
 
 	const tabListItemsArray = [];
@@ -685,7 +911,86 @@ export default function SystemPreferences(): React.ReactElement
 							style={{ marginBottom: '16px' }}
 						/>
 
-						<Table columns={logTableColumnsConfig} dataSource={systemOperationLogsList} rowKey="id" pagination={{ pageSize: 5 }} size="small" />
+						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+							<Segmented
+								value={systemLogLevelFilter}
+								onChange={(selectedLevelValue) => setSystemLogLevelFilter(selectedLevelValue as 'ALL' | SystemLogLevel)}
+								options={[
+									{ value: 'ALL', label: `${translate('admin.syslog_filter_all', '全部')} (${systemLogEntriesList.length})` },
+									{ value: 'INFO', label: `INFO (${systemLogEntriesList.filter(logEntryItem => logEntryItem.level === 'INFO').length})` },
+									{ value: 'WARN', label: `WARN (${systemLogEntriesList.filter(logEntryItem => logEntryItem.level === 'WARN').length})` },
+									{ value: 'ERROR', label: `ERROR (${systemLogEntriesList.filter(logEntryItem => logEntryItem.level === 'ERROR').length})` },
+								]}
+							/>
+							<Button danger icon={<DeleteOutlined />} onClick={showClearSystemLogsConfirm} disabled={systemLogEntriesList.length === 0}>
+								{translate('admin.syslog_clear', '清除日誌')}
+							</Button>
+						</div>
+
+						<Table<SystemLogEntry> columns={logTableColumnsConfig} dataSource={filteredSystemLogEntriesList} rowKey="id" pagination={{ pageSize: 10 }} size="small" />
+					</div>
+				),
+			},
+			{
+				key: 'announcements',
+				label: <span><NotificationOutlined /> {translate('admin.tab_announcements', '系統公告')}</span>,
+				children: (
+					<div>
+						<Alert
+							message={translate('admin.announce_hint_desc', '公告會出現在對象使用者右上角的鈴鐺通知中；標為「重要」的公告，另外以可關閉的橫幅顯示在 Data Owner 首頁（適合維護時段預告、會影響結果判讀的改版說明）。目前公告保存在此瀏覽器中（Demo 版）。')}
+							type="info"
+							showIcon
+							style={{ marginBottom: '16px' }}
+						/>
+
+						<Card
+							type="inner"
+							style={{ marginBottom: '16px', ...(editingAnnouncementItem ? { borderColor: '#3f51b5' } : {}) }}
+							title={editingAnnouncementItem
+								? <span><EditOutlined /> {translate('admin.announce_editing', '修改公告')}：{editingAnnouncementItem.title}</span>
+								: <span><NotificationOutlined /> {translate('admin.announce_hint_title', '發布系統公告')}</span>}
+						>
+							<Form form={announcementFormInstance} layout="vertical" initialValues={announcementFormDefaultValues}>
+								<Form.Item name="icon" label={translate('admin.announce_icon', '圖示')}>
+									<Segmented options={ANNOUNCEMENT_ICON_OPTIONS.map(iconOption => ({
+										value: iconOption.value,
+										label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '2px 4px' }}><span style={{ fontSize: '18px' }}>{iconOption.value}</span>{translate(iconOption.labelKey, iconOption.fallback)}</span>,
+									}))} />
+								</Form.Item>
+								<Form.Item name="title" label={translate('admin.announce_title', '標題')} rules={[{ required: true, whitespace: true, message: translate('admin.announce_title_required', '請輸入公告標題') }]}>
+									<Input maxLength={60} showCount placeholder={translate('admin.announce_title_placeholder', '例：10/10（五）18:00–20:00 系統維護')} />
+								</Form.Item>
+								<Form.Item name="content" label={translate('admin.announce_content', '內容')}>
+									<Input.TextArea rows={3} maxLength={500} showCount placeholder={translate('admin.announce_content_placeholder', '說明影響範圍、需要使用者配合的事項等')} />
+								</Form.Item>
+								<Space size="large" wrap align="end">
+									<Form.Item name="level" label={translate('admin.announce_level', '重要程度')} style={{ marginBottom: 0 }}>
+										<Segmented options={[
+											{ value: 'normal', label: translate('admin.announce_level_normal', '一般') },
+											{ value: 'important', label: translate('admin.announce_level_important', '重要') },
+										]} />
+									</Form.Item>
+									<Form.Item name="audience" label={translate('admin.announce_audience', '對象')} style={{ marginBottom: 0 }}>
+										<Select style={{ width: '160px' }} options={(Object.keys(announcementAudienceLabelDict) as AnnouncementAudience[]).map(audienceKey => ({ value: audienceKey, label: announcementAudienceLabelDict[audienceKey] }))} />
+									</Form.Item>
+									{editingAnnouncementItem && (
+										<Form.Item name="shouldRenotify" valuePropName="checked" style={{ marginBottom: 0 }}>
+											<Checkbox>{translate('admin.announce_renotify', '重新通知使用者（改回未讀；首頁橫幅重新顯示）')}</Checkbox>
+										</Form.Item>
+									)}
+									<Space>
+										{editingAnnouncementItem && (
+											<Button onClick={handleCancelEditAnnouncement}>{translate('admin.btn_cancel', '取消')}</Button>
+										)}
+										<Button type="primary" icon={editingAnnouncementItem ? <EditOutlined /> : <NotificationOutlined />} onClick={handlePublishAnnouncement}>
+											{editingAnnouncementItem ? translate('admin.announce_save_edit', '儲存修改') : translate('admin.announce_publish', '發布公告')}
+										</Button>
+									</Space>
+								</Space>
+							</Form>
+						</Card>
+
+						<Table<AnnouncementItem> columns={announcementTableColumnsConfig} dataSource={announcementsList} rowKey="id" pagination={{ pageSize: 5 }} size="small" />
 					</div>
 				),
 			},
@@ -716,7 +1021,7 @@ export default function SystemPreferences(): React.ReactElement
 											{translate('admin.enable_expiry', '強制密碼過期輪替')}
 										</Text>
 
-										<Text type="secondary" style={{ fontSize: '13px' }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(13) }}>
 											{translate('admin.enable_expiry_desc', '開啟後，所有帳號必須在設定的週期內變更密碼。')}
 										</Text>
 									</div>
@@ -751,7 +1056,7 @@ export default function SystemPreferences(): React.ReactElement
 											{translate('admin.enable_maintenance', '啟用系統維護模式 (Maintenance Mode)')}
 										</Text>
 
-										<Text type="secondary" style={{ fontSize: '13px' }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(13) }}>
 											{translate('admin.maintenance_desc', '開啟後，所有 Data Owner 將無法登入系統，僅允許 Admin 進行伺服器維護。')}
 										</Text>
 									</div>
@@ -786,7 +1091,7 @@ export default function SystemPreferences(): React.ReactElement
 		return (
 			<div style={{ padding: '0 24px', maxWidth: '1200px', margin: '0 auto' }}>
 				<Card 
-					title={<span style={{ fontSize: '18px', fontWeight: 'bold' }}>{translate('admin.console_title', '系統偏好與後台管理 (Admin Console)')}</span>} 
+					title={<span style={{ fontSize: scaleFontSize(18), fontWeight: 'bold' }}>{translate('admin.console_title', '系統偏好與後台管理 (Admin Console)')}</span>} 
 					variant="borderless" 
 					style={{ minHeight: '600px', borderRadius: '12px', marginTop: '24px' }}
 				>
@@ -823,6 +1128,24 @@ export default function SystemPreferences(): React.ReactElement
 						>
 							<Input placeholder="user@company.com" />
 						</Form.Item>
+
+						{!editingUserRecordObj && (
+							<Form.Item
+								name="initialPassword"
+								label={translate('admin.initial_password', '初始密碼')}
+								extra={translate('admin.initial_password_desc', '請將此密碼交給使用者；對方首次登入後系統會要求變更密碼。')}
+								rules={[
+									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
+									{ min: 12, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') },
+									{
+										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#\-_+=])[A-Za-z\d@$!%*?&#\-_+=]+$/,
+										message: translate('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
+									}
+								]}
+							>
+								<Input.Password placeholder={translate('profile.ph_new_password', '至少 12 個字元')} autoComplete="new-password" />
+							</Form.Item>
+						)}
 
 						<Form.Item 
 							name="role" 
@@ -870,7 +1193,7 @@ export default function SystemPreferences(): React.ReactElement
 									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
 									{ min: 12, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') },
 									{
-										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#\-_+=])[A-Za-z\d@$!%*?&#\-_+=]{12,}$/,
+										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#\-_+=])[A-Za-z\d@$!%*?&#\-_+=]+$/,
 										message: translate('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
 									}
 								]
