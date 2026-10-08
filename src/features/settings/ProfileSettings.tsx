@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useAccountStore } from '../../store/useAccountStore';
 import { logSystemEvent } from '../../store/useSystemLogStore';
+import { getRoleDisplayName } from '../../utils/roleLabel';
 import { useUIStore } from '../../store/useUIStore';
 
 import { scaleFontSize } from '../../utils/fontScale';
@@ -347,7 +348,7 @@ export default function ProfileSettings(): React.ReactElement
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 							<Text type="secondary" style={{ width: '80px' }}>{translate('profile.role', '系統角色')}:</Text>
 							<Tag color={currentUserSession?.role === 'admin' ? 'purple' : 'blue'} style={{ margin: 0 }}>
-								{currentUserSession?.role === 'admin' ? 'Admin (系統管理員)' : 'Data Owner (資料擁有者)'}
+								{getRoleDisplayName(currentUserSession?.role)}
 							</Tag>
 						</div>
 					</div>

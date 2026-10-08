@@ -7,8 +7,9 @@
  * ============================================================================
  */
 
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Row, Col, Card, Button, Switch, InputNumber, App as AntdApp, Space } from 'antd';
+import { Row, Col, Card, Button, Switch, InputNumber, App as AntdApp, Space, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { 
 	DesktopOutlined, 
@@ -16,13 +17,19 @@ import {
 	TeamOutlined, 
 	RightOutlined,
 	SettingOutlined,
-	SafetyOutlined
+	SafetyOutlined,
+	ReloadOutlined,
+	LoadingOutlined
 } from '@ant-design/icons';
 
 import { useUIStore } from '../../store/useUIStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuthStore } from '../../store/useAuthStore';
-import { logSystemEvent } from '../../store/useSystemLogStore';
+import { logSystemEvent, useSystemLogStore } from '../../store/useSystemLogStore';
+import { useAccountStore } from '../../store/useAccountStore';
+import {
+	computeApiCallStats, computeFailedLoginStats, computeActiveUserStats, probeBackendHealth, type BackendHealthState,
+} from '../../utils/adminDashboardStats';
 
 import { scaleFontSize } from '../../utils/fontScale';
 /**
@@ -68,9 +75,46 @@ export interface ExtendedWorkspaceSecurity
  * 
  * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素
  */
+// 後端連線狀態自動重新檢查間隔、統計數字重算間隔
+const BACKEND_HEALTH_RECHECK_INTERVAL_MS = 60 * 1000;
+const STATS_REFRESH_INTERVAL_MS = 30 * 1000;
+
+const formatClockTime = (timestampMsValue: number): string =>
+{
+	const dateObj = new Date(timestampMsValue);
+	return [dateObj.getHours(), dateObj.getMinutes(), dateObj.getSeconds()].map(numberValue => String(numberValue).padStart(2, '0')).join(':');
+};
+
 export default function AdminDashboard(): React.ReactElement 
 {
 	const { t: translate } = useTranslation();
+
+	// ★ 2026-10-08：三張狀態卡片改用真實資料（原本 99.99%／3 次／2 / 12 皆為寫死）
+	const systemLogEntriesList = useSystemLogStore((state) => state.logs);
+	const accountRecordsList = useAccountStore((state) => state.accounts);
+	const [statsNowMs, setStatsNowMs] = useState<number>(() => Date.now());
+	const [backendHealthState, setBackendHealthState] = useState<BackendHealthState>({ status: 'checking' });
+
+	const runBackendHealthCheck = useCallback(async (): Promise<void> =>
+	{
+		setBackendHealthState({ status: 'checking' });
+		setBackendHealthState(await probeBackendHealth());
+	}, []);
+
+	useEffect(() =>
+	{
+		// 自動檢查不先切回「檢查中」，避免每分鐘閃一下；結果回來再更新
+		let isUnmounted = false;
+		const probeAndStore = (): void => { void probeBackendHealth().then((healthResult) => { if (!isUnmounted) setBackendHealthState(healthResult); }); };
+		probeAndStore();
+		const healthTimerId = window.setInterval(probeAndStore, BACKEND_HEALTH_RECHECK_INTERVAL_MS);
+		const statsTimerId = window.setInterval(() => setStatsNowMs(Date.now()), STATS_REFRESH_INTERVAL_MS);
+		return () => { isUnmounted = true; window.clearInterval(healthTimerId); window.clearInterval(statsTimerId); };
+	}, []);
+
+	const apiCallStats = useMemo(() => computeApiCallStats(systemLogEntriesList, statsNowMs), [systemLogEntriesList, statsNowMs]);
+	const failedLoginStats = useMemo(() => computeFailedLoginStats(systemLogEntriesList, accountRecordsList, statsNowMs), [systemLogEntriesList, accountRecordsList, statsNowMs]);
+	const activeUserStats = useMemo(() => computeActiveUserStats(accountRecordsList, statsNowMs), [accountRecordsList, statsNowMs]);
 
 	const navigate = useNavigate();
 
@@ -180,7 +224,7 @@ export default function AdminDashboard(): React.ReactElement
 	return (
 		<div style={{ padding: '12px' }}>
 			<h2 style={{ color: themeColorsConfig.textMain, marginBottom: '8px', fontSize: scaleFontSize(24) }}>
-				{translate('admin.dashboard_title', '系統管理大廳 (Admin Dashboard)')}
+				{translate('admin.dashboard_title', '系統管理大廳')}
 			</h2>
 
 			<p style={{ color: themeColorsConfig.textMuted, marginBottom: '24px' }}>
@@ -201,18 +245,40 @@ export default function AdminDashboard(): React.ReactElement
 						}
 					>
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
-								{translate('admin.uptime', '伺服器運行時間 (Uptime)')}
+							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14), display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+								<span>{translate('admin.backend_status', '後端連線狀態')}</span>
+								<Tooltip title={translate('admin.backend_recheck', '重新檢查')}>
+									<Button
+										type="text" size="small" shape="circle"
+										icon={backendHealthState.status === 'checking' ? <LoadingOutlined /> : <ReloadOutlined />}
+										disabled={backendHealthState.status === 'checking'}
+										aria-label={translate('admin.backend_recheck', '重新檢查')}
+										onClick={() => { void runBackendHealthCheck(); }}
+									/>
+								</Tooltip>
 							</div>
 
-							<div style={{ color: themeColorsConfig.textMain, fontSize: scaleFontSize(24), display: 'flex', alignItems: 'center', gap: '8px' }}>
-								<DesktopOutlined style={{ color: '#52c41a' }} />
-								<span>99.99%</span>
+							<div style={{ color: backendHealthState.status === 'down' ? '#ff4d4f' : themeColorsConfig.textMain, fontSize: scaleFontSize(24), display: 'flex', alignItems: 'center', gap: '8px' }}>
+								<DesktopOutlined style={{ color: backendHealthState.status === 'ok' ? '#52c41a' : backendHealthState.status === 'down' ? '#ff4d4f' : themeColorsConfig.textMuted }} />
+								<span>
+									{backendHealthState.status === 'ok' && translate('admin.backend_ok', '連線正常')}
+									{backendHealthState.status === 'down' && translate('admin.backend_down', '無法連線')}
+									{backendHealthState.status === 'checking' && translate('admin.backend_checking', '檢查中…')}
+								</span>
 							</div>
 						</div>
 
-						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(13) }}>
-							{translate('admin.uptime_desc', '連續運行 45 天 12 小時')}
+						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(13), display: 'flex', flexDirection: 'column', gap: '2px' }}>
+							{backendHealthState.status === 'ok' && (
+								<span>{translate('admin.backend_ok_desc', '回應 {{ms}} ms · 檢查於 {{time}}', { ms: backendHealthState.responseMs, time: formatClockTime(backendHealthState.checkedAt) })}</span>
+							)}
+							{backendHealthState.status === 'down' && (
+								<span>{translate('admin.backend_down_desc', '原因：{{reason}} · 檢查於 {{time}}', { reason: backendHealthState.reason === 'timeout' ? translate('admin.backend_reason_timeout', '逾時') : backendHealthState.reason === 'network' ? translate('admin.backend_reason_network', '網路錯誤') : backendHealthState.reason, time: formatClockTime(backendHealthState.checkedAt) })}</span>
+							)}
+							<span>
+								{translate('admin.api_stats_24h', '24H 後端呼叫：成功 {{ok}} 次、失敗 {{fail}} 次', { ok: apiCallStats.successCount, fail: apiCallStats.failureCount })}
+								{apiCallStats.lastFailureAt !== null && translate('admin.api_last_failure', '（最近失敗 {{time}}）', { time: formatClockTime(apiCallStats.lastFailureAt) })}
+							</span>
 						</div>
 					</Card>
 				</Col>
@@ -231,17 +297,24 @@ export default function AdminDashboard(): React.ReactElement
 					>
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
 							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
-								{translate('admin.failed_logins', '24H 異常登入嘗試')}
+								{translate('admin.failed_logins', '24H 異常登入攔截')}
 							</div>
 
-							<div style={{ color: '#faad14', fontSize: scaleFontSize(24), display: 'flex', alignItems: 'center', gap: '8px' }}>
-								<WarningOutlined />
-								<span>3</span>
+							<div style={{ color: failedLoginStats.count > 0 ? '#faad14' : themeColorsConfig.textMain, fontSize: scaleFontSize(24), display: 'flex', alignItems: 'center', gap: '8px' }}>
+								<WarningOutlined style={{ color: failedLoginStats.count > 0 ? '#faad14' : themeColorsConfig.textMuted }} />
+								<span>{failedLoginStats.count}</span>
 							</div>
 						</div>
 
-						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(13) }}>
-							{translate('admin.failed_logins_desc', '來自 2 個不同的外部 IP')}
+						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(13), display: 'flex', flexDirection: 'column', gap: '2px' }}>
+							<span>
+								{failedLoginStats.count === 0
+									? translate('admin.failed_logins_none', '過去 24 小時沒有異常登入')
+									: translate('admin.failed_logins_accounts', '涉及 {{count}} 個帳號：{{names}}', { count: failedLoginStats.distinctSources.length, names: failedLoginStats.distinctSources.slice(0, 3).join('、') + (failedLoginStats.distinctSources.length > 3 ? '…' : '') })}
+							</span>
+							{failedLoginStats.lockedAccountCount > 0 && (
+								<span style={{ color: '#faad14' }}>{translate('admin.locked_accounts_now', '目前鎖定中：{{count}} 個帳號', { count: failedLoginStats.lockedAccountCount })}</span>
+							)}
 						</div>
 					</Card>
 				</Col>
@@ -260,22 +333,33 @@ export default function AdminDashboard(): React.ReactElement
 					>
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
 							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
-								{translate('admin.active_users', '活躍使用者 (Active Users)')}
+								{translate('admin.active_users', '24H 登入使用者')}
 							</div>
 
 							<div style={{ color: themeColorsConfig.textMain, fontSize: scaleFontSize(24), display: 'flex', alignItems: 'baseline', gap: '8px' }}>
 								<TeamOutlined style={{ color: '#1890ff', alignSelf: 'center' }} />
-								<span>2</span>
-								<span style={{ fontSize: scaleFontSize(16) }}>/ 12</span>
+								<span>{activeUserStats.recentLoginCount}</span>
+								<span style={{ fontSize: scaleFontSize(16) }}>/ {activeUserStats.totalAccountCount}</span>
 							</div>
 						</div>
 
-						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(13) }}>
-							{translate('admin.active_users_desc', '目前線上：Admin.Test, Data.Owner.A')}
+						<div style={{ marginTop: '12px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(13), display: 'flex', flexDirection: 'column', gap: '2px' }}>
+							<span>
+								{activeUserStats.recentLoginCount === 0
+									? translate('admin.active_users_none', '過去 24 小時沒有人登入')
+									: translate('admin.active_users_recent', '最近登入：{{names}}', { names: activeUserStats.recentLoginNames.slice(0, 3).join('、') + (activeUserStats.recentLoginNames.length > 3 ? '…' : '') })}
+							</span>
+							{activeUserStats.disabledAccountCount > 0 && (
+								<span>{translate('admin.disabled_accounts', '停用帳號：{{count}} 個', { count: activeUserStats.disabledAccountCount })}</span>
+							)}
 						</div>
 					</Card>
 				</Col>
 			</Row>
+
+			<div style={{ marginTop: '8px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(12), opacity: 0.8 }}>
+				{translate('admin.stats_source_note', '※ 登入與 API 統計來自此瀏覽器的系統維運日誌與帳號資料（Demo 版），尚未集中於後端；後端連線狀態每 60 秒自動檢查一次。')}
+			</div>
 
 			{/* 密碼安全政策快速控管區塊 */}
 			<Card 
@@ -375,7 +459,7 @@ export default function AdminDashboard(): React.ReactElement
 					<div>
 						<h3 style={{ margin: 0, color: themeColorsConfig.textMain, fontSize: scaleFontSize(18), display: 'flex', alignItems: 'center', gap: '8px' }}>
 							<SettingOutlined style={{ color: '#1890ff' }} />
-							{translate('admin.console_entry_title', '系統偏好與後台管理 (Admin Console)')}
+							{translate('admin.console_entry_title', '系統設定')}
 						</h3>
 
 						<p style={{ margin: '8px 0 0 0', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
@@ -389,7 +473,7 @@ export default function AdminDashboard(): React.ReactElement
 						onClick={() => navigate('/settings/preferences')} 
 						style={{ borderRadius: '8px', minWidth: '180px' }}
 					>
-						{translate('admin.btn_enter_console', '進入後台管理中心')} <RightOutlined />
+						{translate('admin.btn_enter_console', '前往系統設定')} <RightOutlined />
 					</Button>
 				</div>
 			</Card>

@@ -159,7 +159,7 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 				title={
 					<Space>
 						<SettingOutlined style={{ color: token.colorPrimary }} />
-						<span style={{ fontSize: scaleFontSize(16), fontWeight: 600 }}>{translate('preferences.title', '系統偏好設定')}</span>
+						<span style={{ fontSize: scaleFontSize(16), fontWeight: 600 }}>{translate('preferences.title', '介面偏好')}</span>
 					</Space>
 				}
 				variant="borderless"
@@ -929,7 +929,7 @@ export default function SystemPreferences(): React.ReactElement
 				children: (
 					<div>
 						<Alert 
-							message={translate('admin.syslog_title', '系統維運日誌 (System Logs)')}
+							message={translate('admin.syslog_title', '系統維運日誌')}
 							description={translate('admin.syslog_desc', '此處僅記錄伺服器連線、登入失敗、系統錯誤等基礎設施事件。若需調閱資料去識別化的合規操作紀錄，請聯絡 Data Owner 於前台匯出 Audit Log。')}
 							type="info" 
 							showIcon 
@@ -1096,7 +1096,7 @@ export default function SystemPreferences(): React.ReactElement
 
 	tabListItemsArray.push({
 		key: 'preferences',
-		label: <span><SettingOutlined /> {translate('preferences.title', 'System Preferences')}</span>,
+		label: <span><SettingOutlined /> {translate('preferences.title', '介面偏好')}</span>,
 		children: <BasicPreferences currentUserRole={currentUserRoleName} />
 	});
 
@@ -1110,7 +1110,7 @@ export default function SystemPreferences(): React.ReactElement
 		return (
 			<div style={{ padding: '0 24px', maxWidth: '1200px', margin: '0 auto' }}>
 				<Card 
-					title={<span style={{ fontSize: scaleFontSize(18), fontWeight: 'bold' }}>{translate('admin.console_title', '系統偏好與後台管理 (Admin Console)')}</span>} 
+					title={<span style={{ fontSize: scaleFontSize(18), fontWeight: 'bold' }}>{translate('admin.console_title', '系統設定')}</span>} 
 					variant="borderless" 
 					style={{ minHeight: '600px', borderRadius: '12px', marginTop: '24px' }}
 				>
@@ -1174,8 +1174,8 @@ export default function SystemPreferences(): React.ReactElement
 							<Select 
 								options={
 									[
-										{ value: 'data_owner', label: translate('admin.role_data_owner', 'Data Owner (資料擁有者)') },
-										{ value: 'admin', label: translate('admin.role_admin', 'Admin (系統管理員)') }
+										{ value: 'data_owner', label: translate('admin.role_data_owner', 'Data Owner') },
+										{ value: 'admin', label: translate('admin.role_admin', 'Admin') }
 									]
 								} 
 							/>

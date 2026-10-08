@@ -319,11 +319,11 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
         selectedKeys: [`role_${currentUserRoleNameString}`],
         items: [
             { key: 'role_header', label: <span style={{ fontWeight: 600, color: '#8c8c8c' }}><UserSwitchOutlined /> {translate('menu.role_switch_demo', '切換測試角色 (RBAC Demo)')}</span>, disabled: true },
-            { key: 'role_admin', label: translate('role.admin', ' Admin (系統管理員)') },
-            { key: 'role_data_owner', label: translate('role.data_owner', ' Data Owner (資料擁有者)') },
+            { key: 'role_admin', label: translate('role.admin', 'Admin') },
+            { key: 'role_data_owner', label: translate('role.data_owner', 'Data Owner') },
             { type: 'divider' },
             { key: 'profile', label: translate('menu.profile_settings', '個人設定'), icon: <UserOutlined /> },
-            { key: 'preferences', label: translate('menu.system_preferences', '系統偏好'), icon: <SettingOutlined /> },
+            { key: 'preferences', label: translate('menu.system_preferences', '系統設定'), icon: <SettingOutlined /> },
         ],
         onClick: (menuClickEventObj) => {
             if (isPasswordExpiredActiveStatus && menuClickEventObj.key !== 'profile') {
