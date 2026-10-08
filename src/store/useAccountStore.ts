@@ -114,8 +114,10 @@ interface AccountState
 	/** 登入驗證；maxFailedLogins 取自安全參數「密碼錯誤鎖定次數」 */
 	authenticate: (email: string, password: string, maxFailedLogins: number, passwordExpiryDays: number | null) => AuthenticateResult;
 	findByEmail: (email: string) => AccountRecord | undefined;
-	addAccount: (input: { name: string; email: string; role: AccountRole; password: string }) => { ok: true } | { ok: false; reason: 'duplicate_email' };
-	updateAccount: (accountId: string, patch: { name: string; email: string; role: AccountRole }) => { ok: true } | { ok: false; reason: 'duplicate_email' };
+	/** 登入用：先比對 Email，再比對使用者名稱（不分大小寫；名稱須唯一才算數） */
+	findByLoginId: (loginId: string) => AccountRecord | undefined;
+	addAccount: (input: { name: string; email: string; role: AccountRole; password: string }) => { ok: true } | { ok: false; reason: 'duplicate_email' | 'duplicate_name' };
+	updateAccount: (accountId: string, patch: { name: string; email: string; role: AccountRole }) => { ok: true } | { ok: false; reason: 'duplicate_email' | 'duplicate_name' };
 	setAccountStatus: (accountId: string, status: AccountStatus) => void;
 	unlockAccount: (accountId: string) => void;
 	deleteAccount: (accountId: string) => void;
@@ -132,10 +134,20 @@ export const useAccountStore = create<AccountState>()(
 
 			findByEmail: (email) => getStoreStateAction().accounts.find(account => account.email === normalizeEmail(email)),
 
+			findByLoginId: (loginId) =>
+			{
+				const normalizedLoginId = normalizeEmail(loginId);
+				const accountsList = getStoreStateAction().accounts;
+				const emailMatchedAccount = accountsList.find(account => account.email === normalizedLoginId);
+				if (emailMatchedAccount) return emailMatchedAccount;
+				const nameMatchedAccounts = accountsList.filter(account => account.name.trim().toLowerCase() === normalizedLoginId);
+				return nameMatchedAccounts.length === 1 ? nameMatchedAccounts[0] : undefined;
+			},
+
 			authenticate: (email, password, maxFailedLogins, passwordExpiryDays) =>
 			{
 				const nowMs = Date.now();
-				const targetAccount = getStoreStateAction().findByEmail(email);
+				const targetAccount = getStoreStateAction().findByLoginId(email);
 				if (!targetAccount) return { ok: false, reason: 'not_found' };
 				if (targetAccount.status === 'disabled') return { ok: false, reason: 'disabled' };
 				if (isAccountLocked(targetAccount, nowMs)) return { ok: false, reason: 'locked', lockedUntil: targetAccount.lockedUntil ?? undefined };
@@ -173,6 +185,7 @@ export const useAccountStore = create<AccountState>()(
 			{
 				const normalizedEmail = normalizeEmail(email);
 				if (getStoreStateAction().accounts.some(account => account.email === normalizedEmail)) return { ok: false, reason: 'duplicate_email' };
+				if (getStoreStateAction().accounts.some(account => account.name.trim().toLowerCase() === name.trim().toLowerCase())) return { ok: false, reason: 'duplicate_name' };
 				const nowMs = Date.now();
 				setStoreStateAction((currentState) => ({
 					accounts: [...currentState.accounts, {
@@ -187,6 +200,7 @@ export const useAccountStore = create<AccountState>()(
 			{
 				const normalizedEmail = normalizeEmail(email);
 				if (getStoreStateAction().accounts.some(account => account.email === normalizedEmail && account.id !== accountId)) return { ok: false, reason: 'duplicate_email' };
+				if (getStoreStateAction().accounts.some(account => account.name.trim().toLowerCase() === name.trim().toLowerCase() && account.id !== accountId)) return { ok: false, reason: 'duplicate_name' };
 				setStoreStateAction((currentState) => ({
 					accounts: currentState.accounts.map(account => account.id === accountId ? { ...account, name: name.trim(), email: normalizedEmail, role } : account),
 				}));

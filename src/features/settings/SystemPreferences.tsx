@@ -373,6 +373,9 @@ export default function SystemPreferences(): React.ReactElement
 	const userRecordList = useAccountStore((state) => state.accounts);
 	const accountStoreActions = useAccountStore.getState();
 	const currentOperatorEmailString = currentUserSession?.email || '';
+	/** 若排除 excludedAccountId 後，已沒有任何「啟用中的 Admin」→ 回傳 true（用來避免系統變成沒有管理員） */
+	const wouldLeaveNoActiveAdmin = (excludedAccountId: string): boolean =>
+		!userRecordList.some(accountItem => accountItem.id !== excludedAccountId && accountItem.role === 'admin' && accountItem.status === 'active');
 	// 每 30 秒重算一次，讓「鎖定中」狀態到期後自動恢復顯示
 	const [nowTimestampMs, setNowTimestampMs] = useState<number>(() => Date.now());
 	useEffect(() => {
@@ -564,6 +567,11 @@ export default function SystemPreferences(): React.ReactElement
 			messageApi.error(translate('admin.msg_cannot_delete_self', '不能刪除自己目前登入的帳號'));
 			return;
 		}
+		if (deletedUserRecordObj?.role === 'admin' && wouldLeaveNoActiveAdmin(targetUserIdStr))
+		{
+			messageApi.error(translate('admin.msg_last_admin', '系統至少需要保留一個啟用中的 Admin 帳號'));
+			return;
+		}
 		logSystemEvent('WARN', `刪除帳號：${deletedUserRecordObj?.name ?? targetUserIdStr}`, operatorNameString);
 
 		accountStoreActions.deleteAccount(targetUserIdStr);
@@ -611,10 +619,24 @@ export default function SystemPreferences(): React.ReactElement
 			{
 				if (editingUserRecordObj) 
 				{
+					const isRoleChangedStatus = editingUserRecordObj.role !== userFormValuesObj.role;
+					if (isRoleChangedStatus && editingUserRecordObj.email === currentOperatorEmailString)
+					{
+						userFormInstance.setFields([{ name: 'role', errors: [translate('admin.msg_cannot_change_own_role', '不能變更自己目前登入帳號的角色')] }]);
+						return;
+					}
+					if (isRoleChangedStatus && editingUserRecordObj.role === 'admin' && editingUserRecordObj.status === 'active' && wouldLeaveNoActiveAdmin(editingUserRecordObj.id))
+					{
+						userFormInstance.setFields([{ name: 'role', errors: [translate('admin.msg_last_admin', '系統至少需要保留一個啟用中的 Admin 帳號')] }]);
+						return;
+					}
+
 					const updateResult = accountStoreActions.updateAccount(editingUserRecordObj.id, { name: userFormValuesObj.name, email: userFormValuesObj.email, role: userFormValuesObj.role });
 					if (!updateResult.ok)
 					{
-						userFormInstance.setFields([{ name: 'email', errors: [translate('admin.email_duplicate', '此 Email 已被其他帳號使用')] }]);
+						userFormInstance.setFields([updateResult.reason === 'duplicate_name'
+							? { name: 'name', errors: [translate('admin.name_duplicate', '此使用者名稱已被其他帳號使用')] }
+							: { name: 'email', errors: [translate('admin.email_duplicate', '此 Email 已被其他帳號使用')] }]);
 						return;
 					}
 
@@ -634,7 +656,9 @@ export default function SystemPreferences(): React.ReactElement
 					});
 					if (!addResult.ok)
 					{
-						userFormInstance.setFields([{ name: 'email', errors: [translate('admin.email_duplicate', '此 Email 已被其他帳號使用')] }]);
+						userFormInstance.setFields([addResult.reason === 'duplicate_name'
+							? { name: 'name', errors: [translate('admin.name_duplicate', '此使用者名稱已被其他帳號使用')] }
+							: { name: 'email', errors: [translate('admin.email_duplicate', '此 Email 已被其他帳號使用')] }]);
 						return;
 					}
 
@@ -666,6 +690,11 @@ export default function SystemPreferences(): React.ReactElement
 		if (newStatusResultString === 'disabled' && toggledUserRecordObj?.email === currentOperatorEmailString)
 		{
 			messageApi.error(translate('admin.msg_cannot_disable_self', '不能停用自己目前登入的帳號'));
+			return;
+		}
+		if (newStatusResultString === 'disabled' && toggledUserRecordObj?.role === 'admin' && wouldLeaveNoActiveAdmin(targetUserIdStr))
+		{
+			messageApi.error(translate('admin.msg_last_admin', '系統至少需要保留一個啟用中的 Admin 帳號'));
 			return;
 		}
 		logSystemEvent(newStatusResultString === 'disabled' ? 'WARN' : 'INFO', `${newStatusResultString === 'disabled' ? '停用' : '啟用'}帳號：${toggledUserRecordObj?.name ?? targetUserIdStr}`, operatorNameString);
@@ -886,7 +915,7 @@ export default function SystemPreferences(): React.ReactElement
 						<div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
 							<div>
 								<Title level={5} style={{ margin: 0 }}>{translate('admin.user_list', '系統使用者列表')}</Title>
-								<Text type="secondary">{translate('admin.user_list_desc', '負責開通 Data Owner 帳號與設定密碼，不包含任何資料授權。')}</Text>
+								<Text type="secondary">{translate('admin.user_list_desc', '負責開通 Data Owner／Admin 帳號、設定角色與密碼，不包含任何資料授權。')}</Text>
 							</div>
 
 							<Button type="primary" icon={<PlusOutlined />} onClick={handleAddUser}>
@@ -894,7 +923,7 @@ export default function SystemPreferences(): React.ReactElement
 							</Button>
 						</div>
 
-						<Table columns={userTableColumnsConfig} dataSource={userRecordList.filter(userRecordItem => userRecordItem.role === 'data_owner')} rowKey="id" pagination={{ pageSize: 5 }} size="middle" />
+						<Table columns={userTableColumnsConfig} dataSource={userRecordList} rowKey="id" pagination={{ pageSize: 5 }} size="middle" />
 					</div>
 				),
 			},
@@ -1155,7 +1184,8 @@ export default function SystemPreferences(): React.ReactElement
 							<Select 
 								options={
 									[
-										{ value: 'data_owner', label: translate('admin.role_data_owner', 'Data Owner (資料擁有者)') }
+										{ value: 'data_owner', label: translate('admin.role_data_owner', 'Data Owner (資料擁有者)') },
+										{ value: 'admin', label: translate('admin.role_admin', 'Admin (系統管理員)') }
 									]
 								} 
 							/>
