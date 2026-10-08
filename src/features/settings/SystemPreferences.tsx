@@ -40,7 +40,6 @@ import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogE
 import { useAccountStore, isAccountLocked, type AccountRecord, type AccountRole } from '../../store/useAccountStore';
 import { useAnnouncementStore, type AnnouncementItem, type AnnouncementLevel, type AnnouncementAudience } from '../../store/useAnnouncementStore';
 import { AnnouncementListItem } from '../../components/AnnouncementListItem';
-import { ANNOUNCEMENT_ICON_OPTIONS } from '../../utils/announcementDisplay';
 import { useUIStore, type FontSizeLevel } from '../../store/useUIStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
@@ -397,10 +396,10 @@ export default function SystemPreferences(): React.ReactElement
 	const [resetPwdFormInstance] = Form.useForm();
 
 	// ★ 2026-10-07：系統公告（右上角鈴鐺／Data Owner 首頁重要橫幅的資料來源）
-	const [announcementFormInstance] = Form.useForm<{ icon: string; title: string; content: string; level: AnnouncementLevel; audience: AnnouncementAudience; shouldRenotify?: boolean }>();
+	const [announcementFormInstance] = Form.useForm<{ title: string; content: string; level: AnnouncementLevel; audience: AnnouncementAudience; shouldRenotify?: boolean }>();
 	const [editingAnnouncementItem, setEditingAnnouncementItem] = useState<AnnouncementItem | null>(null); // 非 null 時表單為「修改」模式
 	const updateAnnouncementAction = useAnnouncementStore((state) => state.updateAnnouncement);
-	const announcementFormDefaultValues = { icon: ANNOUNCEMENT_ICON_OPTIONS[0].value, level: 'normal' as AnnouncementLevel, audience: 'all' as AnnouncementAudience, shouldRenotify: true };
+	const announcementFormDefaultValues = { level: 'normal' as AnnouncementLevel, audience: 'all' as AnnouncementAudience, shouldRenotify: true };
 	const announcementsList = useAnnouncementStore((state) => state.announcements);
 	const publishAnnouncementAction = useAnnouncementStore((state) => state.publishAnnouncement);
 	const removeAnnouncementAction = useAnnouncementStore((state) => state.removeAnnouncement);
@@ -422,7 +421,6 @@ export default function SystemPreferences(): React.ReactElement
 			if (editingAnnouncementItem)
 			{
 				updateAnnouncementAction(editingAnnouncementItem.id, {
-					icon: formValuesObj.icon,
 					title: formValuesObj.title.trim(),
 					content: (formValuesObj.content || '').trim(),
 					level: formValuesObj.level,
@@ -435,7 +433,6 @@ export default function SystemPreferences(): React.ReactElement
 			}
 
 			publishAnnouncementAction({
-				icon: formValuesObj.icon,
 				title: formValuesObj.title.trim(),
 				content: (formValuesObj.content || '').trim(),
 				level: formValuesObj.level,
@@ -456,7 +453,6 @@ export default function SystemPreferences(): React.ReactElement
 	{
 		setEditingAnnouncementItem(targetAnnouncementItem);
 		announcementFormInstance.setFieldsValue({
-			icon: targetAnnouncementItem.icon || (targetAnnouncementItem.level === 'important' ? '⚠️' : '📢'),
 			title: targetAnnouncementItem.title,
 			content: targetAnnouncementItem.content,
 			level: targetAnnouncementItem.level,
@@ -980,12 +976,6 @@ export default function SystemPreferences(): React.ReactElement
 								: <span><NotificationOutlined /> {translate('admin.announce_hint_title', '發布系統公告')}</span>}
 						>
 							<Form form={announcementFormInstance} layout="vertical" initialValues={announcementFormDefaultValues}>
-								<Form.Item name="icon" label={translate('admin.announce_icon', '圖示')}>
-									<Segmented options={ANNOUNCEMENT_ICON_OPTIONS.map(iconOption => ({
-										value: iconOption.value,
-										label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '2px 4px' }}><span style={{ fontSize: '18px' }}>{iconOption.value}</span>{translate(iconOption.labelKey, iconOption.fallback)}</span>,
-									}))} />
-								</Form.Item>
 								<Form.Item name="title" label={translate('admin.announce_title', '標題')} rules={[{ required: true, whitespace: true, message: translate('admin.announce_title_required', '請輸入公告標題') }]}>
 									<Input maxLength={60} showCount placeholder={translate('admin.announce_title_placeholder', '例：10/10（五）18:00–20:00 系統維護')} />
 								</Form.Item>

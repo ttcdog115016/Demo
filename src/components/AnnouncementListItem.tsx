@@ -11,7 +11,8 @@ import { useTranslation } from 'react-i18next';
 
 import type { AnnouncementItem } from '../store/useAnnouncementStore';
 import { scaleFontSize } from '../utils/fontScale';
-import { getAnnouncementIcon, formatAnnouncementTime, formatAnnouncementFullTime } from '../utils/announcementDisplay';
+import { AnnouncementLevelIcon } from './AnnouncementLevelIcon';
+import { formatAnnouncementTime, formatAnnouncementFullTime } from '../utils/announcementDisplay';
 
 
 interface AnnouncementListItemProps
@@ -50,7 +51,7 @@ export const AnnouncementListItem: React.FC<AnnouncementListItemProps> = ({ item
 					border: `1px solid ${isImportantStatus ? token.colorWarningBorder : token.colorPrimaryBorder}`,
 				}}
 			>
-				{getAnnouncementIcon(item)}
+				<AnnouncementLevelIcon level={item.level} />
 			</div>
 
 			{/* 中：標題＋訊息 */}

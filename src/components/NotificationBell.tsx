@@ -15,7 +15,8 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useAnnouncementStore, isAnnouncementVisibleToRole, getAnnouncementUserKey } from '../store/useAnnouncementStore';
 import { AnnouncementListItem } from './AnnouncementListItem';
 import { scaleFontSize } from '../utils/fontScale';
-import { getAnnouncementIcon, formatAnnouncementFullTime } from '../utils/announcementDisplay';
+import { AnnouncementLevelIcon } from './AnnouncementLevelIcon';
+import { formatAnnouncementFullTime } from '../utils/announcementDisplay';
 
 // 鈴鐺面板最多顯示之公告筆數
 const NOTIFICATION_PANEL_MAX_ITEMS = 10;
@@ -124,7 +125,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ iconColor })
 								border: `1px solid ${viewingAnnouncementItem.level === 'important' ? token.colorWarningBorder : token.colorPrimaryBorder}`,
 							}}
 						>
-							{getAnnouncementIcon(viewingAnnouncementItem)}
+							<AnnouncementLevelIcon level={viewingAnnouncementItem.level} />
 						</div>
 						<div style={{ minWidth: 0 }}>
 							<div style={{ fontSize: scaleFontSize(17), fontWeight: 600, wordBreak: 'break-word' }}>{viewingAnnouncementItem.title}</div>
