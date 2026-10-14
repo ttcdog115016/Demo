@@ -7,7 +7,7 @@
  *   兩張卡片同一個結構：上方「大圖示＋結論＋一句白話」，下方幾列「白話問題＋白話答案＋（小字）原始數字」。
  *   - 保護程度：三個問題（認出是誰／和其他資料對上／猜出敏感資料），數字改說「每 100 筆約幾筆」；
  *     「猜出敏感資料」取推斷性攻擊與扣除亂猜基線後 CAP 的較高者。
- *   - 可用性：保留多少筆、欄位怎麼處理（保留原值／變模糊／移除或遮蔽），可展開看每個欄位。
+ *   - 可用性：保留多少筆、欄位怎麼處理（保留原值／去識別化／移除或遮蔽），可展開看每個欄位。
  *   只用 inline style 與 antd icon；問號說明由呼叫端傳入 helpIcon（包 antd Tooltip）。
  */
 import type { ReactNode } from 'react';
@@ -116,7 +116,7 @@ export function RiskSummaryCard({ summary, rows, colors, helpIcon }: {
                     title={`${info.code} ${info.labelText}`}
                     verdictText={RISK_VERDICT_TEXT[info.level]}
                     helpIcon={helpIcon}
-                    helpTooltip={`依下方三項中最高的一項判定（目前最高：${summary.driver.label}）。分級：L1 低風險 < ${lowPct}｜L2 中風險 ${lowPct}～${highPct}｜L3 高風險 ≥ ${highPct}`}
+                    helpTooltip={`依下方三項中最高的一項判定（目前最高：${summary.driver.label}）。分級：L1 低風險 < ${lowPct}｜L2 中風險 ${lowPct}～${highPct}｜L3 高風險 ≥ ${highPct}。這是對處理後資料實際模擬攻擊的結果；只要是 L1，就代表目前的設定已足夠安全，不必為了更安全而犧牲資料可用性。`}
                     colors={colors}
                 />
             )}
@@ -145,8 +145,7 @@ export function RiskSummaryCard({ summary, rows, colors, helpIcon }: {
 }
 
 const BUCKET_ORDER: ColumnTreatmentBucket[] = ['kept', 'blurred', 'removed'];
-/** 欄位數不超過此值時「每個欄位怎麼處理」預設展開 */
-const COLUMN_LIST_DEFAULT_OPEN_MAX = 12;
+// ★ 2026-10-13 使用者要求：「每個欄位怎麼處理」一律預設收起（原本欄位 ≤ 12 個時預設展開）
 
 export function UtilitySummaryCard({ info, recordRow, extraRow, columnItems, colors, helpIcon }: {
     info: UtilityLevelInfo | null;
@@ -187,8 +186,8 @@ export function UtilitySummaryCard({ info, recordRow, extraRow, columnItems, col
                         ))}
                     </div>
                     {columnItems.length > 0 && (
-                        // 欄位不多時預設展開：「我的資料被改成什麼樣子」是使用者最想知道的
-                        <details open={columnItems.length <= COLUMN_LIST_DEFAULT_OPEN_MAX} style={{ marginTop: 10 }}>
+                        // 2026-10-13 起一律預設收起，點選展開
+                        <details style={{ marginTop: 10 }}>
                             <summary style={{ fontSize: scaleFontSize(13), color: colors.muted, cursor: 'pointer' }}>每個欄位怎麼處理</summary>
                             <div style={{ marginTop: 6 }}>
                                 {columnItems.map((item) => (

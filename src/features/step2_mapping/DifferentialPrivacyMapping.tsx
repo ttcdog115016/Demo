@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, Table, Select, Button, Input, InputNumber, Switch, theme, Tabs, Space, Tooltip, Alert, DatePicker, App as AntdApp } from 'antd';
 import {
-	UploadOutlined, DeleteOutlined, PlusOutlined,
+	DeleteOutlined, PlusOutlined,
 	DatabaseOutlined, CodeOutlined, ThunderboltOutlined, InfoCircleOutlined, CopyOutlined,
 	EyeOutlined, EyeInvisibleOutlined, QuestionCircleOutlined
 } from '@ant-design/icons';
@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 
 import { useWorkspaceStore, type DPField, type PreprocessingRule } from '../../store/useWorkspaceStore';
+import ConfigFileButtons from './ConfigFileButtons';
 import { DP_COLUMN_BUDGETS_REFERENCE } from '../../config/recommendationReferenceConfig';
 import {
 	resolveIsDateTimeDpField, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals,
@@ -946,7 +947,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			title: translate('step2.col_name', '欄位名稱'),
 			dataIndex: 'fieldName',
 			key: 'fieldName',
-			width: 140,
+			width: '10em',
 			render: (fieldNameTextValue: string, rowRecordItem: DPField) => (
 				<Tooltip title={!isFieldNameInDataset(fieldNameTextValue, datasetColumnNameSet) ? translate('step2.field_not_in_dataset_tooltip', '上傳的資料中沒有這個欄位，執行時不會被處理。請刪除此列或改選資料中的欄位。') : fieldNameTextValue} placement="topLeft" mouseEnterDelay={0.3}>
 					{datasetColumnsList.length > 0 ? (
@@ -984,7 +985,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			title: translate('step2.data_type', '資料型態'),
 			dataIndex: 'fieldType',
 			key: 'fieldType',
-			width: 200,
+			width: '14.5em',
 			render: (fieldTypeTextValue: string, rowRecordItem: DPField) => (
 				<Select
 					style={{ width: '100%' }}
@@ -1076,7 +1077,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		{
 			title: translate('step2.apply_dp', '套用 DP'),
 			key: 'enabled',
-			width: 110,
+			width: '8em',
 			render: (_: unknown, rowRecordItem: DPField) => 
 			{
 				const isCurrentFieldTextFieldType = rowRecordItem.fieldType === 'Text';
@@ -1124,7 +1125,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				</Space>
 			),
 			key: 'isRiskSensitive',
-			width: 110,
+			width: '8em',
 			render: (_: unknown, rowRecordItem: DPField) =>
 			{
 				// ★ 2026-10-02：類別型、連續數值型（Step4 先分級距）可點選；文字型、日期時間型、尚未選型態停用
@@ -1154,7 +1155,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			),
 			key: 'bounds',
 			// 日期時間型邊界顯示到秒（YYYY-MM-DD HH:mm:ss），兩個選擇器並排需約 360px
-			width: 360,
+			width: '25.5em',
 			render: (_: unknown, rowRecordItem: DPField) => 
 			{
 				if (!rowRecordItem.enabled) 
@@ -1281,7 +1282,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		{
 			title: translate('step2.action', '操作'),
 			key: 'action',
-			width: 96,
+			width: '7em',
 			align: 'center' as const,
 			render: (_: unknown, rowRecordItem: DPField) => (
 				<Space size={4}>
@@ -1359,8 +1360,8 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				defaultActiveKey="1" 
 				tabBarExtraContent={
 					<Space style={{ paddingBottom: '8px' }}>
-						<input type="file" accept=".json" ref={fileInputRef} onChange={handleImportJSON} onClick={(mouseClickEvent) => { (mouseClickEvent.target as HTMLInputElement).value = ''; }} style={{ display: 'none' }} />
-						<Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>{translate('step2.btn_import', '匯入 JSON 設定檔')}</Button>
+						{/* ★ 2026-10-07 QA 回饋：匯入旁加上匯出（見 ConfigFileButtons.tsx） */}
+						<ConfigFileButtons onImportFileChange={handleImportJSON} fileInputRef={fileInputRef} />
 					</Space>
 				}
 				items={[
@@ -1406,7 +1407,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 								)}
 
 								<div style={{ background: isDarkModeActive ? '#1d1d1d' : '#ffffff', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${token.colorBorderSecondary}` }}>
-									<Table dataSource={currentDpFieldsList} columns={dpDataTableColumnsConfig} rowKey="id" pagination={false} size="small" bordered={false} className="attribute-table" scroll={{ x: 1010, y: 400 }} />
+									<Table dataSource={currentDpFieldsList} columns={dpDataTableColumnsConfig} rowKey="id" pagination={false} size="small" bordered={false} className="attribute-table" scroll={{ x: 'max-content', y: 400 }} />
 								</div>
 
 								{isJsonPreviewVisibleStatus && (

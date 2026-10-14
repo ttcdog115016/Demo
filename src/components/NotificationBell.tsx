@@ -12,7 +12,7 @@ import { BellOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../store/useAuthStore';
-import { useAnnouncementStore, isAnnouncementVisibleToRole, getAnnouncementUserKey } from '../store/useAnnouncementStore';
+import { useAnnouncementStore, isAnnouncementShownToRole, getAnnouncementUserKey, useAnnouncementClock } from '../store/useAnnouncementStore';
 import { AnnouncementListItem } from './AnnouncementListItem';
 import { scaleFontSize } from '../utils/fontScale';
 import { AnnouncementLevelIcon } from './AnnouncementLevelIcon';
@@ -37,14 +37,15 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ iconColor })
 	const [isPanelOpenStatus, setIsPanelOpenStatus] = useState<boolean>(false);
 	const [viewingAnnouncementId, setViewingAnnouncementId] = useState<string | null>(null); // 目前開啟於視窗中的公告
 
+	const announcementClockNowMs = useAnnouncementClock();
 	const announcementUserKeyString = getAnnouncementUserKey(currentUserSessionData);
 	const readIdsList = readIdsByUserDict[announcementUserKeyString] ?? [];
 	const visibleAnnouncementsList = allAnnouncementsList
-		.filter(announcementItem => isAnnouncementVisibleToRole(announcementItem, currentUserSessionData?.role))
+		.filter(announcementItem => isAnnouncementShownToRole(announcementItem, currentUserSessionData?.role, announcementClockNowMs))
 		.slice(0, NOTIFICATION_PANEL_MAX_ITEMS);
 	const unreadCountValue = visibleAnnouncementsList.filter(announcementItem => !readIdsList.includes(announcementItem.id)).length;
 
-	// 視窗內容直接從 store 取，Admin 若在視窗開啟期間修改或撤下公告也能即時反映
+	// 視窗內容直接從 store 取，Admin 若在視窗開啟期間修改或刪除公告也能即時反映
 	const viewingAnnouncementItem = viewingAnnouncementId ? allAnnouncementsList.find(announcementItem => announcementItem.id === viewingAnnouncementId) ?? null : null;
 
 	const handleItemClick = (announcementId: string): void =>
@@ -111,7 +112,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ iconColor })
 			<Modal
 				open={viewingAnnouncementItem !== null}
 				onCancel={() => setViewingAnnouncementId(null)}
-				width={640}
+				width={'45.5em'}
 				centered
 				destroyOnHidden
 				title={viewingAnnouncementItem && (

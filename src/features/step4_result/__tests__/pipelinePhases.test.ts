@@ -70,15 +70,15 @@ describe('去識別化階段', () => {
 });
 
 describe('結果計算', () => {
-    it('風險分數以 1/樣本數為基準正規化，取三項最大值為綜合風險', () => {
+    it('三攻擊風險直接採用後端回傳值（後端已扣除控制組與亂猜基準，前端不再重複正規化），取三項最大值為綜合風險', () => {
         const metrics = computeSimulationMetrics(attackReport(0.6, 0.3, 0.05, 20));
-        expect(metrics.singling).toEqual({ ori: 0.6, ctrl: 0, base: 0.05, risk: (0.6 - 0.05) / 0.95 });
-        expect(metrics.inference.risk).toBe(0);
-        expect(metrics.overallRiskPercent).toBe('57.9');
+        expect(metrics.singling).toEqual({ risk: 0.6 });
+        expect(metrics.linkability.risk).toBe(0.3);
+        expect(metrics.inference.risk).toBe(0.05);
+        expect(metrics.overallRiskPercent).toBe('60.0');
     });
 
-    it('樣本數不明時不扣基準；沒有報告時全為 0', () => {
-        expect(computeSimulationMetrics(attackReport(0.4, 0.2, 0.1, 0)).singling.risk).toBe(0.4);
+    it('沒有報告時全為 0', () => {
         expect(computeSimulationMetrics(null).overallRiskPercent).toBe('0.0');
     });
 

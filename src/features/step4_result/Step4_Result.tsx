@@ -8,7 +8,7 @@
  */
 
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
-import type { ReactNode, CSSProperties } from 'react';
+import type { ReactNode } from 'react';
 import {
     Card, Row, Col, Table, Tag, Alert, Button,
     Modal, Segmented, Space, Progress, Spin, Steps, theme, App as AntdApp, Tooltip, Select, Checkbox, InputNumber
@@ -28,19 +28,22 @@ import type { KAnonymityQualityReport, DpQualityReport } from '../../api/apiServ
 
 import { usePipelineRunner } from './usePipelineRunner';
 import BackendReportDetails from './BackendReportDetails';
-import AuditIntegrityPanel from '../../components/AuditIntegrityPanel';
-import { OverallRiskLevelPanel } from '../../components/RiskLevelBadge';
+import ComplianceReportDocument, { type ComplianceReportEntry } from '../../components/ComplianceReportDocument';
+import { formatLossPercent } from '../../utils/kAnonymityLossMetric';
+import { buildComplianceReportSnapshot, formatEpsilonForDisplay, isCapEvaluated, resolveCapExcessRisk, resolveSensitiveGuessRisk } from '../../utils/complianceReport';
+import { useAuthStore } from '../../store/useAuthStore';
 import { RiskSummaryCard, UtilitySummaryCard, type RiskQuestionRow, type PlainCardColors } from '../../components/PlainResultSummary';
-import { classifyKAnonymityUtility, classifyDifferentialPrivacyUtility, describeEpsilonNoiseText, resolveColumnTreatment, resolveReleaseDecision, pickExampleValue } from '../../utils/plainResultSummary';
+import { classifyKAnonymityUtility, resolveColumnTreatment, resolveReleaseDecision, pickExampleValue } from '../../utils/plainResultSummary';
 import { computeOverallRiskLevel } from '../../utils/riskLevel';
 import { useAuditStore } from '../../store/useAuditStore';
+import { getDataUsageNotes, describeProcessingMethod, buildDataUsageNotesText, type DataUsageNotesContext } from '../../utils/dataUsageNotes';
 
 // ★ 2026-10-02：使用者要求暫不顯示「後端處理報告明細」（內容偏技術，一般使用者看了反而更混淆），
 //   元件與單元測試保留，日後要恢復顯示把此旗標改回 true 即可。說明見專案文件「修改建議整理」。
 const SHOW_BACKEND_REPORT_DETAILS = false;
-import { evaluateComplianceValidity } from './pipeline/pipelineResults';
+import { evaluateComplianceValidity, buildPipelineAuditLogEntry } from './pipeline/pipelineResults';
 import { BACKEND_ERROR_CODE_CATEGORY_MAP, DEBUG_ERRORS_LOCAL_STORAGE_KEY, buildFriendlyErrorDisplayNode, DEBUG_PANEL_ERROR_CODE_OPTIONS } from './backendErrorCatalog';
-import { resolveKAnonymityGeneralizationTechKey, getKAnonymityGeneralizationTechLabel } from '../../utils/kAnonymityTechLabel';
+import { resolveKAnonymityGeneralizationTechKey } from '../../utils/kAnonymityTechLabel';
 
 import { scaleFontSize } from '../../utils/fontScale';
 const PDF_COMPILATION_DELAY_MS = 400;
@@ -58,15 +61,7 @@ interface WindowWithHtml2Pdf extends Window
     html2pdf: () => Html2Pdf;
 }
 
-/**
- * ★ 2026-10-02：ε 由多個欄位預算相加而來，浮點數誤差會讓畫面顯示 15.879999999999999 這類數字。
- *   顯示時一律四捨五入至小數點後 6 位並去掉多餘的 0（15.88、17、0.333333），不影響實際運算與送出的值。
- */
-const formatEpsilonForDisplay = (epsilonValue: number | string | null | undefined): string => {
-    const numericEpsilonValue = Number(epsilonValue);
-    if (!Number.isFinite(numericEpsilonValue)) return '0';
-    return String(Number(numericEpsilonValue.toFixed(6)));
-};
+// formatEpsilonForDisplay 移至 utils/complianceReport.ts（合規報告元件共用）
 
 
 
@@ -126,6 +121,9 @@ export default function Step4_Result(): React.ReactElement
     const [previewViewMode, setPreviewViewMode] = useState<'masked' | 'original'>('masked');
     const [isReportModalVisibleStatus, setIsReportModalVisibleStatus] = useState<boolean>(false);
     const [isExportingPdfStatus, setIsExportingPdfStatus] = useState<boolean>(false);
+    // ★ 2026-10-08 諮詢會：下載前先顯示「資料使用注意事項」，可勾選一併下載成文字檔交給資料使用方
+    const [isUsageNotesModalOpenStatus, setIsUsageNotesModalOpenStatus] = useState<boolean>(false);
+    const [isIncludeUsageNotesFileStatus, setIsIncludeUsageNotesFileStatus] = useState<boolean>(true);
 
     const pdfReportContainerRef = useRef<HTMLDivElement>(null);
     const simulationLogsEndRef = useRef<HTMLDivElement>(null);
@@ -355,6 +353,7 @@ export default function Step4_Result(): React.ReactElement
         previewParseDiagnosticText,
         capReportData,
         datasetRowStatsData,
+        kAnonymityLossData,
         attackSimulationMetricsData,
         auditMetadataObject,
         highCardinalitySensitiveWarningInfo,
@@ -372,7 +371,7 @@ export default function Step4_Result(): React.ReactElement
         isPipelineCanceledStatus,
         runFullPipeline,
         handleCancelPipeline
-    } = usePipelineRunner({ actualProcessedColumnsList, getCalculatedRole, resolveQiGeneralizationTech: resolveQiGeneralizationTechKey });
+    } = usePipelineRunner({ actualProcessedColumnsList, getCalculatedRole, resolveQiGeneralizationTech: resolveQiGeneralizationTechKey, deidentifiedColumnsCount: deidentifiedColumnsCountValue });
     // ★ 2026-10-02：本次憑證的防篡改指紋與數位簽章（簽發時寫入稽核紀錄，見 usePipelineRunner）
     const currentAuditLogEntry = useAuditStore((state) => state.auditLogs.find((logItem) => logItem.certificateId === auditMetadataObject.certificateId));
 
@@ -417,25 +416,19 @@ export default function Step4_Result(): React.ReactElement
     // ★ 2026-10-06 使用者要求：等級只給一個統一結果（三攻擊＋敏感資料猜中取最高）。
     //   CAP 改用「扣除亂猜基線」後的值（utils/capBaseline.ts）：原始 CAP 下限就是最常見敏感值的佔比，
     //   直接比 5%／20% 門檻會永遠落在 L3。舊快取沒有扣除值時該項不納入等級。
-    const isCapEvaluatedStatus = Boolean(capReportData && capReportData.cap_before >= 0 && capReportData.cap_after >= 0);
-    const capExcessRiskValue = isCapEvaluatedStatus && typeof capReportData?.cap_after_excess === 'number' ? capReportData.cap_after_excess : null;
+    //   （2026-10-08：判定與取值改用 utils/complianceReport.ts，與合規報告／歷史紀錄共用）
+    const isCapEvaluatedStatus = isCapEvaluated(capReportData);
+    const capExcessRiskValue = resolveCapExcessRisk(capReportData);
     // ★ 2026-10-06 白話版：三個問題。「猜出敏感資料」取推斷性攻擊與扣除基線後 CAP 的較高者（兩者都在問同一件事）。
     const riskQuestionSinglingText = translate('step4.risk.q_singling', '能否認出是誰');
     const riskQuestionLinkabilityText = translate('step4.risk.q_linkability', '能否和其他資料對上');
     const riskQuestionSensitiveText = translate('step4.risk.q_sensitive', '能否猜出敏感資料');
-    const sensitiveGuessRiskValue = (() => {
-        const candidateValues = [attackSimulationMetricsData?.inference.risk, capExcessRiskValue]
-            .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
-        return candidateValues.length > 0 ? Math.max(...candidateValues) : null;
-    })();
+    const sensitiveGuessRiskValue = resolveSensitiveGuessRisk(attackSimulationMetricsData?.inference.risk, capExcessRiskValue);
     const overallRiskSummary = computeOverallRiskLevel([
         { label: riskQuestionSinglingText, value: attackSimulationMetricsData?.singling.risk },
         { label: riskQuestionLinkabilityText, value: attackSimulationMetricsData?.linkability.risk },
         { label: riskQuestionSensitiveText, value: sensitiveGuessRiskValue },
     ]);
-    const overallRiskDriverText = overallRiskSummary
-        ? translate('step4.risk.overall_driver', '依各項風險中最高的一項判定：{{label}} {{value}}%', { label: overallRiskSummary.driver.label, value: (overallRiskSummary.driver.value * 100).toFixed(1) })
-        : '';
     const riskSummaryRowsList: RiskQuestionRow[] = [
         {
             key: 'singling', question: riskQuestionSinglingText, value: attackSimulationMetricsData?.singling.risk,
@@ -449,7 +442,7 @@ export default function Step4_Result(): React.ReactElement
             key: 'sensitive', question: riskQuestionSensitiveText, value: sensitiveGuessRiskValue,
             tooltip: translate('step4.risk.q_sensitive_tooltip', '模擬攻擊者用年齡、地區等欄位，猜出某人的敏感資料（例如疾病）。已扣掉「純憑運氣也猜得中」的部分。'),
             // 舊快取只有原始 CAP、沒有扣除基線值時提示重新運算
-            notEvaluatedText: isCapEvaluatedStatus && capExcessRiskValue === null
+            notEvaluatedText: isCapEvaluatedStatus && capExcessRiskValue === null && capReportData?.cap_baseline_after === undefined
                 ? translate('step4.risk.cap_need_rerun', '請重新運算')
                 : translate('step4.risk.row_not_evaluated', '未評估')
         },
@@ -472,15 +465,22 @@ export default function Step4_Result(): React.ReactElement
             generalizationTechKey: role === 'Quasi-identifier' ? resolveQiGeneralizationTechKey(columnNameString) : undefined,
             isDpNoised: (currentDpFieldsListArray || []).some((field: DpStoreField) => field.enabled && String(field.fieldName || '').replace(/^[\uFEFF\u200B]+/, '').trim() === cleanColName)
         });
-        // 「變模糊」的欄位附一個處理後的範例值（取自去識別化結果預覽），讓使用者看到實際長相
+        // ★ 2026-10-14：K-匿名間接識別欄位附上失真程度（LM）
+        const columnLossItem = currentPrivacyModeTypeStr === 'k-anonymity' && treatmentItem.bucket === 'blurred'
+            ? kAnonymityLossData?.columns.find((lossItem) => lossItem.column === cleanColName)
+            : undefined;
+        if (columnLossItem) treatmentItem.plainText = `${treatmentItem.plainText}，失真約 ${formatLossPercent(columnLossItem.loss)}`;
+        // 「去識別化」（blurred）的欄位附一個處理後的範例值（取自去識別化結果預覽），讓使用者看到實際長相
         return treatmentItem.bucket === 'blurred'
             ? { ...treatmentItem, exampleText: pickExampleValue(realMaskedDataRows as Record<string, unknown>[], columnNameString) }
             : treatmentItem;
     });
     const isCellSuppressionUnitStatus = kReport?.suppression_unit === 'cell';
+    // ★ 2026-10-14 使用者決定：差分隱私不顯示可用性等級（只用 ε 合計判斷不準，後端也沒有可用性指標）。
+    //   K-匿名維持資料釋出率＋失真程度。差分隱私時為 null：不顯示「可用性高／中／低」，頂部結論只依保護程度。
     const utilityLevelInfo = currentPrivacyModeTypeStr === 'k-anonymity'
-        ? classifyKAnonymityUtility(kReport ? kReport.suppression_rate_percent / 100 : null)
-        : classifyDifferentialPrivacyUtility(dpReport ? Number(dpReport.consumed_epsilon) : null);
+        ? classifyKAnonymityUtility(kReport ? kReport.suppression_rate_percent / 100 : null, kAnonymityLossData ? kAnonymityLossData.overall : null)
+        : null;
     // ★ 2026-10-06 白話版：頂部一句話結論「能不能提供、下一步做什麼」
     const releaseDecision = resolveReleaseDecision({
         riskLevel: overallRiskSummary ? overallRiskSummary.info.level : null,
@@ -493,7 +493,7 @@ export default function Step4_Result(): React.ReactElement
             const maskedCellCount = kReport.suppressed_count;
             return {
                 question: translate('step4.utility.q_cells', '被遮蔽的資料格'),
-                tooltip: translate('step4.utility.q_cells_tooltip', '為了讓每一組至少有 K 個人長得一樣，系統把少數資料格改成「*」。比例越低越好用。'),
+                tooltip: translate('step4.utility.q_cells_tooltip', '為了讓間接識別欄位（如年齡、地區）內容相同的資料至少有 K 筆，少數湊不滿 K 筆的資料，會把部分資料格改成「*」。比例越低越好用。'),
                 answer: typeof maskedCellCount === 'number'
                     ? translate('step4.utility.cells_answer', '{{cells}} 格（{{percent}}%）', { cells: maskedCellCount.toLocaleString(), percent: kReport.suppression_rate_percent.toFixed(1) })
                     : `${kReport.suppression_rate_percent.toFixed(1)}%`,
@@ -503,7 +503,7 @@ export default function Step4_Result(): React.ReactElement
         const keptPercentText = datasetRowStatsData.input > 0 ? ((datasetRowStatsData.output / datasetRowStatsData.input) * 100).toFixed(1) : '0';
         return {
             question: translate('step4.utility.q_rows', '保留的資料筆數'),
-            tooltip: translate('step4.utility.q_rows_tooltip', '為了讓每一組至少有 K 個人長得一樣，少數太特別的紀錄會被整筆刪除。保留越多越好用。'),
+            tooltip: translate('step4.utility.q_rows_tooltip', '為了讓間接識別欄位（如年齡、地區）內容相同的資料至少有 K 筆，少數湊不滿 K 筆的資料會被整筆刪除。保留越多越好用。'),
             answer: datasetRowStatsData.deleted === 0
                 ? translate('step4.utility.rows_all_kept', '全部保留')
                 : translate('step4.utility.rows_kept_percent', '保留 {{percent}}%', { percent: keptPercentText }),
@@ -512,43 +512,130 @@ export default function Step4_Result(): React.ReactElement
             })
         };
     })();
+    // ★ 2026-10-14：K-匿名「整體失真程度」（LM）
+    const utilityLossRow = currentPrivacyModeTypeStr === 'k-anonymity' && kAnonymityLossData
+        ? {
+            question: translate('step4.utility.q_loss', '整體失真程度'),
+            tooltip: translate('step4.utility.q_loss_tooltip', '年齡、地區等欄位被改成區間或大類的程度：0% 表示保留原值，100% 表示完全看不出原本的值。越低越好用。'),
+            answer: translate('step4.utility.loss_answer', '約 {{percent}}', { percent: formatLossPercent(kAnonymityLossData.overall) })
+        }
+        : null;
     const utilityNoiseRow = currentPrivacyModeTypeStr === 'differential-privacy' && dpReport
         ? {
-            question: translate('step4.utility.q_noise', '加入的雜訊'),
-            tooltip: translate('step4.utility.q_noise_tooltip', '差分隱私會在數值上加入隨機雜訊。隱私預算 ε 越小，雜訊越多、越安全，但數字偏差越大。'),
-            answer: describeEpsilonNoiseText(Number(dpReport.consumed_epsilon)),
-            detail: translate('step4.utility.noise_detail', '隱私預算 ε = {{epsilon}}', { epsilon: formatEpsilonForDisplay(dpReport.consumed_epsilon) })
+            // ★ 2026-10-14：不再下「雜訊較少／中等／較多」的判定，只列出隱私預算
+            question: translate('step4.utility.q_budget', '隱私預算'),
+            tooltip: translate('step4.utility.q_budget_tooltip', '差分隱私會在每個加噪欄位加入隨機雜訊。ε 越小，雜訊越多、保護越強，數字和原值差得越多。'),
+            answer: translate('step4.utility.budget_answer', 'ε 合計 {{epsilon}}', { epsilon: formatEpsilonForDisplay(dpReport.consumed_epsilon) })
         }
         : null;
 
-    // ★ 使用者反映（2026-09-23）：合規審計報告改版後新增「隱私強化處理配置」段落，其中三攻擊／CAP
-    //   的固定參數（迭代次數／控制組比例／亂數種子／連結性子集大小／重複實驗輪數／跨輪重疊比例）
-    //   目前畫面尚未開放使用者調整，一律採用官方範例預設值——與 runFullPipeline 內部
-    //   RISK_ATTACK_DEFAULT_PARAMS（實際送給後端 /api/v1/risk/* 的值）完全相同。那個常數宣告在
-    //   runFullPipeline 這個 useCallback 內部，屬於該函式的區域變數，這裡的報告 Modal 讀不到，
-    //   故另外宣告這份「僅供顯示」的複本；未來若調整 runFullPipeline 內的預設值，記得這裡也要
-    //   同步更新，否則報告顯示的參數會跟實際送給後端的不一致。
-    const RISK_ATTACK_REPORT_DISPLAY_PARAMS = RISK_ATTACK_DEFAULT_PARAMS;
+    // ★ 2026-10-08：合規報告內容一律取自本次簽發的稽核紀錄（與歷史檢測紀錄調閱同一份資料）；
+    //   找不到紀錄時（例如紀錄尚未寫入）才以目前畫面狀態即時組出同格式內容。
+    //   報告「隱私強化處理配置」的三攻擊固定參數直接取 RISK_ATTACK_DEFAULT_PARAMS（與實際送給後端的值相同）。
+    const currentUserSession = useAuthStore((state) => state.user);
+    const complianceReportEntry: ComplianceReportEntry | null = (() => {
+        if (currentAuditLogEntry) return currentAuditLogEntry;
+        if (!datasetRowStatsData) return null;
+        return buildPipelineAuditLogEntry({
+            certificateId: auditMetadataObject.certificateId,
+            auditTime: auditMetadataObject.auditTime,
+            auditTimestamp: 0, // 僅供畫面顯示，報告不使用此欄位
+            fileName: currentDatasetFileNameString,
+            privacyMode: currentPrivacyModeTypeStr,
+            operatorName: currentUserSession?.name,
+            operatorRole: currentUserSession?.role,
+            kValue: currentKValueNumber,
+            queryCount: 0,
+            hasAttackReport: Boolean(attackSimulationMetricsData),
+            simulationMetrics: attackSimulationMetricsData ?? { singling: { risk: 0 }, linkability: { risk: 0 }, inference: { risk: 0 }, overallRiskPercent: '0' },
+            datasetRowStats: datasetRowStatsData,
+            isComplianceValid: isComplianceValidStatus,
+            columnNames: actualProcessedColumnsList,
+            resolveColumnRole: getCalculatedRole,
+            resolveQiGeneralizationTech: resolveQiGeneralizationTechKey,
+            dpEnabledFieldNames: (currentDpFieldsListArray || []).filter((field: DpStoreField) => field.enabled).map((field: DpStoreField) => field.fieldName),
+            reportSnapshot: buildComplianceReportSnapshot({
+                privacyMode: currentPrivacyModeTypeStr,
+                kValue: currentKValueNumber,
+                maxSuppressionPercent: currentMaxSuppressionNumber,
+                limitExceededAction: currentLimitExceededActionStr,
+                suppressionMethod: currentSuppressionMethodStr,
+                cellFillMethod: currentCellFillMethodStr,
+                dpAccumulatedEpsilon: dpAccumulatedEpsilonValue,
+                dpAccumulatedDelta: dpAccumulatedDeltaValue,
+                dpDefaultDelta: globalTargetDeltaValue,
+                riskAttackParams: RISK_ATTACK_DEFAULT_PARAMS,
+                attackRisks: attackSimulationMetricsData
+                    ? { singling: attackSimulationMetricsData.singling.risk, linkability: attackSimulationMetricsData.linkability.risk, inference: attackSimulationMetricsData.inference.risk }
+                    : null,
+                capReport: capReportData,
+                suppressionRatePercent: kReport ? kReport.suppression_rate_percent : null,
+                consumedEpsilon: dpReport ? dpReport.consumed_epsilon : null,
+                deidentifiedColumnsCount: deidentifiedColumnsCountValue,
+                totalColumnsCount: actualProcessedColumnsList.length,
+                informationLoss: kAnonymityLossData
+            })
+        });
+    })();
+
 
     const handleOpenReportModal = () => setIsReportModalVisibleStatus(true);
 
-    const handleDownloadCSV = () => 
+    /** 以暫時的 <a download> 觸發瀏覽器下載 */
+    const triggerBlobDownload = (downloadBlob: Blob, downloadFileNameStr: string): void =>
+    {
+        const blobDownloadUrlString = URL.createObjectURL(downloadBlob);
+        const downloadAnchorHtmlElement = document.createElement('a');
+        downloadAnchorHtmlElement.href = blobDownloadUrlString;
+        downloadAnchorHtmlElement.download = downloadFileNameStr;
+        document.body.appendChild(downloadAnchorHtmlElement);
+        downloadAnchorHtmlElement.click();
+        document.body.removeChild(downloadAnchorHtmlElement);
+        URL.revokeObjectURL(blobDownloadUrlString);
+    };
+
+    // ★ 2026-10-08 諮詢會（郭博鈞執行長）：資料使用方可能誤用不適用的統計方法而錯誤解讀，下載時附上注意事項。
+    const dataUsageNotesContext: DataUsageNotesContext = {
+        mode: currentPrivacyModeTypeStr === 'differential-privacy' ? 'differential-privacy' : 'k-anonymity',
+        sourceFileName: currentDatasetFileNameString,
+        kValue: currentKValueNumber,
+        consumedEpsilon: dpReport ? dpReport.consumed_epsilon : null,
+    };
+
+    /** 按「下載處理後資料」：先開注意事項視窗，確認後才下載 */
+    const handleDownloadCSV = () =>
     {
         if (isResultNonCompliantStatus) return; // 未達合規標準不提供下載（按鈕已停用，此處再防一次）
-        if (processedCsvBlob) 
+        if (!processedCsvBlob)
         {
-            const blobDownloadUrlString = URL.createObjectURL(processedCsvBlob);
-            const downloadAnchorHtmlElement = document.createElement('a');
-            downloadAnchorHtmlElement.href = blobDownloadUrlString;
-            downloadAnchorHtmlElement.download = `deidentified_dataset_${Date.now()}.csv`;
-            document.body.appendChild(downloadAnchorHtmlElement);
-            downloadAnchorHtmlElement.click();
-            document.body.removeChild(downloadAnchorHtmlElement);
-            URL.revokeObjectURL(blobDownloadUrlString);
-            messageApi.success(translate('step4.msg.download_success', '已成功匯出全量脫敏 CSV 數據！'));
-        } else {
             messageApi.error(translate('step4.msg.download_failed', '無法取得脫敏檔案，請重新運算。'));
+            return;
         }
+        setIsUsageNotesModalOpenStatus(true);
+    };
+
+    /** 注意事項視窗按「下載」：下載 CSV，勾選時一併下載同名的注意事項文字檔 */
+    const handleConfirmDownloadCSV = () =>
+    {
+        if (isResultNonCompliantStatus) return;
+        if (!processedCsvBlob)
+        {
+            setIsUsageNotesModalOpenStatus(false);
+            messageApi.error(translate('step4.msg.download_failed', '無法取得脫敏檔案，請重新運算。'));
+            return;
+        }
+        const downloadTimestampNumber = Date.now();
+        triggerBlobDownload(processedCsvBlob, `deidentified_dataset_${downloadTimestampNumber}.csv`);
+        if (isIncludeUsageNotesFileStatus)
+        {
+            // 加 UTF-8 BOM，Windows 記事本開啟中文不會亂碼
+            const usageNotesBlob = new Blob(['\uFEFF' + buildDataUsageNotesText(dataUsageNotesContext)], { type: 'text/plain;charset=utf-8' });
+            triggerBlobDownload(usageNotesBlob, `deidentified_dataset_${downloadTimestampNumber}_使用注意事項.txt`);
+        }
+        setIsUsageNotesModalOpenStatus(false);
+        messageApi.success(isIncludeUsageNotesFileStatus
+            ? translate('step4.msg.download_success_with_notes', '已下載處理後資料與使用注意事項，請一併提供給資料使用方。')
+            : translate('step4.msg.download_success', '已成功匯出全量脫敏 CSV 數據！'));
     };
 
     const handleDownloadPDF = async () =>
@@ -618,11 +705,11 @@ export default function Step4_Result(): React.ReactElement
     };
 
     return (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div style={{ maxWidth: '100em', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {isErrorDebugPanelVisibleStatus && (
                 <div
                     style={{
-                        position: 'fixed', bottom: 16, right: 16, zIndex: 1000, width: 340,
+                        position: 'fixed', bottom: 16, right: 16, zIndex: 1000, width: '24.5em',
                         background: '#fff', border: '1px solid #d9d9d9', borderRadius: 8,
                         padding: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
                     }}
@@ -711,6 +798,19 @@ export default function Step4_Result(): React.ReactElement
                                             const failedCheckSummaryText = failedCheckNamesList.length > 0
                                                 ? failedCheckNamesList.join('、')
                                                 : translate('step4.alert.failed_detail_suppression', '抑制率');
+                                            // ★ 2026-10-08：畫面顯示用的白話名稱（failedCheckNamesList 仍保留 'k' 等代號供下方判斷）。
+                                            const failedCheckDisplayNameMap: Record<string, string> = {
+                                                'k': `每組至少 ${currentKValueNumber} 筆（k）`,
+                                                'l-多樣性': `每組敏感值至少 ${currentLValueNumber} 種（l）`,
+                                                't-緊密度': `分布差距不超過 ${currentTValueNumber}（t）`,
+                                                '抑制率': '刪除／遮蔽比例超過上限'
+                                            };
+                                            const failedCheckDisplayText = failedCheckNamesList.length > 0
+                                                ? failedCheckNamesList.map((nameItem) => failedCheckDisplayNameMap[nameItem] ?? nameItem).join('、')
+                                                : failedCheckSummaryText;
+                                            const isCellSuppressionModeStatus = currentSuppressionMethodStr === 'cell' || currentSuppressionMethodStr === 'cell_suppression';
+                                            const suppressionActionVerbText = isCellSuppressionModeStatus ? '遮蔽' : '刪除';
+                                            const currentSuppressionCapForDisplay = currentMaxSuppressionNumber ?? 5;
 
                                             // ★ 使用者反映：改為依失敗項目挑選後端建議文字後，內容仍偏技術（等價類／
                                             // l-diversity／t-closeness／QI 等專有名詞＋長句），沒有相關背景的使用者
@@ -798,10 +898,10 @@ export default function Step4_Result(): React.ReactElement
                                                 failureGuidanceSectionsList.push({
                                                     key: 'k',
                                                     headlineNode: (
-                                                        <>{translate('step4.alert.k_plain_issue', `部分分組的人數不足您設定的 k = ${currentKValueNumber} 人，代表這些分組裡的人仍可能被單獨辨識出來。`)}</>
+                                                        <>{translate('step4.alert.k_plain_issue', `部分分組的資料筆數不足您設定的 k = ${currentKValueNumber} 筆，代表這些分組裡的人仍可能被單獨辨識出來。`)}</>
                                                     ),
                                                     optionTextList: [
-                                                        translate('step4.alert.k_option_raise_level', '回到 Step2，提高「間接識別碼」欄位的泛化層級，讓每個分組的人數變多'),
+                                                        translate('step4.alert.k_option_raise_level', '回到 Step2，提高「間接識別碼」欄位的泛化層級，讓每個分組的筆數變多'),
                                                         translate('step4.alert.k_option_lower_k', `回到 Step3，把 k 值從 ${currentKValueNumber} 調低到 ${suggestedKValueNumber}（數字越小，要求越寬鬆）`)
                                                     ]
                                                 });
@@ -824,7 +924,15 @@ export default function Step4_Result(): React.ReactElement
 
                                             return (
                                                 <>
-                                                    <div>{translate('step4.alert.failed_detail', '未通過項目')}：{failedCheckSummaryText}（{translate('step4.alert.suppression_rate', '抑制率')} {kReport.suppression_rate_percent.toFixed(3)}%）</div>
+                                                    {/* ★ 2026-10-08 使用者反映：原本寫成「未通過項目：k（抑制率 4.752%）」，k 與抑制率擠在同一個括號，
+                                                        容易誤以為是 Step3 的「上限」沒過。改為兩行：第一行白話寫出未通過的項目，第二行另外說明
+                                                        實際刪除／遮蔽比例與上限的關係（未超過／已超過）。 */}
+                                                    <div>{translate('step4.alert.failed_detail', '未通過項目')}：{failedCheckDisplayText}</div>
+                                                    <div style={{ color: token.colorTextSecondary }}>
+                                                        {isSuppressionExceededStatus
+                                                            ? translate('step4.alert.suppression_status_exceeded', `目前${suppressionActionVerbText} ${kReport.suppression_rate_percent.toFixed(3)}% 的資料，已超過上限 ${currentSuppressionCapForDisplay}%。`)
+                                                            : translate('step4.alert.suppression_status_within', `目前${suppressionActionVerbText} ${kReport.suppression_rate_percent.toFixed(3)}% 的資料，未超過上限 ${currentSuppressionCapForDisplay}%。`)}
+                                                    </div>
                                                     {failureGuidanceSectionsList.length > 0
                                                         ? failureGuidanceSectionsList.map((sectionItem) => (
                                                             <div key={sectionItem.key} style={{ marginTop: 8 }}>
@@ -899,7 +1007,7 @@ export default function Step4_Result(): React.ReactElement
                                 {currentPipelinePhaseType === 'auditing' && translate('step4.loading.auditing', '正在執行蒙地卡羅攻擊模擬與可用性評估...')}
                                 {currentPipelinePhaseType === 'completed' && translate('step4.loading.completed', '後端演算完畢，正在生成最終合規報告...')}
                             </h3>
-                            <Progress percent={calculationProgressValue} status="active" style={{ maxWidth: '600px', margin: '16px auto' }} strokeColor={token.colorPrimary} />
+                            <Progress percent={calculationProgressValue} status="active" style={{ maxWidth: '43em', margin: '16px auto' }} strokeColor={token.colorPrimary} />
                             {uploadProgressText && (
                                 <div style={{ fontSize: scaleFontSize(13), color: token.colorTextSecondary, marginBottom: '12px' }}>{uploadProgressText}</div>
                             )}
@@ -908,7 +1016,7 @@ export default function Step4_Result(): React.ReactElement
                             </Button>
                         </div>
                         
-                        <div style={{ maxWidth: '800px', margin: '0 auto', background: isDarkModeActiveStatus ? '#000000' : '#1e1e1e', color: '#00ff66', fontFamily: 'monospace', padding: '16px', borderRadius: '8px', textAlign: 'left', fontSize: scaleFontSize(13), height: '180px', overflowY: 'auto', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)' }}>
+                        <div style={{ maxWidth: '57em', margin: '0 auto', background: isDarkModeActiveStatus ? '#000000' : '#1e1e1e', color: '#00ff66', fontFamily: 'monospace', padding: '16px', borderRadius: '8px', textAlign: 'left', fontSize: scaleFontSize(13), height: '180px', overflowY: 'auto', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)' }}>
                             {systemSimulationLogsList.map((logItemString, logItemIndexNumber) => <div key={logItemIndexNumber} style={{ marginBottom: '4px' }}>{logItemString}</div>)}
                             <div ref={simulationLogsEndRef} />
                         </div>
@@ -1015,7 +1123,7 @@ export default function Step4_Result(): React.ReactElement
                                                                     <InputNumber
                                                                         min={0}
                                                                         size="small"
-                                                                        style={{ width: 120 }}
+                                                                        style={{ width: '8.5em' }}
                                                                         value={sensitiveBinWidthOverridesMap[item.columnName] ?? item.binWidth}
                                                                         onChange={(nextValue) => setSensitiveBinWidthOverridesMap((prev) => {
                                                                             const nextMap = { ...prev };
@@ -1057,7 +1165,7 @@ export default function Step4_Result(): React.ReactElement
                                 <UtilitySummaryCard
                                     info={utilityLevelInfo}
                                     recordRow={utilityRecordRow}
-                                    extraRow={utilityNoiseRow}
+                                    extraRow={utilityNoiseRow ?? utilityLossRow}
                                     columnItems={columnTreatmentItemsList}
                                     colors={plainCardColors}
                                     helpIcon={(tooltipContent) => (
@@ -1149,11 +1257,49 @@ export default function Step4_Result(): React.ReactElement
                 )
             )}
 
+            {/* ★ 2026-10-08 諮詢會：下載前的資料使用注意事項 */}
+            <Modal
+                title={translate('step4.usage_notes.title', '下載前請確認：資料使用注意事項')}
+                open={isUsageNotesModalOpenStatus}
+                onCancel={() => setIsUsageNotesModalOpenStatus(false)}
+                width={'45.5em'}
+                destroyOnHidden
+                footer={[
+                    <Button key="cancel" onClick={() => setIsUsageNotesModalOpenStatus(false)}>{translate('common.cancel', '取消')}</Button>,
+                    <Button key="download" type="primary" icon={<DownloadOutlined />} data-testid="usage-notes-confirm-download" onClick={handleConfirmDownloadCSV} style={{ background: '#4F46E5', borderColor: '#4F46E5' }}>
+                        {translate('step4.usage_notes.confirm', '我已了解，下載資料')}
+                    </Button>
+                ]}
+            >
+                <div data-testid="usage-notes-modal" style={{ fontSize: scaleFontSize(14), lineHeight: 1.7 }}>
+                    <div style={{ color: token.colorTextSecondary, marginBottom: 8 }}>
+                        {translate('step4.usage_notes.intro', '處理後的資料與原始資料不同，若用錯統計方法可能得出錯誤結論。請將以下注意事項一併告知資料使用方。')}
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                        <span style={{ color: token.colorTextSecondary }}>{translate('step4.usage_notes.method', '處理方式：')}</span>
+                        <span style={{ fontWeight: 600 }}>{describeProcessingMethod(dataUsageNotesContext)}</span>
+                    </div>
+                    <ol data-testid="usage-notes-list" style={{ paddingLeft: 22, margin: 0, background: token.colorFillQuaternary, borderRadius: 8, padding: '10px 12px 10px 32px' }}>
+                        {getDataUsageNotes(dataUsageNotesContext.mode).map((noteText) => (
+                            <li key={noteText} style={{ marginBottom: 4 }}>{noteText}</li>
+                        ))}
+                    </ol>
+                    <Checkbox
+                        data-testid="usage-notes-include-file"
+                        checked={isIncludeUsageNotesFileStatus}
+                        onChange={(checkboxChangeEvent) => setIsIncludeUsageNotesFileStatus(checkboxChangeEvent.target.checked)}
+                        style={{ marginTop: 12 }}
+                    >
+                        {translate('step4.usage_notes.include_file', '一併下載注意事項文字檔（.txt），方便隨資料交給使用方')}
+                    </Checkbox>
+                </div>
+            </Modal>
+
             <Modal
                 title={isResultNonCompliantStatus
                     ? translate('step4.modal.title_non_compliant', '檢測紀錄（未達合規標準）')
                     : translate('step4.modal.title', '隱私合規與風險評估報告')}
-                open={isReportModalVisibleStatus} onCancel={() => setIsReportModalVisibleStatus(false)} width={800} styles={{ body: { maxHeight: '72vh', overflowY: 'auto', paddingRight: '6px' } }}
+                open={isReportModalVisibleStatus} onCancel={() => setIsReportModalVisibleStatus(false)} width={'57em'} styles={{ body: { maxHeight: '72vh', overflowY: 'auto', paddingRight: '6px' } }}
                 footer={[
                     <Button key="close" onClick={() => setIsReportModalVisibleStatus(false)}>{translate('step4.modal.close', '關閉')}</Button>,
                     <Tooltip key="download" title={isResultNonCompliantStatus ? nonCompliantDownloadBlockedText : undefined}>
@@ -1176,244 +1322,17 @@ export default function Step4_Result(): React.ReactElement
                     讓使用者只需要看這一份、視覺風格與官方報告一致的完整報告——原本合規報告
                     才有的專案資訊、資料效用評估、欄位對照表、數位簽章則完整保留，不因改版而
                     遺失內容。 */}
-                {datasetRowStatsData && (() => {
-                    const sectionHeadingStyle: CSSProperties = { color: '#000000', fontSize: scaleFontSize(15), fontWeight: 600, marginTop: '24px', marginBottom: '10px', paddingBottom: '6px', borderBottom: '1px solid #d9d9d9' };
-                    const keyValueRowStyle: CSSProperties = { display: 'flex', justifyContent: 'space-between', fontSize: scaleFontSize(13), color: '#333333', padding: '3px 0' };
-
-                    // 一、專案與檢測權限資訊
-                    // ★ 使用者反映（2026-09-23）：拿掉「檢測核可人」這一列，此段落只保留檔案名稱與保護模式。
-                    const projectInfoRowsList: { label: string; value: string }[] = [
-                        { label: translate('step4.report.file_name', '原始檔案名稱：'), value: currentDatasetFileNameString || 'dataset.csv' },
-                        { label: translate('step4.report.mode', '保護模式：'), value: currentPrivacyModeTypeStr === 'k-anonymity' ? translate('step4.report.k_anonymity_value', 'K-匿名化') : translate('step4.report.dp_value', '差分隱私化') }
-                    ];
-
-                    // 二、隱私強化處理配置：比照官方風險評估報告（後端 /api/v1/report）同一段落的
-                    // 顯示內容——去識別方法參數取自本次實際送給後端的同一組畫面狀態；三攻擊固定
-                    // 參數取自上方 RISK_ATTACK_REPORT_DISPLAY_PARAMS（與 runFullPipeline 內實際送出
-                    // 的 RISK_ATTACK_DEFAULT_PARAMS 同步維護，見該常數宣告處說明）。
-                    const deidConfigRowsList: { label: string; value: string }[] = currentPrivacyModeTypeStr === 'k-anonymity'
-                        ? [
-                            { label: translate('step4.report.deid_technique', '去識別技術'), value: translate('step4.report.k_anonymity_value', 'K-匿名化') },
-                            { label: translate('step4.report.k_value_label', 'k 值'), value: String(currentKValueNumber) },
-                            { label: translate('step4.report.suppress_limit_label', '抑制上限（%）'), value: String(currentMaxSuppressionNumber ?? 5) },
-                            { label: translate('step4.report.exceed_behavior_label', '超限行為'), value: (currentLimitExceededActionStr || 'stop_and_error') === 'stop_and_error' ? translate('step3.stop_and_error', '停止並報錯') : translate('step3.force_suppress', '強制抑制(降效用)') },
-                            { label: translate('step4.report.suppress_method_label', '抑制方式'), value: (currentSuppressionMethodStr === 'cell' || currentSuppressionMethodStr === 'cell_suppression') ? translate('step3.cell_suppression', '值抑制 ') : translate('step3.row_suppression', '列抑制 ') },
-                            ...((currentSuppressionMethodStr === 'cell' || currentSuppressionMethodStr === 'cell_suppression')
-                                ? [{ label: translate('step4.report.cell_fill_label', '值抑制填法'), value: currentCellFillMethodStr === 'missing' ? translate('step3.cell_fill_missing', '缺失值 (missing)') : translate('step3.cell_fill_star', '星號遮蔽 (star)') }]
-                                : [])
-                        ]
-                        : [
-                            { label: translate('step4.report.deid_technique', '去識別技術'), value: translate('step4.report.dp_value', '差分隱私化') },
-                            { label: translate('step4.report.accumulated_epsilon_label', '已累計 ε'), value: formatEpsilonForDisplay(dpAccumulatedEpsilonValue ?? 0) },
-                            { label: translate('step4.report.accumulated_delta_label', '已累計 δ'), value: String(dpAccumulatedDeltaValue ?? 0) },
-                            { label: translate('step4.report.default_delta_label', '預設 δ'), value: String(globalTargetDeltaValue ?? 0.0001) }
-                        ];
-                    const riskAttackParamRowsList: { label: string; value: string }[] = [
-                        { label: translate('step4.report.iter_count_label', '指認性迭代次數'), value: String(RISK_ATTACK_REPORT_DISPLAY_PARAMS.n_iter) },
-                        { label: translate('step4.report.ctrl_ratio_label', '控制組比例'), value: String(RISK_ATTACK_REPORT_DISPLAY_PARAMS.ctrl_ratio) },
-                        { label: translate('step4.report.seed_label', '亂數種子'), value: String(RISK_ATTACK_REPORT_DISPLAY_PARAMS.seed) },
-                        { label: translate('step4.report.subset_size_label', '連結性子集大小'), value: String(RISK_ATTACK_REPORT_DISPLAY_PARAMS.n_subset) },
-                        { label: translate('step4.report.repeat_rounds_label', '重複實驗輪數'), value: String(RISK_ATTACK_REPORT_DISPLAY_PARAMS.n_repeats) },
-                        { label: translate('step4.report.overlap_ratio_label', '跨輪重疊比例'), value: String(RISK_ATTACK_REPORT_DISPLAY_PARAMS.overlap_ratio) }
-                    ];
-                    const privacyConfigRowsList = [...deidConfigRowsList, ...riskAttackParamRowsList];
-
-                    const renderKeyValueTable = (rowsList: { label: string; value: string }[], headerLeftText: string, headerRightText: string) => (
-                        <div style={{ border: '1px solid #d9d9d9', borderRadius: '4px', marginBottom: '20px', overflow: 'hidden' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', color: '#000000', backgroundColor: '#ffffff' }}>
-                                <thead>
-                                    <tr style={{ backgroundColor: '#f1f5f9' }}>
-                                        <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 12px', textAlign: 'left', width: '40%', fontSize: scaleFontSize(13) }}>{headerLeftText}</th>
-                                        <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 12px', textAlign: 'left', fontSize: scaleFontSize(13) }}>{headerRightText}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {rowsList.map((rowItem, rowIndexNumber) => (
-                                        <tr key={rowIndexNumber}>
-                                            <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 12px', fontSize: scaleFontSize(13), color: '#333333', wordBreak: 'break-word' }}>{rowItem.label}</td>
-                                            <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 12px', fontSize: scaleFontSize(13), color: '#333333', wordBreak: 'break-word' }}>{rowItem.value}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    );
-
-                    return (
-                        <div id="printable-audit-report" ref={pdfReportContainerRef} style={{ color: '#000000', backgroundColor: '#ffffff', borderRadius: '4px', fontFamily: 'sans-serif', overflow: 'hidden' }}>
-                            {/* 頂部深色品牌列，固定樣式不受畫面明／暗主題影響（比照官方風險評估報告 PDF 的
-                                固定風格），才不會印出來的稽核文件因為使用者當下切成深色模式而變色。 */}
-                            <div className="pdf-page-break" style={{ background: '#1f2937', color: '#ffffff', padding: '14px 24px', fontSize: scaleFontSize(12), pageBreakInside: 'avoid' }}>
-                                {isResultNonCompliantStatus
-                                    ? translate('step4.report.brand_bar_non_compliant', '通用去識別化與隱私保護系統 - 安全驗證檢測紀錄')
-                                    : translate('step4.report.brand_bar', '通用去識別化與隱私保護系統 - 安全驗證與合規稽核報告')}
-                            </div>
-
-                            <div style={{ padding: isExportingPdfStatus ? '24px' : '24px' }}>
-                                <div className="pdf-page-break" style={{ textAlign: 'center', marginBottom: '8px', pageBreakInside: 'avoid' }}>
-                                    <h2 style={{ margin: '12px 0 4px', color: isResultNonCompliantStatus ? '#b91c1c' : '#000000', fontSize: scaleFontSize(21) }}>
-                                        {isResultNonCompliantStatus
-                                            ? translate('step4.report.header_non_compliant', '隱私風險評估檢測紀錄（未達合規標準）')
-                                            : translate('step4.report.header', '隱私合規與風險評估報告')}
-                                    </h2>
-                                    <div style={{ fontSize: scaleFontSize(12), color: '#555555' }}>
-                                        {translate('step4.report.cert_id', '報告編號:')} {auditMetadataObject.certificateId} ｜ {translate('step4.report.audit_time', '產出時間:')} {auditMetadataObject.auditTime}
-                                    </div>
-                                </div>
-                                {isResultNonCompliantStatus && (
-                                    <div style={{ margin: '12px 0 4px', padding: '10px 14px', border: '1px solid #fca5a5', background: '#fef2f2', color: '#b91c1c', borderRadius: '4px', fontSize: scaleFontSize(13) }}>
-                                        {translate('step4.report.non_compliant_notice', '本次處理結果未達合規標準，此紀錄僅供檢視調整依據，不得作為合規證明，亦不提供去識別化資料與 PDF 下載。')}
-                                    </div>
-                                )}
-
-                                <h4 className="pdf-page-break" style={{ ...sectionHeadingStyle, marginTop: '20px', pageBreakInside: 'avoid' }}>一、 {translate('step4.report.info_title', '專案與檢測權限資訊')}</h4>
-                                {renderKeyValueTable(projectInfoRowsList, translate('step4.report.config_item_header', '設定項目'), translate('step4.report.config_detail_header', '配置細節'))}
-
-                                <h4 className="pdf-page-break" style={{ ...sectionHeadingStyle, pageBreakInside: 'avoid' }}>二、 {translate('step4.report.privacy_config_title', '隱私強化處理配置')}</h4>
-                                {renderKeyValueTable(privacyConfigRowsList, translate('step4.report.config_item_header', '設定項目'), translate('step4.report.config_detail_header', '配置細節'))}
-
-                                <h4 className="pdf-page-break" style={{ ...sectionHeadingStyle, pageBreakInside: 'avoid' }}>三、 {translate('step4.report.risk_title', '再識別風險量測結果')}</h4>
-                                <div className="pdf-page-break" style={{ marginBottom: '20px', pageBreakInside: 'avoid' }}>
-                                    {attackSimulationMetricsData ? (
-                                        <>
-                                            <div style={keyValueRowStyle}><span>{translate('step4.report.singling_risk', '指認性攻擊成功率 (Singling Out)：')}</span><span>{(attackSimulationMetricsData.singling.risk * 100).toFixed(2)}%</span></div>
-                                            <div style={keyValueRowStyle}><span>{translate('step4.report.linkability_risk', '連結性攻擊成功率 (Linkability)：')}</span><span>{(attackSimulationMetricsData.linkability.risk * 100).toFixed(2)}%</span></div>
-                                            <div style={keyValueRowStyle}><span>{translate('step4.report.inference_risk', '推斷性攻擊成功率 (Inference)：')}</span><span>{(attackSimulationMetricsData.inference.risk * 100).toFixed(2)}%</span></div>
-                                        </>
-                                    ) : (
-                                        // ★ 使用者反映（2026-09-22）：K-匿名「敏感欄位=0」時三攻擊被略過，這裡改顯示
-                                        //   說明文字，而非讀取 null 的 attackSimulationMetricsData 噴錯或整份報告消失。
-                                        <div style={{ fontSize: scaleFontSize(13), color: '#555555', padding: '3px 0' }}>
-                                            {translate('step4.report.risk_not_evaluated', '未評估（尚未設定「敏感欄位」，本次已略過三攻擊與 CAP 風險評估）')}
-                                        </div>
-                                    )}
-                                    {/* ★ 使用者反映（2026-09-23）：CAP 前後對比獨立於 attackSimulationMetricsData
-                                        是否有值（CAP 與三攻擊分開執行、分開判斷「是否已略過」），只依
-                                        capReportData 本身判斷要顯示數字還是「未評估」原因；標籤文字比照官方
-                                        風險評估報告的「處理前／處理後歸因機率」措辭，維持風格一致。 */}
-                                    {capReportData && !(capReportData.cap_before < 0 || capReportData.cap_after < 0) ? (
-                                        <>
-                                            <div style={keyValueRowStyle}><span>{translate('step4.report.cap_before_label', '處理前歸因機率 (CAP Before)：')}</span><span>{(capReportData.cap_before * 100).toFixed(2)}%</span></div>
-                                            <div style={keyValueRowStyle}><span>{translate('step4.report.cap_after_label', '處理後歸因機率 (CAP After)：')}</span><span>{(capReportData.cap_after * 100).toFixed(2)}%</span></div>
-                                            {typeof capReportData.cap_baseline_after === 'number' && typeof capReportData.cap_after_excess === 'number' && (
-                                                <>
-                                                    <div style={keyValueRowStyle}><span>{translate('step4.report.cap_baseline_label', '亂猜基線（敏感欄位打亂後的 CAP）：')}</span><span>{(capReportData.cap_baseline_after * 100).toFixed(2)}%</span></div>
-                                                    <div style={keyValueRowStyle}><span>{translate('step4.report.cap_excess_label', '敏感資料猜中風險（扣除亂猜基線）：')}</span><span>{(capReportData.cap_after_excess * 100).toFixed(2)}%</span></div>
-                                                </>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <div style={{ fontSize: scaleFontSize(13), color: '#555555', padding: '3px 0' }}>
-                                            {translate('step4.report.cap_not_evaluated', '未評估（間接識別碼或敏感欄位設定不足，或限定條件篩選後無資料）')}
-                                            {capReportData?.message && (
-                                                <div style={{ marginTop: '4px', fontSize: scaleFontSize(12) }}>
-                                                    {translate('step4.report.cap_backend_message_prefix', '後端回應原因：')}{capReportData.message}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                    {overallRiskSummary && (
-                                        <div style={{ marginTop: '10px', padding: '12px', border: `1px solid ${overallRiskSummary.info.color}`, borderRadius: '6px' }}>
-                                            <OverallRiskLevelPanel
-                                                summary={overallRiskSummary}
-                                                title={translate('step4.risk.overall_title', '整體風險等級')}
-                                                driverText={overallRiskDriverText}
-                                                textColor="#333333"
-                                                mutedColor="#666666"
-                                                trackColor="#e5e7eb"
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-
-                                <h4 className="pdf-page-break" style={{ ...sectionHeadingStyle, pageBreakInside: 'avoid' }}>四、 {translate('step4.report.utility_title', '資料效用與失真度評估')}</h4>
-                                <div className="pdf-page-break" style={{ marginBottom: '20px', pageBreakInside: 'avoid' }}>
-                                    <div style={keyValueRowStyle}>
-                                        <span>{currentPrivacyModeTypeStr === 'k-anonymity' ? translate('step4.report.suppression', '資料紀錄抑制率：') : translate('step4.report.total_epsilon', '總消耗隱私預算 (Epsilon)：')}</span>
-                                        <span>{currentPrivacyModeTypeStr === 'k-anonymity' ? `${(kReport ? kReport.suppression_rate_percent : 0).toFixed(3)}%` : `${formatEpsilonForDisplay(dpReport ? dpReport.consumed_epsilon : 0)} ε`}</span>
-                                    </div>
-                                    <div style={keyValueRowStyle}>
-                                        <span>{translate('step4.report.total_cols', '實際去識別數 / 總欄位數：')}</span><span>{deidentifiedColumnsCountValue} / {actualProcessedColumnsList.length}</span>
-                                    </div>
-                                    {datasetRowStatsData && (
-                                        <div style={keyValueRowStyle}>
-                                            <span>{translate('step4.report.row_stats', '資料筆數（輸入/刪除/輸出）：')}</span>
-                                            <span>{datasetRowStatsData.input.toLocaleString()} / {datasetRowStatsData.deleted.toLocaleString()} / {datasetRowStatsData.output.toLocaleString()}</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <h4 className="pdf-page-break" style={{ ...sectionHeadingStyle, pageBreakInside: 'avoid' }}>五、 {translate('step4.report.table_title', '欄位處置與技術對照表')}</h4>
-                                <div style={{ maxHeight: isExportingPdfStatus ? 'none' : '240px', overflowY: isExportingPdfStatus ? 'visible' : 'auto', border: '1px solid #d9d9d9', borderRadius: '4px', marginBottom: '20px' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', color: '#000000', backgroundColor: '#ffffff', tableLayout: 'fixed' }}>
-                                        <thead>
-                                            <tr style={{ backgroundColor: '#f1f5f9', position: isExportingPdfStatus ? 'static' : 'sticky', top: 0, zIndex: 1, pageBreakInside: 'avoid' }}>
-                                                <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '40%' }}>{translate('step4.report.col_name', '欄位名稱')}</th>
-                                                <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{translate('step4.report.col_role', '隱私角色')}</th>
-                                                <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{translate('step4.report.col_tech', '套用去識別化技術')}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {actualProcessedColumnsList.map((columnNameString) => {
-                                                const { role: configuredRoleNameString, maskStrategy: configuredMaskStrategyString } = getCalculatedRole(columnNameString);
-                                                const targetDpFieldConfigItemObj = currentDpFieldsListArray?.find(fieldItemRecord => fieldItemRecord.fieldName === columnNameString && fieldItemRecord.enabled);
-                                                let resolvedStrategyDescriptionText = translate('step4.report.tech_keep_original', '保留原文');
-
-                                                if (configuredRoleNameString === 'Identifier') {
-                                                    resolvedStrategyDescriptionText = configuredMaskStrategyString === 'remove'
-                                                        ? translate('step4.report.tech_removed', '直接移除')
-                                                        : translate('step4.report.tech_full_masking', '完全遮蔽');
-                                                }
-                                                else if (configuredRoleNameString === 'Quasi-identifier' && currentPrivacyModeTypeStr === 'k-anonymity') resolvedStrategyDescriptionText = getKAnonymityGeneralizationTechLabel(resolveQiGeneralizationTechKey(columnNameString), translate);
-                                                else if (currentPrivacyModeTypeStr === 'differential-privacy' && targetDpFieldConfigItemObj) resolvedStrategyDescriptionText = translate('step4.report.tech_dp', '差分隱私加噪');
-
-                                                const localizedRoleI18nKeyString = `step4.role.${configuredRoleNameString.toLowerCase().replace(/ /g, '_').replace(/-/g, '_')}`;
-
-                                                return (
-                                                    <tr key={columnNameString} style={{ backgroundColor: '#ffffff', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
-                                                        <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#000000', wordBreak: 'break-word' }}><b>{columnNameString}</b></td>
-                                                        <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{translate(localizedRoleI18nKeyString, configuredRoleNameString)}</td>
-                                                        <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{resolvedStrategyDescriptionText}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                <h4 className="pdf-page-break" style={{ ...sectionHeadingStyle, pageBreakInside: 'avoid' }}>六、 {translate('step4.report.measurement_note_title', '量測說明')}</h4>
-                                <div className="pdf-page-break" style={{ fontSize: scaleFontSize(12), color: '#555555', marginBottom: '20px', pageBreakInside: 'avoid' }}>
-                                    {attackSimulationMetricsData ? (
-                                        <div style={{ marginBottom: '4px' }}>
-                                            {translate('step4.report.measurement_note_attack', '三攻擊風險評估完成。指認性風險: {{singling}}, 連結性風險: {{linkability}}, 推斷性風險: {{inference}}。', {
-                                                singling: attackSimulationMetricsData.singling.risk.toFixed(2),
-                                                linkability: attackSimulationMetricsData.linkability.risk.toFixed(2),
-                                                inference: attackSimulationMetricsData.inference.risk.toFixed(2)
-                                            })}
-                                        </div>
-                                    ) : (
-                                        <div>{translate('step4.report.measurement_note_not_evaluated', '尚未設定「敏感欄位」，本次已略過三攻擊與 CAP 風險評估，故無量測結果可供說明。')}</div>
-                                    )}
-                                    {capReportData && !(capReportData.cap_before < 0 || capReportData.cap_after < 0) && (
-                                        <div>
-                                            {translate('step4.report.measurement_note_cap', 'CAP 前後對比完成。處理前: {{before}}, 處理後: {{after}}。', {
-                                                before: capReportData.cap_before.toFixed(2),
-                                                after: capReportData.cap_after.toFixed(2)
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* ★ 2026-10-02：原為寫死的假簽章字串，改為真實防篡改指紋與數位簽章（見 components/AuditIntegrityPanel） */}
-                                <AuditIntegrityPanel
-                                    entry={currentAuditLogEntry}
-                                    className="pdf-page-break"
-                                    style={{ textAlign: 'left', marginTop: '16px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: scaleFontSize(12), color: '#888888', pageBreakInside: 'avoid', lineHeight: 1.7 }}
-                                />
-                            </div>
-                        </div>
-                    );
-                })()}
+                {/* ★ 2026-10-08 使用者反映：此報告與「歷史檢測紀錄」調閱內容不一致。報告本文改由
+                    components/ComplianceReportDocument.tsx 繪製，資料取自本次簽發的稽核紀錄（含報告快照），
+                    與歷史紀錄調閱為同一元件、同一份資料。原 09-22／09-23 的改版說明見該元件。 */}
+                {datasetRowStatsData && complianceReportEntry && (
+                    <ComplianceReportDocument
+                        entry={complianceReportEntry}
+                        isExportingPdf={isExportingPdfStatus}
+                        containerId="printable-audit-report"
+                        containerRef={pdfReportContainerRef}
+                    />
+                )}
             </Modal>
         </div>
     );

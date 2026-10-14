@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
 import { useAuthStore } from '../../store/useAuthStore';
-import { useAnnouncementStore, isAnnouncementVisibleToRole, getAnnouncementUserKey } from '../../store/useAnnouncementStore';
+import { useAnnouncementStore, isAnnouncementShownToRole, getAnnouncementUserKey, useAnnouncementClock } from '../../store/useAnnouncementStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
 import { AnnouncementListItem } from '../../components/AnnouncementListItem';
 
@@ -36,11 +36,12 @@ export const Dashboard: React.FC = () => {
   const dismissedBannerIdsByUserDict = useAnnouncementStore((state) => state.dismissedBannerIdsByUser);
   const dismissBannerAction = useAnnouncementStore((state) => state.dismissBanner);
   const markAnnouncementsAsReadAction = useAnnouncementStore((state) => state.markAsRead);
+  const announcementClockNowMs = useAnnouncementClock();
   const announcementUserKeyString = getAnnouncementUserKey(currentUserSession);
   const dismissedBannerIdsList = dismissedBannerIdsByUserDict[announcementUserKeyString] ?? [];
   const importantBannerAnnouncementsList = allAnnouncementsList.filter(announcementItem =>
     announcementItem.level === 'important'
-    && isAnnouncementVisibleToRole(announcementItem, currentUserSession?.role ?? 'data_owner')
+    && isAnnouncementShownToRole(announcementItem, currentUserSession?.role ?? 'data_owner', announcementClockNowMs)
     && !dismissedBannerIdsList.includes(announcementItem.id)
   );
 
@@ -109,7 +110,7 @@ export const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ padding: '24px', maxWidth: '85.5em', margin: '0 auto' }}>
       <Space direction="vertical" size="large" style={{ display: 'flex', width: '100%' }}>
         
         {/* --- 0. 重要系統公告（可關閉；關閉同時視為已讀） --- */}

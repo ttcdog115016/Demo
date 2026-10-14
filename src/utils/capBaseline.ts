@@ -157,10 +157,26 @@ export const computeCapShuffleBaselineFromCsvText = (input: {
     return { baseline: shuffledCapSum / repeatCount, recomputedCap, rowCount: groupIds.length };
 };
 
-/** 扣除亂猜基線後的 CAP 風險（0~1）；CAP 未評估（負數）或沒有基線時回傳 null */
+/**
+ * 基線距離 100% 至少要留這麼多空間，扣除基線後的 CAP 才有意義。
+ * ★ 2026-10-07 使用者回報 DP 結果「能否猜出敏感資料：每 100 筆約 100 筆」：
+ *   DP 加噪後的數值型間接識別欄位幾乎每筆都不同，等價類幾乎全是 1 筆，CAP 與打亂後的基線都 ≈ 99.9x%。
+ *   (CAP − 基線) ÷ (1 − 基線) 的分母只剩極少數「剛好同組」的列，數字被放大成雜訊；
+ *   加上後端 cap_after 四捨五入到小數 4 位（例如 0.99996 → 1.0），分子分母一比就變成 100%。
+ *   後端 cap.py 註解也說明：QI 近乎唯一時前後皆趨近 1.0，屬此指標先天性質。
+ *   故 1 − 基線 < 5%（≥ 95% 的資料不必靠間接識別欄位也「猜得中」）時判定此指標不適用，回傳 null，
+ *   整體等級改由推斷性攻擊判斷。
+ */
+export const CAP_MIN_INFORMATIVE_HEADROOM = 0.05;
+
+/** 扣除亂猜基線後的 CAP 風險（0~1）；CAP 未評估（負數）、沒有基線或指標不適用時回傳 null */
 export const computeCapExcessRisk = (capValue: number | null | undefined, baselineValue: number | null | undefined): number | null => {
     if (typeof capValue !== 'number' || !Number.isFinite(capValue) || capValue < 0) return null;
     if (typeof baselineValue !== 'number' || !Number.isFinite(baselineValue) || baselineValue < 0) return null;
-    if (baselineValue >= 1) return 0;
+    if (1 - baselineValue < CAP_MIN_INFORMATIVE_HEADROOM) return null;
     return Math.min(1, Math.max(0, (capValue - baselineValue) / (1 - baselineValue)));
 };
+
+/** 有基線、但因間接識別欄位幾乎每筆都不同而不適用 */
+export const isCapExcessNotApplicable = (baselineValue: number | null | undefined): boolean =>
+    typeof baselineValue === 'number' && Number.isFinite(baselineValue) && 1 - baselineValue < CAP_MIN_INFORMATIVE_HEADROOM;

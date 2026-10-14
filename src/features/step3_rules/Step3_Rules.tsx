@@ -8,8 +8,9 @@
  */
 
 import React from 'react';
-import { Result, Button, App as AntdApp, Alert } from 'antd';
-import { DownloadOutlined } from '@ant-design/icons';
+import { Result, Button, App as AntdApp, Alert, theme } from 'antd';
+import { DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
+import { scaleFontSize } from '../../utils/fontScale';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
@@ -53,6 +54,10 @@ export default function Step3_Rules(): React.ReactElement
 	);                             // 參數不合規警告訊息
 
 	const { t: translate } = useTranslation(); 
+
+	const { token } = theme.useToken();
+	const isDarkModeActiveStatus = token.colorBgContainer !== '#ffffff';  // 與 KAnonymityRules 相同的深色判定
+	const exportAccentColor = isDarkModeActiveStatus ? '#9fa8ff' : '#4F46E5';
 	
 	const { message: messageApi } = AntdApp.useApp();
 
@@ -63,7 +68,7 @@ export default function Step3_Rules(): React.ReactElement
 	 * 輸入參數 (Input): 無
 	 * 輸出參數 (Output): 無
 	 * 返回值 (Return): void
-	 * 呼叫關係 (Call Relations): 綁定於「Export Final Config (JSON)」按鈕之 onClick 事件
+	 * 呼叫關係 (Call Relations): 綁定於頁面上方「下載設定檔」區塊按鈕之 onClick 事件
 	 * 
 	 * 規範對照: 符合規範 b) 函數開頭註記
 	 */
@@ -135,15 +140,32 @@ export default function Step3_Rules(): React.ReactElement
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 			
-			{/* 頂部全局操作區塊：匯出 JSON 配置檔 */}
-			<div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-				<Button 
-					type="primary" 
-					icon={<DownloadOutlined />} 
-					onClick={handleExportJSON} 
-					style={{ background: '#4F46E5', borderColor: '#4F46E5' }}
+			{/* ★ 2026-10-07 QA 回饋「輸出設定檔不明顯」：原本是右上角一顆小按鈕，改為整列醒目的下載區塊
+			    （圖示＋標題＋一句用途＋大按鈕），放在頁面最上方。 */}
+			<div
+				data-testid="step3-export-banner"
+				style={{
+					display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
+					padding: '14px 18px', borderRadius: 12,
+					border: `1px solid ${exportAccentColor}`,
+					background: isDarkModeActiveStatus ? 'rgba(79, 70, 229, 0.16)' : '#EEF2FF'
+				}}
+			>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+					<FileTextOutlined style={{ fontSize: scaleFontSize(30), color: exportAccentColor, flexShrink: 0 }} />
+					<div style={{ minWidth: 0 }}>
+						<div style={{ fontSize: scaleFontSize(16), fontWeight: 700, color: token.colorText }}>{translate('step3.export_banner_title', '設定檔（JSON）')}</div>
+						<div style={{ fontSize: scaleFontSize(13), color: token.colorTextSecondary }}>{translate('step3.export_banner_desc', '保存本次設定，下次可在 Step2 匯入重複使用。')}</div>
+					</div>
+				</div>
+				<Button
+					type="primary"
+					size="large"
+					icon={<DownloadOutlined />}
+					onClick={handleExportJSON}
+					style={{ background: '#4F46E5', borderColor: '#4F46E5', height: 44, paddingInline: 24, fontWeight: 600 }}
 				>
-					{translate('step3.btn_export_json', 'Export Final Config (JSON)')}
+					{translate('step3.btn_download_config', '下載設定檔')}
 				</Button>
 			</div>
 

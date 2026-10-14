@@ -37,10 +37,11 @@ describe('Step3 隱私預算中心', () => {
             columns: dpFields.map((field) => field.fieldName), columnRoles: {}, privacyMode: 'differential-privacy',
             dpFields, targetDelta: 1e-4, budgetLimitEpsilon: 20
         } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
-        const { container } = render(<DifferentialPrivacyRules />);
-        const pageText = container.textContent || '';
-        // 舊版「等效 ε」會把薪資換算成 4、總和 16
-        expect(pageText).not.toMatch(/1\.6000e\+1/);
-        expect(pageText).toMatch(/本次消耗預算:ε = 1\.7000e\+1δ = 1\.10*e-4/);
+        const { getByTestId } = render(<DifferentialPrivacyRules />);
+        // ★ 2026-10-07 白話版：右側「已用預算 ε」格顯示 17 / 20 與 δ（舊版「等效 ε」會把薪資換算成 4、總和 16）
+        const budgetTileText = getByTestId('dp-plain-sum-budget').textContent || '';
+        expect(budgetTileText).toContain('17 / 20');
+        expect(budgetTileText).not.toContain('16');
+        expect(budgetTileText).toContain('δ = 1.1e-4');
     });
 });

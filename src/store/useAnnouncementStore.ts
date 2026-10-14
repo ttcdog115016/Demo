@@ -12,6 +12,7 @@
  * ============================================================================
  */
 
+import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
@@ -29,6 +30,7 @@ export interface AnnouncementItem
 	createdBy: string;                // 發布者名稱
 	icon?: string;                    // 左側圖示 (emoji)；舊資料可能沒有，顯示時依 level 給預設
 	updatedAt?: number;               // 最後修改時間 (epoch 毫秒)；未修改過為 undefined
+	expiresAt?: number | null;        // 顯示到（epoch 毫秒）；null／undefined＝不限期，直到刪除
 }
 
 interface AnnouncementState
@@ -38,7 +40,9 @@ interface AnnouncementState
 	dismissedBannerIdsByUser: Record<string, string[]>;    // 使用者 → 已關閉之首頁橫幅 id
 	publishAnnouncement: (item: Omit<AnnouncementItem, 'id' | 'createdAt'>) => void;
 	removeAnnouncement: (announcementId: string) => void;
-	updateAnnouncement: (announcementId: string, patch: Partial<Pick<AnnouncementItem, 'title' | 'content' | 'level' | 'audience' | 'icon'>>, shouldRenotify: boolean) => void;
+	updateAnnouncement: (announcementId: string, patch: Partial<Pick<AnnouncementItem, 'title' | 'content' | 'level' | 'audience' | 'icon' | 'expiresAt'>>, shouldRenotify: boolean) => void;
+	/** 立即結束顯示：把顯示期限設為現在，鈴鐺與首頁橫幅立刻不再顯示，Admin 列表保留並標示已過期 */
+	endAnnouncementNow: (announcementId: string) => void;
 	markAsRead: (userKey: string, announcementIds: string[]) => void;
 	dismissBanner: (userKey: string, announcementId: string) => void;
 }
@@ -76,6 +80,9 @@ export const useAnnouncementStore = create<AnnouncementState>()(
 			})),
 			removeAnnouncement: (announcementId) => setStoreStateAction((currentState) => ({
 				announcements: currentState.announcements.filter(item => item.id !== announcementId),
+			})),
+			endAnnouncementNow: (announcementId) => setStoreStateAction((currentState) => ({
+				announcements: currentState.announcements.map(item => item.id === announcementId ? { ...item, expiresAt: Date.now() } : item),
 			})),
 			// 修改公告；shouldRenotify=true 時清除所有人的已讀／橫幅已關閉狀態，讓修改後內容重新提醒
 			updateAnnouncement: (announcementId, patch, shouldRenotify) => setStoreStateAction((currentState) =>
@@ -116,8 +123,22 @@ if (typeof window !== 'undefined')
 }
 
 /**
+ * 函數名稱: isAnnouncementActive
+ * 函數功能: 公告是否仍在顯示期間內（未設定期限＝一直顯示）。
+ */
+export const isAnnouncementActive = (item: AnnouncementItem, nowMs: number = Date.now()): boolean =>
+	item.expiresAt === undefined || item.expiresAt === null || item.expiresAt > nowMs;
+
+/**
+ * 函數名稱: isAnnouncementShownToRole
+ * 函數功能: 鈴鐺／首頁橫幅用——對象符合且仍在顯示期間內才顯示。
+ */
+export const isAnnouncementShownToRole = (item: AnnouncementItem, role: string | undefined, nowMs: number = Date.now()): boolean =>
+	isAnnouncementActive(item, nowMs) && (item.audience === 'all' || item.audience === role);
+
+/**
  * 函數名稱: isAnnouncementVisibleToRole
- * 函數功能: 判斷公告是否應對該角色顯示。
+ * 函數功能: 只判斷對象是否符合（不看顯示期間）。
  */
 export const isAnnouncementVisibleToRole = (item: AnnouncementItem, role: string | undefined): boolean =>
 	item.audience === 'all' || item.audience === role;
@@ -128,3 +149,20 @@ export const isAnnouncementVisibleToRole = (item: AnnouncementItem, role: string
  */
 export const getAnnouncementUserKey = (user: { email?: string; name?: string } | null | undefined): string =>
 	user?.email || user?.name || 'anonymous';
+
+/**
+ * 函數名稱: useAnnouncementClock
+ * 函數功能: 每 30 秒（以及公告資料變動時）更新一次「現在時間」，讓公告到了顯示期限時，鈴鐺與首頁橫幅不用重新整理也會自動消失。
+ */
+export const useAnnouncementClock = (): number =>
+{
+	const [nowMs, setNowMs] = useState<number>(() => Date.now());
+	useEffect(() =>
+	{
+		const clockTimerId = window.setInterval(() => setNowMs(Date.now()), 30 * 1000);
+		// 公告資料一有變動（例如 Admin 按「立即結束」）就同步更新時間，避免畫面要等下一次計時才反映
+		const unsubscribeStore = useAnnouncementStore.subscribe(() => setNowMs(Date.now()));
+		return () => { window.clearInterval(clockTimerId); unsubscribeStore(); };
+	}, []);
+	return nowMs;
+};

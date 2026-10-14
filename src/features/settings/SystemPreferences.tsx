@@ -11,8 +11,9 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
 	Card, Switch, Select, Segmented, Space, Divider, theme, Typography,
-	Tabs, Table, Tag, Button, Form, InputNumber, Alert, Modal, Input, App as AntdApp, Dropdown, Checkbox
+	Tabs, Table, Tag, Button, Form, InputNumber, Alert, Modal, Input, App as AntdApp, Dropdown, Checkbox, DatePicker
 } from 'antd';
+import dayjs, { type Dayjs } from 'dayjs';
 import type { MenuProps } from 'antd';
 import {
 	SettingOutlined,
@@ -38,7 +39,8 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
 import { useAccountStore, isAccountLocked, type AccountRecord, type AccountRole } from '../../store/useAccountStore';
-import { useAnnouncementStore, type AnnouncementItem, type AnnouncementLevel, type AnnouncementAudience } from '../../store/useAnnouncementStore';
+import { useAnnouncementStore, isAnnouncementActive, useAnnouncementClock, type AnnouncementItem, type AnnouncementLevel, type AnnouncementAudience } from '../../store/useAnnouncementStore';
+import { formatAnnouncementFullTime } from '../../utils/announcementDisplay';
 import { AnnouncementListItem } from '../../components/AnnouncementListItem';
 import { useUIStore, type FontSizeLevel } from '../../store/useUIStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
@@ -154,7 +156,8 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 	);
 
 	return (
-		<div style={{ maxWidth: '600px', margin: currentUserRole === 'admin' ? '0' : '40px auto' }}>
+		// ★ 2026-10-08：寬度改用 em（跟著字體大小等比例放大），字體調大時版面不會擠在一起
+		<div style={{ maxWidth: '44em', margin: currentUserRole === 'admin' ? '0' : '40px auto' }}>
 			<Card
 				title={
 					<Space>
@@ -185,7 +188,7 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 						</div>
 					</Space>
 
-					<Switch checked={isDarkModeActive} onChange={(isChecked) => setIsDarkModeAction(isChecked)} checkedChildren={<MoonOutlined />} unCheckedChildren={<SunOutlined />} style={{ minWidth: '60px' }} />
+					<Switch checked={isDarkModeActive} onChange={(isChecked) => setIsDarkModeAction(isChecked)} checkedChildren={<MoonOutlined />} unCheckedChildren={<SunOutlined />} style={{ minWidth: '4.5em' }} />
 				</div>
 
 				<Divider dashed style={{ margin: '16px 0' }} />
@@ -206,7 +209,8 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 					<Select
 						value={currentLanguageCode}
 						onChange={(selectedLanguageVal) => setLanguageAction(selectedLanguageVal)}
-						style={{ width: 140 }}
+						style={{ minWidth: '9em' }}
+						popupMatchSelectWidth={false}
 						options={
 							[
 								{ value: 'zh_TW', label: '繁體中文' },
@@ -396,7 +400,9 @@ export default function SystemPreferences(): React.ReactElement
 	const [resetPwdFormInstance] = Form.useForm();
 
 	// ★ 2026-10-07：系統公告（右上角鈴鐺／Data Owner 首頁重要橫幅的資料來源）
-	const [announcementFormInstance] = Form.useForm<{ title: string; content: string; level: AnnouncementLevel; audience: AnnouncementAudience; shouldRenotify?: boolean }>();
+	const [announcementFormInstance] = Form.useForm<{ title: string; content: string; level: AnnouncementLevel; audience: AnnouncementAudience; expiresAt?: Dayjs | null; shouldRenotify?: boolean }>();
+	const announcementClockNowMs = useAnnouncementClock(); // 顯示期限到了，列表狀態自動變「已結束」
+	const endAnnouncementNowAction = useAnnouncementStore((state) => state.endAnnouncementNow);
 	const [editingAnnouncementItem, setEditingAnnouncementItem] = useState<AnnouncementItem | null>(null); // 非 null 時表單為「修改」模式
 	const updateAnnouncementAction = useAnnouncementStore((state) => state.updateAnnouncement);
 	const announcementFormDefaultValues = { level: 'normal' as AnnouncementLevel, audience: 'all' as AnnouncementAudience, shouldRenotify: true };
@@ -425,6 +431,7 @@ export default function SystemPreferences(): React.ReactElement
 					content: (formValuesObj.content || '').trim(),
 					level: formValuesObj.level,
 					audience: formValuesObj.audience,
+					expiresAt: formValuesObj.expiresAt ? formValuesObj.expiresAt.valueOf() : null,
 				}, formValuesObj.shouldRenotify !== false);
 				logSystemEvent('INFO', `修改系統公告：「${formValuesObj.title.trim()}」${formValuesObj.shouldRenotify !== false ? '（重新通知使用者）' : ''}`, operatorNameString);
 				messageApi.success(translate('admin.announce_updated', '公告已更新'));
@@ -437,9 +444,10 @@ export default function SystemPreferences(): React.ReactElement
 				content: (formValuesObj.content || '').trim(),
 				level: formValuesObj.level,
 				audience: formValuesObj.audience,
+				expiresAt: formValuesObj.expiresAt ? formValuesObj.expiresAt.valueOf() : null,
 				createdBy: operatorNameString,
 			});
-			logSystemEvent('INFO', `發布系統公告：「${formValuesObj.title.trim()}」（${formValuesObj.level === 'important' ? '重要' : '一般'}，對象：${announcementAudienceLabelDict[formValuesObj.audience]}）`, operatorNameString);
+			logSystemEvent('INFO', `發布系統公告：「${formValuesObj.title.trim()}」（${formValuesObj.level === 'important' ? '重要' : '一般'}，對象：${announcementAudienceLabelDict[formValuesObj.audience]}，顯示到：${formValuesObj.expiresAt ? formValuesObj.expiresAt.format('YYYY-MM-DD HH:mm') : '不限期'}）`, operatorNameString);
 			messageApi.success(translate('admin.announce_published', '公告已發布'));
 			announcementFormInstance.resetFields();
 		});
@@ -457,6 +465,8 @@ export default function SystemPreferences(): React.ReactElement
 			content: targetAnnouncementItem.content,
 			level: targetAnnouncementItem.level,
 			audience: targetAnnouncementItem.audience,
+			// 已結束的公告載入時清空期限，方便直接重新設定；若要維持結束狀態按取消即可
+			expiresAt: targetAnnouncementItem.expiresAt && targetAnnouncementItem.expiresAt > Date.now() ? dayjs(targetAnnouncementItem.expiresAt) : null,
 			shouldRenotify: true,
 		});
 	};
@@ -469,21 +479,40 @@ export default function SystemPreferences(): React.ReactElement
 
 	/**
 	 * 函數名稱: showRemoveAnnouncementConfirm
-	 * 函數功能: 二次確認後撤下公告。
+	 * 函數功能: 二次確認後刪除公告（永久移除，無法復原）。
 	 */
 	const showRemoveAnnouncementConfirm = (targetAnnouncementItem: AnnouncementItem): void =>
 	{
 		modalApi.confirm({
-			title: translate('admin.announce_remove_title', '撤下公告'),
+			title: translate('admin.announce_remove_title', '刪除公告'),
 			icon: <ExclamationCircleFilled />,
-			content: translate('admin.announce_remove_desc', '撤下後，所有使用者的通知與首頁橫幅都不會再顯示此公告。'),
-			okText: translate('admin.btn_confirm', '確認'),
+			content: translate('admin.announce_remove_desc', '刪除後無法復原，所有使用者的通知與首頁橫幅都不會再顯示此公告。'),
+			okText: translate('admin.btn_delete', '刪除'),
 			okType: 'danger',
 			cancelText: translate('admin.btn_cancel', '取消'),
 			onOk()
 			{
 				removeAnnouncementAction(targetAnnouncementItem.id);
-				logSystemEvent('INFO', `撤下系統公告：「${targetAnnouncementItem.title}」`, operatorNameString);
+				logSystemEvent('INFO', `刪除系統公告：「${targetAnnouncementItem.title}」`, operatorNameString);
+			},
+		});
+	};
+
+	/**
+	 * 函數名稱: showEndAnnouncementConfirm
+	 * 函數功能: 二次確認後立即結束公告顯示（保留在列表，可再修改顯示期限重新開放）。
+	 */
+	const showEndAnnouncementConfirm = (targetAnnouncementItem: AnnouncementItem): void =>
+	{
+		modalApi.confirm({
+			title: translate('admin.announce_end_title', '立即結束顯示'),
+			content: translate('admin.announce_end_desc', '結束後，使用者的鈴鐺通知與首頁橫幅將不再顯示此公告；公告仍保留在此列表，之後可用「修改」重新設定顯示期限。'),
+			okText: translate('admin.announce_end_ok', '結束顯示'),
+			cancelText: translate('admin.btn_cancel', '取消'),
+			onOk()
+			{
+				endAnnouncementNowAction(targetAnnouncementItem.id);
+				logSystemEvent('INFO', `立即結束系統公告顯示：「${targetAnnouncementItem.title}」`, operatorNameString);
 			},
 		});
 	};
@@ -491,22 +520,50 @@ export default function SystemPreferences(): React.ReactElement
 	const announcementTableColumnsConfig = [
 		{
 			title: translate('admin.announce_column', '公告'), key: 'announcement',
-			render: (_: unknown, announcementItem: AnnouncementItem) => <AnnouncementListItem item={announcementItem} />
+			render: (_: unknown, announcementItem: AnnouncementItem) => (
+				<div style={{ opacity: isAnnouncementActive(announcementItem, announcementClockNowMs) ? 1 : 0.55 }}>
+					<AnnouncementListItem item={announcementItem} />
+				</div>
+			)
 		},
 		{
-			title: translate('admin.announce_level', '重要程度'), dataIndex: 'level', key: 'level', width: '100px', align: 'center' as const,
+			title: translate('admin.announce_status', '顯示狀態'), key: 'status', width: '12em',
+			render: (_: unknown, announcementItem: AnnouncementItem) =>
+			{
+				const isActiveStatus = isAnnouncementActive(announcementItem, announcementClockNowMs);
+				return (
+					<div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+						<Tag color={isActiveStatus ? 'success' : 'default'} style={{ margin: 0 }}>
+							{isActiveStatus ? translate('admin.announce_status_active', '顯示中') : translate('admin.announce_status_ended', '已結束')}
+						</Tag>
+						<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
+							{announcementItem.expiresAt
+								? (isActiveStatus
+									? translate('admin.announce_until', '至 {{time}}', { time: formatAnnouncementFullTime(announcementItem.expiresAt) })
+									: translate('admin.announce_ended_at', '於 {{time}} 結束', { time: formatAnnouncementFullTime(announcementItem.expiresAt) }))
+								: translate('admin.announce_no_expiry', '不限期')}
+						</Text>
+					</div>
+				);
+			}
+		},
+		{
+			title: translate('admin.announce_level', '重要程度'), dataIndex: 'level', key: 'level', width: '6.5em', align: 'center' as const,
 			render: (levelValue: AnnouncementLevel) => levelValue === 'important'
 				? <Tag color="orange" style={{ margin: 0 }}>{translate('admin.announce_level_important', '重要')}</Tag>
 				: <Tag style={{ margin: 0 }}>{translate('admin.announce_level_normal', '一般')}</Tag>
 		},
-		{ title: translate('admin.announce_audience', '對象'), dataIndex: 'audience', key: 'audience', width: '120px', render: (audienceValue: AnnouncementAudience) => announcementAudienceLabelDict[audienceValue] },
-		{ title: translate('admin.announce_by', '發布者'), dataIndex: 'createdBy', key: 'createdBy', width: '130px' },
+		{ title: translate('admin.announce_audience', '對象'), dataIndex: 'audience', key: 'audience', width: '7.5em', render: (audienceValue: AnnouncementAudience) => announcementAudienceLabelDict[audienceValue] },
+		{ title: translate('admin.announce_by', '發布者'), dataIndex: 'createdBy', key: 'createdBy', width: '8em' },
 		{
-			title: translate('admin.col_action', '操作'), key: 'action', width: '100px', align: 'center' as const,
+			title: translate('admin.col_action', '操作'), key: 'action', width: '9em', align: 'center' as const,
 			render: (_: unknown, announcementItem: AnnouncementItem) => (
 				<Space size={0}>
+					{isAnnouncementActive(announcementItem, announcementClockNowMs) && (
+						<Button type="text" icon={<StopOutlined />} title={translate('admin.announce_end_title', '立即結束顯示')} aria-label={translate('admin.announce_end_title', '立即結束顯示')} onClick={() => showEndAnnouncementConfirm(announcementItem)} />
+					)}
 					<Button type="text" icon={<EditOutlined />} title={translate('admin.announce_edit', '修改公告')} aria-label={translate('admin.announce_edit', '修改公告')} onClick={() => handleStartEditAnnouncement(announcementItem)} />
-					<Button type="text" danger icon={<DeleteOutlined />} title={translate('admin.announce_remove_title', '撤下公告')} aria-label={translate('admin.announce_remove_title', '撤下公告')} onClick={() => showRemoveAnnouncementConfirm(announcementItem)} />
+					<Button type="text" danger icon={<DeleteOutlined />} title={translate('admin.announce_remove_title', '刪除公告')} aria-label={translate('admin.announce_remove_title', '刪除公告')} onClick={() => showRemoveAnnouncementConfirm(announcementItem)} />
 				</Space>
 			)
 		},
@@ -823,7 +880,7 @@ export default function SystemPreferences(): React.ReactElement
 		{ 
 			title: translate('admin.col_action', '操作'), 
 			key: 'action',
-			width: '100px', 
+			width: '6.5em', 
 			align: 'center' as const,
 			render: (_: unknown, userRecordItem: UserRecord) => 
 			{
@@ -881,12 +938,12 @@ export default function SystemPreferences(): React.ReactElement
 
 	// 系統日誌表格欄位定義 (符合規範 g, h)
 	const logTableColumnsConfig = [
-		{ title: translate('admin.col_time', '時間'), dataIndex: 'timestamp', key: 'timestamp', width: '180px', render: (timestampMsValue: number) => formatSystemLogTimestamp(timestampMsValue) },
+		{ title: translate('admin.col_time', '時間'), dataIndex: 'timestamp', key: 'timestamp', width: '11em', render: (timestampMsValue: number) => formatSystemLogTimestamp(timestampMsValue) },
 		{ 
 			title: translate('admin.col_level', '層級'), 
 			dataIndex: 'level', 
 			key: 'level',
-			width: '100px',
+			width: '6.5em',
 			render: (levelNameString: string) => 
 			{
 				const levelTagColor = levelNameString === 'ERROR' ? 'red' : levelNameString === 'WARN' ? 'orange' : 'green';
@@ -895,7 +952,7 @@ export default function SystemPreferences(): React.ReactElement
 			}
 		},
 		{ title: translate('admin.col_event', '系統事件'), dataIndex: 'event', key: 'event' },
-		{ title: translate('admin.col_source', '來源'), dataIndex: 'source', key: 'source', width: '260px', ellipsis: true },
+		{ title: translate('admin.col_source', '來源'), dataIndex: 'source', key: 'source', width: '16em', ellipsis: true },
 	];
 
 	const tabListItemsArray = [];
@@ -989,8 +1046,27 @@ export default function SystemPreferences(): React.ReactElement
 											{ value: 'important', label: translate('admin.announce_level_important', '重要') },
 										]} />
 									</Form.Item>
+									<Form.Item
+										name="expiresAt"
+										label={translate('admin.announce_expires', '顯示到（選填）')}
+										tooltip={translate('admin.announce_expires_tip', '時間一到，鈴鐺通知與首頁橫幅自動不再顯示；公告仍保留在列表中。不填＝一直顯示到刪除為止。')}
+										style={{ marginBottom: 0 }}
+										rules={[{
+											validator: (_rule, pickedValue?: Dayjs | null) => (!pickedValue || pickedValue.valueOf() > Date.now())
+												? Promise.resolve()
+												: Promise.reject(new Error(translate('admin.announce_expires_past', '顯示期限必須晚於現在'))),
+										}]}
+									>
+										<DatePicker
+											showTime={{ format: 'HH:mm' }}
+											format="YYYY-MM-DD HH:mm"
+											placeholder={translate('admin.announce_expires_placeholder', '不限（直到刪除）')}
+											disabledDate={(candidateDate) => candidateDate.isBefore(dayjs().startOf('day'))}
+											style={{ minWidth: '13em' }}
+										/>
+									</Form.Item>
 									<Form.Item name="audience" label={translate('admin.announce_audience', '對象')} style={{ marginBottom: 0 }}>
-										<Select style={{ width: '160px' }} options={(Object.keys(announcementAudienceLabelDict) as AnnouncementAudience[]).map(audienceKey => ({ value: audienceKey, label: announcementAudienceLabelDict[audienceKey] }))} />
+										<Select style={{ minWidth: '10em' }} popupMatchSelectWidth={false} options={(Object.keys(announcementAudienceLabelDict) as AnnouncementAudience[]).map(audienceKey => ({ value: audienceKey, label: announcementAudienceLabelDict[audienceKey] }))} />
 									</Form.Item>
 									{editingAnnouncementItem && (
 										<Form.Item name="shouldRenotify" valuePropName="checked" style={{ marginBottom: 0 }}>
@@ -1017,15 +1093,15 @@ export default function SystemPreferences(): React.ReactElement
 				key: 'security',
 				label: <span><SafetyCertificateOutlined /> {translate('admin.tab_security', '安全與環境參數')}</span>,
 				children: (
-					<div style={{ maxWidth: '600px' }}>
+					<div style={{ maxWidth: '44em' }}>
 						<Form form={envSecurityFormInstance} layout="vertical">
 							<Card type="inner" title={translate('admin.conn_security', '連線安全設定')} style={{ marginBottom: '16px' }}>
 								<Form.Item name="sessionTimeout" label={translate('admin.session_timeout', 'Session 閒置強制登出時間 (分鐘)')} extra={translate('admin.session_timeout_desc', '設定使用者在無操作狀態下多久後會被系統自動登出。')}>
-									<InputNumber min={MIN_SESSION_TIMEOUT_MINUTES} max={MAX_SESSION_TIMEOUT_MINUTES} style={{ width: '100px' }} />
+									<InputNumber min={MIN_SESSION_TIMEOUT_MINUTES} max={MAX_SESSION_TIMEOUT_MINUTES} style={{ width: '7em' }} />
 								</Form.Item>
 
 								<Form.Item name="maxFailedLogins" label={translate('admin.max_login_attempts', '密碼錯誤鎖定次數')} extra={translate('admin.max_login_desc', '連續登入失敗達此次數後，帳號將被鎖定 15 分鐘。')}>
-									<InputNumber min={MIN_FAILED_LOGINS_LIMIT} max={MAX_FAILED_LOGINS_LIMIT} style={{ width: '100px' }} />
+									<InputNumber min={MIN_FAILED_LOGINS_LIMIT} max={MAX_FAILED_LOGINS_LIMIT} style={{ width: '7em' }} />
 								</Form.Item>
 							</Card>
 
@@ -1055,7 +1131,7 @@ export default function SystemPreferences(): React.ReactElement
 											return (
 												<div style={{ opacity: isPasswordExpiryEnabledStatus ? 1 : 0.4, pointerEvents: isPasswordExpiryEnabledStatus ? 'auto' : 'none', transition: 'all 0.3s' }}>
 													<Form.Item name="passwordExpiryDays" label={translate('admin.expiry_days', '密碼有效天數')} extra={translate('admin.expiry_days_desc', '建議企業內部安全規範設定為 90 天。')}>
-														<InputNumber min={MIN_PASSWORD_EXPIRY_DAYS} max={MAX_PASSWORD_EXPIRY_DAYS} style={{ width: '120px' }} addonAfter={translate('admin.days', '天')} />
+														<InputNumber min={MIN_PASSWORD_EXPIRY_DAYS} max={MAX_PASSWORD_EXPIRY_DAYS} style={{ width: '9em' }} addonAfter={translate('admin.days', '天')} />
 													</Form.Item>
 												</div>
 											);
@@ -1108,13 +1184,14 @@ export default function SystemPreferences(): React.ReactElement
 	if (currentUserRoleName === 'admin') 
 	{
 		return (
-			<div style={{ padding: '0 24px', maxWidth: '1200px', margin: '0 auto' }}>
+			<div style={{ padding: '0 24px', maxWidth: '86em', margin: '0 auto' }}>
 				<Card 
 					title={<span style={{ fontSize: scaleFontSize(18), fontWeight: 'bold' }}>{translate('admin.console_title', '系統設定')}</span>} 
 					variant="borderless" 
 					style={{ minHeight: '600px', borderRadius: '12px', marginTop: '24px' }}
 				>
-					<Tabs activeKey={activeTabIdentifier} onChange={handleTabChange} items={tabListItemsArray} size="large" />
+					{/* 分頁標籤放不下時自動換行（不收進「…」選單），字體調大時才不會被截斷 */}
+					<Tabs className="wrap-tabs" activeKey={activeTabIdentifier} onChange={handleTabChange} items={tabListItemsArray} size="large" />
 				</Card>
 
 				<Modal

@@ -1,21 +1,22 @@
 /**
  * ============================================================================
  * 檔案名稱 (File): KAnonymityRules.tsx
- * 模組功能 (Description): K-匿名參數設定與帕累托邊界模擬組件 (提供 K/L/T 參數控制、抑制率策略設定與 Pareto Front 隱私效用圖表模擬)
+ * 模組功能 (Description): K-匿名參數設定（2026-10-07 起為精簡白話版：左側保護強度卡、湊不滿人數的資料處理、進階敏感資料檢測；右側原 Pareto 示意圖＋三個重點數字）
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之識別字) 以及變數撰寫參考 a) ~ h)
  * ============================================================================
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Alert, Card, Slider, Row, Col, Divider, InputNumber, Input, theme, Select, Button, Tag, Space, Tooltip, Switch } from 'antd';
-import { LockOutlined, PlusOutlined, DeleteOutlined, WarningOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { Alert, Slider, Row, Col, InputNumber, Input, theme, Select, Button, Tag, Space, Tooltip, Switch, Radio } from 'antd';
+import { PlusOutlined, DeleteOutlined, WarningOutlined, QuestionCircleOutlined, CheckCircleFilled, DownOutlined, UpOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
-import { findSmallestSensitiveColumnDistinct, computeEffectiveMaxLValue, isLValueExceedingSensitiveDistinct } from '../../utils/lDiversityLimits';
+import { findSmallestSensitiveColumnDistinct, computeLSliderMaxValue, isLValueExceedingSensitiveDistinct, isLNotLessThanK } from '../../utils/lDiversityLimits';
+import DatasetScaleHint from '../../components/DatasetScaleHint';
 
 import { scaleFontSize, scaleChartFontSize } from '../../utils/fontScale';
 /**
@@ -26,7 +27,7 @@ import { scaleFontSize, scaleChartFontSize } from '../../utils/fontScale';
 const MIN_K_VALUE = 2;                     // K 值最小限制 (低於 2 等同無匿名效果)
 const MAX_K_VALUE = 100;                    // K 值最大限制 (過大會導致資料破壞嚴重)
 const MIN_L_VALUE = 1;                     // L 值最小限制
-const MAX_L_VALUE = 10;                    // L 值最大限制（僅在尚未設定敏感欄位／尚未載入資料時作為備援上限，見 effectiveMaxLValue）
+const MAX_L_VALUE = 10;                    // L 值最大限制（僅在尚無 K 值時作為備援上限，見 effectiveMaxLValue）
 const MIN_T_VALUE = 0.01;                  // T 值最小限制
 const MAX_T_VALUE = 1.0;                   // T 值最大限制
 const DEFAULT_T_VALUE = 0.15;              // 系統預設 T 趨近性基準值
@@ -48,6 +49,28 @@ const SUPPRESSION_PENALTY_THRESHOLD = 12;  // 計算 Pareto 懲罰之抑制率�
 //   恢復方式：待後端在 API／設定檔開放 k_qi_subset 後，把下列常數改回 true，並將組合改為
 //   「單一一組」、寫入 k_anonymity 設定區塊送出（注意：子集只會放寬分組條件、降低抑制量）。
 const SHOW_QI_COMBINATION_SCOPE = false;
+/**
+ * ★ 2026-10-07 白話版：保護強度預設選項。標準 K=3 與 useWorkspaceStore 預設值一致。
+ */
+const K_PRESET_OPTIONS: ReadonlyArray<{ key: 'standard' | 'enhanced' | 'strict'; kValue: number; titleText: string; isDefault?: boolean }> = [
+    { key: 'standard', kValue: 3, titleText: '標準', isDefault: true },
+    { key: 'enhanced', kValue: 5, titleText: '加強' },
+    { key: 'strict', kValue: 10, titleText: '嚴格' },
+];
+
+/** 白話版選項卡（保護強度、抑制方式共用） */
+interface PlainChoiceCardProps
+{
+    cardKey: string;                 // React key
+    testId: string;                  // data-testid
+    isSelected: boolean;             // 是否為目前選項
+    isDisabled: boolean;             // 是否停用
+    disabledReasonText?: string;     // 停用原因（Tooltip）
+    onSelect: () => void;            // 點選事件
+    titleText: string;               // 標題
+    badgeText?: string;              // 標題旁小標籤（例如「預設」）
+    children: React.ReactNode;       // 說明內容
+}
 
 /**
  * ECharts 繪圖工具提示 (Tooltip) 參數型別介面
@@ -180,7 +203,9 @@ export default function KAnonymityRules(): React.ReactElement
         () => findSmallestSensitiveColumnDistinct(rawColumnRolesMapForLUpper, datasetProfileSnapshot),
         [rawColumnRolesMapForLUpper, datasetProfileSnapshot]
     );
-    const effectiveMaxLValue = computeEffectiveMaxLValue(sensitiveColumnDistinctCountInfo, currentKValue, MIN_L_VALUE, MAX_L_VALUE);
+    // ★ 2026-10-13：上限改為只受 K 限制。原本 = min(K, 敏感欄位相異值數)，敏感欄位只有 1 種值時
+    //   滑桿被鎖成 1、使用者無法調整也看不出原因；現在可自由調到 K，超過相異值數時直接顯示紅字並擋下一步。
+    const effectiveMaxLValue = computeLSliderMaxValue(currentKValue, MIN_L_VALUE, MAX_L_VALUE);
     // 例如匯入的設定檔 l=8，但敏感欄位只有 5 種值：必定無法通過，需提示並擋下一步
     const isLExceedsSensitiveDistinctStatus = isEnableLDiversityStatus && isLValueExceedingSensitiveDistinct(currentLValue, sensitiveColumnDistinctCountInfo);
 
@@ -214,14 +239,15 @@ export default function KAnonymityRules(): React.ReactElement
                 return;
             }
 
-            // 3. 驗證 K 必須大於等於 L (L-Diversity 數學限制：多樣性類別數不可能超過群組筆數)
+            // 3. 驗證 l 必須小於 K
+            //    ★ 2026-10-13：依使用者規格由 K ≥ L 改為 l < K（K=5 時 l 只能 1～4）。
             //    ★ 僅在使用者實際啟用 l-多樣性檢測時才驗證，未啟用時 l 值不會送給後端，不需卡關。
-            if (isEnableLDiversityStatus && currentKValue < currentLValue)
+            if (isEnableLDiversityStatus && isLNotLessThanK(currentLValue, currentKValue))
             {
                 setStepValidationAction(false, translate(
-                    'step3.error_k_less_than_l',
-                    '參數衝突：要求資料具備 {{l}} 種多樣性 (L={{l}})，但群組大小僅有 {{k}} (K={{k}})，這是數學上無法達成的。請確保 K ≥ L。',
-                    { k: currentKValue, l: currentLValue }
+                    'step3.error_l_not_less_than_k',
+                    '參數衝突：l 必須小於 K（目前 K={{k}}、l={{l}}），請把 l 調到 {{max}} 以下。',
+                    { k: currentKValue, l: currentLValue, max: Math.max(MIN_L_VALUE, currentKValue - 1) }
                 ));
 
                 return;
@@ -232,7 +258,7 @@ export default function KAnonymityRules(): React.ReactElement
             {
                 setStepValidationAction(false, translate(
                     'step3.error_l_exceeds_sensitive_distinct',
-                    '參數衝突：L={{l}}，但敏感欄位「{{column}}」只有 {{count}} 種不同的值，任何群組都不可能湊出 {{l}} 種，l-多樣性必定無法通過。請將 L 調整為 {{count}} 以下。',
+                    '敏感欄位「{{column}}」只有 {{count}} 種不同的值，任何群組都湊不出 {{l}} 種，l 設為 {{l}} 一定無法通過。請把 l 調到 {{count}} 以下，或回 Step2 確認敏感欄位是否選對。',
                     { l: currentLValue, column: sensitiveColumnDistinctCountInfo.columnName, count: sensitiveColumnDistinctCountInfo.distinctCount }
                 ));
 
@@ -487,7 +513,7 @@ export default function KAnonymityRules(): React.ReactElement
                         ? `${translate('step3.chart_pareto_limit')}<br/>${translate('step3.chart_util_short')} ${tooltipParamsObj.data[0]}% | ${translate('step3.chart_priv_short')} ${tooltipParamsObj.data[1]}%` : '';
                 } 
             },
-            grid: { top: '15%', left: '8%', right: '15%', bottom: '12%', containLabel: true },
+            grid: { top: '15%', left: 130, right: '15%', bottom: '12%', containLabel: true },
             xAxis: { 
                 type: 'value', min: 0, max: 100, name: translate('step3.chart_x_axis'), nameLocation: 'center', nameGap: 30, 
                 nameTextStyle: { color: token.colorTextSecondary, fontWeight: 500, fontSize: scaleChartFontSize(12, token.fontSize) }, 
@@ -566,7 +592,7 @@ export default function KAnonymityRules(): React.ReactElement
     const isKValueBelowMinStatus = currentKValue === undefined || currentKValue === null || currentKValue < MIN_K_VALUE;
     const isKValueExceedsDatasetStatus = datasetRowCountValue > 0 && currentKValue > datasetRowCountValue;
     // ★ 未啟用 l-多樣性／t-緊密度檢測時，這兩個參數不會送給後端，畫面上也不應顯示紅框／錯誤提示
-    const isKLessThanLStatus = isEnableLDiversityStatus && currentKValue < currentLValue;
+    const isKLessThanLStatus = isEnableLDiversityStatus && isLNotLessThanK(currentLValue, currentKValue); // ★ 2026-10-13：l 必須小於 K
     const isKValueInvalidStatus = isKValueBelowMinStatus || isKValueExceedsDatasetStatus || isKLessThanLStatus;
     const isTValueInvalidStatus = isEnableTClosenessStatus && (currentTValue === undefined || currentTValue === null || currentTValue <= 0 || currentTValue > 1);
 
@@ -629,7 +655,7 @@ export default function KAnonymityRules(): React.ReactElement
         })
         : '';
 
-    const kLessThanLConflictMessageText = translate('step3.error_k_less_than_l', '參數衝突：要求資料具備 {{l}} 種多樣性 (L={{l}})，但群組大小僅有 {{k}} (K={{k}})，這是數學上無法達成的。請確保 K ≥ L。', { k: currentKValue, l: currentLValue });
+    const kLessThanLConflictMessageText = translate('step3.error_l_not_less_than_k', '參數衝突：l 必須小於 K（目前 K={{k}}、l={{l}}），請把 l 調到 {{max}} 以下。', { k: currentKValue, l: currentLValue, max: Math.max(MIN_L_VALUE, currentKValue - 1) });
 
     const kValueInlineErrorMessageText = isKValueBelowMinStatus
         ? translate('step3.error_k_too_small', 'K 值必須大於等於 2（K=1 等同於沒有匿名效果）。')
@@ -643,283 +669,423 @@ export default function KAnonymityRules(): React.ReactElement
         ? translate('step3.error_t_range', 'T-Closeness (t) 必須介於 0 與 1 之間。')
         : '';
 
+    // ★ 2026-10-07 白話版：「自訂」保護強度與「進階」區塊的展開狀態（無提前 return，hooks 順序固定）
+    const [isCustomKModeStatus, setIsCustomKModeStatus] = useState<boolean>(
+        () => !K_PRESET_OPTIONS.some((presetOption) => presetOption.kValue === currentKValue)
+    );
+    // 已啟用 l／t，或敏感欄位處理方式與檢測衝突時，進階區塊預設展開，避免設定被藏起來
+    const [isAdvancedOpenStatus, setIsAdvancedOpenStatus] = useState<boolean>(
+        () => isEnableLDiversityStatus || isEnableTClosenessStatus || Boolean(removedSensitiveLtConflictMessageText) || Boolean(maskedSensitiveLtConflictMessageText)
+    );
+
+    /**
+     * ============================================================================
+     * ★ 2026-10-07 白話版版面（比照 Step4 白話版）
+     * ============================================================================
+     * 使用者反映：原本左側一排 k／l／t 滑桿＋抑制策略，沒有背景知識的使用者看不懂、無法快速上手。
+     * 改為左側三區（① 保護強度卡 標準 K=3／加強 K=5／嚴格 K=10／自訂；② 湊不滿人數的資料：整筆刪除／只遮蔽欄位、
+     * 上限、超過時；③ 進階 l／t，預設收合，已啟用或有衝突時自動展開），右側保留原 Pareto 示意圖並在下方列三個重點數字。
+     * 使用者再要求：保留示意圖、文字越少越好——說明一律收進問號 Tooltip，畫面只留標題與短標籤。
+     */
+    const helpIcon = (tooltipContent: React.ReactNode): React.ReactNode => (
+        <Tooltip title={tooltipContent}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
+    );
+
+    // 深色主題下主色 #3f51b5 當文字對比不足，改用較亮的靛藍
+    const accentTextColor = isDarkModeActiveStatus ? '#9fa8ff' : token.colorPrimary;
+
+    const sectionCardStyle: React.CSSProperties = {
+        background: token.colorBgContainer,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: 12,
+        padding: '18px 20px',
+        boxShadow: isDarkModeActiveStatus ? 'none' : '0 2px 8px rgba(0,0,0,0.04)'
+    };
+
+    const renderSectionHeader = (stepNumberText: string, titleText: string, descriptionText?: React.ReactNode, tooltipText?: React.ReactNode): React.ReactNode => (
+        <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: scaleFontSize(16), fontWeight: 700, color: token.colorText }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: '50%', background: token.colorPrimary, color: '#fff', fontSize: scaleFontSize(14), flexShrink: 0 }}>{stepNumberText}</span>
+                {titleText}
+                {tooltipText ? helpIcon(tooltipText) : null}
+            </div>
+            {descriptionText && <div style={{ marginTop: 6, fontSize: scaleFontSize(13), color: token.colorTextSecondary, lineHeight: 1.7 }}>{descriptionText}</div>}
+        </div>
+    );
+
+    const renderChoiceCard = (choiceCardProps: PlainChoiceCardProps): React.ReactNode => {
+        const { cardKey, isSelected, isDisabled, onSelect, titleText, badgeText, children, testId, disabledReasonText } = choiceCardProps;
+        const cardElement = (
+            <div
+                key={cardKey}
+                role="radio"
+                aria-checked={isSelected}
+                aria-disabled={isDisabled}
+                tabIndex={isDisabled ? -1 : 0}
+                data-testid={testId}
+                onClick={() => { if (!isDisabled) onSelect(); }}
+                onKeyDown={(keyboardEvent) => {
+                    if (!isDisabled && (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ')) { keyboardEvent.preventDefault(); onSelect(); }
+                }}
+                style={{
+                    flex: '1 1 0', minWidth: '7em', cursor: isDisabled ? 'not-allowed' : 'pointer', opacity: isDisabled ? 0.45 : 1,
+                    padding: '12px 14px', borderRadius: 10, textAlign: 'left',
+                    border: `2px solid ${isSelected ? accentTextColor : token.colorBorder}`,
+                    background: isSelected ? token.colorPrimaryBg : token.colorBgContainer,
+                    transition: 'border-color .15s, background .15s'
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: scaleFontSize(16), fontWeight: 700, color: isSelected ? accentTextColor : token.colorText }}>
+                    {isSelected
+                        ? <CheckCircleFilled />
+                        : <span style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${token.colorBorder}`, display: 'inline-block', flexShrink: 0 }} />}
+                    {titleText}
+                    {badgeText && <Tag color="blue" style={{ marginInlineStart: 2, marginInlineEnd: 0 }}>{badgeText}</Tag>}
+                </div>
+                <div style={{ marginTop: 6, fontSize: scaleFontSize(13), color: token.colorTextSecondary, lineHeight: 1.6 }}>{children}</div>
+            </div>
+        );
+        return isDisabled && disabledReasonText ? <Tooltip key={cardKey} title={disabledReasonText}>{cardElement}</Tooltip> : cardElement;
+    };
+
+    // ── ① 保護強度 ──
+    const matchedKPresetOption = K_PRESET_OPTIONS.find((presetOption) => presetOption.kValue === currentKValue);
+    const isCustomKSelectedStatus = isCustomKModeStatus || !matchedKPresetOption;
+
+    const handleSelectKPreset = (presetKValue: number): void => {
+        setIsCustomKModeStatus(false);
+        handleKValueChange(presetKValue);
+    };
+    const safeKForTextValue = Math.max(1, currentKValue || 1);
+    const guessChancePercentText = `${Math.round(100 / safeKForTextValue)}%`;
+
+    // ── ② 無法歸群的資料 ──
+    const isCellSuppressionStatus = currentSuppressionMethodTypeStr === 'cell' || currentSuppressionMethodTypeStr === 'cell_suppression';
+    const approxSuppressibleRowCountValue = datasetRowCountValue > 0 ? Math.floor(datasetRowCountValue * (maxSuppressionPercentageValue || 0) / 100) : 0;
+    const suppressionLimitPlainText = datasetRowCountValue > 0
+        ? translate('step3.plain_suppress_limit_rows', '約 {{n}} 筆（共 {{total}} 筆）', { n: approxSuppressibleRowCountValue.toLocaleString(), total: datasetRowCountValue.toLocaleString() })
+        : '';
+
+    // ── 右側：示意圖下方的三個重點數字 ──
+    const protectionLevelLabelText = isCustomKSelectedStatus || !matchedKPresetOption
+        ? translate('step3.plain_level_custom_k', '自訂 K={{k}}', { k: currentKValue })
+        : translate(`step3.plain_level_${matchedKPresetOption.key}`, matchedKPresetOption.titleText);
+    const protectionLevelColor = isKValueInvalidStatus
+        ? token.colorError
+        : currentKValue >= 5 ? token.colorSuccess : currentKValue >= 3 ? accentTextColor : token.colorWarning;
+
+    const summaryStatsList: Array<{ key: string; label: string; value: React.ReactNode; color?: string; tooltip?: string }> = [
+        { key: 'level', label: translate('step3.plain_sum_level', '保護強度'), value: protectionLevelLabelText, color: protectionLevelColor },
+        {
+            key: 'guess',
+            label: translate('step3.plain_sum_guess_short', '被認出機率'),
+            value: translate('step3.plain_sum_guess_value', '≤ {{pct}}', { pct: guessChancePercentText }),
+            tooltip: translate('step3.plain_sum_guess_tip', '每群至少 {{k}} 筆資料在可識別欄位上完全相同，猜中是其中哪一筆的機會最多 1/{{k}}。', { k: currentKValue })
+        },
+        {
+            key: 'suppress',
+            label: isCellSuppressionStatus ? translate('step3.plain_sum_cell_short', '最多遮蔽') : translate('step3.plain_sum_row_short', '最多刪除'),
+            value: datasetRowCountValue > 0
+                ? translate('step3.plain_sum_rows_value', '{{n}} 筆', { n: approxSuppressibleRowCountValue.toLocaleString() })
+                : `${maxSuppressionPercentageValue}%`
+        }
+    ];
+
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <Alert title={translate('step3.k_params_title')} description={translate('step3.k_params_desc')} type="info" showIcon style={{ textAlign: 'left' }} />
-            
-            <Row gutter={24} align="stretch">
-                
-                {/* 左側參數控制區塊 */}
-                <Col span={8}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', paddingRight: '4px' }}>
-                        <Card title={<span style={{ fontWeight: 600 }}><LockOutlined /> {translate('step3.privacy_settings')}</span>} variant="borderless" style={{ background: token.colorBgContainer, boxShadow: isDarkModeActiveStatus ? 'none' : '0 2px 8px rgba(0,0,0,0.04)', flex: 1 }}>
-                            
-                            {/* k-anonymity 滑桿 */}
-                            <Row gutter={16} align="middle" style={{ marginBottom: isKValueInvalidStatus ? '2px' : '6px' }}>
-                                <Col span={8}>
-                                    <span style={{ color: isKValueInvalidStatus ? token.colorError : token.colorText }}>k-anonymity (k)：</span>
-                                    <Tooltip title={translate('step3.k_value_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
-                                </Col>
-                                <Col span={10}><Slider min={MIN_K_VALUE} max={effectiveMaxKValue} value={currentKValue} onChange={handleKValueChange} /></Col>
-                                <Col span={6}><InputNumber min={MIN_K_VALUE} max={effectiveMaxKValue} value={currentKValue} onChange={handleKValueChange} status={isKValueInvalidStatus ? 'error' : undefined} style={{ width: '100%' }} /></Col>
-                            </Row>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <Alert
+                type="info"
+                showIcon
+                style={{ textAlign: 'left' }}
+                title={translate('step3.plain_intro_short', '選一個保護強度即可進入下一步，其餘已帶入建議值。')}
+            />
+
+            <Row gutter={[20, 16]} align="stretch">
+                {/* 左側：設定 */}
+                <Col xs={24} xl={11}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                        {/* ① 保護強度 */}
+                        <div style={sectionCardStyle} data-testid="kanon-plain-protection">
+                            {renderSectionHeader('1', translate('step3.plain_sec1_title', '保護強度'))}
+                            <div role="radiogroup" aria-label={translate('step3.plain_sec1_title', '保護強度')} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                {K_PRESET_OPTIONS.map((presetOption) => renderChoiceCard({
+                                    cardKey: presetOption.key,
+                                    testId: `kanon-preset-${presetOption.key}`,
+                                    isSelected: !isCustomKSelectedStatus && currentKValue === presetOption.kValue,
+                                    isDisabled: datasetRowCountValue > 0 && presetOption.kValue > effectiveMaxKValue,
+                                    disabledReasonText: translate('step3.plain_preset_disabled', '資料只有 {{rows}} 筆', { rows: datasetRowCountValue }),
+                                    onSelect: () => handleSelectKPreset(presetOption.kValue),
+                                    titleText: translate(`step3.plain_level_${presetOption.key}`, presetOption.titleText),
+                                    badgeText: presetOption.isDefault ? translate('step3.plain_badge_default', '預設') : undefined,
+                                    children: translate('step3.plain_preset_k', '每群 ≥ {{k}} 筆資料', { k: presetOption.kValue })
+                                }))}
+                                {renderChoiceCard({
+                                    cardKey: 'custom',
+                                    testId: 'kanon-preset-custom',
+                                    isSelected: isCustomKSelectedStatus,
+                                    isDisabled: false,
+                                    onSelect: () => setIsCustomKModeStatus(true),
+                                    titleText: translate('step3.plain_level_custom', '自訂'),
+                                    children: translate('step3.plain_preset_custom_desc', '自行設定 K')
+                                })}
+                            </div>
+
+                            {isCustomKSelectedStatus && (
+                                <Row gutter={12} align="middle" style={{ marginTop: 14 }}>
+                                    <Col flex="none">
+                                        <span style={{ color: isKValueInvalidStatus ? token.colorError : token.colorText }}>K</span>
+                                        {helpIcon(translate('step3.k_value_tooltip'))}
+                                    </Col>
+                                    <Col flex="auto"><Slider min={MIN_K_VALUE} max={effectiveMaxKValue} value={currentKValue} onChange={handleKValueChange} /></Col>
+                                    <Col flex="7em"><InputNumber aria-label="k-anonymity (k)" min={MIN_K_VALUE} max={effectiveMaxKValue} value={currentKValue} onChange={handleKValueChange} status={isKValueInvalidStatus ? 'error' : undefined} style={{ width: '100%' }} /></Col>
+                                </Row>
+                            )}
                             {isKValueInvalidStatus && (
-                                <div style={{ marginBottom: '10px', marginTop: '-2px' }}>
-                                    <span style={{ color: token.colorError, fontSize: scaleFontSize(12) }}><WarningOutlined style={{ marginRight: 4 }} />{kValueInlineErrorMessageText}</span>
+                                <div style={{ marginTop: 8, color: token.colorError, fontSize: scaleFontSize(13) }}>
+                                    <WarningOutlined style={{ marginRight: 4 }} />{kValueInlineErrorMessageText}
+                                </div>
+                            )}
+                            {/* ★ 2026-10-08 諮詢會：資料筆數納入考量（完整掃描完成後才顯示，避免以預覽筆數誤判規模） */}
+                            <DatasetScaleHint mode="k-anonymity" rowCount={datasetProfileSnapshot ? datasetRowCountValue : 0} kValue={currentKValue} />
+                        </div>
+
+                        {/* ② 湊不滿 K 筆的資料 */}
+                        <div style={sectionCardStyle} data-testid="kanon-plain-suppression">
+                            {renderSectionHeader('2', translate('step3.plain_sec2_title', '湊不滿 K 筆的資料'), undefined, translate('step3.suppress_method_tooltip'))}
+
+                            <div role="radiogroup" aria-label={translate('step3.suppress_method')} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                {renderChoiceCard({
+                                    cardKey: 'row',
+                                    testId: 'kanon-suppress-row',
+                                    isSelected: !isCellSuppressionStatus,
+                                    isDisabled: false,
+                                    onSelect: () => handleSuppressionMethodChange('row_suppression'),
+                                    titleText: translate('step3.plain_row_title', '整筆刪除'),
+                                    badgeText: translate('step3.plain_badge_default', '預設'),
+                                    children: translate('step3.plain_row_desc', '整筆資料移除')
+                                })}
+                                {renderChoiceCard({
+                                    cardKey: 'cell',
+                                    testId: 'kanon-suppress-cell',
+                                    isSelected: isCellSuppressionStatus,
+                                    isDisabled: false,
+                                    onSelect: () => handleSuppressionMethodChange('cell_suppression'),
+                                    titleText: translate('step3.plain_cell_title', '只遮蔽欄位'),
+                                    children: translate('step3.plain_cell_desc', '保留資料，只隱藏部分欄位')
+                                })}
+                            </div>
+
+                            {isCellSuppressionStatus && (
+                                <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, background: token.colorFillQuaternary, border: `1px solid ${token.colorBorderSecondary}` }}>
+                                    <Row align="middle" gutter={12} style={{ marginBottom: filteredQuasiIdentifierColumnsList.length > 0 ? 10 : 0 }}>
+                                        <Col flex="8em">
+                                            <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.plain_cell_fill_label', '預設填入')}</span>
+                                            {helpIcon(translate('step3.cell_fill_method_tooltip'))}
+                                        </Col>
+                                        <Col flex="auto">
+                                            <Select value={currentCellFillMethodTypeStr} onChange={handleCellFillMethodChange} size="small" style={{ width: '100%', maxWidth: '16em' }}
+                                                options={[{ value: 'star', label: translate('step3.plain_cell_fill_star', '星號 *') }, { value: 'missing', label: translate('step3.plain_cell_fill_missing', '缺失值（空值）') }]} />
+                                        </Col>
+                                    </Row>
+                                    {filteredQuasiIdentifierColumnsList.length > 0 && (
+                                        <Row align="top" gutter={12} data-testid="cell-fill-values-by-column">
+                                            <Col flex="8em">
+                                                <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.plain_cell_fill_by_column', '自訂文字')}</span>
+                                                {helpIcon(translate('step3.plain_cell_fill_by_column_tip', '可替個別欄位指定填入的文字，例如地區填「臺灣」、職業填「其他」；留空的欄位沿用「預設填入」。'))}
+                                            </Col>
+                                            <Col flex="auto">
+                                                <Space orientation="vertical" size={6} style={{ width: '100%', maxWidth: '23em' }}>
+                                                    {filteredQuasiIdentifierColumnsList.map((columnNameString: string) => (
+                                                        <Space.Compact key={columnNameString} size="small" style={{ width: '100%' }}>
+                                                            <span style={{ width: '40%', display: 'inline-flex', alignItems: 'center', padding: '0 8px', fontSize: scaleFontSize(12), color: token.colorText, border: `1px solid ${token.colorBorder}`, borderRight: 'none', borderRadius: '4px 0 0 4px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} title={columnNameString}>{columnNameString}</span>
+                                                            <Input
+                                                                size="small"
+                                                                allowClear
+                                                                aria-label={`${columnNameString} cell_fill_value`}
+                                                                value={cellFillValuesByColumnMap?.[columnNameString] ?? ''}
+                                                                placeholder={currentCellFillMethodTypeStr === 'missing' ? translate('step3.cell_fill_value_ph_missing', '未填：空值') : translate('step3.cell_fill_value_ph_star', '未填：*')}
+                                                                onChange={(inputChangeEvent) => handleCellFillValueChange(columnNameString, inputChangeEvent.target.value)}
+                                                                style={{ width: '60%' }}
+                                                            />
+                                                        </Space.Compact>
+                                                    ))}
+                                                </Space>
+                                            </Col>
+                                        </Row>
+                                    )}
                                 </div>
                             )}
 
-                            {/* 運算範圍選擇（暫時隱藏，見檔案上方 SHOW_QI_COMBINATION_SCOPE 說明） */}
-                            {SHOW_QI_COMBINATION_SCOPE && (<>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: calculationModeType === 'custom' ? '8px' : '16px' }}>
-                                <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(12), minWidth: '70px' }}>
-                                    {translate('step3.calc_scope')}
-                                    <Tooltip title={translate('step3.calc_scope_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
+                            <Row gutter={12} align="middle" style={{ marginTop: 14 }}>
+                                <Col flex="none">
+                                    <span style={{ color: token.colorText }}>{translate('step3.plain_limit_label', '上限')}</span>
+                                    {helpIcon(translate('step3.suppress_limit_tooltip'))}
+                                </Col>
+                                <Col flex="auto"><Slider min={MIN_SUPPRESSION_PERCENT} max={MAX_SUPPRESSION_PERCENT} value={maxSuppressionPercentageValue} onChange={handleMaxSuppressionChange} /></Col>
+                                <Col flex="7.5em">
+                                    <Space.Compact style={{ width: '100%' }}>
+                                        <InputNumber aria-label={translate('step3.suppress_limit')} min={MIN_SUPPRESSION_PERCENT} max={MAX_SUPPRESSION_PERCENT} value={maxSuppressionPercentageValue} onChange={handleMaxSuppressionChange} precision={2} step={0.01} style={{ width: '100%' }} />
+                                        <span className="ant-input-group-addon" style={{ fontSize: scaleFontSize(12), padding: '0 8px', display: 'flex', alignItems: 'center' }}>%</span>
+                                    </Space.Compact>
+                                </Col>
+                            </Row>
+                            {suppressionLimitPlainText && (
+                                <div style={{ fontSize: scaleFontSize(12), color: token.colorTextDescription }}>{suppressionLimitPlainText}</div>
+                            )}
+
+                            <Row gutter={12} align="middle" style={{ marginTop: 12 }}>
+                                <Col flex="none">
+                                    <span style={{ color: token.colorText }}>{translate('step3.plain_exceed_label', '超過上限')}</span>
+                                    {helpIcon(translate('step3.exceed_behavior_tooltip'))}
+                                </Col>
+                                <Col flex="auto">
+                                    {/* 後端 limit_exceeded_action 只接受 stop_and_error／allow_with_warning（relax_k 後端未實作、已移除） */}
+                                    <Radio.Group
+                                        value={currentLimitExceededActionTypeStr}
+                                        onChange={(radioChangeEvent) => handleLimitExceededActionChange(radioChangeEvent.target.value)}
+                                        options={[
+                                            { value: 'stop_and_error', label: translate('step3.plain_exceed_stop', '停止') },
+                                            { value: 'allow_with_warning', label: translate('step3.plain_exceed_allow', '仍產出（標示未達標）') }
+                                        ]}
+                                    />
+                                </Col>
+                            </Row>
+                        </div>
+
+                        {/* ③ 進階：敏感資料 */}
+                        <div style={sectionCardStyle} data-testid="kanon-plain-advanced">
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                aria-expanded={isAdvancedOpenStatus}
+                                onClick={() => setIsAdvancedOpenStatus(!isAdvancedOpenStatus)}
+                                onKeyDown={(keyboardEvent) => { if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') { keyboardEvent.preventDefault(); setIsAdvancedOpenStatus(!isAdvancedOpenStatus); } }}
+                                style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+                            >
+                                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: '50%', background: token.colorFillSecondary, color: token.colorText, fontSize: scaleFontSize(13), flexShrink: 0 }}>3</span>
+                                <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: scaleFontSize(16), fontWeight: 700, color: token.colorText }}>
+                                    {translate('step3.plain_sec3_title', '進階：敏感資料保護')}
+                                    {helpIcon(translate('step3.plain_sec3_tip', '檢查每一群的敏感資料（例如病名）是否夠多樣，避免整群都一樣而被猜出。一般情況可不設定。'))}
+                                    {isAnyLtCheckEnabledStatus && <Tag color="green">{translate('step3.plain_enabled', '已啟用')}</Tag>}
+                                    {(removedSensitiveLtConflictMessageText || maskedSensitiveLtConflictMessageText) && <Tag color="orange">{translate('step3.plain_needs_check', '需確認')}</Tag>}
                                 </span>
-                                <Select value={calculationModeType} onChange={(dropdownSelectedModeValue) => setCalculationModeType(dropdownSelectedModeValue as 'all' | 'custom')} size="small" style={{ flex: 1 }} options={[{ value: 'all', label: translate('step3.apply_all_qi') }, { value: 'custom', label: translate('step3.custom_qi_combo') }]} />
+                                <span style={{ color: token.colorTextSecondary }}>{isAdvancedOpenStatus ? <UpOutlined /> : <DownOutlined />}</span>
                             </div>
-                            
-                            {/* 自訂威脅組合 */}
-                            {calculationModeType === 'custom' && (
-                                <div style={{ marginBottom: '16px', padding: '12px', background: isDarkModeActiveStatus ? '#141414' : '#fafafa', borderRadius: '8px', border: `1px solid ${token.colorBorder}` }}>
-                                    {quasiIdentifierCombinationsList.map(
-                                        (combinationItemArray, combinationRowIndexNumber) => 
-                                        (
-                                            <div key={combinationRowIndexNumber} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                                                <Tag color="cyan" style={{ margin: 'auto 0', height: 'fit-content' }}>{translate('step3.combo_idx', { idx: combinationRowIndexNumber + 1 })}</Tag>
+                            {/* ★ 2026-10-08 使用者要求：l／t 預設關閉；說明不開也能計算，開啟的取捨（收合時也看得到） */}
+                            <div data-testid="kanon-advanced-optional-note" style={{ marginTop: 6, marginLeft: 34, fontSize: scaleFontSize(13), color: token.colorTextSecondary }}>
+                                {translate('step3.plain_sec3_optional_note', '不開也能計算；開啟後保護更強，但可能刪除更多筆。')}
+                            </div>
 
-                                                <Select 
-                                                    mode="multiple" 
-                                                    allowClear 
-                                                    placeholder={translate('step3.select_field')} 
-                                                    style={{ flex: 1 }} 
-                                                    value={combinationItemArray} 
-                                                    onChange={(dropdownSelectedValuesArray) => updateCombination(combinationRowIndexNumber, dropdownSelectedValuesArray)} 
-                                                    options={
-                                                        quasiIdentifierColumnsArray.map(
-                                                            (quasiIdentifierColumnNameString: string) => 
-                                                            (
-                                                                { 
-                                                                    label: quasiIdentifierColumnNameString, 
-                                                                    value: quasiIdentifierColumnNameString, 
-                                                                    disabled: quasiIdentifierCombinationsList.some((comboListItemArray, comboListIndexNumber) => comboListIndexNumber !== combinationRowIndexNumber && comboListItemArray.includes(quasiIdentifierColumnNameString)) 
-                                                                }
-                                                            )
-                                                        )
-                                                    } 
-                                                />
-
-                                                <Button danger icon={<DeleteOutlined />} disabled={quasiIdentifierCombinationsList.length === 1} onClick={() => removeCombination(combinationRowIndexNumber)} />
-                                            </div>
-                                        )
+                            {isAdvancedOpenStatus && (
+                                <div style={{ marginTop: 14 }}>
+                                    {(isMissingSensitiveColumnStatus || isMultiSensitiveColumnStatus) && (
+                                        <Alert type={isMissingSensitiveColumnStatus ? 'warning' : 'info'} showIcon style={{ marginBottom: 10, textAlign: 'left' }}
+                                            title={isMissingSensitiveColumnStatus ? translate('step3.plain_no_sensitive', '尚未在 Step2 指定敏感欄位') : translate('step3.plain_multi_sensitive', '共 {{n}} 個敏感欄位，會逐一檢查', { n: sensitiveColumnsCountNumber })}
+                                            action={helpIcon(sensitiveColumnWarningMessageText)} />
+                                    )}
+                                    {removedSensitiveLtConflictMessageText && (
+                                        <Alert type="warning" showIcon style={{ marginBottom: 10, textAlign: 'left' }} title={removedSensitiveLtConflictMessageText} />
+                                    )}
+                                    {maskedSensitiveLtConflictMessageText && (
+                                        <Alert type="error" showIcon style={{ marginBottom: 10, textAlign: 'left' }} title={maskedSensitiveLtConflictMessageText} />
                                     )}
 
-                                    <Button type="dashed" block icon={<PlusOutlined />} disabled={quasiIdentifierCombinationsList.reduce((sumAccumulatorValue, combinationItemArray) => sumAccumulatorValue + combinationItemArray.length, 0) >= quasiIdentifierColumnsArray.length} onClick={addCombination}>{translate('step3.add_threat_combo')}</Button>
+                                    {/* l-多樣性 */}
+                                    <div style={{ padding: '10px 12px', borderRadius: 8, border: `1px solid ${token.colorBorderSecondary}`, marginBottom: 10 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                            <span style={{ color: token.colorText }}>
+                                                {translate('step3.plain_l_title', '敏感值種類（l）')}
+                                                {helpIcon(translate('step3.l_value_tooltip'))}
+                                            </span>
+                                            <Switch aria-label={translate('step3.enable_l_diversity', '啟用 l-多樣性檢測')} checked={isEnableLDiversityStatus} onChange={handleEnableLDiversityChange} />
+                                        </div>
+                                        {isEnableLDiversityStatus && (
+                                            <>
+                                                <Row gutter={12} align="middle" style={{ marginTop: 8 }}>
+                                                    <Col flex="auto"><Slider min={MIN_L_VALUE} max={effectiveMaxLValue} value={currentLValue} onChange={handleLValueChange} /></Col>
+                                                    <Col flex="7em"><InputNumber aria-label="l-diversity (l)" min={MIN_L_VALUE} max={effectiveMaxLValue} value={currentLValue} onChange={handleLValueChange} status={isKLessThanLStatus || isLExceedsSensitiveDistinctStatus ? 'error' : undefined} style={{ width: '100%' }} /></Col>
+                                                </Row>
+                                                <div style={{ fontSize: scaleFontSize(12), color: isLExceedsSensitiveDistinctStatus ? token.colorError : token.colorTextDescription }}>
+                                                    {translate('step3.plain_l_max', '上限 {{max}}', { max: effectiveMaxLValue })}
+                                                    {helpIcon(sensitiveColumnDistinctCountInfo
+                                                        ? translate('step3.l_max_hint_sensitive_v2', '上限 {{max}}（l 必須小於 K）。敏感欄位「{{column}}」有 {{count}} 種不同的值，l 超過 {{count}} 一定無法通過。', { max: effectiveMaxLValue, column: sensitiveColumnDistinctCountInfo.columnName, count: sensitiveColumnDistinctCountInfo.distinctCount })
+                                                        : translate('step3.l_max_hint_default_v2', '上限 {{max}}（l 必須小於 K）。尚未設定敏感欄位或尚未載入資料，無法檢查敏感欄位有幾種值。', { max: effectiveMaxLValue }))}
+                                                </div>
+                                                {isLExceedsSensitiveDistinctStatus && sensitiveColumnDistinctCountInfo && (
+                                                    <div data-testid="l-exceeds-sensitive-distinct" style={{ marginTop: 4, color: token.colorError, fontSize: scaleFontSize(12) }}><WarningOutlined style={{ marginRight: 4 }} />{translate('step3.error_l_exceeds_sensitive_distinct', '敏感欄位「{{column}}」只有 {{count}} 種不同的值，任何群組都湊不出 {{l}} 種，l 設為 {{l}} 一定無法通過。請把 l 調到 {{count}} 以下，或回 Step2 確認敏感欄位是否選對。', { l: currentLValue, column: sensitiveColumnDistinctCountInfo.columnName, count: sensitiveColumnDistinctCountInfo.distinctCount })}</div>
+                                                )}
+                                                {isKLessThanLStatus && (
+                                                    <div style={{ marginTop: 4, color: token.colorError, fontSize: scaleFontSize(12) }}><WarningOutlined style={{ marginRight: 4 }} />{kLessThanLConflictMessageText}</div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {/* t-緊密度 */}
+                                    <div style={{ padding: '10px 12px', borderRadius: 8, border: `1px solid ${token.colorBorderSecondary}` }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                            <span style={{ color: token.colorText }}>
+                                                {translate('step3.plain_t_title', '分布差距（t）')}
+                                                {helpIcon(translate('step3.t_value_tooltip'))}
+                                            </span>
+                                            <Switch aria-label={translate('step3.enable_t_closeness', '啟用 t-緊密度檢測')} checked={isEnableTClosenessStatus} onChange={handleEnableTClosenessChange} />
+                                        </div>
+                                        {isEnableTClosenessStatus && (
+                                            <>
+                                                <Row gutter={12} align="middle" style={{ marginTop: 8 }}>
+                                                    <Col flex="auto"><Slider min={MIN_T_VALUE} max={MAX_T_VALUE} step={MIN_T_VALUE} value={currentTValue} onChange={handleTValueChange} /></Col>
+                                                    <Col flex="7em"><InputNumber aria-label="t-closeness (t)" min={MIN_T_VALUE} max={MAX_T_VALUE} step={MIN_T_VALUE} value={currentTValue} onChange={handleTValueChange} status={isTValueInvalidStatus ? 'error' : undefined} style={{ width: '100%' }} /></Col>
+                                                </Row>
+                                                {isTValueInvalidStatus && (
+                                                    <div style={{ color: token.colorError, fontSize: scaleFontSize(12) }}><WarningOutlined style={{ marginRight: 4 }} />{tValueInlineErrorMessageText}</div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {/* 計算範圍（暫時隱藏，見檔案上方 SHOW_QI_COMBINATION_SCOPE 說明） */}
+                                    {SHOW_QI_COMBINATION_SCOPE && (
+                                        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>{translate('step3.calc_scope')}{helpIcon(translate('step3.calc_scope_tooltip'))}</span>
+                                            <Select value={calculationModeType} onChange={(dropdownSelectedModeValue) => setCalculationModeType(dropdownSelectedModeValue as 'all' | 'custom')} size="small" options={[{ value: 'all', label: translate('step3.apply_all_qi') }, { value: 'custom', label: translate('step3.custom_qi_combo') }]} />
+                                            {calculationModeType === 'custom' && quasiIdentifierCombinationsList.map((combinationItemArray, combinationRowIndexNumber) => (
+                                                <div key={combinationRowIndexNumber} style={{ display: 'flex', gap: 8 }}>
+                                                    <Select mode="multiple" allowClear placeholder={translate('step3.select_field')} style={{ flex: 1 }} value={combinationItemArray}
+                                                        onChange={(dropdownSelectedValuesArray) => updateCombination(combinationRowIndexNumber, dropdownSelectedValuesArray)}
+                                                        options={quasiIdentifierColumnsArray.map((columnName: string) => ({ label: columnName, value: columnName }))} />
+                                                    <Button danger icon={<DeleteOutlined />} disabled={quasiIdentifierCombinationsList.length === 1} onClick={() => removeCombination(combinationRowIndexNumber)} />
+                                                </div>
+                                            ))}
+                                            {calculationModeType === 'custom' && <Button type="dashed" icon={<PlusOutlined />} onClick={addCombination}>{translate('step3.add_threat_combo')}</Button>}
+                                        </div>
+                                    )}
                                 </div>
                             )}
-                            
-                            </>)}
-                            {(isMissingSensitiveColumnStatus || isMultiSensitiveColumnStatus) && (
-                                // ★ 使用者反映（2026-09-22）：多個敏感欄位不再是「設定錯誤」（見上方說明），
-                                //   改用 info 樣式呈現「會怎麼評估」；0 個敏感欄位則仍是值得留意的情況
-                                //   （l/t 判定未執行、風險評估被略過），維持 warning 樣式。
-                                <Alert
-                                    type={isMissingSensitiveColumnStatus ? 'warning' : 'info'}
-                                    showIcon
-                                    style={{ marginBottom: '12px', textAlign: 'left' }}
-                                    message={sensitiveColumnWarningMessageText}
-                                />
-                            )}
-
-                            {removedSensitiveLtConflictMessageText && (
-                                <Alert type="warning" showIcon style={{ marginBottom: '12px', textAlign: 'left' }} message={removedSensitiveLtConflictMessageText} />
-                            )}
-                            {maskedSensitiveLtConflictMessageText && (
-                                <Alert type="error" showIcon style={{ marginBottom: '12px', textAlign: 'left' }} message={maskedSensitiveLtConflictMessageText} />
-                            )}
-
-                            {/* l-diversity 滑桿 */}
-                            {/* ★ 使用者反映：純 K-匿名模式不一定需要 l-多樣性檢測，加開關讓使用者自行決定是否啟用；
-                                關閉時滑桿灰階、Step4 組裝設定檔也不會送出 l 欄位（後端因此不會執行該項檢測）。 */}
-                            <Row gutter={16} align="middle" style={{ marginBottom: '8px' }}>
-                                <Col span={8}>
-                                    <span style={{ color: token.colorText }}>{translate('step3.enable_l_diversity', '啟用 l-多樣性檢測')}：</span>
-                                    <Tooltip title={translate('step3.enable_l_diversity_tooltip', '需先在 Step2 將一個欄位標記為「敏感欄位」，才能正確判定 l-多樣性是否通過；未啟用時不會將 l 值送給後端，後端也不會執行此項檢測。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
-                                </Col>
-                                <Col span={16}><Switch checked={isEnableLDiversityStatus} onChange={handleEnableLDiversityChange} /></Col>
-                            </Row>
-                            <Row gutter={16} align="middle" style={{ marginBottom: isKLessThanLStatus ? '2px' : '16px', opacity: isEnableLDiversityStatus ? 1 : 0.45 }}>
-                                <Col span={8}>
-                                    <span style={{ color: isKLessThanLStatus ? token.colorError : token.colorText }}>l-diversity (l)：</span>
-                                    <Tooltip title={translate('step3.l_value_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
-                                </Col>
-                                <Col span={10}><Slider disabled={!isEnableLDiversityStatus} min={MIN_L_VALUE} max={effectiveMaxLValue} value={currentLValue} onChange={handleLValueChange} /></Col>
-                                <Col span={6}><InputNumber disabled={!isEnableLDiversityStatus} min={MIN_L_VALUE} max={effectiveMaxLValue} value={currentLValue} onChange={handleLValueChange} status={isKLessThanLStatus || isLExceedsSensitiveDistinctStatus ? 'error' : undefined} style={{ width: '100%' }} /></Col>
-                            </Row>
-                            {isEnableLDiversityStatus && (
-                                <div style={{ marginBottom: '10px', marginTop: '-4px', fontSize: scaleFontSize(12), color: isLExceedsSensitiveDistinctStatus ? token.colorError : token.colorTextDescription }}>
-                                    {sensitiveColumnDistinctCountInfo
-                                        ? translate('step3.l_max_hint_sensitive', '可設上限 {{max}}（敏感欄位「{{column}}」有 {{count}} 種不同的值，且 L 不可大於 K）', { max: effectiveMaxLValue, column: sensitiveColumnDistinctCountInfo.columnName, count: sensitiveColumnDistinctCountInfo.distinctCount })
-                                        : translate('step3.l_max_hint_default', '尚未設定敏感欄位或尚未載入資料，暫以 {{max}} 為上限；設定敏感欄位後會依其實際相異值數調整。', { max: effectiveMaxLValue })}
-                                </div>
-                            )}
-                            {isKLessThanLStatus && (
-                                <div style={{ marginBottom: '14px', marginTop: '-2px' }}>
-                                    <span style={{ color: token.colorError, fontSize: scaleFontSize(12) }}><WarningOutlined style={{ marginRight: 4 }} />{kLessThanLConflictMessageText}</span>
-                                </div>
-                            )}
-
-                            <Divider dashed style={{ margin: '8px 0' }} />
-
-                            {/* t-closeness 滑桿 */}
-                            {/* ★ 同 l-多樣性：純 K-匿名模式不一定需要 t-緊密度檢測，加開關讓使用者自行決定是否啟用 */}
-                            <Row gutter={16} align="middle" style={{ marginBottom: '8px' }}>
-                                <Col span={8}>
-                                    <span style={{ color: token.colorText }}>{translate('step3.enable_t_closeness', '啟用 t-緊密度檢測')}：</span>
-                                    <Tooltip title={translate('step3.enable_t_closeness_tooltip', '需先在 Step2 將一個欄位標記為「敏感欄位」，才能正確判定 t-緊密度是否通過；未啟用時不會將 t 值送給後端，後端也不會執行此項檢測。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
-                                </Col>
-                                <Col span={16}><Switch checked={isEnableTClosenessStatus} onChange={handleEnableTClosenessChange} /></Col>
-                            </Row>
-                            <Row gutter={16} align="middle" style={{ marginBottom: isTValueInvalidStatus ? '2px' : '8px', opacity: isEnableTClosenessStatus ? 1 : 0.45 }}>
-                                <Col span={8}>
-                                    <span style={{ color: isTValueInvalidStatus ? token.colorError : token.colorText }}>t-closeness (t)：</span>
-                                    <Tooltip title={translate('step3.t_value_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
-                                </Col>
-                                <Col span={10}><Slider disabled={!isEnableTClosenessStatus} min={MIN_T_VALUE} max={MAX_T_VALUE} step={MIN_T_VALUE} value={currentTValue} onChange={handleTValueChange} /></Col>
-                                <Col span={6}><InputNumber disabled={!isEnableTClosenessStatus} min={MIN_T_VALUE} max={MAX_T_VALUE} step={MIN_T_VALUE} value={currentTValue} onChange={handleTValueChange} status={isTValueInvalidStatus ? 'error' : undefined} style={{ width: '100%' }} /></Col>
-                            </Row>
-                            {isTValueInvalidStatus && (
-                                <div style={{ marginBottom: '6px' }}>
-                                    <span style={{ color: token.colorError, fontSize: scaleFontSize(12) }}><WarningOutlined style={{ marginRight: 4 }} />{tValueInlineErrorMessageText}</span>
-                                </div>
-                            )}
-
-                            <Divider dashed style={{ margin: '16px 0' }} />
-
-                            {/* 抑制率策略 */}
-                            <div style={{ padding: '16px', background: isDarkModeActiveStatus ? '#141414' : '#fafafa', borderRadius: '8px', border: `1px solid ${token.colorBorder}` }}>
-                                <div style={{ fontWeight: 600, marginBottom: '16px', color: token.colorText }}><WarningOutlined style={{ color: token.colorWarning, marginRight: '6px' }} /> {translate('step3.suppression_strategy')}</div>
-                                
-                                <Row align="middle" style={{ marginBottom: '16px' }}>
-                                    <Col span={7}>
-                                        <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.suppress_method')}</span>
-                                        <Tooltip title={translate('step3.suppress_method_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
-                                    </Col>
-                                    <Col span={17}><Select value={currentSuppressionMethodTypeStr} onChange={handleSuppressionMethodChange} size="small" style={{ width: '100%' }} options={[{ value: 'row_suppression', label: translate('step3.row_suppression') }, { value: 'cell_suppression', label: translate('step3.cell_suppression') }]} /></Col>
-                                </Row>
-
-                                {/* ★ 使用者反映（2026-09-23）：後端 cell_fill 參數僅在抑制方式為「值抑制」
-                                    (cell_suppression) 時才有作用，先前完全沒有 UI 可選、前端也從未送出，
-                                    後端只能默默套用內建預設 (star)。這裡加一個下拉選單，只在選了「值抑制」
-                                    時才顯示，避免在「列抑制」模式下讓使用者誤以為這個設定隨時都有效。 */}
-                                {(currentSuppressionMethodTypeStr === 'cell' || currentSuppressionMethodTypeStr === 'cell_suppression') && (
-                                    <Row align="middle" style={{ marginBottom: '16px' }}>
-                                        <Col span={7}>
-                                            <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.cell_fill_method')}</span>
-                                            <Tooltip title={translate('step3.cell_fill_method_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
-                                        </Col>
-                                        <Col span={17}><Select value={currentCellFillMethodTypeStr} onChange={handleCellFillMethodChange} size="small" style={{ width: '100%' }} options={[{ value: 'star', label: translate('step3.cell_fill_star') }, { value: 'missing', label: translate('step3.cell_fill_missing') }]} /></Col>
-                                    </Row>
-                                )}
-
-                                {/* ★ 2026-10-01：值抑制只會置換「間接識別碼」欄位，可逐欄指定填入值（例如地區填「臺灣」），
-                                    對應後端 columns.<欄>.cell_fill_value；留空即沿用上面的填法。 */}
-                                {(currentSuppressionMethodTypeStr === 'cell' || currentSuppressionMethodTypeStr === 'cell_suppression') && filteredQuasiIdentifierColumnsList.length > 0 && (
-                                    <Row align="top" style={{ marginBottom: '16px' }} data-testid="cell-fill-values-by-column">
-                                        <Col span={7}>
-                                            <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.cell_fill_value_by_column', '逐欄填值（選填）')}</span>
-                                            <Tooltip title={translate('step3.cell_fill_value_by_column_tooltip', '值抑制時，可以替個別「間接識別碼」欄位指定要填入的文字，例如地區填「臺灣」、職業填「其他」，讓輸出資料比「*」或空白更容易閱讀。留空的欄位沿用上面選的填法。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
-                                        </Col>
-                                        <Col span={17}>
-                                            <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                                                {filteredQuasiIdentifierColumnsList.map((columnNameString: string) => (
-                                                    <Space.Compact key={columnNameString} size="small" style={{ width: '100%' }}>
-                                                        <span style={{ width: '40%', display: 'inline-flex', alignItems: 'center', padding: '0 8px', fontSize: scaleFontSize(12), color: token.colorText, border: `1px solid ${token.colorBorder}`, borderRight: 'none', borderRadius: '4px 0 0 4px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} title={columnNameString}>{columnNameString}</span>
-                                                        <Input
-                                                            size="small"
-                                                            allowClear
-                                                            aria-label={`${columnNameString} cell_fill_value`}
-                                                            value={cellFillValuesByColumnMap?.[columnNameString] ?? ''}
-                                                            placeholder={currentCellFillMethodTypeStr === 'missing' ? translate('step3.cell_fill_value_ph_missing', '未填：空值') : translate('step3.cell_fill_value_ph_star', '未填：*')}
-                                                            onChange={(inputChangeEvent) => handleCellFillValueChange(columnNameString, inputChangeEvent.target.value)}
-                                                            style={{ width: '60%' }}
-                                                        />
-                                                    </Space.Compact>
-                                                ))}
-                                            </Space>
-                                        </Col>
-                                    </Row>
-                                )}
-
-                                {/* ★ 核心修正：使用 Space.Compact 替代 addonAfter，消滅 Ant Design 棄用警告 */}
-                                <Row align="middle" style={{ marginBottom: '4px' }}>
-                                    <Col span={7}>
-                                        <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.suppress_limit')}</span>
-                                        <Tooltip title={translate('step3.suppress_limit_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
-                                    </Col>
-                                    <Col span={11}><Slider min={MIN_SUPPRESSION_PERCENT} max={MAX_SUPPRESSION_PERCENT} value={maxSuppressionPercentageValue} onChange={handleMaxSuppressionChange} style={{ margin: '0 8px 0 0' }} /></Col>
-                                    <Col span={6}>
-                                        <Space.Compact style={{ width: '100%' }}>
-                                            <InputNumber 
-                                                min={MIN_SUPPRESSION_PERCENT} 
-                                                max={MAX_SUPPRESSION_PERCENT} 
-                                                value={maxSuppressionPercentageValue} 
-                                                onChange={handleMaxSuppressionChange} 
-                                                precision={2}
-                                                step={0.01}
-                                                style={{ width: '100%' }} 
-                                                size="small" 
-                                            />
-                                            <span className="ant-input-group-addon" style={{ fontSize: scaleFontSize(12), padding: '0 6px', display: 'flex', alignItems: 'center' }}>%</span>
-                                        </Space.Compact>
-                                    </Col>
-                                </Row>
-
-                                <Row align="middle">
-                                    <Col span={7}>
-                                        <span style={{ color: token.colorTextSecondary, fontSize: scaleFontSize(13) }}>{translate('step3.exceed_behavior')}</span>
-                                        <Tooltip title={translate('step3.exceed_behavior_tooltip')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} /></Tooltip>
-                                    </Col>
-                                    <Col span={17}>
-                                        <Select
-                                            value={currentLimitExceededActionTypeStr}
-                                            onChange={handleLimitExceededActionChange}
-                                            size="small"
-                                            style={{ width: '100%' }}
-                                            options={
-                                                [
-                                                    { value: 'stop_and_error', label: translate('step3.stop_and_error') },
-                                                    // ★ 修正：「自動放寬 K 值」(relax_k) 選項已移除。已通讀後端
-                                                    //   KAnonymityAnonymizer 從建構到 run() 的完整流程，self.k
-                                                    //   全程是使用者設定的固定值，後端從未實作過「抑制率超標時
-                                                    //   自動降低 K 值」這個能力——不是欄位值打錯，而是後端根本
-                                                    //   沒有這個功能可對應，不管前端傳什麼字串都無法讓後端做到。
-                                                    //   若之後要提供這個功能，需另外向後端提出功能需求。
-                                                    // ★ 修正：此選項原本送出的值是 'force_suppress'，但已核對後端
-                                                    //   pipeline.py 原始碼確認 limit_exceeded_action 欄位只接受
-                                                    //   'stop_and_error' 或 'allow_with_warning' 兩種值 (由
-                                                    //   validate_choice_param 嚴格驗證，其餘值一律 400)。
-                                                    //   「強制抑制(降效用)：不管效用損失、持續抑制至符合門檻」這個
-                                                    //   說明語意，實際對應到的正是後端 allow_with_warning 的行為
-                                                    //   (超過抑制上限時不中止，讓流程照跑完、僅將 is_valid 標示為
-                                                    //   false)，只是先前送出的字串值打錯，才會一選就 400。
-                                                    //   標籤文字維持不變，僅修正實際送出的值。
-                                                    { value: 'allow_with_warning', label: translate('step3.force_suppress') }
-                                                ]
-                                            }
-                                        />
-                                    </Col>
-                                </Row>
-                            </div>
-                        </Card>
+                        </div>
                     </div>
                 </Col>
 
-                {/* 右側帕累托模擬圖表區塊 */}
-                <Col span={16}>
-                    <Card title={translate('step3.solution_space')} variant="borderless" style={{ background: token.colorBgContainer, boxShadow: isDarkModeActiveStatus ? 'none' : '0 2px 8px rgba(0,0,0,0.04)', height: '100%' }}>
-                        <ReactECharts option={getKAnonymityChartOption()} style={{ height: '420px', width: '100%' }} theme={isDarkModeActiveStatus ? 'dark' : 'light'} />
-                    </Card>
+                {/* 右側：原 Step3 隱私與效用空間示意圖＋三個重點數字 */}
+                <Col xs={24} xl={13}>
+                    <div style={{ ...sectionCardStyle, boxSizing: 'border-box', height: '100%', display: 'flex', flexDirection: 'column' }} data-testid="kanon-plain-summary">
+                        <div style={{ fontSize: scaleFontSize(16), fontWeight: 700, color: token.colorText }}>
+                            {translate('step3.solution_space')}
+                            {helpIcon(translate('step3.plain_chart_tip', '示意圖：越往上越安全、越往右資料越完整，兩者無法兼得。橘點為目前設定，僅供參考，實際結果以下一步運算為準。'))}
+                        </div>
+                        <ReactECharts option={getKAnonymityChartOption()} style={{ height: '380px', width: '100%' }} theme={isDarkModeActiveStatus ? 'dark' : 'light'} />
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                            {summaryStatsList.map((statItem) => (
+                                <div key={statItem.key} data-testid={`kanon-plain-sum-${statItem.key}`} style={{ flex: '1 1 0', minWidth: '8em', padding: '10px 12px', borderRadius: 8, background: token.colorFillQuaternary, border: `1px solid ${token.colorBorderSecondary}` }}>
+                                    <div style={{ fontSize: scaleFontSize(12), color: token.colorTextSecondary }}>
+                                        {statItem.label}
+                                        {statItem.tooltip ? helpIcon(statItem.tooltip) : null}
+                                    </div>
+                                    <div data-testid={statItem.key === 'level' ? 'kanon-plain-level' : undefined} style={{ fontSize: scaleFontSize(20), fontWeight: 700, color: statItem.color || token.colorText, lineHeight: 1.3 }}>{statItem.value}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </Col>
             </Row>
         </div>

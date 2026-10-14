@@ -602,6 +602,10 @@ export default function App(): React.ReactElement {
                 token: {
                     colorPrimary: '#3f51b5',
                     fontSize: FONT_SIZE_LEVEL_PX_MAP[currentFontSizeLevelValue],
+                    // ★ 2026-10-08：按鈕／輸入框／下拉的高度跟著字體等比例放大（以「中」字級對應 AntD 預設 32px 高為基準）。
+                    //   原本高度固定，字體調大後文字會超出按鈕（例如 Step3 DP「改為『秒』」小按鈕）。
+                    //   small／large 高度由 AntD 依此自動推算（×0.75／×1.25）。
+                    controlHeight: Math.round(32 * FONT_SIZE_LEVEL_PX_MAP[currentFontSizeLevelValue] / FONT_SIZE_LEVEL_PX_MAP.medium),
                     borderRadius: 12,
                     boxShadow: isDarkModeActiveStatus 
                         ? '0px 3px 5px -1px rgba(0,0,0,0.2), 0px 6px 10px 0px rgba(0,0,0,0.14), 0px 1px 18px 0px rgba(0,0,0,0.12)'

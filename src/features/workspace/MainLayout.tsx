@@ -120,7 +120,7 @@ export default function MainLayout(): React.ReactElement
         const noiseUnitConfirmDialog = globalModalApi.confirm({
             title: translate('workspace.dp_noise_unit_confirm_title', '日期欄位的雜訊單位比上下限粗'),
             // ★ 2026-10-02：三顆按鈕在 520px 內放不下而凸出視窗外，改加寬並允許換行、主要按鈕靠右
-            width: 600,
+            width: '43em',
             closable: true,
             content: (
                 <div data-testid="dp-noise-unit-confirm">
@@ -176,7 +176,7 @@ export default function MainLayout(): React.ReactElement
 
         const sensitiveFieldConfirmDialog = globalModalApi.confirm({
             title: translate('workspace.dp_sensitive_confirm_title', '尚未點選敏感欄位'),
-            width: 520,
+            width: '37em',
             closable: true,
             content: (
                 <div data-testid="dp-sensitive-confirm">

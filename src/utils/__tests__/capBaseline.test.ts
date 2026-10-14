@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeCapShuffleBaselineFromCsvText, computeCapExcessRisk } from '../capBaseline';
+import { computeCapShuffleBaselineFromCsvText, computeCapExcessRisk, isCapExcessNotApplicable } from '../capBaseline';
 
 describe('computeCapShuffleBaselineFromCsvText', () => {
     // 地區 A：否否是；地區 B：否是；地區 C：（缺值）
@@ -36,9 +36,15 @@ describe('computeCapExcessRisk', () => {
         expect(computeCapExcessRisk(0.4, 0.45)).toBe(0);
         expect(computeCapExcessRisk(1, 0.45)).toBe(1);
     });
-    it('CAP 未評估或無基線回傳 null；基線 100% 回傳 0', () => {
+    it('CAP 未評估或無基線回傳 null', () => {
         expect(computeCapExcessRisk(-1, 0.4)).toBeNull();
         expect(computeCapExcessRisk(0.5, null)).toBeNull();
-        expect(computeCapExcessRisk(1, 1)).toBe(0);
+    });
+    it('間接識別欄位幾乎每筆都不同（基線 ≥ 95%）時不適用，避免 CAP 1.0 vs 基線 0.9999 被放大成 100%', () => {
+        expect(computeCapExcessRisk(1, 0.9999)).toBeNull();
+        expect(computeCapExcessRisk(1, 1)).toBeNull();
+        expect(isCapExcessNotApplicable(0.96)).toBe(true);
+        expect(isCapExcessNotApplicable(0.9)).toBe(false);
+        expect(computeCapExcessRisk(0.95, 0.9)).toBeCloseTo(0.5);
     });
 });

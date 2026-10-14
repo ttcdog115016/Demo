@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 
@@ -17,6 +17,7 @@ import Step2_Mapping from '../../features/step2_mapping/Step2_Mapping';
 // ★ 2026-09-30：舊版測試 mock 的是已移除的 usePrivacyStore，但元件實際讀的是 useWorkspaceStore，
 //   mock 根本沒有作用。改為直接對真正的 useWorkspaceStore 寫入測試用狀態。
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import { App } from 'antd';
 
 vi.mock('../../features/step2_mapping/KAnonymityMapping', () => ({ default: () => <div data-testid="k-anon-mapping" /> }));
@@ -72,5 +73,28 @@ describe('Step2_Mapping Component', () => {
     setupStore('k-anonymity');
     render(<App><Step2_Mapping /></App>);
     expect(screen.getByTestId('k-anon-mapping')).toBeInTheDocument();
+  });
+
+  // ★ 2026-10-07 QA 回饋：多步驟清洗不易察覺、預覽看不到缺值處理
+  it('每個步驟有順序編號，且有「新增步驟」按鈕，點擊後多一個步驟', () => {
+    setupStore();
+    useAuthStore.setState({ isAuthenticated: true, user: { role: 'data_owner' } } as unknown as Partial<ReturnType<typeof useAuthStore.getState>>);
+    render(<App><Step2_Mapping /></App>);
+    expect(screen.getAllByTestId('preprocess-step-number')).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('preprocess-add-step-phone_number'));
+    expect(screen.getAllByTestId('preprocess-step-number').map((element) => element.textContent)).toEqual(['1', '2']);
+  });
+
+  it('預覽：範例值取第一個非空值；另列空值的處理結果與筆數', () => {
+    useWorkspaceStore.setState({
+      privacyMode: 'differential-privacy', columns: ['age'], preprocessingRules: {}, datasetProfile: null, dataFile: null,
+      previewData: [{ age: '' }, { age: '35' }, { age: null }],
+      missingValueRules: { age: { strategy: 'constant', constantValue: '未知' } },
+    } as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+    render(<App><Step2_Mapping /></App>);
+    expect(screen.getByTestId('preprocess-preview-sample-age').textContent).toContain('35');
+    const missingPreviewText = screen.getByTestId('preprocess-preview-missing-age').textContent;
+    expect(missingPreviewText).toContain('未知');
+    expect(missingPreviewText).toContain('預覽中');
   });
 });

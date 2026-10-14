@@ -7,13 +7,16 @@
  * ============================================================================
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, Table, Input, InputNumber, Button, Typography, theme, Space, Alert, Tooltip } from 'antd';
-import { ToolOutlined, SafetyOutlined, ArrowRightOutlined, LockOutlined, PlusCircleOutlined, MinusCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { ToolOutlined, SafetyOutlined, ArrowRightOutlined, LockOutlined, PlusOutlined, MinusCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type PreprocessingRule, type MissingValueRule } from '../../store/useWorkspaceStore';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
+import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
+import { pickPreviewSampleValue, countMissingInPreviewRows } from '../../utils/preprocessPreviewSample';
+import { scrollTableRowIntoView } from '../../utils/tableRowScroll';
 import { useAuthStore } from '../../store/useAuthStore';
 
 import KAnonymityMapping from './KAnonymityMapping';
@@ -46,7 +49,7 @@ const DEFAULT_ANCHOR_KEEP_COUNT = 0;
 const COMPACT_TABLE_MAX_ROW_COUNT = 5;
 const DROPDOWN_UPWARD_TAIL_ROW_COUNT = 5;
 const DROPDOWN_UPWARD_MIN_ROWS_ABOVE = 3;
-const PREPROCESS_TABLE_SCROLL_HEIGHT_PX = 250;
+const PREPROCESS_TABLE_SCROLL_HEIGHT_PX = 520; // ★ 2026-10-08 使用者反映表格偏矮（多步驟時要一直捲動），由 250 調高為 520
 
 /**
  * 函數名稱: resolveDropdownPopupModeForRow
@@ -73,7 +76,9 @@ interface MappingRecord
     name: string;                    // 欄位名稱
     steps: PreprocessingRule[];      // 該欄位依序執行之預處理策略清單 (至少 1 筆，由上而下依序套用)
     missingValueRule: MissingValueRule; // 該欄位之缺失值處理規則 (與 steps 互斥並存)
-    sampleValue: string;             // 預覽樣本數據數值
+    sampleValue: string;             // 預覽樣本數據數值（★ 2026-10-07：改取該欄第一個非空值，不再固定取第一筆）
+    missingCount: number;            // 該欄空值筆數（有完整資料統計時為全量，否則為預覽樣本內的筆數）
+    isMissingCountFromFullData: boolean; // missingCount 是否為全量資料統計
     dropdownPopupMode: DropdownPopupMode; // 該列下拉選單展開方式 (見 resolveDropdownPopupModeForRow)
 }
 
@@ -125,6 +130,11 @@ export default function Step2_Mapping(): React.ReactElement
     const previewDataRowsList = useWorkspaceStore(
         (state) => state.previewData
     );
+
+    // ★ 2026-10-07 QA 回饋：預覽只看第一筆，若前幾筆沒有缺值就看不到缺值處理的效果。
+    //   改讀完整資料的欄位統計（utils/datasetProfile.ts）取得各欄空值筆數，預覽另列一行「空值 → 處理結果」。
+    useEnsureDatasetProfile();
+    const datasetProfileSnapshot = useWorkspaceStore((state) => state.datasetProfile);
 
     const preprocessingRulesMap = useWorkspaceStore(
         (state) => state.preprocessingRules
@@ -366,6 +376,19 @@ export default function Step2_Mapping(): React.ReactElement
     );
 
     /**
+     * ★ 2026-10-08 諮詢會（張瑞益教授）：表格捲到最底端的欄位時，選了清洗動作／缺失值策略或按「新增步驟」後，
+     *   新長出的參數欄位落在表格捲動區下方看不到，要再自己往下捲。改為設定變更後，等畫面更新完成再把該列
+     *   捲進可視範圍（已看得到時不會移動）。用遞增序號觸發，連續操作同一列也會每次都捲。
+     */
+    const pendingScrollRowKeyRef = useRef<string | null>(null);
+    const [scrollRowRequestSeq, setScrollRowRequestSeq] = useState<number>(0);
+    const requestScrollRowIntoView = (targetColumnNameStr: string): void =>
+    {
+        pendingScrollRowKeyRef.current = targetColumnNameStr;
+        setScrollRowRequestSeq((previousSeqNumber) => previousSeqNumber + 1);
+    };
+
+    /**
      * 函數名稱: handleStepActionChange
      * 函數功能: 變更指定欄位、指定步驟之預處理動作，並將該動作之所有參數重設為預設值。
      */
@@ -392,6 +415,7 @@ export default function Step2_Mapping(): React.ReactElement
         );
 
         setPreprocessingRulesAction({ ...preprocessingRulesMap, [targetColumnNameStr]: updatedStepsArray });
+        requestScrollRowIntoView(targetColumnNameStr); // 新動作可能帶出參數欄位
     };
 
     /**
@@ -433,6 +457,7 @@ export default function Step2_Mapping(): React.ReactElement
             ...preprocessingRulesMap,
             [targetColumnNameStr]: [...currentStepsForColumnArray, { action: 'none', params: {} }]
         });
+        requestScrollRowIntoView(targetColumnNameStr); // 新步驟加在該列最下方
     };
 
     /**
@@ -474,6 +499,7 @@ export default function Step2_Mapping(): React.ReactElement
         if (newStrategyTypedValue === 'fill') nextMissingValueRule.fillMethod = 'mean';
 
         setMissingValueRulesAction({ ...missingValueRulesMap, [targetColumnNameStr]: nextMissingValueRule });
+        requestScrollRowIntoView(targetColumnNameStr); // 常數／策略填充會帶出下方輸入欄位
     };
 
     /**
@@ -503,6 +529,20 @@ export default function Step2_Mapping(): React.ReactElement
         }
     }, [isCompactPreprocessTableStatus, datasetColumnsList.length]);
 
+    // ★ 2026-10-08：設定變更後把該列捲進可視範圍（見 requestScrollRowIntoView 說明）。
+    //   等下一個畫格再捲，確保新長出的參數欄位已排版完成、列高已更新。
+    useEffect(() =>
+    {
+        const targetRowKeyStr = pendingScrollRowKeyRef.current;
+        if (!targetRowKeyStr) return;
+        const animationFrameId = requestAnimationFrame(() =>
+        {
+            scrollTableRowIntoView(preprocessTableWrapperRef.current, targetRowKeyStr);
+            pendingScrollRowKeyRef.current = null;
+        });
+        return () => cancelAnimationFrame(animationFrameId);
+    }, [scrollRowRequestSeq]);
+
     // 轉換 Ant Design Table 呈現用之數據清單 (符合規範 g)
     const mappingTableDataList: MappingRecord[] = datasetColumnsList.map(
         (columnNameString, columnIndexNumber) =>
@@ -513,7 +553,11 @@ export default function Step2_Mapping(): React.ReactElement
                 name: columnNameString,
                 steps: getFieldPreprocessSteps(columnNameString),
                 missingValueRule: getFieldMissingValueRule(columnNameString),
-                sampleValue: previewDataRowsList.length > 0 ? String(previewDataRowsList[0][columnNameString] || DEFAULT_PREVIEW_SYMBOL) : DEFAULT_PREVIEW_SYMBOL
+                sampleValue: pickPreviewSampleValue(previewDataRowsList, columnNameString) ?? DEFAULT_PREVIEW_SYMBOL,
+                missingCount: datasetProfileSnapshot?.columns?.[columnNameString]
+                    ? Math.max(0, datasetProfileSnapshot.rowCount - datasetProfileSnapshot.columns[columnNameString].nonEmptyCount)
+                    : countMissingInPreviewRows(previewDataRowsList, columnNameString),
+                isMissingCountFromFullData: Boolean(datasetProfileSnapshot?.columns?.[columnNameString])
             }
         )
     );
@@ -661,7 +705,16 @@ export default function Step2_Mapping(): React.ReactElement
             )
         },
         {
-            title: translate('step2.clean_strategy', 'Cleansing Strategy'),
+            // ★ 2026-10-07 QA 回饋：使用者不知道同一欄位可以設定多個處理步驟（原本只有最後一步旁的小 + 圖示）。
+            //   改為每個步驟前加上順序編號，並在步驟清單下方放一顆有文字的「新增步驟」按鈕。
+            title: (
+                <span>
+                    {translate('step2.clean_strategy_multi', '清洗步驟（可多個）')}
+                    <Tooltip title={translate('step2.clean_strategy_multi_tip', '同一欄位可依序加入多個處理步驟，由上而下執行。例如：先「去除空白」，再「截斷」。')}>
+                        <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} />
+                    </Tooltip>
+                </span>
+            ),
             dataIndex: 'steps',
             width: '22%',
             render: (_: unknown, rowRecordItem: MappingRecord) => (
@@ -673,13 +726,13 @@ export default function Step2_Mapping(): React.ReactElement
                             //   選擇「不處理」且無法變更；欄位策略鏈中只要含有雜湊步驟 (不論位置)，即不允許
                             //   再新增後續步驟。
                             const isStepLockedByPriorHashStatus = rowRecordItem.steps.slice(0, stepIndexNumber).some((priorStepItemRecord) => priorStepItemRecord.action === 'hash');
-                            const hasHashStepInChainStatus = rowRecordItem.steps.some((stepItemRecordForCheck) => stepItemRecordForCheck.action === 'hash');
                             // ★ 修正：與「參數設定」欄採用同一份可見參數欄位清單計算列高下限，確保同一步驟
                             //   在兩欄位中對齊於同一條水平線 (詳見 computeStepRowMinHeightPx 說明)。
                             const stepRowMinHeightPx = computeStepRowMinHeightPx(getVisibleParamFieldListForStep(stepItemRecord).length);
 
                             return (
                                 <div key={stepIndexNumber} style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: stepRowMinHeightPx }}>
+                                    <span data-testid="preprocess-step-number" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: '50%', flexShrink: 0, fontSize: scaleFontSize(11), fontWeight: 600, color: token.colorTextSecondary, background: token.colorFillSecondary }}>{stepIndexNumber + 1}</span>
                                     <Tooltip title={isStepLockedByPriorHashStatus ? translate('step2.strategy_locked_by_hash', '此步驟前方已套用「雜湊」，雜湊為不可逆之最終處理，其後不可再串接其他策略。') : ''}>
                                         <AdaptivePopupSelect
                                             value={stepItemRecord.action}
@@ -695,12 +748,6 @@ export default function Step2_Mapping(): React.ReactElement
                                         />
                                     </Tooltip>
 
-                                    {isUserAllowedToEditRulesStatus && stepIndexNumber === rowRecordItem.steps.length - 1 && (
-                                        <Tooltip title={hasHashStepInChainStatus ? translate('step2.add_strategy_step_disabled_hash', '「雜湊」為不可逆之最終處理，其後不可再新增策略。') : translate('step2.add_strategy_step', '新增策略 (依序執行)')}>
-                                            <Button type="text" size="small" icon={<PlusCircleOutlined />} onClick={() => handleAddPreprocessStep(rowRecordItem.name)} disabled={hasHashStepInChainStatus} />
-                                        </Tooltip>
-                                    )}
-
                                     {isUserAllowedToEditRulesStatus && rowRecordItem.steps.length > 1 && (
                                         <Tooltip title={translate('step2.remove_strategy_step', '移除此策略')}>
                                             <Button type="text" size="small" danger icon={<MinusCircleOutlined />} onClick={() => handleRemovePreprocessStep(rowRecordItem.name, stepIndexNumber)} />
@@ -710,6 +757,24 @@ export default function Step2_Mapping(): React.ReactElement
                             );
                         }
                     )}
+                    {isUserAllowedToEditRulesStatus && (() => {
+                        const hasHashStepInChainStatus = rowRecordItem.steps.some((stepItemRecordForCheck) => stepItemRecordForCheck.action === 'hash');
+                        return (
+                            <Tooltip title={hasHashStepInChainStatus ? translate('step2.add_strategy_step_disabled_hash', '「雜湊」為不可逆之最終處理，其後不可再新增策略。') : ''}>
+                                <Button
+                                    type="dashed"
+                                    size="small"
+                                    icon={<PlusOutlined />}
+                                    data-testid={`preprocess-add-step-${rowRecordItem.name}`}
+                                    onClick={() => handleAddPreprocessStep(rowRecordItem.name)}
+                                    disabled={hasHashStepInChainStatus}
+                                    style={{ alignSelf: 'flex-start', marginLeft: 22 }}
+                                >
+                                    {translate('step2.add_strategy_step_btn', '新增步驟')}
+                                </Button>
+                            </Tooltip>
+                        );
+                    })()}
                 </div>
             )
         },
@@ -739,7 +804,7 @@ export default function Step2_Mapping(): React.ReactElement
                                 <div key={stepIndexNumber} style={{ display: 'flex', flexDirection: 'column', gap: PARAM_FIELD_VERTICAL_GAP_PX, minHeight: stepRowMinHeightPx, justifyContent: 'center' }}>
                                     {visibleParamFieldList.map(
                                         (paramFieldDefItem) => (
-                                            <div key={paramFieldDefItem.key} style={{ width: '100%', maxWidth: 200 }}>
+                                            <div key={paramFieldDefItem.key} style={{ width: '100%', maxWidth: '14.5em' }}>
                                                 {renderPreprocessParamControl(
                                                     paramFieldDefItem,
                                                     stepItemRecord.params,
@@ -757,42 +822,53 @@ export default function Step2_Mapping(): React.ReactElement
             )
         },
         {
-            title: translate('step2.live_preview', '即時預覽 (取首筆資料)'),
+            // ★ 2026-10-07 QA 回饋：原本只取第一筆資料預覽，前幾筆沒有缺值時看不到缺值處理效果。
+            //   改為兩行：① 範例值（該欄第一個非空值）經清洗步驟後的結果；② 空值經「缺失值處理」後的結果與空值筆數。
+            title: (
+                <span>
+                    {translate('step2.live_preview_v2', '即時預覽')}
+                    <Tooltip title={translate('step2.live_preview_v2_tip', '第一行：範例值經清洗步驟後的結果。第二行：空值經缺失值處理後的結果，並標出整份資料的空值筆數。')}>
+                        <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help' }} />
+                    </Tooltip>
+                </span>
+            ),
             key: 'preview',
             width: '25%',
             render: (_: unknown, rowRecordItem: MappingRecord) =>
             {
                 const originalSampleTextValue = rowRecordItem.sampleValue;
-                const isSampleValueMissingStatus = originalSampleTextValue === DEFAULT_PREVIEW_SYMBOL;
-
-                if (isSampleValueMissingStatus && rowRecordItem.missingValueRule.strategy !== 'none')
-                {
-                    const missingStrategyStr = rowRecordItem.missingValueRule.strategy;
-                    let missingPreviewTextStr: string;
-
-                    if (missingStrategyStr === 'drop') missingPreviewTextStr = translate('step2.missing_preview_drop', '（整列將被移除）');
-                    else if (missingStrategyStr === 'constant') missingPreviewTextStr = rowRecordItem.missingValueRule.constantValue || DEFAULT_PREVIEW_SYMBOL;
-                    else missingPreviewTextStr = translate('step2.missing_preview_fill', '（依全數據動態計算，後端處理階段套用）');
-
-                    return (
-                        <Space style={{ display: 'flex', flexWrap: 'wrap' }}>
-                            <Text type="secondary" delete>{originalSampleTextValue}</Text>
-                            <ArrowRightOutlined style={{ color: token.colorWarning, fontSize: scaleFontSize(12) }} />
-                            <Text style={{ color: token.colorWarning, fontWeight: 600 }}>{missingPreviewTextStr}</Text>
-                        </Space>
-                    );
-                }
-
-                const processedSampleTextValue = applyPreprocessSteps(originalSampleTextValue, rowRecordItem.steps);
-
+                const processedSampleTextValue = originalSampleTextValue === DEFAULT_PREVIEW_SYMBOL ? originalSampleTextValue : applyPreprocessSteps(originalSampleTextValue, rowRecordItem.steps);
                 const isContentModifiedStatus = originalSampleTextValue !== processedSampleTextValue;
 
+                const missingStrategyStr = rowRecordItem.missingValueRule.strategy;
+                const fillMethodLabel = fillMethodOptionList.find((optionItem) => optionItem.value === (rowRecordItem.missingValueRule.fillMethod ?? 'mean'))?.label ?? '';
+                const missingResultText = missingStrategyStr === 'drop'
+                    ? translate('step2.missing_preview_drop_v2', '整列移除')
+                    : missingStrategyStr === 'constant'
+                        ? (rowRecordItem.missingValueRule.constantValue || DEFAULT_PREVIEW_SYMBOL)
+                        : missingStrategyStr === 'fill'
+                            ? translate('step2.missing_preview_fill_v2', '依{{method}}填入', { method: fillMethodLabel })
+                            : translate('step2.missing_preview_keep', '保留空值');
+                const missingCountText = rowRecordItem.missingCount > 0
+                    ? translate(rowRecordItem.isMissingCountFromFullData ? 'step2.missing_count_full' : 'step2.missing_count_sample', rowRecordItem.isMissingCountFromFullData ? '共 {{n}} 筆' : '預覽中 {{n}} 筆', { n: rowRecordItem.missingCount.toLocaleString() })
+                    : translate('step2.missing_count_none', '此欄無空值');
+                const isMissingHandledStatus = missingStrategyStr !== 'none';
+
                 return (
-                    <Space style={{ display: 'flex', flexWrap: 'wrap' }}>
-                        <Text type="secondary" delete={isContentModifiedStatus}>{originalSampleTextValue}</Text>
-                        {isContentModifiedStatus && <ArrowRightOutlined style={{ color: token.colorPrimary, fontSize: scaleFontSize(12) }} />}
-                        {isContentModifiedStatus && <Text style={{ color: token.colorPrimary, fontWeight: 600 }}>{processedSampleTextValue}</Text>}
-                    </Space>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <Space size={6} style={{ display: 'flex', flexWrap: 'wrap' }} data-testid={`preprocess-preview-sample-${rowRecordItem.name}`}>
+                            {/* ★ 2026-10-08：有值的範例放大、空值那行縮小，主從分明 */}
+                            <Text type="secondary" delete={isContentModifiedStatus} style={{ fontSize: scaleFontSize(16) }}>{originalSampleTextValue}</Text>
+                            {isContentModifiedStatus && <ArrowRightOutlined style={{ color: token.colorPrimary, fontSize: scaleFontSize(14) }} />}
+                            {isContentModifiedStatus && <Text style={{ color: token.colorPrimary, fontWeight: 600, fontSize: scaleFontSize(16) }}>{processedSampleTextValue}</Text>}
+                        </Space>
+                        <Space size={4} style={{ display: 'flex', flexWrap: 'wrap' }} data-testid={`preprocess-preview-missing-${rowRecordItem.name}`}>
+                            <span style={{ padding: '0 4px', borderRadius: 4, fontSize: scaleFontSize(11), lineHeight: 1.5, border: `1px dashed ${token.colorBorder}`, color: token.colorTextSecondary }}>{translate('step2.missing_preview_label', '空值')}</span>
+                            <ArrowRightOutlined style={{ color: isMissingHandledStatus ? token.colorWarning : token.colorTextDescription, fontSize: scaleFontSize(10) }} />
+                            <Text style={{ color: isMissingHandledStatus ? token.colorWarning : token.colorTextSecondary, fontWeight: isMissingHandledStatus ? 600 : 400, fontSize: scaleFontSize(12) }}>{missingResultText}</Text>
+                            <Text type="secondary" style={{ fontSize: scaleFontSize(11) }}>（{missingCountText}）</Text>
+                        </Space>
+                    </div>
                 );
             }
         }
@@ -841,4 +917,4 @@ export default function Step2_Mapping(): React.ReactElement
             <style>{`.ant-table-thead > tr > th { background: ${isDarkModeActive ? '#262626' : '#f0f2f5'} !important; }`}</style>
         </div>
     );
-}
+}

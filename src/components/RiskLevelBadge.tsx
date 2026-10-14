@@ -80,14 +80,14 @@ export function OverallRiskLevelPanel({ summary, title, driverText, textColor, m
     const segmentRangeTextList = [`< ${lowPct}`, `${lowPct}～${highPct}`, `≥ ${highPct}`];
     return (
         <div data-testid="overall-risk-level" style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 180 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: '13em' }}>
                 <LevelIcon style={{ fontSize: scaleFontSize(36), color: info.color }} />
                 <div>
                     <div style={{ fontSize: scaleFontSize(12), color: mutedColor }}>{title}</div>
                     <div style={{ fontSize: scaleFontSize(22), fontWeight: 700, color: info.color, lineHeight: 1.2 }}>{info.code} {info.labelText}</div>
                 </div>
             </div>
-            <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ flex: 1, minWidth: '17em' }}>
                 <div style={{ display: 'flex', gap: 4 }}>
                     {([1, 2, 3] as RiskLevelNumber[]).map((levelNumber, index) => {
                         const segmentInfo = getRiskLevelInfo(levelNumber);

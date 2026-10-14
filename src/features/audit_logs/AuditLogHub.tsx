@@ -21,8 +21,9 @@ import { useTranslation } from 'react-i18next';
 import { getRoleDisplayName } from '../../utils/roleLabel';
 
 import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
-import AuditIntegrityPanel from '../../components/AuditIntegrityPanel';
-import { getKAnonymityGeneralizationTechLabel } from '../../utils/kAnonymityTechLabel';
+import ComplianceReportDocument from '../../components/ComplianceReportDocument';
+import RiskLevelBadge from '../../components/RiskLevelBadge';
+import { computeReportOverallRisk } from '../../utils/complianceReport';
 
 import { scaleFontSize } from '../../utils/fontScale';
 /**
@@ -30,7 +31,6 @@ import { scaleFontSize } from '../../utils/fontScale';
  * 規範對照: 符合規範 e) 避免魔術數字 (Magic Number)
  */
 const DEFAULT_PAGE_SIZE = 10;
-const HIGH_RISK_THRESHOLD_PERCENT = 20;
 const PDF_COMPILATION_DELAY_MS = 400;
 
 /**
@@ -187,7 +187,7 @@ export default function AuditLogHub(): React.ReactElement
 		{
 			const pdfCompilationOptions = {
 				margin:      [10, 10, 10, 10], 
-				filename:    `Historical_Audit_Certificate_${selectedAuditLog?.certificateId}.pdf`,
+				filename:    `Privacy_Audit_Certificate_${selectedAuditLog?.certificateId}.pdf`, // ★ 2026-10-08：檔名與 Step4 一致
 				image:       { type: 'jpeg', quality: 0.98 },
 				html2canvas: { 
 					scale: 2, 
@@ -206,7 +206,7 @@ export default function AuditLogHub(): React.ReactElement
 					hideLoadingMessageFunction();
 
 					messageApi.success(
-						translate('audit.msg_pdf_success', '歷史審計憑證 PDF 已成功下載！')
+						translate('step4.msg.pdf_success', '合規審計憑證 PDF 已成功下載！')
 					);
 				}
 			).catch(
@@ -243,22 +243,10 @@ export default function AuditLogHub(): React.ReactElement
 	};
 
 	/**
-	 * 函數名稱: getSnapshotRole
-	 * 函數功能: 從歷史審計紀錄自身之欄位角色快照 (columnRoleSnapshot) 讀取該欄位簽發當下所套用之隱私角色，
-	 *           不依賴目前 WorkspaceStore 狀態，確保歷史紀錄檢視結果不受後續操作 (清空/切換資料集) 影響。
-	 *
-	 * 輸入參數 (Input):
-	 *   - targetAuditLogItem (AuditLogItem): 目前選取之歷史審計紀錄物件
-	 *   - targetColumnName (string): 欄位名稱
-	 * 輸出參數 (Output): 無
-	 * 返回值 (Return):
-	 *   - { role: string }: 包含簽發當下隱私角色名稱之物件
+	 * ★ 2026-10-08：列表的整體等級改取自報告快照；「三大攻擊殘餘風險」欄依使用者要求移除（細節見調閱報告）（與 Step4 報告、調閱視窗同一算法）。
+	 *   原本「綜合殘餘風險」是三攻擊平均之類的百分比、以 20% 判斷顏色，與 Step4 的 L1/L2/L3 整體等級
+	 *   （三個白話問題取最高、含扣除基線後的 CAP）不同，同一筆紀錄兩邊看到的結論可能不一樣。
 	 */
-	const getSnapshotRole = (targetAuditLogItem: AuditLogItem, targetColumnName: string): { role: string } =>
-	{
-		return { role: targetAuditLogItem.columnRoleSnapshot?.[targetColumnName] || 'Non-sensitive' };
-	};
-
 	// 儀表板資料表格欄位配置
 	const dataTableColumnsConfig = [
 		{
@@ -296,25 +284,20 @@ export default function AuditLogHub(): React.ReactElement
 			),
 		},
 		{
-			title: translate('audit.col_risks', '三大攻擊殘餘風險 (Singling/Link/Inf)'),
-			key: 'risks',
-			render: (_: unknown, auditLogRecordItem: AuditLogItem) => (
-				<Space size="small">
-					<Tag color="green">{translate('audit.risk_singling', '指認')}: {auditLogRecordItem.singlingRisk}</Tag>
-					<Tag color="green">{translate('audit.risk_linkability', '連結')}: {auditLogRecordItem.linkabilityRisk}</Tag>
-					<Tag color="green">{translate('audit.risk_inference', '推斷')}: {auditLogRecordItem.inferenceRisk}</Tag>
-				</Space>
-			),
-		},
-		{
-			title: translate('audit.col_overall_risk', '綜合殘餘風險'),
-			dataIndex: 'overallRisk',
+			title: translate('audit.col_overall_level', '整體風險等級'),
 			key: 'overallRisk',
-			render: (overallRiskValueTextString: string) => (
-				<Text strong style={{ color: parseFloat(overallRiskValueTextString) < HIGH_RISK_THRESHOLD_PERCENT ? '#52c41a' : '#faad14' }}>
-					{overallRiskValueTextString}
-				</Text>
-			),
+			render: (_: unknown, auditLogRecordItem: AuditLogItem) =>
+			{
+				if (!auditLogRecordItem.reportSnapshot)
+				{
+					// 舊紀錄沒有報告快照，只能顯示當時記錄的百分比
+					return <Text type="secondary">{auditLogRecordItem.overallRisk}</Text>;
+				}
+				const overallSummary = computeReportOverallRisk(auditLogRecordItem.reportSnapshot.attackRisks, auditLogRecordItem.reportSnapshot.cap, { singling: '', linkability: '', sensitive: '' });
+				return overallSummary
+					? <RiskLevelBadge level={overallSummary.info.level} size="small" />
+					: <Text type="secondary">{translate('step4.risk.row_not_evaluated', '未評估')}</Text>;
+			},
 		},
 		{
 			title: translate('audit.col_audit_time', '審計時間'),
@@ -368,14 +351,14 @@ export default function AuditLogHub(): React.ReactElement
 							prefix={<SearchOutlined />} 
 							value={searchKeywordText}
 							onChange={(inputEvent) => setSearchKeywordText(inputEvent.target.value)}
-							style={{ width: '280px' }}
+							style={{ width: '20em' }}
 							allowClear
 						/>
 
 						<Select 
 							value={privacyFilterMode} 
 							onChange={(selectedFilterModeValue) => setPrivacyFilterMode(selectedFilterModeValue)}
-							style={{ width: '180px' }}
+							style={{ width: '13em' }}
 							options={[
 								{ value: 'all', label: translate('audit.filter_all', '全部保護模式') },
 								{ value: 'k-anonymity', label: 'K-Anonymity' },
@@ -397,10 +380,12 @@ export default function AuditLogHub(): React.ReactElement
 
 			{/* 歷史審計憑證調閱 Modal */}
 			<Modal
-				title={translate('audit.modal_title', '歷史審計憑證調閱 (Historical Certificate Viewer)')}
+				title={selectedAuditLog?.status === 'failed' // ★ 2026-10-08：標題與 Step4 報告視窗一致
+					? translate('step4.modal.title_non_compliant', '檢測紀錄（未達合規標準）')
+					: translate('step4.modal.title', '隱私合規與風險評估報告')}
 				open={isReportModalVisible}
 				onCancel={() => setIsReportModalVisible(false)}
-				width={800}
+				width={'57em'}
 				styles={{
 					body: { 
 						maxHeight: isPdfExporting ? 'none' : '72vh', 
@@ -418,255 +403,14 @@ export default function AuditLogHub(): React.ReactElement
 					</Tooltip>
 				]}
 			>
+				{/* ★ 2026-10-08 使用者反映：調閱內容與 Step4「查看與下載報告」不一致（這裡原本是舊版憑證格式）。
+				    改用與 Step4 相同的報告元件與紀錄內的報告快照繪製，兩處內容一致。 */}
 				{selectedAuditLog && (
-					<div 
-						id="printable-historical-report" 
-						style={{ 
-							padding: isPdfExporting ? '0px' : '24px', 
-							color: '#000000', 
-							backgroundColor: '#ffffff', 
-							borderRadius: '4px',
-							fontFamily: 'sans-serif'
-						}}
-					>
-						{/* 
-						  * 渲染憑證標頭區塊：包含憑證編號與驗證合格狀態標籤 
-						  */}
-						<div className="pdf-page-break avoid-break" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `2px solid ${token.colorPrimary}`, paddingBottom: '12px', marginBottom: '24px', pageBreakInside: 'avoid' }}>
-							<div>
-								<h2 style={{ margin: 0, color: selectedAuditLog.status === 'failed' ? '#b91c1c' : token.colorPrimary, fontSize: scaleFontSize(20) }}>
-									{selectedAuditLog.status === 'failed'
-										? translate('audit.report_title_failed', '資料隱私技術檢測紀錄（未達合規標準）')
-										: translate('audit.report_title', '數據隱私合規與技術審計憑證')}
-								</h2>
-								<span style={{ fontSize: scaleFontSize(12), color: '#555555' }}>{translate('audit.report_cert_id', '憑證編號:')} {selectedAuditLog.certificateId}</span>
-							</div>
-
-							{/* ★ 2026-10-02：原本不論結果一律顯示「驗證合格」，改依紀錄狀態顯示 */}
-							<div style={{ textAlign: 'right' }}>
-								<span 
-									style={{ 
-										display: 'inline-block',
-										backgroundColor: selectedAuditLog.status === 'failed' ? '#fef2f2' : '#f6ffed', 
-										border: selectedAuditLog.status === 'failed' ? '1px solid #fca5a5' : '1px solid #b7eb8f', 
-										color: selectedAuditLog.status === 'failed' ? '#b91c1c' : '#389e0d', 
-										padding: '6px 16px', 
-										borderRadius: '4px', 
-										fontSize: scaleFontSize(14), 
-										fontWeight: 'bold',
-										lineHeight: '20px',
-										whiteSpace: 'nowrap'
-									}}
-								>
-									{selectedAuditLog.status === 'failed'
-										? <><span style={{ marginRight: '6px', fontSize: scaleFontSize(15) }}>✕</span> {translate('audit.report_failed', '未達合規標準')}</>
-										: <><span style={{ marginRight: '6px', fontSize: scaleFontSize(15) }}>✓</span> {translate('audit.report_passed', '驗證合格')}</>}
-								</span>
-							</div>
-						</div>
-
-						{/* 
-						  * 渲染專案與執行軌跡資訊：從 selectedAuditLog 讀取檔案名稱、保護模式、操作人員與簽發時間 
-						  */}
-						<div className="pdf-page-break avoid-break" style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', marginBottom: '24px', border: `1px solid #d9d9d9`, pageBreakInside: 'avoid' }}>
-							<h4 style={{ marginTop: 0, color: '#000000', marginBottom: '8px' }}>{translate('audit.report_track_title', '專案與執行軌跡')}</h4>
-
-							<Row gutter={[16, 8]} style={{ fontSize: scaleFontSize(13), color: '#555555' }}>
-								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_file_name', '資料檔案：')}</b> {selectedAuditLog.fileName}</Col>
-								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_tech', '套用技術：')}</b> {selectedAuditLog.privacyMode.toUpperCase()}</Col>
-								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_operator', '執行人員：')}</b> {selectedAuditLog.operator} ({getRoleDisplayName(selectedAuditLog.operatorRole)})</Col>
-								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_time', '簽發時間：')}</b> {selectedAuditLog.auditTime}</Col>
-							</Row>
-						</div>
-
-						{/* 
-						  * 渲染殘餘風險量測結果：展示指認性、連結性、推斷性風險，以及最終綜合風險百分比 
-						  */}
-						<div className="pdf-page-break avoid-break" style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', marginBottom: '32px', border: `1px solid #d9d9d9`, pageBreakInside: 'avoid', clear: 'both' }}>
-							<h4 style={{ marginTop: 0, color: '#000000', marginBottom: '8px' }}>{translate('audit.report_risk_title', '殘餘風險與量測結果')}</h4>
-
-							<Row gutter={[16, 8]} style={{ fontSize: scaleFontSize(13), color: '#555555' }}>
-								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_singling', '指認性風險 (Singling Out):')}</b> <span>{selectedAuditLog.singlingRisk}</span></Col>
-								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_linkability', '連結性風險 (Linkability):')}</b> <span>{selectedAuditLog.linkabilityRisk}</span></Col>
-								<Col span={12}><b style={{ color: '#000000' }}>{translate('audit.report_inference', '推斷性風險 (Inference):')}</b> <span>{selectedAuditLog.inferenceRisk}</span></Col>
-								<Col span={12}>
-									<b style={{ color: '#000000' }}>{translate('audit.report_overall_risk', '綜合殘餘風險 (Final Risk):')}</b>{' '}
-									<span style={{ color: parseFloat(selectedAuditLog.overallRisk) < HIGH_RISK_THRESHOLD_PERCENT ? '#389e0d' : '#faad14', fontWeight: 'bold' }}>
-										{selectedAuditLog.overallRisk}
-									</span>
-								</Col>
-								{typeof selectedAuditLog.inputRowCount === 'number' && (
-									<Col span={24}>
-										<b style={{ color: '#000000' }}>{translate('audit.report_row_stats', '資料筆數（輸入/刪除/輸出）:')}</b>
-										<div style={{ display: 'flex', flexWrap: 'wrap', columnGap: '16px', marginTop: '4px' }}>
-											<span>{translate('audit.report_row_stats_input', '輸入 {{num}}', { num: selectedAuditLog.inputRowCount.toLocaleString() })}</span>
-											<span style={{ color: '#cf1322' }}>{translate('audit.report_row_stats_deleted', '刪除 {{num}}', { num: selectedAuditLog.deletedRowCount.toLocaleString() })}</span>
-											<span style={{ color: '#389e0d', fontWeight: 'bold' }}>{translate('audit.report_row_stats_output', '輸出 {{num}}', { num: selectedAuditLog.outputRowCount.toLocaleString() })}</span>
-										</div>
-									</Col>
-								)}
-							</Row>
-						</div>
-
-						{/* 
-						  * 渲染欄位處置與技術對照表：根據欄位隱私角色與所選模式，動態推導並顯示套用的去識別化技術 
-						  */}
-						<h4 className="pdf-page-break avoid-break" style={{ color: '#000000', marginTop: '16px', marginBottom: '12px', pageBreakInside: 'avoid', clear: 'both' }}>
-							{translate('audit.report_table_title', '欄位處置與技術對照表')}
-						</h4>
-						
-						{/* 
-						* ============================================================================
-						* [前端渲染區塊 - 欄位處置與技術對照表 (動態視圖切換)]
-						* 規範對照: 符合變數撰寫參考 b) 說明變數含義與作用、c) 確認全域變數與程序之關係
-						* 實作說明:
-						* 此區塊依據狀態變數 `isPdfExporting` 決定渲染哪一種 HTML 表格 DOM 結構：
-						* 
-						* 1. 匯出 PDF 模式 (isPdfExporting === true)：
-						*    - 【關鍵】：必須移除外層帶有 `overflowY: 'auto'` 的限制高度容器，讓表格在網頁上完全平展。
-						*    - 【原因】：底層的 html2canvas 渲染引擎無法正確擷取被 CSS 捲動軸隱藏的內部元素。若不平展，PDF 截圖只會剩下目前畫面上可見的範圍。
-						*    - 行列加上 `pageBreakInside: 'avoid'`，確保匯出時單一橫列不會被切成兩半（跨頁斷裂）。
-						* 
-						* 2. 網頁 UI 預覽模式 (isPdfExporting === false)：
-						*    - 包覆外層限制高度 (`maxHeight: '240px'`) 與垂直捲動 (`overflowY: 'auto'`) 的 <div> 容器。
-						*    - 表頭 (thead) 加上 `position: 'sticky'` 與 `zIndex: 1`，提升使用者在 Modal 彈窗內瀏覽大量欄位時的體驗。
-						* ============================================================================
-						*/}
-
-						{isPdfExporting ? (
-							<table 
-								style={{ 
-									width: '100%', 
-									borderCollapse: 'collapse', 
-									color: '#000000', 
-									backgroundColor: '#ffffff', 
-									tableLayout: 'fixed',
-									border: '1px solid #d9d9d9',
-									marginBottom: '24px'
-								}}
-							>
-								<thead>
-									<tr style={{ backgroundColor: '#f1f5f9', pageBreakInside: 'avoid' }}>
-										<th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '40%' }}>{translate('audit.table_col_name', '欄位名稱')}</th>
-										<th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{translate('audit.table_col_role', '隱私角色')}</th>
-										<th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{translate('audit.table_col_tech', '套用去識別化技術')}</th>
-									</tr>
-								</thead>
-
-								<tbody>
-									{selectedAuditLog.columnsSnapshot.map(
-										(targetColumnNameString) =>
-										{
-											const { role: calculatedRoleName } = getSnapshotRole(selectedAuditLog, targetColumnNameString);
-
-											const isDpFieldEnabled = selectedAuditLog.dpEnabledFieldNamesSnapshot.includes(targetColumnNameString);
-
-											let selectedStrategyDescription = translate('audit.tech_keep_original', '保留原文');
-
-											if (calculatedRoleName === 'Identifier')
-											{
-												selectedStrategyDescription = selectedAuditLog.identifierMaskStrategySnapshot?.[targetColumnNameString] === 'remove'
-													? translate('audit.tech_removed', '直接移除')
-													: translate('audit.tech_full_masking', '完全遮蔽');
-											}
-											else if (calculatedRoleName === 'Quasi-identifier' && selectedAuditLog.privacyMode === 'k-anonymity')
-											{
-												selectedStrategyDescription = getKAnonymityGeneralizationTechLabel(selectedAuditLog.qiGeneralizationTechSnapshot?.[targetColumnNameString], translate);
-											}
-											else if (selectedAuditLog.privacyMode === 'differential-privacy' && isDpFieldEnabled)
-											{
-												selectedStrategyDescription = translate('audit.tech_dp', '差分隱私加噪');
-											}
-
-											const roleI18nKeyString = `step4.role.${calculatedRoleName.toLowerCase().replace(/ /g, '_').replace(/-/g, '_')}`;
-
-											return (
-												<tr key={targetColumnNameString} style={{ backgroundColor: '#ffffff', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
-													<td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#000000', wordBreak: 'break-word' }}><b>{targetColumnNameString}</b></td>
-													<td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{translate(roleI18nKeyString, calculatedRoleName)}</td>
-													<td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{selectedStrategyDescription}</td>
-												</tr>
-											);
-										}
-									)}
-								</tbody>
-							</table>
-						) : (
-							<div 
-								style={{ 
-									maxHeight: '240px', 
-									overflowY: 'auto', 
-									border: '1px solid #d9d9d9', 
-									borderRadius: '4px', 
-									marginBottom: '24px' 
-								}}
-							>
-								<table 
-									style={{ 
-										width: '100%', 
-										borderCollapse: 'collapse', 
-										color: '#000000', 
-										backgroundColor: '#ffffff', 
-										tableLayout: 'fixed'
-									}}
-								>
-									<thead>
-										<tr style={{ backgroundColor: '#f1f5f9', position: 'sticky', top: 0, zIndex: 1 }}>
-											<th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '40%' }}>{translate('audit.table_col_name', '欄位名稱')}</th>
-											<th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{translate('audit.table_col_role', '隱私角色')}</th>
-											<th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{translate('audit.table_col_tech', '套用去識別化技術')}</th>
-										</tr>
-									</thead>
-
-									<tbody>
-										{selectedAuditLog.columnsSnapshot.map(
-											(targetColumnNameString) =>
-											{
-												const { role: calculatedRoleName } = getSnapshotRole(selectedAuditLog, targetColumnNameString);
-
-												const isDpFieldEnabled = selectedAuditLog.dpEnabledFieldNamesSnapshot.includes(targetColumnNameString);
-
-												let selectedStrategyDescription = translate('audit.tech_keep_original', '保留原文');
-
-												if (calculatedRoleName === 'Identifier')
-												{
-													selectedStrategyDescription = selectedAuditLog.identifierMaskStrategySnapshot?.[targetColumnNameString] === 'remove'
-														? translate('audit.tech_removed', '直接移除')
-														: translate('audit.tech_full_masking', '完全遮蔽');
-												}
-												else if (calculatedRoleName === 'Quasi-identifier' && selectedAuditLog.privacyMode === 'k-anonymity')
-												{
-													selectedStrategyDescription = getKAnonymityGeneralizationTechLabel(selectedAuditLog.qiGeneralizationTechSnapshot?.[targetColumnNameString], translate);
-												}
-												else if (selectedAuditLog.privacyMode === 'differential-privacy' && isDpFieldEnabled)
-												{
-													selectedStrategyDescription = translate('audit.tech_dp', '差分隱私加噪');
-												}
-
-												const roleI18nKeyString = `step4.role.${calculatedRoleName.toLowerCase().replace(/ /g, '_').replace(/-/g, '_')}`;
-
-												return (
-													<tr key={targetColumnNameString} style={{ backgroundColor: '#ffffff' }}>
-														<td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#000000', wordBreak: 'break-word' }}><b>{targetColumnNameString}</b></td>
-														<td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{translate(roleI18nKeyString, calculatedRoleName)}</td>
-														<td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{selectedStrategyDescription}</td>
-													</tr>
-												);
-											}
-										)}
-									</tbody>
-								</table>
-							</div>
-						)}
-
-						{/* ★ 2026-10-02：原為寫死的假指紋與假簽章（Mock Data），改為簽發時產生的真實 SHA-256 指紋與 ECDSA 數位簽章，
-						    開啟憑證時依目前內容即時驗證是否被竄改（見 utils/auditIntegrity.ts、components/AuditIntegrityPanel.tsx）。 */}
-						<AuditIntegrityPanel
-							entry={selectedAuditLog}
-							className="pdf-page-break avoid-break"
-							style={{ textAlign: 'left', marginTop: '24px', borderTop: `1px dashed #d9d9d9`, paddingTop: '12px', fontSize: scaleFontSize(12), color: '#888888', pageBreakInside: 'avoid', lineHeight: 1.7 }}
-						/>
-					</div>
+					<ComplianceReportDocument
+						entry={selectedAuditLog}
+						isExportingPdf={isPdfExporting}
+						containerId="printable-historical-report"
+					/>
 				)}
 			</Modal>
 

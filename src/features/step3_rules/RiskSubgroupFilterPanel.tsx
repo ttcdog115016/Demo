@@ -196,7 +196,7 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
                                 <Select
                                     size="small"
                                     value={columnNameString}
-                                    style={{ width: 160 }}
+                                    style={{ width: '11.5em' }}
                                     options={columnSelectOptionsListArray}
                                     onChange={(newColumnNameString) => handleColumnChangeForCondition(columnNameString, newColumnNameString)}
                                 />
@@ -204,7 +204,7 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
                                     <Space size={4}>
                                         <Input
                                             size="small"
-                                            style={{ width: 140 }}
+                                            style={{ width: '10em' }}
                                             placeholder={isTemporalColumnStatus ? translate('step3_subgroup.range_min_date_placeholder', '下限日期（可留空）') : translate('step3_subgroup.range_min_placeholder', '下限（可留空）')}
                                             value={conditionRecord.min ?? ''}
                                             onChange={(e) => handleRangeBoundChange(columnNameString, 'min', e.target.value)}
@@ -212,14 +212,14 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
                                         <span>~</span>
                                         <Input
                                             size="small"
-                                            style={{ width: 140 }}
+                                            style={{ width: '10em' }}
                                             placeholder={isTemporalColumnStatus ? translate('step3_subgroup.range_max_date_placeholder', '上限日期（可留空）') : translate('step3_subgroup.range_max_placeholder', '上限（可留空）')}
                                             value={conditionRecord.max ?? ''}
                                             onChange={(e) => handleRangeBoundChange(columnNameString, 'max', e.target.value)}
                                         />
                                     </Space>
                                 ) : (
-                                    <div style={{ minWidth: 240, flex: 1 }}>
+                                    <div style={{ minWidth: '17em', flex: 1 }}>
                                         {/* ★ 修正：改用 mode="multiple"（而非原本的 "tags"）——只能勾選 options 清單內的值，
                                             不再接受使用者自由輸入新文字，從根本避免「打的值跟資料集實際內容對不上」的問題。
                                             清單來源為完整掃描資料集之相異值（見上方 useEffect），而非僅前 1000 筆預覽。 */}

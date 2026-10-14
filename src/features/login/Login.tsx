@@ -251,7 +251,7 @@ export default function Login(): React.ReactElement
 					style={
 						{
 							width: '100%',
-							maxWidth: 440,
+							maxWidth: '31.5em',
 							backgroundColor: isDarkModeActive ? '#1a1a1e' : '#ffffff',
 							border: `1px solid ${isDarkModeActive ? '#2d2d34' : '#e2e8f0'}`,
 							boxShadow: isDarkModeActive ? '0 12px 40px rgba(0,0,0,0.5)' : '0 12px 32px rgba(0,0,0,0.08)',

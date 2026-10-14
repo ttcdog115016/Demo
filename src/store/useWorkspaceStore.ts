@@ -26,6 +26,24 @@ const DEFAULT_BUDGET_LIMIT_EPSILON = 20;
 const DEFAULT_TARGET_DELTA = 0.0001;
 
 /**
+ * ★ 2026-10-08：K-匿名 Step3 參數（保護強度、l／t、資料抑制）的系統預設值，集中一處。
+ *   Store 初始值與 Step2「套用系統推薦設定」共用：套用推薦設定時一併把 Step3 還原成「標準（預設）」、
+ *   敏感資料保護關閉，避免先匯入設定檔帶入的 K、l／t、抑制設定殘留。
+ */
+export const DEFAULT_KANON_RULE_PARAMS = {
+    kValue: DEFAULT_K_ANONYMITY_VALUE,
+    lValue: DEFAULT_L_DIVERSITY_VALUE,
+    tValue: DEFAULT_T_CLOSENESS_VALUE,
+    enableLDiversity: false,
+    enableTCloseness: false,
+    maxSuppression: DEFAULT_MAX_SUPPRESSION_PERCENT,
+    suppressionMethod: 'row_suppression',
+    cellFillMethod: 'star' as 'star' | 'missing',
+    cellFillValuesByColumn: {} as Record<string, string>,
+    limitExceededAction: 'stop_and_error',
+};
+
+/**
  * 預處理清洗規則介面 (單一序列轉換步驟)
  * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
  */
@@ -91,9 +109,9 @@ export type RiskSubgroupCondition =
 export interface Step4Cache 
 {
     metrics: {
-        singling: { ori: number; ctrl: number; base: number; risk: number };    // 指認性風險明細
-        linkability: { ori: number; ctrl: number; base: number; risk: number }; // 連結性風險明細
-        inference: { ori: number; ctrl: number; base: number; risk: number };   // 推斷性風險明細
+        singling: { risk: number };    // 指認性風險（後端回傳，已扣除控制組與亂猜基準）
+        linkability: { risk: number }; // 連結性風險（同上）
+        inference: { risk: number };   // 推斷性風險（同上）
         overallRiskPercent: string;                                             // 綜合風險百分比字串
     };
     certificateId: string;                                                      // 合規驗證憑證編號
@@ -105,6 +123,7 @@ export interface Step4Cache
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     capReport?: any;                                                            // ★新增：保存 CAP 前後對比報表快照（現為安全性評估卡片主要顯示內容，需隨快取還原）
     datasetRowStats?: { input: number; deleted: number; output: number };       // ★新增：保存輸入／刪除／輸出筆數快照
+    kAnonymityLoss?: { overall: number; columns: { column: string; loss: number }[] } | null; // ★ 2026-10-14：K-匿名失真程度（LM）快照
     // ★ 使用者反映（2026-09-22）：Step4 每次切換步驟再切回來都會重新掛載（MainLayout 以
     //   currentStepIndexValue 當 key），命中快取時 runFullPipeline 會直接略過整段風險評估
     //   （含高唯一值比例敏感欄位偵測），若這兩項不隨快照還原，畫面上的風險數字雖然正確
@@ -282,16 +301,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
             lastRunParamsHash: null,
             isStepValid: true,
             stepErrorMessage: null,
-            kValue: DEFAULT_K_ANONYMITY_VALUE,
-            lValue: DEFAULT_L_DIVERSITY_VALUE,
-            tValue: DEFAULT_T_CLOSENESS_VALUE,
-            enableLDiversity: false,
-            enableTCloseness: false,
-            maxSuppression: DEFAULT_MAX_SUPPRESSION_PERCENT,
-            suppressionMethod: 'row_suppression',
-            cellFillMethod: 'star',
-            cellFillValuesByColumn: {},
-            limitExceededAction: 'stop_and_error',
+            ...DEFAULT_KANON_RULE_PARAMS,
             kAnonymityFields: [],
             kAnonymityHierarchies: [],
             fieldAttributes: {},

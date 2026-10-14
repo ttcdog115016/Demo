@@ -431,7 +431,7 @@ export default function AdminDashboard(): React.ReactElement
 									value={passwordExpiryDaysValue} 
 									onChange={handleDaysChange}
 									disabled={!isPasswordExpiryEnabled}
-									style={{ width: '100px' }}
+									style={{ width: '7em' }}
 								/>
 
 								<span style={{ color: themeColorsConfig.textMuted }}>
@@ -471,7 +471,7 @@ export default function AdminDashboard(): React.ReactElement
 						type="primary" 
 						size="large" 
 						onClick={() => navigate('/settings/preferences')} 
-						style={{ borderRadius: '8px', minWidth: '180px' }}
+						style={{ borderRadius: '8px', minWidth: '13em' }}
 					>
 						{translate('admin.btn_enter_console', '前往系統設定')} <RightOutlined />
 					</Button>

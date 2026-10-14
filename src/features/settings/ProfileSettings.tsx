@@ -297,7 +297,7 @@ export default function ProfileSettings(): React.ReactElement
 	};
 
 	return (
-		<div style={{ maxWidth: '600px', margin: '40px auto', padding: '0 24px' }}>
+		<div style={{ maxWidth: '43em', margin: '40px auto', padding: '0 24px' }}>
 			<Card
 				title={
 					<Space>
@@ -336,17 +336,17 @@ export default function ProfileSettings(): React.ReactElement
 
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<Text type="secondary" style={{ width: '80px' }}>{translate('profile.name', '使用者名稱')}:</Text>
+							<Text type="secondary" style={{ width: '5.5em' }}>{translate('profile.name', '使用者名稱')}:</Text>
 							<Text strong>{currentUserSession?.name}</Text>
 						</div>
 
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<Text type="secondary" style={{ width: '80px' }}>{translate('profile.email', 'Email')}:</Text>
+							<Text type="secondary" style={{ width: '5.5em' }}>{translate('profile.email', 'Email')}:</Text>
 							<Text>{currentUserSession?.email}</Text>
 						</div>
 
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<Text type="secondary" style={{ width: '80px' }}>{translate('profile.role', '系統角色')}:</Text>
+							<Text type="secondary" style={{ width: '5.5em' }}>{translate('profile.role', '系統角色')}:</Text>
 							<Tag color={currentUserSession?.role === 'admin' ? 'purple' : 'blue'} style={{ margin: 0 }}>
 								{getRoleDisplayName(currentUserSession?.role)}
 							</Tag>

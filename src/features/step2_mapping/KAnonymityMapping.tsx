@@ -10,15 +10,17 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, Table, Select, Button, Input, InputNumber, Segmented, theme, Tabs, Space, Popconfirm, Tooltip, TimePicker, App as AntdApp, Alert } from 'antd';
 import {
-    UploadOutlined, DeleteOutlined, PlusOutlined, MinusOutlined,
+    DeleteOutlined, PlusOutlined, MinusOutlined,
     SaveOutlined, DatabaseOutlined, SisternodeOutlined,
     CodeOutlined, ThunderboltOutlined, QuestionCircleOutlined, CopyOutlined,
-    EyeOutlined, EyeInvisibleOutlined, CheckCircleOutlined, WarningOutlined, InfoCircleOutlined
+    EyeOutlined, EyeInvisibleOutlined, CheckCircleOutlined, WarningOutlined, InfoCircleOutlined,
+    RightOutlined, VerticalAlignTopOutlined, VerticalAlignBottomOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
 
-import { useWorkspaceStore, type PreprocessingRule } from '../../store/useWorkspaceStore';
+import { useWorkspaceStore, DEFAULT_KANON_RULE_PARAMS, type PreprocessingRule } from '../../store/useWorkspaceStore';
+import ConfigFileButtons from './ConfigFileButtons';
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { findHierarchyTableProblems, describeHierarchyRowProblem } from '../../utils/hierarchyTableValidation';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
@@ -424,6 +426,8 @@ const buildSpecCompliantPreviewJSON = (fieldsList: FieldDef[], hierarchiesList: 
 //   泛化階層對照之原始值／各層分類名稱、數值與時間自訂區間之顯示標籤：15 字
 //   （實際資料集類別值最長約 3～5 字，15 字已足夠）；欄位名稱：50 字。
 const HIERARCHY_CELL_MAX_LENGTH = 15;
+// ★ 2026-10-13：泛化階層對照每張卡片的表格最大高度（以 em 為單位，隨字體大小縮放），超過即在卡片內捲動，表頭固定。
+const HIERARCHY_SCROLL_BOX_MAX_HEIGHT = '26em';
 const CUSTOM_BIN_LABEL_MAX_LENGTH = 15;
 const FIELD_NAME_MAX_LENGTH = 50;
 
@@ -504,6 +508,41 @@ export default function KAnonymityMapping(): React.ReactElement
     const [isJsonPreviewVisibleStatus, setIsJsonPreviewVisibleStatus] = useState<boolean>(false);
     // ★ 新增：每個欄位各自的「系統推薦設定」UI 狀態 (模式/區間數量/單位寬度)。
     const [binAutoFillSettingsMap, setBinAutoFillSettingsMap] = useState<Record<string, { mode: 'even' | 'unit'; binCount: number; unitWidth: number }>>({});
+
+    // ★ 2026-10-13：「泛化階層對照」分頁每張卡片可收合，列數多時表格內部捲動。
+    // 鍵值：自訂區間卡片 `bins:<欄位 id>`；階層樹對照表 `tree:<對照表 id>`。預設全部展開。
+    const [collapsedHierarchyCardKeyMap, setCollapsedHierarchyCardKeyMap] = useState<Record<string, boolean>>({});
+    const isHierarchyCardCollapsed = (cardKeyStr: string): boolean => !!collapsedHierarchyCardKeyMap[cardKeyStr];
+    const toggleHierarchyCardCollapsed = (cardKeyStr: string): void =>
+        setCollapsedHierarchyCardKeyMap((previousMap) => ({ ...previousMap, [cardKeyStr]: !previousMap[cardKeyStr] }));
+    const collapseAllHierarchyCards = (): void => {
+        const nextMap: Record<string, boolean> = {};
+        kAnonymityFieldsList.forEach((fieldItemRecord) => { nextMap[`bins:${fieldItemRecord.id}`] = true; });
+        kAnonymityHierarchiesList.forEach((hierarchyItemRecord) => { nextMap[`tree:${hierarchyItemRecord.id}`] = true; });
+        setCollapsedHierarchyCardKeyMap(nextMap);
+    };
+    const expandAllHierarchyCards = (): void => setCollapsedHierarchyCardKeyMap({});
+    // 新增一列後捲到捲動區底部，讓使用者看得到剛新增的列（等 React 重新渲染後再捲）
+    const scrollHierarchyBoxToBottom = (cardKeyStr: string): void => {
+        window.setTimeout(() => {
+            const scrollBoxElement = document.querySelector<HTMLElement>(`[data-hierarchy-scroll="${cardKeyStr}"]`);
+            if (scrollBoxElement) scrollBoxElement.scrollTop = scrollBoxElement.scrollHeight;
+        }, 0);
+    };
+    const renderHierarchyCardToggle = (cardKeyStr: string): React.ReactNode => {
+        const isCollapsedStatus = isHierarchyCardCollapsed(cardKeyStr);
+        return (
+            <Tooltip title={isCollapsedStatus ? translate('step2.hierarchy_card_expand', '展開') : translate('step2.hierarchy_card_collapse', '收起')}>
+                <Button
+                    type="text"
+                    size="small"
+                    aria-expanded={!isCollapsedStatus}
+                    onClick={() => toggleHierarchyCardCollapsed(cardKeyStr)}
+                    icon={<RightOutlined style={{ transition: 'transform 0.2s', transform: isCollapsedStatus ? 'none' : 'rotate(90deg)' }} />}
+                />
+            </Tooltip>
+        );
+    };
 
     // ★ 需要各欄位完整資料的實際數值陣列（datasetColumnNumericValuesMap），避免依賴筆數有上限的
     //   previewData 導致「系統推薦設定」算出來的區間範圍失真。
@@ -1305,7 +1344,6 @@ export default function KAnonymityMapping(): React.ReactElement
             let recommendedMaskingStrategyValue: string; 
             let recommendedFieldTypeValue = fieldItemRecord.type;
             let recommendedGeneralizationStrategyValue = fieldItemRecord.genStrategy;
-            let recommendedGenMaxLevelValue = fieldItemRecord.genMaxLevel;
             // ★ 新增: 標記下方各分支「是否已明確依欄位名稱判斷出資料型態」——參考設定檔精確比對、
             //   年齡／生日、日期、郵遞區號／性別等城市類欄位這幾支都是刻意想清楚才下的分類判斷
             //   （例如郵遞區號雖是數字組成，仍刻意歸為字串型），不應被下方「讀實際資料」的判斷覆蓋；
@@ -1340,8 +1378,6 @@ export default function KAnonymityMapping(): React.ReactElement
                 recommendedMaskingStrategyValue = normalizeMaskStrategyValue(matchedKanonReferenceItem.strategy, recommendedPrivacyRoleValue).strategy;
 
                 recommendedGeneralizationStrategyValue = resolveDefaultGenStrategyForType(recommendedFieldTypeValue);
-                if (recommendedGeneralizationStrategyValue === 'rounding' && recommendedGenMaxLevelValue > 1) recommendedGenMaxLevelValue = 1;
-                if (recommendedGeneralizationStrategyValue === 'time_rounding') recommendedGenMaxLevelValue = TEMPORAL_DEFAULT_GRANULARITY_LEVEL;
                 hasExplicitlyClassifiedTypeStatus = true;
             } else if (/(id|name|card|nric|phone|email|姓名|電話|手機|信箱|電子郵件|身分證|統一編號|地址)/.test(lowerCaseFieldNameString)) {
                 recommendedPrivacyRoleValue = 'Identifier';
@@ -1354,7 +1390,6 @@ export default function KAnonymityMapping(): React.ReactElement
                 recommendedMaskingStrategyValue = 'none';
                 recommendedFieldTypeValue = 'numeric';
                 recommendedGeneralizationStrategyValue = resolveDefaultGenStrategyForType('numeric');
-                if (recommendedGeneralizationStrategyValue === 'rounding' && recommendedGenMaxLevelValue > 1) recommendedGenMaxLevelValue = 1;
                 hasExplicitlyClassifiedTypeStatus = true;
             } else if (/(date|日期)/.test(lowerCaseFieldNameString)) {
                 // ★ 修正: 日期等時間型間接識別欄位，同樣需一併判斷為「時間」資料型態（生日已改分類至上方直接識別）。
@@ -1362,7 +1397,6 @@ export default function KAnonymityMapping(): React.ReactElement
                 recommendedMaskingStrategyValue = 'none';
                 recommendedFieldTypeValue = 'temporal';
                 recommendedGeneralizationStrategyValue = resolveDefaultGenStrategyForType('temporal');
-                if (recommendedGeneralizationStrategyValue === 'time_rounding') recommendedGenMaxLevelValue = TEMPORAL_DEFAULT_GRANULARITY_LEVEL;
                 hasExplicitlyClassifiedTypeStatus = true;
             } else if (/(zip|gender|station|city|region|job|occupation|marital|marriage|郵遞區號|性別|地區|城市|縣市|國家|職業|婚姻狀況|婚姻)/.test(lowerCaseFieldNameString)) {
                 // ★ 修正: 城市／性別等欄位原本歸類為「類別型」，套用系統推薦設定時需搭配自訂階層樹
@@ -1395,16 +1429,6 @@ export default function KAnonymityMapping(): React.ReactElement
                 recommendedFieldTypeValue = 'numeric';
             }
 
-            // ★ 修正: 類別型間接識別碼固定使用「自訂階層樹」(tree) 策略，但先前套用系統推薦設定
-            //   時只決定了策略本身，未一併給定「最大層級」；若欄位先前不是間接識別碼（尚未啟用
-            //   泛化、停留在「原始」(0)），套用後畫面上的「最大層級」仍停留在「原始」，如同完全
-            //   沒有做選擇。比照上方數值型 (rounding)／時間型 (time_rounding) 欄位的做法，套用
-            //   推薦設定時一併給予預設層級 1 (L1)；若使用者原本已手動選擇更高層級，則保留原選擇，
-            //   不強制降回 1。
-            if (recommendedPrivacyRoleValue === 'Quasi-identifier' && recommendedGeneralizationStrategyValue === 'tree' && (!recommendedGenMaxLevelValue || recommendedGenMaxLevelValue < 1)) {
-                recommendedGenMaxLevelValue = 1;
-            }
-
             // ★ 新增: 使用者明確指定「套用系統推薦設定」時，隱私角色為間接識別碼的欄位，
             // 依資料型態應固定套用之預設處理策略：字串→字串前後綴 (prefix)、數值→最小單位設定
             // (rounding)、時間→時間粒度 (time_rounding)。上方各分支（參考設定精確比對／關鍵字
@@ -1423,7 +1447,6 @@ export default function KAnonymityMapping(): React.ReactElement
                     recommendedGeneralizationStrategyValue = 'prefix';
                 } else if (recommendedFieldTypeValue === 'numeric') {
                     recommendedGeneralizationStrategyValue = 'rounding';
-                    if (recommendedGenMaxLevelValue > 1) recommendedGenMaxLevelValue = 1;
 
                     const columnRealNumericValuesArray = datasetColumnNumericValuesMap[fieldItemRecord.name];
                     if (columnRealNumericValuesArray && columnRealNumericValuesArray.length > 0) {
@@ -1435,23 +1458,44 @@ export default function KAnonymityMapping(): React.ReactElement
                     }
                 } else if (recommendedFieldTypeValue === 'temporal') {
                     recommendedGeneralizationStrategyValue = 'time_rounding';
-                    if (!recommendedGenMaxLevelValue || recommendedGenMaxLevelValue < 1) recommendedGenMaxLevelValue = TEMPORAL_DEFAULT_GRANULARITY_LEVEL;
                 }
             }
 
+            // ★ 2026-10-08 使用者要求：推薦設定一律把層級重設為系統預設值，不再沿用欄位原本的層級。
+            //   先前會保留欄位原有層級（例如匯入設定檔帶入的職業 [1, 3]），導致「先匯入再套用推薦」與
+            //   「直接套用推薦」結果不同（職業層級 1 vs 2）。預設值與畫面上手動切換角色／策略時相同：
+            //   字串前後綴 4（保留 1 字）、依字串長度 1、時間粒度「月」、數值與區間類 1、階層樹 1；
+            //   非間接識別碼欄位層級不會送出，統一回到通用預設 2。方向回到「前方」，匯入帶入的層級範圍上限一併清除。
+            const resolveRecommendedDefaultGenMaxLevel = (): number => {
+                if (recommendedPrivacyRoleValue !== 'Quasi-identifier') return DEFAULT_MAX_GENERALIZATION_LEVEL;
+                switch (recommendedGeneralizationStrategyValue) {
+                    case 'prefix': return STRING_PREFIX_STRATEGY_DEFAULT_LEVEL;
+                    case 'length': return STRING_LENGTH_STRATEGY_FIXED_LEVEL;
+                    case 'time_rounding': return TEMPORAL_DEFAULT_GRANULARITY_LEVEL;
+                    case 'rounding': case 'custom_bins': case 'time_range': case 'tree': return 1;
+                    default: return DEFAULT_MAX_GENERALIZATION_LEVEL;
+                }
+            };
+            const { genLevelRangeUpper: _discardedImportedLevelRangeUpper, ...fieldWithoutLevelRangeUpper } = fieldItemRecord;
+            void _discardedImportedLevelRangeUpper;
+
             return {
-                ...fieldItemRecord,
+                ...fieldWithoutLevelRangeUpper,
                 role: recommendedPrivacyRoleValue,
                 maskStrategy: recommendedMaskingStrategyValue,
                 type: recommendedFieldTypeValue,
                 genStrategy: recommendedGeneralizationStrategyValue,
-                genMaxLevel: recommendedGenMaxLevelValue,
+                genMaxLevel: resolveRecommendedDefaultGenMaxLevel(),
+                genDirection: 'front' as const,
                 ...(recommendedGenParamValue !== undefined ? { genParam: recommendedGenParamValue } : {})
             };
         });
 
         setKAnonymityFieldsList(recommendedUpdatedFieldsList);
-        messageApi.success(translate('message.apply_recommend_success'));
+        // ★ 2026-10-08 使用者反映：先匯入設定檔（帶入 K、l／t、抑制設定）再套用推薦設定，Step3 仍停在匯入的值、
+        //   「進階：敏感資料保護」也還開著。推薦設定應整組回到系統預設：Step3 一併還原為「標準（K=3）」、l／t 關閉、抑制預設值。
+        useWorkspaceStore.setState({ ...DEFAULT_KANON_RULE_PARAMS, cellFillValuesByColumn: {} });
+        messageApi.success(translate('message.apply_recommend_success_with_step3', '已為所有欄位套用推薦設定；Step3 保護強度也已還原為「標準（預設）」。'));
     };
 
     const handleFieldChange = (targetFieldIdStr: string, targetAttributeKeyName: keyof FieldDef, newAttributeValueData: string | number | null): void => {
@@ -1701,7 +1745,7 @@ export default function KAnonymityMapping(): React.ReactElement
     const kAnonymityFieldTableColumnsConfig = [
         {
             title: translate('step2.col_name'),
-            dataIndex: 'name', width: 130,
+            dataIndex: 'name', width: '9.5em',
             render: (fieldNameTextValue: string, rowRecordItem: FieldDef) => {
                 const isDuplicatedFieldNameStatus = (duplicateFieldNameCountMap[fieldNameTextValue.trim()] || 0) >= 2;
                 return (
@@ -1741,7 +1785,7 @@ export default function KAnonymityMapping(): React.ReactElement
         },
         {
             title: translate('step2.data_type'),
-            dataIndex: 'type', width: 130,
+            dataIndex: 'type', width: '9.5em',
             render: (fieldTypeTextValue: string, rowRecordItem: FieldDef) => (
                 <Select value={fieldTypeTextValue} onChange={(dropdownSelectedValue) => handleFieldChange(rowRecordItem.id, 'type', dropdownSelectedValue)} style={{ width: '100%' }}>
                     <Select.Option value="string">{translate('step2.opt_string')}</Select.Option>
@@ -1753,7 +1797,7 @@ export default function KAnonymityMapping(): React.ReactElement
         },
         {
             title: translate('step2.privacy_role'),
-            dataIndex: 'role', width: 190,
+            dataIndex: 'role', width: '13.5em',
             render: (privacyRoleTextValue: string, rowRecordItem: FieldDef) => (
                 <Select value={privacyRoleTextValue} onChange={(dropdownSelectedValue) => handleFieldChange(rowRecordItem.id, 'role', dropdownSelectedValue)} style={{ width: '100%' }}>
                     <Select.Option value="Identifier"><span>{translate('step2.opt_identifier')}<Tooltip title={translate('step2.opt_identifier_tooltip', '本身就能直接指出特定個人，例如姓名、身分證字號，會從輸出資料中整欄刪除。')}><QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} /></Tooltip></span></Select.Option>
@@ -1772,7 +1816,7 @@ export default function KAnonymityMapping(): React.ReactElement
                     </Tooltip>
                 </span>
             ),
-            dataIndex: 'strategy', width: 195,
+            dataIndex: 'strategy', width: '14em',
             render: (_: unknown, rowRecordItem: FieldDef) => {
                 // 主新增: 下方各策略下拉選項旁邊都加一個小小的「？」說明圖示，讓使用者不需要點選就能大致知道每個選項的當下效果。
                 const strategyOptionLabel = (labelNode: React.ReactNode, tooltipText: string) => (
@@ -1833,7 +1877,7 @@ export default function KAnonymityMapping(): React.ReactElement
                     </Tooltip>
                 </span>
             ),
-            key: 'details', width: 220,
+            key: 'details', width: '15.5em',
             render: (_: unknown, rowRecordItem: FieldDef) => {
                 if (rowRecordItem.role === 'Identifier') {
                     if (rowRecordItem.maskStrategy === 'keep') {
@@ -1874,7 +1918,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                     <Select
                                         value={rowRecordItem.genDirection || 'front'}
                                         onChange={(dropdownSelectedValue) => handleFieldChange(rowRecordItem.id, 'genDirection', dropdownSelectedValue)}
-                                        style={{ minWidth: 88 }}
+                                        style={{ minWidth: '6.5em' }}
                                         options={[
                                             { value: 'front', label: translate('step2.anchor_direction_front', '前方') },
                                             { value: 'back', label: translate('step2.anchor_direction_back', '後方') },
@@ -1909,7 +1953,7 @@ export default function KAnonymityMapping(): React.ReactElement
                     </Tooltip>
                 </span>
             ),
-            key: 'level', width: 240,
+            key: 'level', width: '17em',
             render: (_: unknown, rowRecordItem: FieldDef) => {
                 if (rowRecordItem.role === 'Quasi-identifier') {
                     let segmentedLevelOptionList: { label: string; value: number }[] = [];
@@ -2013,7 +2057,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                         max={4}
                                         value={currentKeepCharsCountValue}
                                         onChange={handleKeepCharsInputChange}
-                                        style={{ width: 80 }}
+                                        style={{ width: '5.5em' }}
                                     />
                                 </Space>
                                 <div style={{ fontSize: scaleFontSize(11), color: currentKeepCharsCountValue >= 3 ? '#faad14' : token.colorTextDescription, marginTop: 2 }}>
@@ -2065,7 +2109,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                         value={isTemporalLevelRangeActiveStatus ? rowRecordItem.genLevelRangeUpper : undefined}
                                         onChange={(selectedUpperLevelValue) => handleFieldChange(rowRecordItem.id, 'genLevelRangeUpper', selectedUpperLevelValue ?? 0)}
                                         options={temporalRangeUpperOptionList}
-                                        style={{ width: 96 }}
+                                        style={{ width: '7em' }}
                                     />
                                 </Space>
                             )}
@@ -2076,7 +2120,7 @@ export default function KAnonymityMapping(): React.ReactElement
                 return <span style={{ color: token.colorTextDescription }}>-</span>;
             },
         },
-        { title: translate('step2.action'), key: 'action', width: 70, align: 'center' as const, render: (_: FieldDef, rowRecordItem: FieldDef) => <Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeField(rowRecordItem.id)} /> },
+        { title: translate('step2.action'), key: 'action', width: '5em', align: 'center' as const, render: (_: FieldDef, rowRecordItem: FieldDef) => <Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeField(rowRecordItem.id)} /> },
     ];
 
     const addHierarchyTable = (): void => setKAnonymityHierarchiesList([...kAnonymityHierarchiesList, { id: `h_${Date.now()}`, fieldName: '', mappings: [['', '']] }]);
@@ -2162,8 +2206,8 @@ export default function KAnonymityMapping(): React.ReactElement
                 defaultActiveKey="1"
                 tabBarExtraContent={
                     <Space style={{ paddingBottom: '8px' }}>
-                        <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportJSON} onClick={(fileInputEvent) => { (fileInputEvent.target as HTMLInputElement).value = ''; }} style={{ display: 'none' }} />
-                        <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>{translate('step2.btn_import')}</Button>
+                        {/* ★ 2026-10-07 QA 回饋：匯入旁加上匯出（見 ConfigFileButtons.tsx） */}
+                        <ConfigFileButtons onImportFileChange={handleImportJSON} fileInputRef={fileInputRef} />
                     </Space>
                 }
                 items={
@@ -2277,7 +2321,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                             size="small" 
                                             bordered={false} 
                                             className="attribute-table" 
-                                            scroll={{ x: 1175, y: 400 }}
+                                            scroll={{ x: 'max-content', y: 400 }}
                                             expandable={
                                                 { 
                                                     columnTitle: translate('step2.preview_column_title', '預覽'),
@@ -2371,6 +2415,14 @@ export default function KAnonymityMapping(): React.ReactElement
                             ),
                             children: (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                                    {(kAnonymityHierarchiesList.length > 0 || kAnonymityFieldsList.some(fieldItemRecord => fieldItemRecord.role === 'Quasi-identifier' && ((fieldItemRecord.type === 'numeric' && fieldItemRecord.genStrategy === 'custom_bins') || (fieldItemRecord.type === 'temporal' && fieldItemRecord.genStrategy === 'time_range')))) && (
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-12px' }}>
+                                            <Space size={4}>
+                                                <Button size="small" icon={<VerticalAlignTopOutlined />} onClick={collapseAllHierarchyCards}>{translate('step2.hierarchy_collapse_all', '全部收起')}</Button>
+                                                <Button size="small" icon={<VerticalAlignBottomOutlined />} onClick={expandAllHierarchyCards}>{translate('step2.hierarchy_expand_all', '全部展開')}</Button>
+                                            </Space>
+                                        </div>
+                                    )}
                                     {kAnonymityFieldsList.filter(fieldItemRecord =>
                                         // ★ 修正：使用者反映「薪資」「就醫次數」等隱私角色不是「間接識別碼」(例如敏感／非敏感)
                                         // 的欄位，也出現在「泛化階層對照」分頁——根因是這些欄位的 genStrategy 欄位值殘留自
@@ -2389,20 +2441,28 @@ export default function KAnonymityMapping(): React.ReactElement
                                     ).map(
                                         (customBinsFieldItemRecord) => {
                                             const isTemporalRangeFieldStatus = customBinsFieldItemRecord.type === 'temporal';
+                                            const binsCardKeyStr = `bins:${customBinsFieldItemRecord.id}`;
+                                            const isBinsCardCollapsedStatus = isHierarchyCardCollapsed(binsCardKeyStr);
 
                                             return (
                                             <Card
                                                 key={customBinsFieldItemRecord.id}
                                                 size="small"
-                                                styles={{ header: { background: isDarkModeActive ? '#1f1f1f' : '#f5f5f5', borderBottom: `1px solid ${token.colorBorderSecondary}` } }}
+                                                styles={{ header: { background: isDarkModeActive ? '#1f1f1f' : '#f5f5f5', borderBottom: isBinsCardCollapsedStatus ? 'none' : `1px solid ${token.colorBorderSecondary}` }, body: isBinsCardCollapsedStatus ? { display: 'none' } : undefined }}
                                                 style={{ border: `1px solid ${token.colorBorderSecondary}`, boxShadow: 'none' }}
                                                 title={
                                                     <Space>
+                                                        {renderHierarchyCardToggle(binsCardKeyStr)}
                                                         <span style={{ color: token.colorTextSecondary }}>{translate('step2.related_field')}</span>
                                                         <span style={{ fontWeight: 600 }}>{customBinsFieldItemRecord.name}</span>
                                                         <span style={{ fontSize: scaleFontSize(12), color: token.colorPrimary, border: `1px solid ${token.colorPrimaryBorder}`, borderRadius: '4px', padding: '0 6px' }}>
                                                             {isTemporalRangeFieldStatus ? translate('step2.opt_time_range', '時間區間') : translate('step2.opt_custom_bins_editable', '自訂數值區間')}
                                                         </span>
+                                                        {isBinsCardCollapsedStatus && (
+                                                            <span style={{ fontSize: scaleFontSize(12), color: token.colorTextDescription, fontWeight: 'normal' }}>
+                                                                {translate('step2.hierarchy_card_row_count', { count: (customBinsFieldItemRecord.customBins || []).length, defaultValue: '共 {{count}} 列' })}
+                                                            </span>
+                                                        )}
                                                     </Space>
                                                 }
                                             >
@@ -2443,7 +2503,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                                     size="small"
                                                                     min={MIN_AUTO_BIN_COUNT}
                                                                     max={MAX_AUTO_BIN_COUNT}
-                                                                    style={{ width: '80px' }}
+                                                                    style={{ width: '5.5em' }}
                                                                     value={getBinAutoFillSettingsForField(customBinsFieldItemRecord.id).binCount}
                                                                     onChange={(inputNumberValue) => updateBinAutoFillSettingForField(customBinsFieldItemRecord.id, { binCount: Number(inputNumberValue) || DEFAULT_AUTO_BIN_COUNT })}
                                                                 />
@@ -2455,7 +2515,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                                     size="small"
                                                                     min={0.01}
                                                                     step={1}
-                                                                    style={{ width: '90px' }}
+                                                                    style={{ width: '6.5em' }}
                                                                     value={getBinAutoFillSettingsForField(customBinsFieldItemRecord.id).unitWidth}
                                                                     onChange={(inputNumberValue) => updateBinAutoFillSettingForField(customBinsFieldItemRecord.id, { unitWidth: Number(inputNumberValue) || DEFAULT_AUTO_BIN_UNIT_WIDTH })}
                                                                 />
@@ -2476,11 +2536,12 @@ export default function KAnonymityMapping(): React.ReactElement
                                                     </div>
                                                 )}
 
-                                                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', padding: '0 8px' }}>
-                                                    <div style={{ width: '140px', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>{isTemporalRangeFieldStatus ? translate('step2.time_range_start', '起始時間 (含)') : translate('step2.bin_min', '下限 (含)')}</div>
-                                                    <div style={{ width: '140px', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>{isTemporalRangeFieldStatus ? translate('step2.time_range_end', '結束時間 (不含)') : translate('step2.bin_max', '上限 (不含)')}</div>
+                                                <div data-hierarchy-scroll={binsCardKeyStr} style={{ maxHeight: HIERARCHY_SCROLL_BOX_MAX_HEIGHT, overflowY: 'auto', overflowX: 'auto', marginBottom: '4px' }}>
+                                                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', padding: '0 8px', position: 'sticky', top: 0, zIndex: 2, background: token.colorBgContainer }}>
+                                                    <div style={{ width: '10em', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>{isTemporalRangeFieldStatus ? translate('step2.time_range_start', '起始時間 (含)') : translate('step2.bin_min', '下限 (含)')}</div>
+                                                    <div style={{ width: '10em', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>{isTemporalRangeFieldStatus ? translate('step2.time_range_end', '結束時間 (不含)') : translate('step2.bin_max', '上限 (不含)')}</div>
                                                     <div style={{ flex: 1, color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>{translate('step2.bin_label', '顯示標籤')}</div>
-                                                    <div style={{ width: '60px' }}></div>
+                                                    <div style={{ width: '4.5em' }}></div>
                                                 </div>
 
                                                 {(customBinsFieldItemRecord.customBins || []).map(
@@ -2489,14 +2550,14 @@ export default function KAnonymityMapping(): React.ReactElement
                                                             {isTemporalRangeFieldStatus ? (
                                                                 <>
                                                                     <TimePicker
-                                                                        style={{ width: '140px' }}
+                                                                        style={{ width: '10em' }}
                                                                         format="HH:mm"
                                                                         placeholder={translate('step2.bin_unbounded', '不限')}
                                                                         value={binItemRecord.min != null ? dayjs().startOf('day').add(binItemRecord.min, 'minute') : null}
                                                                         onChange={(timePickerValue) => updateCustomBinField(customBinsFieldItemRecord.id, binIndexNumber, 'min', timePickerValue ? timePickerValue.hour() * 60 + timePickerValue.minute() : null)}
                                                                     />
                                                                     <TimePicker
-                                                                        style={{ width: '140px' }}
+                                                                        style={{ width: '10em' }}
                                                                         format="HH:mm"
                                                                         placeholder={translate('step2.bin_unbounded', '不限')}
                                                                         value={binItemRecord.max != null ? dayjs().startOf('day').add(binItemRecord.max, 'minute') : null}
@@ -2506,13 +2567,13 @@ export default function KAnonymityMapping(): React.ReactElement
                                                             ) : (
                                                                 <>
                                                                     <InputNumber
-                                                                        style={{ width: '140px' }}
+                                                                        style={{ width: '10em' }}
                                                                         placeholder={translate('step2.bin_unbounded', '不限')}
                                                                         value={binItemRecord.min ?? undefined}
                                                                         onChange={(inputNumberValue) => updateCustomBinField(customBinsFieldItemRecord.id, binIndexNumber, 'min', inputNumberValue)}
                                                                     />
                                                                     <InputNumber
-                                                                        style={{ width: '140px' }}
+                                                                        style={{ width: '10em' }}
                                                                         placeholder={translate('step2.bin_unbounded', '不限')}
                                                                         value={binItemRecord.max ?? undefined}
                                                                         onChange={(inputNumberValue) => updateCustomBinField(customBinsFieldItemRecord.id, binIndexNumber, 'max', inputNumberValue)}
@@ -2548,7 +2609,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                                     onChange={(inputChangeEvent) => updateCustomBinField(customBinsFieldItemRecord.id, binIndexNumber, 'label', inputChangeEvent.target.value.slice(0, CUSTOM_BIN_LABEL_MAX_LENGTH))}
                                                                 />
                                                             </Tooltip>
-                                                            <Space style={{ width: '60px', justifyContent: 'center' }}>
+                                                            <Space style={{ width: '4.5em', justifyContent: 'center' }}>
                                                                 <Popconfirm title={translate('step2.confirm_delete_row')} onConfirm={() => removeCustomBinRow(customBinsFieldItemRecord.id, binIndexNumber)}>
                                                                     <Button type="text" size="small" icon={<DeleteOutlined style={{ color: token.colorTextDescription }} />} />
                                                                 </Popconfirm>
@@ -2557,7 +2618,9 @@ export default function KAnonymityMapping(): React.ReactElement
                                                     )
                                                 )}
 
-                                                <Button type="link" icon={<PlusOutlined />} onClick={() => addCustomBinRow(customBinsFieldItemRecord.id)} style={{ paddingLeft: 0 }}>{isTemporalRangeFieldStatus ? translate('step2.btn_add_time_range', '新增時段') : translate('step2.btn_add_bin', '新增區間')}</Button>
+                                                </div>
+
+                                                <Button type="link" icon={<PlusOutlined />} onClick={() => { addCustomBinRow(customBinsFieldItemRecord.id); scrollHierarchyBoxToBottom(binsCardKeyStr); }} style={{ paddingLeft: 0 }}>{isTemporalRangeFieldStatus ? translate('step2.btn_add_time_range', '新增時段') : translate('step2.btn_add_bin', '新增區間')}</Button>
                                             </Card>
                                             );
                                         }
@@ -2612,26 +2675,28 @@ export default function KAnonymityMapping(): React.ReactElement
                                             const selectedTreeLevelValue = associatedTreeFieldRecord ? associatedTreeFieldRecord.genMaxLevel : undefined;
                                             const hierarchyTableProblemsList = findHierarchyTableProblems(hierarchyTableRecordItem.mappings, selectedTreeLevelValue);
                                             const problemCellKeySet = new Set(hierarchyTableProblemsList.map((problemItem) => `${problemItem.rowNumber - 1}:${problemItem.columnIndex}`));
+                                            const treeCardKeyStr = `tree:${hierarchyTableRecordItem.id}`;
+                                            const isTreeCardCollapsedStatus = isHierarchyCardCollapsed(treeCardKeyStr);
 
                                             return (
-                                                <Card key={hierarchyTableRecordItem.id} size="small" styles={{ header: { background: isDarkModeActive ? '#1f1f1f' : '#f5f5f5', borderBottom: `1px solid ${token.colorBorderSecondary}` } }} style={{ border: `1px solid ${token.colorBorderSecondary}`, boxShadow: 'none' }} title={ <Space> <span style={{ color: token.colorTextSecondary }}>{translate('step2.related_field')}</span> <Select value={hierarchyTableRecordItem.fieldName || undefined} onChange={(dropdownSelectedValue) => updateHierarchyField(hierarchyTableRecordItem.id, dropdownSelectedValue)} placeholder={translate('step2.ph_select_qi')} style={{ width: '250px' }} options={kAnonymityFieldsList.filter(fieldItemRecord => fieldItemRecord.role === 'Quasi-identifier' && !(fieldItemRecord.type === 'numeric' && fieldItemRecord.genStrategy === 'rounding')).map(fieldItemRecord => ({ label: fieldItemRecord.name, value: fieldItemRecord.name }))} /> </Space> } extra={<Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeHierarchyTable(hierarchyTableRecordItem.id)} />} >
-                                                    <div style={{ overflowX: 'auto', paddingBottom: '8px' }}>
-                                                        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', padding: '0 8px' }}>
-                                                            <div style={{ flex: 1, minWidth: '150px', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>
+                                                <Card key={hierarchyTableRecordItem.id} size="small" styles={{ header: { background: isDarkModeActive ? '#1f1f1f' : '#f5f5f5', borderBottom: isTreeCardCollapsedStatus ? 'none' : `1px solid ${token.colorBorderSecondary}` }, body: isTreeCardCollapsedStatus ? { display: 'none' } : undefined }} style={{ border: `1px solid ${token.colorBorderSecondary}`, boxShadow: 'none' }} title={ <Space> {renderHierarchyCardToggle(treeCardKeyStr)} <span style={{ color: token.colorTextSecondary }}>{translate('step2.related_field')}</span> <Select value={hierarchyTableRecordItem.fieldName || undefined} onChange={(dropdownSelectedValue) => updateHierarchyField(hierarchyTableRecordItem.id, dropdownSelectedValue)} placeholder={translate('step2.ph_select_qi')} style={{ width: '18em' }} options={kAnonymityFieldsList.filter(fieldItemRecord => fieldItemRecord.role === 'Quasi-identifier' && !(fieldItemRecord.type === 'numeric' && fieldItemRecord.genStrategy === 'rounding')).map(fieldItemRecord => ({ label: fieldItemRecord.name, value: fieldItemRecord.name }))} /> {isTreeCardCollapsedStatus && ( <span style={{ fontSize: scaleFontSize(12), color: token.colorTextDescription, fontWeight: 'normal' }}>{translate('step2.hierarchy_card_row_count', { count: hierarchyTableRecordItem.mappings.length, defaultValue: '共 {{count}} 列' })}</span> )} {isTreeCardCollapsedStatus && hierarchyTableProblemsList.length > 0 && ( <span style={{ fontSize: scaleFontSize(12), color: token.colorError, fontWeight: 'normal' }}><WarningOutlined /> {translate('step2.hierarchy_card_problem_count', { count: hierarchyTableProblemsList.length, defaultValue: '{{count}} 處需修正' })}</span> )} </Space> } extra={<Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeHierarchyTable(hierarchyTableRecordItem.id)} />} >
+                                                    <div data-hierarchy-scroll={treeCardKeyStr} style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: HIERARCHY_SCROLL_BOX_MAX_HEIGHT, paddingBottom: '8px', marginBottom: '4px' }}>
+                                                        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', padding: '0 8px', position: 'sticky', top: 0, zIndex: 2, background: token.colorBgContainer }}>
+                                                            <div style={{ flex: 1, minWidth: '10.5em', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>
                                                                 {translate('step2.original_value')}
                                                                 <Tooltip title={translate('step2.original_value_tooltip', '請填入資料集中實際出現的原始值，須完全一致（含全形/半形、大小寫、空格）；不一致將視為未涵蓋此值，執行時會被取代成「*」。')}>
                                                                     <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} />
                                                                 </Tooltip>
                                                             </div>
                                                             {Array.from({ length: columnCountCalculatedValue - 1 }).map((_, levelIndexLoopVar) => (
-                                                                <div key={levelIndexLoopVar} style={{ flex: 1, minWidth: '150px', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>
+                                                                <div key={levelIndexLoopVar} style={{ flex: 1, minWidth: '10.5em', color: token.colorTextSecondary, fontSize: scaleFontSize(12) }}>
                                                                     {translate('step2.generalize_level', { level: levelIndexLoopVar + 1 })}
                                                                     <Tooltip title={translate('step2.generalize_level_tooltip', '欄位的「泛化層級」設定達到此層時，這個原始值會被取代成這裡填寫的較粗分類；建議層級越高，填寫越粗略的分類。')}>
                                                                         <QuestionCircleOutlined style={{ marginLeft: 4, color: token.colorTextDescription, cursor: 'help', fontSize: scaleFontSize(12) }} />
                                                                     </Tooltip>
                                                                 </div>
                                                             ))}
-                                                            <div style={{ width: '60px' }}></div>
+                                                            <div style={{ width: '4.5em' }}></div>
                                                         </div>
 
                                                         {hierarchyTableRecordItem.mappings.map(
@@ -2641,7 +2706,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                                     {Array.from({ length: columnCountCalculatedValue }).map((_, columnIndexNumber) => (
                                                                         <Input
                                                                             key={columnIndexNumber}
-                                                                            style={{ flex: 1, minWidth: '150px' }}
+                                                                            style={{ flex: 1, minWidth: '10.5em' }}
                                                                             placeholder={columnIndexNumber === 0
                                                                                 ? translate('step2.hierarchy_cell_placeholder_original', '原始值，如：大安區')
                                                                                 : translate('step2.hierarchy_cell_placeholder_level', '較粗分類，如：臺北市')}
@@ -2651,7 +2716,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                                             onChange={(inputChangeEvent) => updateMappingCell(hierarchyTableRecordItem.id, rowIndexNumber, columnIndexNumber, inputChangeEvent.target.value)}
                                                                         />
                                                                     ))}
-                                                                    <Space style={{ width: '60px', justifyContent: 'center' }}>
+                                                                    <Space style={{ width: '4.5em', justifyContent: 'center' }}>
                                                                         <Popconfirm title={translate('step2.confirm_delete_row')} onConfirm={() => removeMappingRow(hierarchyTableRecordItem.id, rowIndexNumber)}> <Button type="text" size="small" icon={<DeleteOutlined style={{ color: token.colorTextDescription }} />} /> </Popconfirm>
                                                                         <Button type="primary" size="small" icon={<SaveOutlined />} />
                                                                     </Space>
@@ -2669,7 +2734,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                         </div>
                                                     )}
                                                     <Space size={4} wrap>
-                                                        <Button type="link" icon={<PlusOutlined />} onClick={() => addMappingRow(hierarchyTableRecordItem.id)} style={{ paddingLeft: 0 }}>{translate('step2.btn_add_mapping')}</Button>
+                                                        <Button type="link" icon={<PlusOutlined />} onClick={() => { addMappingRow(hierarchyTableRecordItem.id); scrollHierarchyBoxToBottom(treeCardKeyStr); }} style={{ paddingLeft: 0 }}>{translate('step2.btn_add_mapping')}</Button>
                                                         <Button type="link" icon={<PlusOutlined />} disabled={columnCountCalculatedValue - 1 >= MAX_HIERARCHY_LEVEL_COUNT} onClick={() => addHierarchyLevelColumn(hierarchyTableRecordItem.id)}>{translate('step2.btn_add_hierarchy_level', '新增泛化層級')}</Button>
                                                         {(() => {
                                                             const lastLevelHasValueStatus = hierarchyTableRecordItem.mappings.some(mappingRowArray => (mappingRowArray[columnCountCalculatedValue - 1] || '').trim() !== '');

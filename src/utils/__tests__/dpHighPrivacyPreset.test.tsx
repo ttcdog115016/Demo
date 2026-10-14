@@ -39,11 +39,13 @@ describe('Step3 差分隱私：9 個欄位套用「高隱私」後可前往下�
             columns: NAMES, columnRoles: {}, privacyMode: 'differential-privacy',
             dpFields, targetDelta: 1e-4, budgetLimitEpsilon: 20
         } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
-        const { getByText } = render(<DifferentialPrivacyRules />);
+        const { getByTestId } = render(<DifferentialPrivacyRules />);
 
-        fireEvent.click(getByText('高隱私 (High Privacy)'));
+        fireEvent.click(getByTestId('dp-preset-high'));
         await waitFor(() => expect(useWorkspaceStore.getState().budgetLimitEpsilon).toBe(1));
         useWorkspaceStore.getState().dpFields.forEach((field) => expect(field.epsilon).toBeCloseTo(1 / 9, 12));
         await waitFor(() => expect(useWorkspaceStore.getState().isStepValid).toBe(true));
+        // 套用後「高保護」卡為選中狀態
+        await waitFor(() => expect(getByTestId('dp-preset-high').getAttribute('aria-checked')).toBe('true'));
     });
 });

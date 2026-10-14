@@ -13,7 +13,7 @@ import { buildBackendSubgroupPayload } from '../../../utils/riskSubgroupHelpers'
 import { applySensitiveBinningToCsvText } from '../../../utils/sensitiveBinning';
 import { ENABLE_RISK_UPLOAD_COLUMN_TRIMMING, projectCsvTextToColumns, pruneKAnonymityBlockToColumns, formatMegabytesText } from '../../../utils/riskUploadTrimming';
 import { extractCapRequestFailureReasonText, buildCapUnavailableReceipt } from '../../../utils/riskResultHelpers';
-import { computeCapShuffleBaselineFromCsvText, computeCapExcessRisk } from '../../../utils/capBaseline';
+import { computeCapShuffleBaselineFromCsvText, computeCapExcessRisk, isCapExcessNotApplicable } from '../../../utils/capBaseline';
 import {
     resolveKAnonymityRiskColumns, selectKAnonymitySensitiveCandidates, describeKAnonymityHighCardinalityHandling,
     buildKAnonymityRiskColumnsForCandidate, buildKAnonymityConfigBlockForRisk, selectDifferentialPrivacySensitiveCandidates,
@@ -305,7 +305,8 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
                     ...capReport,
                     cap_sensitive_column: sensitiveColumnName,
                     cap_baseline_after: baselineValue,
-                    cap_after_excess: computeCapExcessRisk(capReport.cap_after, baselineValue)
+                    // 用前端重算的完整精度 CAP（與後端同一公式），避免後端四捨五入到小數 4 位造成偏差
+                    cap_after_excess: computeCapExcessRisk(baselineResult ? baselineResult.recomputedCap : capReport.cap_after, baselineValue)
                 };
             };
             // 後端只評設定檔中的第一個敏感欄位（cap_mode.py：sensitive_cols[0]）
@@ -348,7 +349,9 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             console.log('📩 /api/v1/risk/cap 原始回應內容:', capReportResult);
             if (capReportResult && capReportResult.cap_before >= 0 && capReportResult.cap_after >= 0) {
                 appendPipelineLog(`✅ CAP 前後對比完成（處理前 ${(capReportResult.cap_before * 100).toFixed(1)}% → 處理後 ${(capReportResult.cap_after * 100).toFixed(1)}%）`);
-                if (typeof capReportResult.cap_baseline_after === 'number' && typeof capReportResult.cap_after_excess === 'number') {
+                if (isCapExcessNotApplicable(capReportResult.cap_baseline_after)) {
+                    appendPipelineLog(`ℹ️ 敏感欄位「${capReportResult.cap_sensitive_column}」：間接識別欄位幾乎每筆都不同（亂猜基線 ${((capReportResult.cap_baseline_after as number) * 100).toFixed(1)}%），CAP 無法判斷，「能否猜出敏感資料」改以推斷性攻擊為準`);
+                } else if (typeof capReportResult.cap_baseline_after === 'number' && typeof capReportResult.cap_after_excess === 'number') {
                     appendPipelineLog(`ℹ️ 敏感欄位「${capReportResult.cap_sensitive_column}」亂猜基線（打亂敏感欄位後的 CAP）${(capReportResult.cap_baseline_after * 100).toFixed(1)}%，扣除後的猜中風險 ${(capReportResult.cap_after_excess * 100).toFixed(1)}%`);
                 }
             } else if (capReportResult) {

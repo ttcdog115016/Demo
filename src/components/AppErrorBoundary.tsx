@@ -47,7 +47,7 @@ export default class AppErrorBoundary extends Component<AppErrorBoundaryProps, A
         if (!caughtError) return this.props.children;
 
         return (
-            <div style={{ maxWidth: 880, margin: '48px auto', padding: 24, fontFamily: 'system-ui, sans-serif', color: '#e5e5e5', background: '#1f1f1f', borderRadius: 12, border: '1px solid #ff4d4f' }}>
+            <div style={{ maxWidth: '63em', margin: '48px auto', padding: 24, fontFamily: 'system-ui, sans-serif', color: '#e5e5e5', background: '#1f1f1f', borderRadius: 12, border: '1px solid #ff4d4f' }}>
                 <h2 style={{ marginTop: 0, color: '#ff7875' }}>畫面發生錯誤</h2>
                 <p>系統遇到未預期的錯誤，畫面已停止更新。請按「複製錯誤內容」後回報給開發人員，再重新載入頁面。</p>
                 <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: '#141414', padding: 12, borderRadius: 8, maxHeight: 360, overflow: 'auto', fontSize: scaleFontSize(12) }}>

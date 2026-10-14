@@ -9,6 +9,7 @@
 
 import { create } from 'zustand';
 import type { AuditIntegrityRecord } from '../utils/auditIntegrity';
+import type { ComplianceReportSnapshot } from '../utils/complianceReport';
 
 /**
  * 歷史審計軌跡單筆紀錄資料結構介面
@@ -38,6 +39,7 @@ export interface AuditLogItem
 	identifierMaskStrategySnapshot: Record<string, string>; // 簽發當下 Identifier 欄位實際套用之遮蔽策略快照 ('hash' | 'remove')，用以區分套用技術對照表顯示「完全遮蔽」或「直接移除」
 	dpEnabledFieldNamesSnapshot: string[];            // 簽發當下已啟用差分隱私之欄位名稱清單快照
 	qiGeneralizationTechSnapshot?: Record<string, string>; // ★ 2026-10-05：K-匿名間接識別欄位實際套用之泛化技術代碼快照（見 utils/kAnonymityTechLabel.ts）；舊紀錄無此欄位，顯示退回「區間/時間泛化」
+	reportSnapshot?: ComplianceReportSnapshot;        // ★ 2026-10-08：簽發當下合規報告所需數值（處理配置、三攻擊、CAP、效用），Step4 報告與歷史紀錄調閱共用同一份，內容一致；舊紀錄無此欄位
 	integrity?: AuditIntegrityRecord;                 // ★ 2026-10-02：防篡改指紋（SHA-256）與數位簽章（ECDSA P-256），見 utils/auditIntegrity.ts；舊紀錄無此欄位
 }
 

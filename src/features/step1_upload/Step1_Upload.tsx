@@ -327,7 +327,7 @@ export default function Step1_Upload(): React.ReactElement
     // ★ 2026-10-05：上傳檢查不通過時共用：關閉載入動畫、清掉已暫存的檔案，並以「問題／建議」兩行
     //   精簡顯示（比照後端「錯誤訊息與建議」寫法）。
     const renderProblemAdviceNode = (problemText: ReactNode, adviceText: string): ReactNode => (
-        <div style={{ textAlign: 'left', maxWidth: 560 }}>
+        <div style={{ textAlign: 'left', maxWidth: '40em' }}>
             <div><strong>{translate('step1.label_problem', '問題：')}</strong>{problemText}</div>
             <div style={{ marginTop: 2 }}><strong>{translate('step1.label_advice', '建議：')}</strong>{adviceText}</div>
         </div>
@@ -623,7 +623,7 @@ export default function Step1_Upload(): React.ReactElement
                 title={translate('step1.content_review_title', '資料內容需要確認')}
                 onCancel={handleContentReviewCancel}
                 maskClosable={false}
-                width={640}
+                width={'45.5em'}
                 footer={[
                     <Button key="cancel" onClick={handleContentReviewCancel}>{translate('step1.content_review_btn_cancel', '取消上傳')}</Button>,
                     ...(pendingContentReview?.specialChars

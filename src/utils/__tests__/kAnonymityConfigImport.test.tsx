@@ -187,3 +187,36 @@ describe('值抑制逐欄填值 cell_fill_value', () => {
         expect(extractImportedCellFillValues(undefined)).toEqual({});
     });
 });
+
+describe('匯入設定檔後再「套用系統推薦設定」：Step3 還原為系統預設（2026-10-08）', () => {
+    afterEach(() => cleanup());
+
+    it('K、l／t、抑制設定回到預設；Step3 顯示「標準」且進階區塊收合；下載設定檔不含 l／t', async () => {
+        resetStore();
+        await importThroughStep2(backendConfigKanonText);
+        expect(useWorkspaceStore.getState()).toMatchObject({ kValue: 5, enableLDiversity: true, enableTCloseness: true, maxSuppression: 20, limitExceededAction: 'allow_with_warning' });
+
+        render(<KAnonymityMapping />);
+        fireEvent.click(screen.getByText('step2.btn_apply_recommend'));
+        cleanup();
+        expect(useWorkspaceStore.getState()).toMatchObject({
+            kValue: 3, lValue: 2, tValue: 0.15, enableLDiversity: false, enableTCloseness: false,
+            maxSuppression: 5, suppressionMethod: 'row_suppression', limitExceededAction: 'stop_and_error', cellFillValuesByColumn: {}
+        });
+
+        const { getByTestId, container } = render(<KAnonymityRules />);
+        expect(getByTestId('kanon-preset-standard').getAttribute('aria-checked')).toBe('true');
+        expect(container.querySelector('[data-testid="kanon-plain-advanced"] [role="button"]')?.getAttribute('aria-expanded')).toBe('false');
+
+        const exportedConfig = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: Record<string, unknown> };
+        expect(exportedConfig.k_anonymity).toMatchObject({ k: 3, suppression_limit_percent: 5, limit_exceeded_action: 'stop_and_error', suppression_method: 'row_suppression' });
+        expect(exportedConfig.k_anonymity).not.toHaveProperty('l');
+        expect(exportedConfig.k_anonymity).not.toHaveProperty('t');
+
+        // 層級一律重設為系統預設（不沿用匯入的職業 [1, 3]）：字串前後綴＝4，與直接套用推薦相同
+        const fieldsByName = Object.fromEntries((useWorkspaceStore.getState().kAnonymityFields as { name: string }[]).map((field) => [field.name, field]));
+        expect(fieldsByName.職業).toMatchObject({ genStrategy: 'prefix', genMaxLevel: 4, genDirection: 'front' });
+        expect(fieldsByName.職業).not.toHaveProperty('genLevelRangeUpper');
+        expect(exportedConfig.k_anonymity.qi_generalization_levels).toEqual({ 地區: 4, 職業: 4 });
+    });
+});

@@ -6,12 +6,13 @@ import type { AttackReport, KAnonymityQualityReport, DpQualityReport } from '../
 import type { AuditLogItem } from '../../../store/useAuditStore';
 import { countCsvDataRowsForStats } from '../../../utils/riskResultHelpers';
 import { isDpBudgetExceeded } from '../../../utils/pipelineConfig';
+import type { ComplianceReportSnapshot } from '../../../utils/complianceReport';
 
 export interface SimulationResult
 {
-    singling: { ori: number; ctrl: number; base: number; risk: number };
-    linkability: { ori: number; ctrl: number; base: number; risk: number };
-    inference: { ori: number; ctrl: number; base: number; risk: number };
+    singling: { risk: number };     // 後端回傳的指認性風險（已扣除控制組與亂猜基準）
+    linkability: { risk: number };  // 後端回傳的連結性風險（同上）
+    inference: { risk: number };    // 後端回傳的推斷性風險（同上）
     overallRiskPercent: string;
 }
 
@@ -50,39 +51,26 @@ export const evaluateComplianceValidity = (
     return true;
 };
 
-/** 控制攻擊分數：後端目前沒有回傳對照組成功率，暫以 0 表示（不憑空捏造），待後端提供後再串接 */
-export const CONTROL_ATTACK_RISK_PLACEHOLDER = 0;
-
 /**
- * 三攻擊風險分數正規化（主要攻擊 S_ori／控制攻擊 S_ctrl／基準攻擊 S_base）：
- *   最終風險 = max(0, (S_ori − max(S_ctrl, S_base)) / (1 − max(S_ctrl, S_base)))
- * S_base 採隨機猜測基準 1/樣本數；樣本數不明或為 0 時視為無基準，直接用原始值。
+ * 三攻擊風險分數：直接採用後端回傳值。
+ * ★ 2026-10-14 修正：後端（app/engines/risk/formula.py 的 risk_score，三攻擊共用）回傳的
+ *   singling_out_risk／linkability_risk／inference_risk 已是
+ *     max(0, (S_ori − max(S_ctrl, S_base)) / (1 − max(S_ctrl, S_base)))
+ *   ＝扣除控制組（ctrl_ratio 切出的 holdout）與亂猜基準後的最終風險，並取多輪平均。
+ *   前端原本把它當成原始成功率，又以 1/樣本數 為基準再正規化一次（重複扣除，影響極小但邏輯錯誤），已移除。
+ *   （依據：期中交付套件原始碼；v3 只有映像檔，待後端確認未改變。）
  * 沒有三攻擊報告（例如沒有敏感欄位而略過）時三項皆為 0，呼叫端不應把它當成「評估過且無風險」。
  */
 export const computeSimulationMetrics = (attackReport: AttackReport | null): SimulationResult => {
-    const finalSinglingRiskValue = attackReport?.singling_out_risk ?? 0;
-    const finalLinkabilityRiskValue = attackReport?.linkability_risk ?? 0;
-    const finalInferenceRiskValue = attackReport?.inference_risk ?? 0;
-
-    const naiveBaselineRiskValue = (attackReport?.sample_size && attackReport.sample_size > 0)
-        ? 1 / attackReport.sample_size
-        : 0;
-    const riskReferenceFloorValue = Math.max(CONTROL_ATTACK_RISK_PLACEHOLDER, naiveBaselineRiskValue);
-    const normalizeAttackRiskScore = (mainAttackRiskValue: number): number => {
-        if (riskReferenceFloorValue >= 1) return 0;
-        return Math.max(0, (mainAttackRiskValue - riskReferenceFloorValue) / (1 - riskReferenceFloorValue));
-    };
-
-    const normalizedSinglingRiskValue = normalizeAttackRiskScore(finalSinglingRiskValue);
-    const normalizedLinkabilityRiskValue = normalizeAttackRiskScore(finalLinkabilityRiskValue);
-    const normalizedInferenceRiskValue = normalizeAttackRiskScore(finalInferenceRiskValue);
-    const calculatedOverallMaxRiskScoreValue = Math.max(normalizedSinglingRiskValue, normalizedLinkabilityRiskValue, normalizedInferenceRiskValue);
-
+    const singlingRiskValue = attackReport?.singling_out_risk ?? 0;
+    const linkabilityRiskValue = attackReport?.linkability_risk ?? 0;
+    const inferenceRiskValue = attackReport?.inference_risk ?? 0;
+    const overallMaxRiskValue = Math.max(singlingRiskValue, linkabilityRiskValue, inferenceRiskValue);
     return {
-        singling: { ori: finalSinglingRiskValue, ctrl: CONTROL_ATTACK_RISK_PLACEHOLDER, base: naiveBaselineRiskValue, risk: normalizedSinglingRiskValue },
-        linkability: { ori: finalLinkabilityRiskValue, ctrl: CONTROL_ATTACK_RISK_PLACEHOLDER, base: naiveBaselineRiskValue, risk: normalizedLinkabilityRiskValue },
-        inference: { ori: finalInferenceRiskValue, ctrl: CONTROL_ATTACK_RISK_PLACEHOLDER, base: naiveBaselineRiskValue, risk: normalizedInferenceRiskValue },
-        overallRiskPercent: (calculatedOverallMaxRiskScoreValue * 100).toFixed(1)
+        singling: { risk: singlingRiskValue },
+        linkability: { risk: linkabilityRiskValue },
+        inference: { risk: inferenceRiskValue },
+        overallRiskPercent: (overallMaxRiskValue * 100).toFixed(1)
     };
 };
 
@@ -126,6 +114,8 @@ export const buildPipelineAuditLogEntry = (input: {
     dpEnabledFieldNames: string[];
     /** K-匿名間接識別欄位實際套用之泛化技術代碼（見 utils/kAnonymityTechLabel.ts）；未提供時不寫快照 */
     resolveQiGeneralizationTech?: (columnName: string) => string;
+    /** ★ 2026-10-08：合規報告快照（見 utils/complianceReport.ts），Step4 報告與歷史紀錄調閱共用 */
+    reportSnapshot?: ComplianceReportSnapshot;
 }): Omit<AuditLogItem, 'id'> => {
     const columnRoleSnapshotDict = input.columnNames.reduce((accumulatorDict, columnNameString) => {
         accumulatorDict[columnNameString] = input.resolveColumnRole(columnNameString).role;
@@ -158,7 +148,7 @@ export const buildPipelineAuditLogEntry = (input: {
         auditTime: input.auditTime,
         auditTimestamp: input.auditTimestamp,
         parameters: input.privacyMode === 'k-anonymity' ? `K = ${input.kValue}` : `發布次數 M = ${input.queryCount}`,
-        // 與畫面顯示一致，記錄正規化後的最終風險分數（.risk），而非原始成功率（.ori）
+        // 與畫面顯示一致，記錄後端回傳的最終風險分數（已扣除控制組與亂猜基準）
         singlingRisk: formatRiskText(input.simulationMetrics.singling.risk),
         linkabilityRisk: formatRiskText(input.simulationMetrics.linkability.risk),
         inferenceRisk: formatRiskText(input.simulationMetrics.inference.risk),
@@ -171,6 +161,7 @@ export const buildPipelineAuditLogEntry = (input: {
         columnRoleSnapshot: columnRoleSnapshotDict,
         identifierMaskStrategySnapshot: identifierMaskStrategySnapshotDict,
         dpEnabledFieldNamesSnapshot: input.dpEnabledFieldNames,
-        ...(qiGeneralizationTechSnapshotDict ? { qiGeneralizationTechSnapshot: qiGeneralizationTechSnapshotDict } : {})
+        ...(qiGeneralizationTechSnapshotDict ? { qiGeneralizationTechSnapshot: qiGeneralizationTechSnapshotDict } : {}),
+        ...(input.reportSnapshot ? { reportSnapshot: input.reportSnapshot } : {})
     };
 };

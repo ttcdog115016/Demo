@@ -426,8 +426,11 @@ export const mergeWorstCaseAttackReport = (
  * ★ 2026-10-06：有前端算的扣除基線值（cap_after_excess）時以它比較——各敏感欄位的亂猜基線不同，
  *   cap_after 最高的欄位不一定是超出亂猜最多的；基線與扣除值一律跟著最危險那一輪走。
  */
+// 已算過基線（含「不適用」）的報告以扣除值比較，不適用者視為最低，避免原始 CAP ≈ 100% 搶走最危險的位置
 const resolveCapSeverity = (report: CapReport): number =>
-    typeof report.cap_after_excess === 'number' ? report.cap_after_excess : report.cap_after;
+    typeof report.cap_after_excess === 'number'
+        ? report.cap_after_excess
+        : report.cap_baseline_after !== undefined ? -1 : report.cap_after;
 export const mergeWorstCaseCapReport = (worstCaseReport: CapReport | null, thisRoundReport: CapReport): CapReport => {
     const isThisRoundNewWorstCapCase: boolean = !worstCaseReport || resolveCapSeverity(thisRoundReport) > resolveCapSeverity(worstCaseReport);
     return {

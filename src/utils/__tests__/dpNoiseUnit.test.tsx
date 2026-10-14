@@ -97,7 +97,9 @@ describe('DP 日期欄位的雜訊單位（noise_unit：day／hour／minute／se
 
     it('Step3 畫面：日期欄位有雜訊單位選單，改成「時」後敏感度 365 天 → 8760 時，送出 noise_unit hour', async () => {
         setWorkspace(loadFields(backendSample.differential_privacy.column_budgets));
-        const { getByTestId, getByText } = render(<DifferentialPrivacyRules />);
+        const { getByTestId, getByText, getByLabelText } = render(<DifferentialPrivacyRules />);
+        // ★ 2026-10-07 白話版：雜訊單位等設定收在每列「詳細」裡
+        fireEvent.click(getByLabelText('生日 詳細'));
         const noiseUnitSelect = getByTestId('dp-noise-unit-select');
         expect(noiseUnitSelect.textContent).toContain('天');
         expect(getByText('加噪步階 (天)')).toBeTruthy();
