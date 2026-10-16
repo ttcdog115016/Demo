@@ -1,0 +1,541 @@
+{
+  "opts": {
+    "base": "https://maps-reload-writing-indicating.trycloudflare.com",
+    "users": "kanon,kanon,dp,dp",
+    "rows": 5000,
+    "csv": "stress-test\\data\\input_test.csv",
+    "stagger": 0,
+    "repeat": 1,
+    "baseline": true,
+    "report": true,
+    "pageLoad": true,
+    "timeoutSec": 900,
+    "maxSec": 300,
+    "docker": true,
+    "out": "C:\\Users\\TTCWEI\\Desktop\\Demo\\stress-test\\results"
+  },
+  "meta": {
+    "startedAt": "2026/10/2 16:20:47",
+    "csvName": "input_test.csv",
+    "rows": 69773,
+    "cols": 10,
+    "bytes": 5526633
+  },
+  "baselineRuns": [
+    {
+      "userId": 0,
+      "mode": "kanon",
+      "phase": "baseline",
+      "ok": true,
+      "error": null,
+      "totalMs": 98716,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 114,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 6348,
+          "bytes": 3540499,
+          "ok": true,
+          "detail": "3458 KB"
+        },
+        {
+          "name": "POST /k-anonymity",
+          "status": 200,
+          "ms": 39134,
+          "bytes": 5035840,
+          "ok": true,
+          "detail": "輸出 26867 筆、抑制率 61.49370100182019%、is_valid=false"
+        },
+        {
+          "name": "POST /risk/k-anonymity #1",
+          "status": 200,
+          "ms": 22186,
+          "bytes": 606,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.7%"
+        },
+        {
+          "name": "POST /risk/cap #1",
+          "status": 200,
+          "ms": 30294,
+          "bytes": 146,
+          "ok": true,
+          "detail": "CAP 100.0% → 42.6%"
+        },
+        {
+          "name": "POST /report (PDF)",
+          "status": 200,
+          "ms": 614,
+          "bytes": 40822,
+          "ok": true,
+          "detail": "40 KB"
+        }
+      ],
+      "attackReport": {
+        "singling_out_risk": 0,
+        "linkability_risk": 0,
+        "inference_risk": 0.0073,
+        "sample_size": 69773,
+        "linkability_evaluated": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0,
+        "processing_config": {
+          "method": "k-anon",
+          "deid_params": {
+            "k": 5,
+            "l": 2,
+            "t": 0.7,
+            "suppression_limit_percent": 20,
+            "limit_exceeded_action": "allow_with_warning",
+            "suppression_method": "row_suppression",
+            "cell_fill": "star"
+          },
+          "risk_params": {
+            "n_iter": 50,
+            "ctrl_ratio": 0.2,
+            "seed": 42,
+            "n_subset": 500,
+            "n_repeats": 1,
+            "overlap_ratio": 0
+          }
+        },
+        "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.00, 連結性風險: 0.00, 推斷性風險: 0.01。"
+      },
+      "capReport": {
+        "cap_before": 1,
+        "cap_after": 0.4261,
+        "n_original": 69773,
+        "n_processed": 26867,
+        "message": "CAP 前後對比完成。原始: 1.00, 處理後: 0.43。"
+      }
+    },
+    {
+      "userId": 0,
+      "mode": "dp",
+      "phase": "baseline",
+      "ok": false,
+      "error": "POST /dp: 回傳 CSV 為空",
+      "totalMs": 15797,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 405,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 5283,
+          "bytes": 3540499,
+          "ok": true,
+          "detail": "3458 KB"
+        },
+        {
+          "name": "POST /dp",
+          "status": 502,
+          "ms": 10099,
+          "bytes": 155,
+          "ok": false,
+          "detail": "回傳 CSV 為空"
+        }
+      ],
+      "attackReport": null,
+      "capReport": null
+    }
+  ],
+  "concurrentRuns": [
+    {
+      "userId": 1,
+      "mode": "kanon",
+      "phase": "R1",
+      "ok": false,
+      "error": "GET / (頁面載入): HTTP 530 <!DOCTYPE html> <html class=\"no-js\" lang=\"en-US\"> <head> <title>Cloudflare Tunnel error | maps-reload-writing-indicating.trycloudflare.com | Cloudflare</title> <meta charset=\"UTF-8\" /> <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" /> <meta name=\"robots\" content=\"noindex, nofollow\" /> <meta name=\"viewport\" content=\"wi",
+      "totalMs": 85,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 530,
+          "ms": 84,
+          "bytes": 5997,
+          "ok": false,
+          "detail": "HTTP 530 <!DOCTYPE html> <html class=\"no-js\" lang=\"en-US\"> <head> <title>Cloudflare Tunnel error | maps-reload-writing-indicating.trycloudflare.com | Cloudflare</title> <meta charset=\"UTF-8\" /> <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" /> <meta name=\"robots\" content=\"noindex, nofollow\" /> <meta name=\"viewport\" content=\"wi"
+        }
+      ],
+      "attackReport": null,
+      "capReport": null
+    },
+    {
+      "userId": 2,
+      "mode": "kanon",
+      "phase": "R1",
+      "ok": false,
+      "error": "GET / (頁面載入): HTTP 530 <!DOCTYPE html> <html class=\"no-js\" lang=\"en-US\"> <head> <title>Cloudflare Tunnel error | maps-reload-writing-indicating.trycloudflare.com | Cloudflare</title> <meta charset=\"UTF-8\" /> <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" /> <meta name=\"robots\" content=\"noindex, nofollow\" /> <meta name=\"viewport\" content=\"wi",
+      "totalMs": 69,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 530,
+          "ms": 67,
+          "bytes": 5997,
+          "ok": false,
+          "detail": "HTTP 530 <!DOCTYPE html> <html class=\"no-js\" lang=\"en-US\"> <head> <title>Cloudflare Tunnel error | maps-reload-writing-indicating.trycloudflare.com | Cloudflare</title> <meta charset=\"UTF-8\" /> <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" /> <meta name=\"robots\" content=\"noindex, nofollow\" /> <meta name=\"viewport\" content=\"wi"
+        }
+      ],
+      "attackReport": null,
+      "capReport": null
+    },
+    {
+      "userId": 3,
+      "mode": "dp",
+      "phase": "R1",
+      "ok": false,
+      "error": "GET / (頁面載入): HTTP 530 <!DOCTYPE html> <html class=\"no-js\" lang=\"en-US\"> <head> <title>Cloudflare Tunnel error | maps-reload-writing-indicating.trycloudflare.com | Cloudflare</title> <meta charset=\"UTF-8\" /> <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" /> <meta name=\"robots\" content=\"noindex, nofollow\" /> <meta name=\"viewport\" content=\"wi",
+      "totalMs": 341,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 530,
+          "ms": 341,
+          "bytes": 5997,
+          "ok": false,
+          "detail": "HTTP 530 <!DOCTYPE html> <html class=\"no-js\" lang=\"en-US\"> <head> <title>Cloudflare Tunnel error | maps-reload-writing-indicating.trycloudflare.com | Cloudflare</title> <meta charset=\"UTF-8\" /> <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" /> <meta name=\"robots\" content=\"noindex, nofollow\" /> <meta name=\"viewport\" content=\"wi"
+        }
+      ],
+      "attackReport": null,
+      "capReport": null
+    },
+    {
+      "userId": 4,
+      "mode": "dp",
+      "phase": "R1",
+      "ok": false,
+      "error": "GET / (頁面載入): HTTP 530 <!DOCTYPE html> <html class=\"no-js\" lang=\"en-US\"> <head> <title>Cloudflare Tunnel error | maps-reload-writing-indicating.trycloudflare.com | Cloudflare</title> <meta charset=\"UTF-8\" /> <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" /> <meta name=\"robots\" content=\"noindex, nofollow\" /> <meta name=\"viewport\" content=\"wi",
+      "totalMs": 275,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 530,
+          "ms": 275,
+          "bytes": 5997,
+          "ok": false,
+          "detail": "HTTP 530 <!DOCTYPE html> <html class=\"no-js\" lang=\"en-US\"> <head> <title>Cloudflare Tunnel error | maps-reload-writing-indicating.trycloudflare.com | Cloudflare</title> <meta charset=\"UTF-8\" /> <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" /> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" /> <meta name=\"robots\" content=\"noindex, nofollow\" /> <meta name=\"viewport\" content=\"wi"
+        }
+      ],
+      "attackReport": null,
+      "capReport": null
+    }
+  ],
+  "dockerSamples": [
+    {
+      "t": 1790929249701,
+      "name": "modest_pascal",
+      "cpu": 0.2,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929251802,
+      "name": "modest_pascal",
+      "cpu": 0.31,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929253894,
+      "name": "modest_pascal",
+      "cpu": 0.3,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929255996,
+      "name": "modest_pascal",
+      "cpu": 0.23,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929259009,
+      "name": "modest_pascal",
+      "cpu": 0.23,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929261137,
+      "name": "modest_pascal",
+      "cpu": 0.27,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929263233,
+      "name": "modest_pascal",
+      "cpu": 0.31,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929265303,
+      "name": "modest_pascal",
+      "cpu": 16.43,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929267390,
+      "name": "modest_pascal",
+      "cpu": 17.62,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929270398,
+      "name": "modest_pascal",
+      "cpu": 99.81,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929272477,
+      "name": "modest_pascal",
+      "cpu": 75.9,
+      "memMB": 1658.88
+    },
+    {
+      "t": 1790929274569,
+      "name": "modest_pascal",
+      "cpu": 0.27,
+      "memMB": 1657.856
+    },
+    {
+      "t": 1790929276654,
+      "name": "modest_pascal",
+      "cpu": 0.29,
+      "memMB": 1657.856
+    },
+    {
+      "t": 1790929279671,
+      "name": "modest_pascal",
+      "cpu": 0.25,
+      "memMB": 1656.832
+    },
+    {
+      "t": 1790929281763,
+      "name": "modest_pascal",
+      "cpu": 0.25,
+      "memMB": 1656.832
+    },
+    {
+      "t": 1790929283860,
+      "name": "modest_pascal",
+      "cpu": 0.3,
+      "memMB": 1656.832
+    },
+    {
+      "t": 1790929285944,
+      "name": "modest_pascal",
+      "cpu": 0.16,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929288975,
+      "name": "modest_pascal",
+      "cpu": 0.19,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929291054,
+      "name": "modest_pascal",
+      "cpu": 0.27,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929293142,
+      "name": "modest_pascal",
+      "cpu": 0.29,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929295245,
+      "name": "modest_pascal",
+      "cpu": 0.24,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929297314,
+      "name": "modest_pascal",
+      "cpu": 0.19,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929300336,
+      "name": "modest_pascal",
+      "cpu": 0.26,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929302442,
+      "name": "modest_pascal",
+      "cpu": 0.25,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929304547,
+      "name": "modest_pascal",
+      "cpu": 0.29,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929306657,
+      "name": "modest_pascal",
+      "cpu": 0.25,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929309674,
+      "name": "modest_pascal",
+      "cpu": 12.02,
+      "memMB": 1654.784
+    },
+    {
+      "t": 1790929311753,
+      "name": "modest_pascal",
+      "cpu": 28.18,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929313831,
+      "name": "modest_pascal",
+      "cpu": 40.65,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929315914,
+      "name": "modest_pascal",
+      "cpu": 100.07,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929318928,
+      "name": "modest_pascal",
+      "cpu": 0.18,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929321038,
+      "name": "modest_pascal",
+      "cpu": 0.28,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929323133,
+      "name": "modest_pascal",
+      "cpu": 0.34,
+      "memMB": 1654.784
+    },
+    {
+      "t": 1790929325233,
+      "name": "modest_pascal",
+      "cpu": 0.24,
+      "memMB": 1654.784
+    },
+    {
+      "t": 1790929327315,
+      "name": "modest_pascal",
+      "cpu": 0.24,
+      "memMB": 1654.784
+    },
+    {
+      "t": 1790929330328,
+      "name": "modest_pascal",
+      "cpu": 0.3,
+      "memMB": 1654.784
+    },
+    {
+      "t": 1790929332416,
+      "name": "modest_pascal",
+      "cpu": 0.32,
+      "memMB": 1654.784
+    },
+    {
+      "t": 1790929334511,
+      "name": "modest_pascal",
+      "cpu": 0.72,
+      "memMB": 1654.784
+    },
+    {
+      "t": 1790929336595,
+      "name": "modest_pascal",
+      "cpu": 28.37,
+      "memMB": 1654.784
+    },
+    {
+      "t": 1790929339601,
+      "name": "modest_pascal",
+      "cpu": 8.18,
+      "memMB": 1654.784
+    },
+    {
+      "t": 1790929341676,
+      "name": "modest_pascal",
+      "cpu": 17.7,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929343757,
+      "name": "modest_pascal",
+      "cpu": 20.98,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929345861,
+      "name": "modest_pascal",
+      "cpu": 20.44,
+      "memMB": 1655.808
+    },
+    {
+      "t": 1790929348878,
+      "name": "modest_pascal",
+      "cpu": 0.27,
+      "memMB": 1658.88
+    },
+    {
+      "t": 1790929350962,
+      "name": "modest_pascal",
+      "cpu": 0.25,
+      "memMB": 1658.88
+    },
+    {
+      "t": 1790929353053,
+      "name": "modest_pascal",
+      "cpu": 0.33,
+      "memMB": 1658.88
+    },
+    {
+      "t": 1790929355146,
+      "name": "modest_pascal",
+      "cpu": 0.34,
+      "memMB": 1658.88
+    },
+    {
+      "t": 1790929357219,
+      "name": "modest_pascal",
+      "cpu": 0.22,
+      "memMB": 1658.88
+    },
+    {
+      "t": 1790929360234,
+      "name": "modest_pascal",
+      "cpu": 0.31,
+      "memMB": 1658.88
+    },
+    {
+      "t": 1790929362326,
+      "name": "modest_pascal",
+      "cpu": 0.4,
+      "memMB": 1658.88
+    }
+  ]
+}

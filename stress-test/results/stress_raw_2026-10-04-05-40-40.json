@@ -1,0 +1,585 @@
+{
+  "opts": {
+    "base": "https://interference-profession-five-manual.trycloudflare.com",
+    "users": "dp,dp",
+    "rows": 5000,
+    "csv": "stress-test\\data\\input_test.csv",
+    "stagger": 0,
+    "repeat": 1,
+    "baseline": true,
+    "report": true,
+    "pageLoad": true,
+    "timeoutSec": 900,
+    "maxSec": 300,
+    "docker": true,
+    "out": "C:\\Users\\TTCWEI\\Desktop\\Demo\\stress-test\\results"
+  },
+  "meta": {
+    "startedAt": "2026/10/4 13:39:09",
+    "csvName": "input_test.csv",
+    "rows": 69773,
+    "cols": 10,
+    "bytes": 5526633
+  },
+  "baselineRuns": [
+    {
+      "userId": 0,
+      "mode": "dp",
+      "phase": "baseline",
+      "ok": true,
+      "error": null,
+      "totalMs": 29928,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 72,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 600,
+          "bytes": 3543216,
+          "ok": true,
+          "detail": "3460 KB"
+        },
+        {
+          "name": "POST /dp",
+          "status": 200,
+          "ms": 9794,
+          "bytes": 5878559,
+          "ok": true,
+          "detail": "輸出 69773 筆、消耗 ε=17"
+        },
+        {
+          "name": "POST /risk/dp #1 (地區)",
+          "status": 200,
+          "ms": 7418,
+          "bytes": 518,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/dp #2 (職業)",
+          "status": 200,
+          "ms": 7492,
+          "bytes": 521,
+          "ok": true,
+          "detail": "指認 2.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/cap #1 (地區)",
+          "status": 200,
+          "ms": 1782,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /risk/cap #2 (職業)",
+          "status": 200,
+          "ms": 2014,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /report (PDF)",
+          "status": 200,
+          "ms": 703,
+          "bytes": 39864,
+          "ok": true,
+          "detail": "39 KB"
+        }
+      ],
+      "attackReport": {
+        "singling_out_risk": 0.0204,
+        "linkability_risk": 0,
+        "inference_risk": 0,
+        "sample_size": 69773,
+        "linkability_evaluated": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0,
+        "processing_config": {
+          "method": "dp",
+          "deid_params": {
+            "accumulated_epsilon": 17,
+            "accumulated_delta": 0.00002,
+            "default_delta": 0.00001
+          },
+          "risk_params": {
+            "n_iter": 50,
+            "ctrl_ratio": 0.2,
+            "seed": 42,
+            "n_subset": 500,
+            "n_repeats": 1,
+            "overlap_ratio": 0
+          }
+        },
+        "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.02, 連結性風險: 0.00, 推斷性風險: 0.00。"
+      },
+      "capReport": {
+        "cap_before": 1,
+        "cap_after": 1,
+        "n_original": 69773,
+        "n_processed": 69773,
+        "message": "CAP 前後對比完成。原始: 1.00, 處理後: 1.00。"
+      }
+    }
+  ],
+  "concurrentRuns": [
+    {
+      "userId": 1,
+      "mode": "dp",
+      "phase": "R1",
+      "ok": true,
+      "error": null,
+      "totalMs": 59997,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 49,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 474,
+          "bytes": 3543216,
+          "ok": true,
+          "detail": "3460 KB"
+        },
+        {
+          "name": "POST /dp",
+          "status": 200,
+          "ms": 16114,
+          "bytes": 5878561,
+          "ok": true,
+          "detail": "輸出 69773 筆、消耗 ε=17"
+        },
+        {
+          "name": "POST /risk/dp #1 (地區)",
+          "status": 200,
+          "ms": 9681,
+          "bytes": 521,
+          "ok": true,
+          "detail": "指認 2.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/dp #2 (職業)",
+          "status": 200,
+          "ms": 13730,
+          "bytes": 518,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/cap #1 (地區)",
+          "status": 200,
+          "ms": 12201,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /risk/cap #2 (職業)",
+          "status": 200,
+          "ms": 7415,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /report (PDF)",
+          "status": 200,
+          "ms": 302,
+          "bytes": 39947,
+          "ok": true,
+          "detail": "39 KB"
+        }
+      ],
+      "attackReport": {
+        "singling_out_risk": 0.0204,
+        "linkability_risk": 0,
+        "inference_risk": 0,
+        "sample_size": 69773,
+        "linkability_evaluated": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0,
+        "processing_config": {
+          "method": "dp",
+          "deid_params": {
+            "accumulated_epsilon": 17,
+            "accumulated_delta": 0.00002,
+            "default_delta": 0.00001
+          },
+          "risk_params": {
+            "n_iter": 50,
+            "ctrl_ratio": 0.2,
+            "seed": 42,
+            "n_subset": 500,
+            "n_repeats": 1,
+            "overlap_ratio": 0
+          }
+        },
+        "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.02, 連結性風險: 0.00, 推斷性風險: 0.00。"
+      },
+      "capReport": {
+        "cap_before": 1,
+        "cap_after": 1,
+        "n_original": 69773,
+        "n_processed": 69773,
+        "message": "CAP 前後對比完成。原始: 1.00, 處理後: 1.00。"
+      }
+    },
+    {
+      "userId": 2,
+      "mode": "dp",
+      "phase": "R1",
+      "ok": true,
+      "error": null,
+      "totalMs": 59699,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 84,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 789,
+          "bytes": 3543216,
+          "ok": true,
+          "detail": "3460 KB"
+        },
+        {
+          "name": "POST /dp",
+          "status": 200,
+          "ms": 17218,
+          "bytes": 5878772,
+          "ok": true,
+          "detail": "輸出 69773 筆、消耗 ε=17"
+        },
+        {
+          "name": "POST /risk/dp #1 (地區)",
+          "status": 200,
+          "ms": 14602,
+          "bytes": 521,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.9%"
+        },
+        {
+          "name": "POST /risk/dp #2 (職業)",
+          "status": 200,
+          "ms": 15235,
+          "bytes": 520,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.2% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/cap #1 (地區)",
+          "status": 200,
+          "ms": 4768,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /risk/cap #2 (職業)",
+          "status": 200,
+          "ms": 6412,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /report (PDF)",
+          "status": 200,
+          "ms": 556,
+          "bytes": 39951,
+          "ok": true,
+          "detail": "39 KB"
+        }
+      ],
+      "attackReport": {
+        "singling_out_risk": 0,
+        "linkability_risk": 0.002,
+        "inference_risk": 0.0086,
+        "sample_size": 69773,
+        "linkability_evaluated": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0,
+        "processing_config": {
+          "method": "dp",
+          "deid_params": {
+            "accumulated_epsilon": 17,
+            "accumulated_delta": 0.00002,
+            "default_delta": 0.00001
+          },
+          "risk_params": {
+            "n_iter": 50,
+            "ctrl_ratio": 0.2,
+            "seed": 42,
+            "n_subset": 500,
+            "n_repeats": 1,
+            "overlap_ratio": 0
+          }
+        },
+        "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.00, 連結性風險: 0.00, 推斷性風險: 0.01。"
+      },
+      "capReport": {
+        "cap_before": 1,
+        "cap_after": 1,
+        "n_original": 69773,
+        "n_processed": 69773,
+        "message": "CAP 前後對比完成。原始: 1.00, 處理後: 1.00。"
+      }
+    }
+  ],
+  "dockerSamples": [
+    {
+      "t": 1791092351359,
+      "name": "gifted_wozniak",
+      "cpu": 0.16,
+      "memMB": 292.2
+    },
+    {
+      "t": 1791092353456,
+      "name": "gifted_wozniak",
+      "cpu": 99.67,
+      "memMB": 292.7
+    },
+    {
+      "t": 1791092356470,
+      "name": "gifted_wozniak",
+      "cpu": 99.86,
+      "memMB": 292.7
+    },
+    {
+      "t": 1791092358609,
+      "name": "gifted_wozniak",
+      "cpu": 99.68,
+      "memMB": 292.7
+    },
+    {
+      "t": 1791092360715,
+      "name": "gifted_wozniak",
+      "cpu": 19.7,
+      "memMB": 296.5
+    },
+    {
+      "t": 1791092362780,
+      "name": "gifted_wozniak",
+      "cpu": 99.18,
+      "memMB": 293.1
+    },
+    {
+      "t": 1791092365790,
+      "name": "gifted_wozniak",
+      "cpu": 100.2,
+      "memMB": 293.1
+    },
+    {
+      "t": 1791092367874,
+      "name": "gifted_wozniak",
+      "cpu": 112.93,
+      "memMB": 312.4
+    },
+    {
+      "t": 1791092369937,
+      "name": "gifted_wozniak",
+      "cpu": 69.51,
+      "memMB": 307
+    },
+    {
+      "t": 1791092372013,
+      "name": "gifted_wozniak",
+      "cpu": 100.13,
+      "memMB": 307
+    },
+    {
+      "t": 1791092375014,
+      "name": "gifted_wozniak",
+      "cpu": 99.8,
+      "memMB": 310.9
+    },
+    {
+      "t": 1791092377095,
+      "name": "gifted_wozniak",
+      "cpu": 7,
+      "memMB": 341.3
+    },
+    {
+      "t": 1791092379193,
+      "name": "gifted_wozniak",
+      "cpu": 16.23,
+      "memMB": 327.5
+    },
+    {
+      "t": 1791092381264,
+      "name": "gifted_wozniak",
+      "cpu": 0.23,
+      "memMB": 342.4
+    },
+    {
+      "t": 1791092383345,
+      "name": "gifted_wozniak",
+      "cpu": 80.47,
+      "memMB": 352.4
+    },
+    {
+      "t": 1791092386347,
+      "name": "gifted_wozniak",
+      "cpu": 99.8,
+      "memMB": 352.4
+    },
+    {
+      "t": 1791092388412,
+      "name": "gifted_wozniak",
+      "cpu": 99.86,
+      "memMB": 352.9
+    },
+    {
+      "t": 1791092390480,
+      "name": "gifted_wozniak",
+      "cpu": 100.35,
+      "memMB": 350.7
+    },
+    {
+      "t": 1791092392544,
+      "name": "gifted_wozniak",
+      "cpu": 99.13,
+      "memMB": 350.7
+    },
+    {
+      "t": 1791092395551,
+      "name": "gifted_wozniak",
+      "cpu": 99.83,
+      "memMB": 351.2
+    },
+    {
+      "t": 1791092397643,
+      "name": "gifted_wozniak",
+      "cpu": 9.71,
+      "memMB": 348.2
+    },
+    {
+      "t": 1791092399739,
+      "name": "gifted_wozniak",
+      "cpu": 0.25,
+      "memMB": 348.1
+    },
+    {
+      "t": 1791092401804,
+      "name": "gifted_wozniak",
+      "cpu": 99.8,
+      "memMB": 364.2
+    },
+    {
+      "t": 1791092404817,
+      "name": "gifted_wozniak",
+      "cpu": 99.68,
+      "memMB": 364.2
+    },
+    {
+      "t": 1791092406911,
+      "name": "gifted_wozniak",
+      "cpu": 307.75,
+      "memMB": 360.9
+    },
+    {
+      "t": 1791092408970,
+      "name": "gifted_wozniak",
+      "cpu": 99.69,
+      "memMB": 360.9
+    },
+    {
+      "t": 1791092411034,
+      "name": "gifted_wozniak",
+      "cpu": 100.07,
+      "memMB": 361.3
+    },
+    {
+      "t": 1791092413122,
+      "name": "gifted_wozniak",
+      "cpu": 281.76,
+      "memMB": 349.3
+    },
+    {
+      "t": 1791092416118,
+      "name": "gifted_wozniak",
+      "cpu": 99.68,
+      "memMB": 368.8
+    },
+    {
+      "t": 1791092418188,
+      "name": "gifted_wozniak",
+      "cpu": 99.68,
+      "memMB": 368.8
+    },
+    {
+      "t": 1791092420250,
+      "name": "gifted_wozniak",
+      "cpu": 290.38,
+      "memMB": 359.1
+    },
+    {
+      "t": 1791092422623,
+      "name": "gifted_wozniak",
+      "cpu": 80.97,
+      "memMB": 375.1
+    },
+    {
+      "t": 1791092425588,
+      "name": "gifted_wozniak",
+      "cpu": 100.14,
+      "memMB": 375
+    },
+    {
+      "t": 1791092427653,
+      "name": "gifted_wozniak",
+      "cpu": 100.2,
+      "memMB": 377.2
+    },
+    {
+      "t": 1791092429736,
+      "name": "gifted_wozniak",
+      "cpu": 0.19,
+      "memMB": 362.2
+    },
+    {
+      "t": 1791092431820,
+      "name": "gifted_wozniak",
+      "cpu": 0.22,
+      "memMB": 362.2
+    },
+    {
+      "t": 1791092434830,
+      "name": "gifted_wozniak",
+      "cpu": 0.29,
+      "memMB": 366
+    },
+    {
+      "t": 1791092436914,
+      "name": "gifted_wozniak",
+      "cpu": 0.3,
+      "memMB": 366
+    },
+    {
+      "t": 1791092438995,
+      "name": "gifted_wozniak",
+      "cpu": 14.53,
+      "memMB": 366.8
+    }
+  ]
+}
