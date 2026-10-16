@@ -10,6 +10,7 @@
  *   版面沿用 Step4 報告（比照後端 /api/v1/report 官方報告的樸素風格，固定白底，PDF 不受深色模式影響）。
  *   舊紀錄（無 reportSnapshot）只顯示紀錄裡有的欄位，缺的項目標示「此紀錄建立於舊版，未保存此項」。
  */
+import { formatFidelityScore } from '../utils/kAnonymityFidelity';
 import type { CSSProperties, Ref, ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AuditLogItem } from '../store/useAuditStore';
@@ -17,7 +18,6 @@ import AuditIntegrityPanel from './AuditIntegrityPanel';
 import { OverallRiskLevelPanel } from './RiskLevelBadge';
 import { computeReportOverallRisk, formatEpsilonForDisplay, isCapEvaluated, resolveReportColumnTechText, type ComplianceReportEntry } from '../utils/complianceReport';
 import { scaleFontSize } from '../utils/fontScale';
-import { formatLossPercent } from '../utils/kAnonymityLossMetric';
 
 export type { ComplianceReportEntry } from '../utils/complianceReport';
 
@@ -239,11 +239,22 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                             <div style={keyValueRowStyle}>
                                 <span>{translate('step4.report.total_cols', '實際去識別數 / 總欄位數：')}</span><span>{utility.deidentifiedColumnsCount} / {utility.totalColumnsCount}</span>
                             </div>
-                            {isKAnonymity && utility.informationLoss && (
-                                <div style={keyValueRowStyle}>
-                                    <span>{translate('step4.report.information_loss', '整體失真程度：')}</span>
-                                    <span>{formatLossPercent(utility.informationLoss.overall)}</span>
-                                </div>
+                            {isKAnonymity && utility.fidelity && (
+                                // ★ 2026-10-15：K-匿名資料實用性（《合成資料技術指引 v1.5》保真度三項指標，各 ≥ 0.75 為達標）
+                                <>
+                                    <div style={keyValueRowStyle}>
+                                        <span>{translate('step4.report.fidelity_shapes', '欄位分布相似度：')}</span><span>{formatFidelityScore(utility.fidelity.columnShapes)}</span>
+                                    </div>
+                                    <div style={keyValueRowStyle}>
+                                        <span>{translate('step4.report.fidelity_pairs', '欄位間相關性保留：')}</span><span>{utility.fidelity.columnPairTrends === null ? '—' : formatFidelityScore(utility.fidelity.columnPairTrends)}</span>
+                                    </div>
+                                    <div style={keyValueRowStyle}>
+                                        <span>{translate('step4.report.fidelity_overall', '整體品質綜合分數：')}</span><span>{formatFidelityScore(utility.fidelity.overall)}</span>
+                                    </div>
+                                    <div style={keyValueRowStyle}>
+                                        <span>{translate('step4.report.fidelity_verdict', '資料實用性判定（各 ≥ 0.75）：')}</span><span>{utility.fidelity.isPassed ? translate('step4.report.fidelity_pass', '達標') : translate('step4.report.fidelity_fail', '未達標')}</span>
+                                    </div>
+                                </>
                             )}
                         </>
                     ) : (

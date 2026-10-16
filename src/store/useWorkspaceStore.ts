@@ -123,7 +123,6 @@ export interface Step4Cache
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     capReport?: any;                                                            // ★新增：保存 CAP 前後對比報表快照（現為安全性評估卡片主要顯示內容，需隨快取還原）
     datasetRowStats?: { input: number; deleted: number; output: number };       // ★新增：保存輸入／刪除／輸出筆數快照
-    kAnonymityLoss?: { overall: number; columns: { column: string; loss: number }[] } | null; // ★ 2026-10-14：K-匿名失真程度（LM）快照
     // ★ 使用者反映（2026-09-22）：Step4 每次切換步驟再切回來都會重新掛載（MainLayout 以
     //   currentStepIndexValue 當 key），命中快取時 runFullPipeline 會直接略過整段風險評估
     //   （含高唯一值比例敏感欄位偵測），若這兩項不隨快照還原，畫面上的風險數字雖然正確

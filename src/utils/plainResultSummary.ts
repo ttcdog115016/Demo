@@ -20,10 +20,10 @@ export interface UtilityLevelInfo {
 
 /**
  * 可用性分級門檻（草案，待確認）：
- * - K-匿名（2026-10-14 使用者決定）：取下面兩項較差的一級
- *   (1) 資料釋出率＝保留筆數 ÷ 原始筆數（實務目標 95% 以上）：抑制比例 < 5% 高、5%～20% 中、≥ 20% 低
- *       （儲存格抑制時以被遮蔽格數比例計）。
- *   (2) 失真程度（LM，utils/kAnonymityLossMetric.ts）：< 20% 高、20%～50% 中、≥ 50% 低。
+ * - K-匿名（2026-10-14 使用者決定）：只看資料釋出率＝保留筆數 ÷ 原始筆數（實務目標 95% 以上）：
+ *   抑制比例 < 5% 高、5%～20% 中、≥ 20% 低（儲存格抑制時以被遮蔽格數比例計）。
+ *   失真程度（LM，utils/kAnonymityLossMetric.ts）為前端自算、門檻無依據，同日決定先不顯示也不納入等級；
+ *   classifyKAnonymityUtility 的 informationLossRatio 參數保留供日後使用（目前呼叫端不傳）。
  * - 差分隱私：總消耗 ε > 10 雜訊少（高）、1～10 中、≤ 1 雜訊多（低），與 Step3「當前保護強度」三級對應（方向相反）。
  */
 // TODO【待後端確認：資料可用性報告】（2026-10-13）目前後端沒有效用指標：K-匿名只有抑制率，差分隱私只有 ε 用量，
@@ -37,22 +37,46 @@ export const UTILITY_LEVEL_THRESHOLDS = {
 } as const;
 
 const UTILITY_LEVEL_TABLE: Record<UtilityLevelNumber, Omit<UtilityLevelInfo, 'level'>> = {
-    1: { labelText: '高', color: '#16a34a', verdictText: '資料大致完整保留，適合做統計分析。' },
+    1: { labelText: '高', color: '#16a34a', verdictText: '資料筆數大致完整保留，資料效用較佳。' }, // ★ 2026-10-15：原「資料大致完整保留，適合做統計分析」未考慮泛化造成的精細度下降，改為只描述筆數
     2: { labelText: '中', color: '#d97706', verdictText: '有部分資料被刪除、遮蔽、改成區間或加入雜訊，分析結果可能略有偏差。' },
     3: { labelText: '低', color: '#dc2626', verdictText: '大量資料被刪除、遮蔽、改成區間或加入雜訊，分析結果可能不準確。' },
 };
 
 export const getUtilityLevelInfo = (level: UtilityLevelNumber): UtilityLevelInfo => ({ level, ...UTILITY_LEVEL_TABLE[level] });
 
+/**
+ * K-匿名結論文字（2026-10-15 使用者要求以「資料效用」描述，不寫「統計分析」）：直接寫出分級標準，讓使用者看得出「保留 97.9% 是高、94.0% 是中」的原因（2026-10-15）。
+ * 與 UTILITY_LEVEL_THRESHOLDS.suppressionRatio 對應：抑制 < 5%（保留超過 95%）高、5%～20% 中、≥ 20%（保留 80% 以下）低。
+ */
+const K_ANONYMITY_UTILITY_VERDICT_TEXT: Record<UtilityLevelNumber, string> = {
+    1: '資料保留超過 95%，資料效用較佳。',
+    2: '資料保留 80%～95%（未達 95%），資料效用可能略受影響。',
+    3: '資料保留 80% 以下，資料效用可能明顯降低。',
+};
+
 /** K-匿名：抑制比例（0~1，＝1 − 資料釋出率）與失真程度 LM（0~1，可省略）→ 可用性，取兩者較差的一級 */
 export const classifyKAnonymityUtility = (suppressionRatio: number | null | undefined, informationLossRatio?: number | null): UtilityLevelInfo | null => {
     if (typeof suppressionRatio !== 'number' || !Number.isFinite(suppressionRatio) || suppressionRatio < 0) return null;
     const { high, low } = UTILITY_LEVEL_THRESHOLDS.suppressionRatio;
     const releaseLevel: UtilityLevelNumber = suppressionRatio < high ? 1 : suppressionRatio < low ? 2 : 3;
-    if (typeof informationLossRatio !== 'number' || !Number.isFinite(informationLossRatio) || informationLossRatio < 0) return getUtilityLevelInfo(releaseLevel);
+    if (typeof informationLossRatio !== 'number' || !Number.isFinite(informationLossRatio) || informationLossRatio < 0) {
+        return { ...getUtilityLevelInfo(releaseLevel), verdictText: K_ANONYMITY_UTILITY_VERDICT_TEXT[releaseLevel] };
+    }
     const lossThresholds = UTILITY_LEVEL_THRESHOLDS.informationLoss;
     const lossLevel: UtilityLevelNumber = informationLossRatio < lossThresholds.high ? 1 : informationLossRatio < lossThresholds.low ? 2 : 3;
     return getUtilityLevelInfo(Math.max(releaseLevel, lossLevel) as UtilityLevelNumber);
+};
+
+/**
+ * ★ 2026-10-15：K-匿名資料實用性改依《合成資料技術指引 v1.5》保真度三項指標（見 utils/kAnonymityFidelity.ts）：
+ *   三項皆 ≥ 0.75 為「達標」，否則「未達標」（指引只有 0.75 一條建議值，不再分高／中／低，也不再用 95%／80% 保留筆數門檻）。
+ *   沿用 UtilityLevelInfo 結構：達標＝level 1（綠）、未達標＝level 3（紅），頂部建議依此判斷。
+ */
+export const classifyKAnonymityFidelity = (fidelity: { isPassed: boolean } | null | undefined): UtilityLevelInfo | null => {
+    if (!fidelity) return null;
+    return fidelity.isPassed
+        ? { level: 1, labelText: '達標', color: '#16a34a', verdictText: '處理後資料的統計特性與原始資料相近，資料效用良好。' }
+        : { level: 3, labelText: '未達標', color: '#dc2626', verdictText: '部分欄位的分布或欄位之間的關聯改變較多，資料效用可能降低。' };
 };
 
 /** 差分隱私：總消耗 ε → 可用性（ε 越大雜訊越少、越好用） */

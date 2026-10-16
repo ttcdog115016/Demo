@@ -10,6 +10,7 @@
  *   改為：運算完成時把報告需要的數值存成快照（寫入稽核紀錄、一併簽章），兩邊都用
  *   components/ComplianceReportDocument.tsx 以同一份快照繪製，內容保證相同。
  */
+import type { KAnonymityFidelityResult } from './kAnonymityFidelity';
 import type { CapReport } from '../api/apiService';
 import { computeOverallRiskLevel, type OverallRiskSummary } from './riskLevel';
 import { getKAnonymityGeneralizationTechLabel } from './kAnonymityTechLabel';
@@ -56,7 +57,8 @@ export interface ComplianceReportSnapshot {
         consumedEpsilon: number | null;        // 差分隱私本次消耗 ε
         deidentifiedColumnsCount: number;      // 實際去識別欄位數
         totalColumnsCount: number;             // 總欄位數
-        informationLoss?: { overall: number; columns: { column: string; loss: number }[] } | null; // ★ 2026-10-14：K-匿名失真程度（LM）
+        /** K-匿名資料實用性：指引保真度三項指標（2026-10-15 起；舊紀錄無此欄位） */
+        fidelity?: { columnShapes: number; columnPairTrends: number | null; overall: number; isPassed: boolean } | null;
     };
 }
 
@@ -77,7 +79,7 @@ export interface BuildComplianceReportSnapshotInput {
     consumedEpsilon: number | null | undefined;
     deidentifiedColumnsCount: number;
     totalColumnsCount: number;
-    informationLoss?: { overall: number; columns: { column: string; loss: number }[] } | null;
+    fidelity?: Pick<KAnonymityFidelityResult, 'columnShapes' | 'columnPairTrends' | 'overall' | 'isPassed'> | null;
 }
 
 const toFiniteOrNull = (value: unknown): number | null => {
@@ -123,7 +125,9 @@ export const buildComplianceReportSnapshot = (input: BuildComplianceReportSnapsh
             consumedEpsilon: isKAnonymity ? null : toFiniteOrNull(input.consumedEpsilon),
             deidentifiedColumnsCount: input.deidentifiedColumnsCount,
             totalColumnsCount: input.totalColumnsCount,
-            ...(isKAnonymity && input.informationLoss ? { informationLoss: input.informationLoss } : {})
+            fidelity: isKAnonymity && input.fidelity
+                ? { columnShapes: input.fidelity.columnShapes, columnPairTrends: input.fidelity.columnPairTrends, overall: input.fidelity.overall, isPassed: input.fidelity.isPassed }
+                : null
         }
     };
 };

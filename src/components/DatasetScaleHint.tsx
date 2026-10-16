@@ -55,7 +55,7 @@ export default function DatasetScaleHint({ mode, rowCount, kValue }: DatasetScal
     {
         summaryText = translate('step3_dp.scale_summary', '資料共 {{rows}} 筆。加入的雜訊大小與筆數無關：筆數越少，雜訊對統計結果的影響越大。', { rows: rowsText });
         adviceText = scaleLevel === 'small'
-            ? translate('step3_dp.scale_small', '資料量較少：平均數、總數等統計誤差會明顯變大，分組統計時誤差更大，請在 Step4 確認資料可用性。')
+            ? translate('step3_dp.scale_small', '資料量較少：平均數、總數等統計誤差會明顯變大，分組統計時誤差更大，請在 Step4 確認資料實用性。')
             : scaleLevel === 'large'
                 ? translate('step3_dp.scale_large', '資料量很大：雜訊對整體統計的影響相對小，但分組後筆數很少的群組，誤差仍然很大。')
                 : translate('step3_dp.scale_medium', '分組後筆數很少的群組，誤差會比整體統計大。');

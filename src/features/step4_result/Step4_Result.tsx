@@ -29,11 +29,10 @@ import type { KAnonymityQualityReport, DpQualityReport } from '../../api/apiServ
 import { usePipelineRunner } from './usePipelineRunner';
 import BackendReportDetails from './BackendReportDetails';
 import ComplianceReportDocument, { type ComplianceReportEntry } from '../../components/ComplianceReportDocument';
-import { formatLossPercent } from '../../utils/kAnonymityLossMetric';
 import { buildComplianceReportSnapshot, formatEpsilonForDisplay, isCapEvaluated, resolveCapExcessRisk, resolveSensitiveGuessRisk } from '../../utils/complianceReport';
 import { useAuthStore } from '../../store/useAuthStore';
 import { RiskSummaryCard, UtilitySummaryCard, type RiskQuestionRow, type PlainCardColors } from '../../components/PlainResultSummary';
-import { classifyKAnonymityUtility, resolveColumnTreatment, resolveReleaseDecision, pickExampleValue } from '../../utils/plainResultSummary';
+import { classifyKAnonymityFidelity, resolveColumnTreatment, resolveReleaseDecision, pickExampleValue } from '../../utils/plainResultSummary';
 import { computeOverallRiskLevel } from '../../utils/riskLevel';
 import { useAuditStore } from '../../store/useAuditStore';
 import { getDataUsageNotes, describeProcessingMethod, buildDataUsageNotesText, type DataUsageNotesContext } from '../../utils/dataUsageNotes';
@@ -46,6 +45,7 @@ import { BACKEND_ERROR_CODE_CATEGORY_MAP, DEBUG_ERRORS_LOCAL_STORAGE_KEY, buildF
 import { resolveKAnonymityGeneralizationTechKey } from '../../utils/kAnonymityTechLabel';
 
 import { scaleFontSize } from '../../utils/fontScale';
+import { formatFidelityPercent } from '../../utils/kAnonymityFidelity';
 const PDF_COMPILATION_DELAY_MS = 400;
 
 
@@ -353,7 +353,7 @@ export default function Step4_Result(): React.ReactElement
         previewParseDiagnosticText,
         capReportData,
         datasetRowStatsData,
-        kAnonymityLossData,
+        kAnonymityFidelityData,
         attackSimulationMetricsData,
         auditMetadataObject,
         highCardinalitySensitiveWarningInfo,
@@ -465,11 +465,6 @@ export default function Step4_Result(): React.ReactElement
             generalizationTechKey: role === 'Quasi-identifier' ? resolveQiGeneralizationTechKey(columnNameString) : undefined,
             isDpNoised: (currentDpFieldsListArray || []).some((field: DpStoreField) => field.enabled && String(field.fieldName || '').replace(/^[\uFEFF\u200B]+/, '').trim() === cleanColName)
         });
-        // ★ 2026-10-14：K-匿名間接識別欄位附上失真程度（LM）
-        const columnLossItem = currentPrivacyModeTypeStr === 'k-anonymity' && treatmentItem.bucket === 'blurred'
-            ? kAnonymityLossData?.columns.find((lossItem) => lossItem.column === cleanColName)
-            : undefined;
-        if (columnLossItem) treatmentItem.plainText = `${treatmentItem.plainText}，失真約 ${formatLossPercent(columnLossItem.loss)}`;
         // 「去識別化」（blurred）的欄位附一個處理後的範例值（取自去識別化結果預覽），讓使用者看到實際長相
         return treatmentItem.bucket === 'blurred'
             ? { ...treatmentItem, exampleText: pickExampleValue(realMaskedDataRows as Record<string, unknown>[], columnNameString) }
@@ -477,9 +472,11 @@ export default function Step4_Result(): React.ReactElement
     });
     const isCellSuppressionUnitStatus = kReport?.suppression_unit === 'cell';
     // ★ 2026-10-14 使用者決定：差分隱私不顯示可用性等級（只用 ε 合計判斷不準，後端也沒有可用性指標）。
-    //   K-匿名維持資料釋出率＋失真程度。差分隱私時為 null：不顯示「可用性高／中／低」，頂部結論只依保護程度。
+    // ★ 2026-10-15 使用者決定「以指引為主」：K-匿名實用性改依《合成資料技術指引 v1.5》保真度三項指標
+    //   （欄位分布相似度、欄位間相關性保留、整體品質綜合分數，各 ≥ 0.75 為達標），不再以保留筆數 95%／80% 判斷。
+    //   計算見 utils/kAnonymityFidelity.ts；無法計算（例如配對失敗）時不顯示等級。
     const utilityLevelInfo = currentPrivacyModeTypeStr === 'k-anonymity'
-        ? classifyKAnonymityUtility(kReport ? kReport.suppression_rate_percent / 100 : null, kAnonymityLossData ? kAnonymityLossData.overall : null)
+        ? classifyKAnonymityFidelity(kAnonymityFidelityData)
         : null;
     // ★ 2026-10-06 白話版：頂部一句話結論「能不能提供、下一步做什麼」
     const releaseDecision = resolveReleaseDecision({
@@ -500,7 +497,10 @@ export default function Step4_Result(): React.ReactElement
                 detail: translate('step4.utility.rows_kept_detail', '資料筆數全部保留（{{rows}} 筆）', { rows: datasetRowStatsData.output.toLocaleString() })
             };
         }
-        const keptPercentText = datasetRowStatsData.input > 0 ? ((datasetRowStatsData.output / datasetRowStatsData.input) * 100).toFixed(1) : '0';
+        // ★ 2026-10-15：四捨五入到小數一位（取整數時 99.84% 會顯示「保留 100%」卻有刪除筆數，已改回）。
+        //   有刪除時最多顯示 99.9%，避免 99.96% 進位成「100.0%」。
+        const keptPercentValue = datasetRowStatsData.input > 0 ? Math.round((datasetRowStatsData.output / datasetRowStatsData.input) * 1000) / 10 : 0;
+        const keptPercentText = (datasetRowStatsData.deleted > 0 ? Math.min(keptPercentValue, 99.9) : keptPercentValue).toFixed(1);
         return {
             question: translate('step4.utility.q_rows', '保留的資料筆數'),
             tooltip: translate('step4.utility.q_rows_tooltip', '為了讓間接識別欄位（如年齡、地區）內容相同的資料至少有 K 筆，少數湊不滿 K 筆的資料會被整筆刪除。保留越多越好用。'),
@@ -512,13 +512,39 @@ export default function Step4_Result(): React.ReactElement
             })
         };
     })();
-    // ★ 2026-10-14：K-匿名「整體失真程度」（LM）
-    const utilityLossRow = currentPrivacyModeTypeStr === 'k-anonymity' && kAnonymityLossData
-        ? {
-            question: translate('step4.utility.q_loss', '整體失真程度'),
-            tooltip: translate('step4.utility.q_loss_tooltip', '年齡、地區等欄位被改成區間或大類的程度：0% 表示保留原值，100% 表示完全看不出原本的值。越低越好用。'),
-            answer: translate('step4.utility.loss_answer', '約 {{percent}}', { percent: formatLossPercent(kAnonymityLossData.overall) })
-        }
+    // ★ 2026-10-15：K-匿名「與原始資料的相似度」列（指引保真度三項指標）。
+    //   使用者回饋（沒有背景知識的公務人員看不懂）：分數改以百分比呈現（0.96 → 96%、≥ 0.75 → 75% 以上），
+    //   「欄位分布／欄位間關聯」改白話，「變化較大」的項目移到問號說明。合規報告仍用指引正式名稱與小數分數。
+    const utilityFidelityRow = currentPrivacyModeTypeStr === 'k-anonymity' && kAnonymityFidelityData
+        ? (() => {
+            const belowItems = kAnonymityFidelityData.belowThresholdItems.slice(0, 3)
+                .map((item) => item.label.includes(' × ')
+                    ? translate('step4.utility.fidelity_below_pair', '{{left}}與{{right}}的對應關係（{{percent}}）', { left: item.label.split(' × ')[0], right: item.label.split(' × ')[1], percent: formatFidelityPercent(item.score) })
+                    : translate('step4.utility.fidelity_below_column', '{{column}}的資料分布（{{percent}}）', { column: item.label, percent: formatFidelityPercent(item.score) }));
+            return {
+                question: translate('step4.utility.q_fidelity', '與原始資料的相似度'),
+                tooltip: (
+                    <>
+                        <div>{translate('step4.utility.q_fidelity_tooltip', '比較處理前後的資料有多相似，100% 代表完全相同。依《合成資料技術指引》，各項都在 75% 以上即達標。')}</div>
+                        {belowItems.length > 0 && (
+                            <div style={{ marginTop: 6 }}>{translate('step4.utility.fidelity_below', '變化較大：{{items}}', { items: belowItems.join('、') })}</div>
+                        )}
+                    </>
+                ),
+                answer: formatFidelityPercent(kAnonymityFidelityData.overall),
+                // ★ 2026-10-15 使用者要求再精簡：細項併成一行，「75% 以上即達標」只放在問號說明
+                detail: (
+                    <>
+                        <div>{kAnonymityFidelityData.columnPairTrends === null
+                            ? translate('step4.utility.fidelity_detail_shapes_only', '欄位分布 {{shapes}}', { shapes: formatFidelityPercent(kAnonymityFidelityData.columnShapes) })
+                            : translate('step4.utility.fidelity_detail', '欄位分布 {{shapes}}・欄位關係 {{pairs}}', { shapes: formatFidelityPercent(kAnonymityFidelityData.columnShapes), pairs: formatFidelityPercent(kAnonymityFidelityData.columnPairTrends) })}</div>
+                        {kAnonymityFidelityData.sampled && (
+                            <div>{translate('step4.utility.fidelity_sampled', '（抽樣 {{rows}} 筆計算）', { rows: kAnonymityFidelityData.sampleRows.toLocaleString() })}</div>
+                        )}
+                    </>
+                )
+            };
+        })()
         : null;
     const utilityNoiseRow = currentPrivacyModeTypeStr === 'differential-privacy' && dpReport
         ? {
@@ -573,7 +599,7 @@ export default function Step4_Result(): React.ReactElement
                 consumedEpsilon: dpReport ? dpReport.consumed_epsilon : null,
                 deidentifiedColumnsCount: deidentifiedColumnsCountValue,
                 totalColumnsCount: actualProcessedColumnsList.length,
-                informationLoss: kAnonymityLossData
+                fidelity: kAnonymityFidelityData
             })
         });
     })();
@@ -773,7 +799,7 @@ export default function Step4_Result(): React.ReactElement
                                                 <>{translate('step4.alert.summary_risk', '保護程度')}：<b style={{ color: overallRiskSummary.info.color }}>{overallRiskSummary.info.code} {overallRiskSummary.info.labelText}</b><span style={{ marginRight: 16 }} /></>
                                             )}
                                             {utilityLevelInfo && (
-                                                <>{translate('step4.alert.summary_utility', '資料可用性')}：<b style={{ color: utilityLevelInfo.color }}>{utilityLevelInfo.labelText}</b></>
+                                                <>{translate('step4.alert.summary_utility', '資料實用性')}：<b style={{ color: utilityLevelInfo.color }}>{utilityLevelInfo.labelText}</b></>
                                             )}
                                         </div>
                                         <div style={{ marginTop: 4 }}>{releaseDecision.adviceText}</div>
@@ -1004,7 +1030,7 @@ export default function Step4_Result(): React.ReactElement
                             <h3 style={{ marginTop: '16px', color: token.colorText }}>
                                 {currentPipelinePhaseType === 'uploading' && translate('step4.loading.uploading', '正在將大數據切片 (Chunk) 傳輸至後端伺服器...')}
                                 {currentPipelinePhaseType === 'processing' && translate('step4.loading.processing', '後端正在執行去識別化矩陣與加噪演算...')}
-                                {currentPipelinePhaseType === 'auditing' && translate('step4.loading.auditing', '正在執行蒙地卡羅攻擊模擬與可用性評估...')}
+                                {currentPipelinePhaseType === 'auditing' && translate('step4.loading.auditing', '正在執行蒙地卡羅攻擊模擬與實用性評估...')}
                                 {currentPipelinePhaseType === 'completed' && translate('step4.loading.completed', '後端演算完畢，正在生成最終合規報告...')}
                             </h3>
                             <Progress percent={calculationProgressValue} status="active" style={{ maxWidth: '43em', margin: '16px auto' }} strokeColor={token.colorPrimary} />
@@ -1157,15 +1183,17 @@ export default function Step4_Result(): React.ReactElement
                         </Col>
                         <Col span={8} style={{ display: 'flex' }}>
                             <Card 
-                                title={<span><LineChartOutlined style={{ marginRight: 8, color: '#1677ff' }} />{translate('step4.utility.title_plain', '資料可用性')}</span>}
+                                title={<span><LineChartOutlined style={{ marginRight: 8, color: '#1677ff' }} />{currentPrivacyModeTypeStr === 'differential-privacy' ? translate('step4.utility.title_dp', '資料處理摘要') : translate('step4.utility.title_plain', '資料實用性')}</span>}
                                 variant="borderless" style={{ background: token.colorBgContainer, width: '100%', display: 'flex', flexDirection: 'column' }} styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}
                             >
                                 {/* ★ 2026-10-06 白話版：原「抑制率／實際去識別數 / 總欄位數」大數字改為「結論＋保留筆數＋欄位處理方式」，
                                     原數字（抑制率、ε）改放在小字與合規報告。 */}
                                 <UtilitySummaryCard
                                     info={utilityLevelInfo}
-                                    recordRow={utilityRecordRow}
-                                    extraRow={utilityNoiseRow ?? utilityLossRow}
+                                    // ★ 2026-10-15：實用性標題旁問號說明（「這裡只看保留了多少筆資料…」）依使用者要求移除；
+                                    //   UtilitySummaryCard 的 levelTooltip 參數保留供日後使用。
+                                    recordRow={currentPrivacyModeTypeStr === 'differential-privacy' ? null : utilityRecordRow} // ★ 2026-10-14：差分隱私不刪資料，「保留的資料筆數」恆為全部保留，不顯示
+                                    extraRow={utilityNoiseRow ?? utilityFidelityRow}
                                     columnItems={columnTreatmentItemsList}
                                     colors={plainCardColors}
                                     helpIcon={(tooltipContent) => (
@@ -1204,7 +1232,7 @@ export default function Step4_Result(): React.ReactElement
                                 message={translate('step4.preview.wildcard_hint_title', '欄位顯示「*」是什麼意思？')}
                                 description={translate(
                                     'step4.preview.wildcard_hint_desc',
-                                    '「*」不是錯誤，代表這筆資料的原始值沒有被您在 Step2「泛化階層對照」設定的分類或區間涵蓋到，系統為了避免外洩沒被泛化到的原始值，直接整格改顯示「*」。如果想保留這些資料的可用性，請回到 Step2，把這個值也加進對照設定中。'
+                                    '「*」不是錯誤，代表這筆資料的原始值沒有被您在 Step2「泛化階層對照」設定的分類或區間涵蓋到，系統為了避免外洩沒被泛化到的原始值，直接整格改顯示「*」。如果想保留這些資料的實用性，請回到 Step2，把這個值也加進對照設定中。'
                                 )}
                             />
                         )}

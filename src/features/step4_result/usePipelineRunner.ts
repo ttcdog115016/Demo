@@ -15,7 +15,7 @@ import { createAuditIntegrity } from '../../utils/auditIntegrity';
 import { ensureDatasetProfile } from '../../utils/datasetProfile';
 import { RISK_ATTACK_DEFAULT_PARAMS, type HighCardinalitySensitiveInfo } from '../../utils/riskAssessment';
 import { buildComplianceReportSnapshot } from '../../utils/complianceReport';
-import { computeKAnonymityLossMetric, type KAnonymityLossResult } from '../../utils/kAnonymityLossMetric';
+import { computeKAnonymityFidelity, type KAnonymityFidelityResult } from '../../utils/kAnonymityFidelity';
 import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, wrapBackendConfigDocument, type DpStoreField, type KAnonymityPipelineSettings, type DifferentialPrivacyConfigInput } from '../../utils/pipelineConfig';
 import { isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
 import { describePipelineError } from './backendErrorCatalog';
@@ -159,16 +159,17 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             ? ((step4AnalysisCacheData as unknown as Record<string, unknown>).capReport as CapReport | null) || null
             : null
     );
-    // ★ 2026-10-14：K-匿名失真程度（LM），隨快取還原
-    const [kAnonymityLossData, setKAnonymityLossData] = useState<KAnonymityLossResult | null>(
-        isAnalysisCacheValidStatus && step4AnalysisCacheData
-            ? ((step4AnalysisCacheData as unknown as Record<string, unknown>).kAnonymityLoss as KAnonymityLossResult | null) || null
-            : null
-    );
     // ★ 新增：輸入／刪除／輸出筆數統計快照，同樣需要隨命中快取還原，避免重新整理後消失。
     const [datasetRowStatsData, setDatasetRowStatsData] = useState<DatasetRowStats | null>(
         isAnalysisCacheValidStatus && step4AnalysisCacheData
             ? ((step4AnalysisCacheData as unknown as Record<string, unknown>).datasetRowStats as DatasetRowStats | null) || null
+            : null
+    );
+
+    // ★ 2026-10-15：K-匿名資料實用性（指引保真度三項指標，見 utils/kAnonymityFidelity.ts），隨快取還原
+    const [kAnonymityFidelityData, setKAnonymityFidelityData] = useState<KAnonymityFidelityResult | null>(
+        isAnalysisCacheValidStatus && step4AnalysisCacheData
+            ? ((step4AnalysisCacheData as unknown as Record<string, unknown>).kAnonymityFidelity as KAnonymityFidelityResult | null) || null
             : null
     );
 
@@ -522,21 +523,21 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 const generatedDatasetRowStatsObject = await computeDatasetRowStats(cleanedCsvText, finalCsvBlobData ? readProcessedCsvTextOnce : null);
                 setDatasetRowStatsData(generatedDatasetRowStatsObject);
 
-                // ★ 2026-10-14：K-匿名失真程度（LM），以處理前後資料計算（見 utils/kAnonymityLossMetric.ts）
-                let generatedKAnonymityLoss: KAnonymityLossResult | null = null;
+                // ★ 2026-10-15：K-匿名資料實用性＝指引保真度三項指標（欄位分布、欄位間關聯、綜合分數，各 ≥ 0.75），以處理前後資料計算
+                let generatedKAnonymityFidelity: KAnonymityFidelityResult | null = null;
                 if (currentPrivacyModeTypeStr === 'k-anonymity' && finalCsvBlobData) {
                     try {
-                        generatedKAnonymityLoss = computeKAnonymityLossMetric({
+                        generatedKAnonymityFidelity = computeKAnonymityFidelity({
                             originalCsvText: cleanedCsvText,
                             processedCsvText: await readProcessedCsvTextOnce(),
-                            qiColumns: actualProcessedColumnsList.filter((columnName) => getCalculatedRole(columnName).role === 'Quasi-identifier'),
+                            evaluatedColumns: actualProcessedColumnsList.filter((columnName) => getCalculatedRole(columnName).role !== 'Identifier'),
                             anchorColumns: actualProcessedColumnsList.filter((columnName) => ['Sensitive', 'Non-sensitive', 'Retained'].includes(getCalculatedRole(columnName).role))
                         });
-                    } catch (lossErrorPayload) {
-                        console.error('計算失真程度失敗:', lossErrorPayload);
+                    } catch (fidelityErrorPayload) {
+                        console.error('計算資料實用性（保真度）失敗:', fidelityErrorPayload);
                     }
                 }
-                setKAnonymityLossData(generatedKAnonymityLoss);
+                setKAnonymityFidelityData(generatedKAnonymityFidelity);
 
                 setCalculationProgressValue(100);
                 setCurrentPipelinePhaseType('completed');
@@ -558,7 +559,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                         processedCsvBlob: finalCsvBlobData,
                         capReport: riskAssessmentResult.capReport,
                         datasetRowStats: generatedDatasetRowStatsObject,
-                        kAnonymityLoss: generatedKAnonymityLoss,
+                        kAnonymityFidelity: generatedKAnonymityFidelity,
                         // ★ 一併存讀高唯一值比例敏感欄位警告快照，避免切換步驟重新掛載後消失
                         // （見上方 highCardinalitySensitiveWarningInfo state 宣告處的完整說明）。
                         // 這裡讀取的是本次執行過程中賦值的 finalHighCardinalitySensitiveWarningInfo
@@ -608,7 +609,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                         consumedEpsilon: currentPrivacyModeTypeStr === 'differential-privacy' ? (finalApiReportData as DpQualityReport | null)?.consumed_epsilon : null,
                         deidentifiedColumnsCount: deidentifiedColumnsCount ?? 0,
                         totalColumnsCount: actualProcessedColumnsList.length,
-                        informationLoss: generatedKAnonymityLoss
+                        fidelity: generatedKAnonymityFidelity
                     })
                 });
                 // ★ 2026-10-02：簽發前計算防篡改指紋（憑證內容＋原始檔／輸出檔 SHA-256）並以 ECDSA 簽章（見 utils/auditIntegrity.ts）；
@@ -685,7 +686,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
         attackReportData,
         capReportData,
         datasetRowStatsData,
-        kAnonymityLossData,
+        kAnonymityFidelityData,
         attackSimulationMetricsData,
         auditMetadataObject,
         highCardinalitySensitiveWarningInfo,

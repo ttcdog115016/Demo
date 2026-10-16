@@ -116,7 +116,7 @@ export function RiskSummaryCard({ summary, rows, colors, helpIcon }: {
                     title={`${info.code} ${info.labelText}`}
                     verdictText={RISK_VERDICT_TEXT[info.level]}
                     helpIcon={helpIcon}
-                    helpTooltip={`依下方三項中最高的一項判定（目前最高：${summary.driver.label}）。分級：L1 低風險 < ${lowPct}｜L2 中風險 ${lowPct}～${highPct}｜L3 高風險 ≥ ${highPct}。這是對處理後資料實際模擬攻擊的結果；只要是 L1，就代表目前的設定已足夠安全，不必為了更安全而犧牲資料可用性。`}
+                    helpTooltip={`依下方三項中最高的一項判定（目前最高：${summary.driver.label}）。分級：L1 低風險 < ${lowPct}｜L2 中風險 ${lowPct}～${highPct}｜L3 高風險 ≥ ${highPct}。這是對處理後資料實際模擬攻擊的結果；只要是 L1，就代表目前的設定已足夠安全，不必為了更安全而犧牲資料實用性。`}
                     colors={colors}
                 />
             )}
@@ -147,8 +147,10 @@ export function RiskSummaryCard({ summary, rows, colors, helpIcon }: {
 const BUCKET_ORDER: ColumnTreatmentBucket[] = ['kept', 'blurred', 'removed'];
 // ★ 2026-10-13 使用者要求：「每個欄位怎麼處理」一律預設收起（原本欄位 ≤ 12 個時預設展開）
 
-export function UtilitySummaryCard({ info, recordRow, extraRow, columnItems, colors, helpIcon }: {
+export function UtilitySummaryCard({ info, levelTooltip, recordRow, extraRow, columnItems, colors, helpIcon }: {
     info: UtilityLevelInfo | null;
+    /** 實用性等級旁的問號說明（2026-10-15：K-匿名註明等級只看釋出率） */
+    levelTooltip?: ReactNode;
     /** 第一列：資料筆數保留情形（或差分隱私雜訊程度） */
     recordRow: { question: string; tooltip?: ReactNode; answer: ReactNode; detail?: ReactNode } | null;
     /** 選用的第二列（例如差分隱私的雜訊程度） */
@@ -166,8 +168,10 @@ export function UtilitySummaryCard({ info, recordRow, extraRow, columnItems, col
                     testId="overall-utility-level"
                     level={info.level}
                     color={info.color}
-                    title={`可用性${info.labelText}`}
+                    title={`實用性${info.labelText}`}
                     verdictText={info.verdictText}
+                    helpIcon={helpIcon}
+                    helpTooltip={levelTooltip}
                     colors={colors}
                 />
             )}

@@ -676,7 +676,7 @@ const translationResourcesDictionary = {
 					start_mc: "[{{time}}] 🚀 脫敏完成，啟動蒙地卡羅攻擊模擬器 (N={{n}})",
 					attack1: "[{{time}}]  執行指認性與跨表連結攻擊測試 ...",
 					attack2: "[{{time}}]  訓練隨機森林模型評估推斷攻擊 ...",
-					utility: "[{{time}}]  計算分佈散度誤差以驗證資料可用性 ...",
+					utility: "[{{time}}]  計算分佈散度誤差以驗證資料實用性 ...",
 					finished: "[{{time}}] 🎉 後端管線運算完畢，合規憑證生成完成！",
 					recommendations_title: "系統建議調整方式："
 				},
@@ -703,7 +703,7 @@ const translationResourcesDictionary = {
 				loading: {
 					uploading: "正在將大資料切片 (Chunk) 傳輸至後端伺服器...",
 					processing: "後端正在執行去識別化矩陣與加噪演算...",
-					auditing: "正在執行攻擊模擬與可用性評估...",
+					auditing: "正在執行攻擊模擬與實用性評估...",
 					completed: "後端演算完畢，正在生成合規報告..."
 				},
 				risk: {
@@ -718,7 +718,7 @@ const translationResourcesDictionary = {
 					retention: "機器學習資料特徵保留率",
 					jsd: "分佈散度 (JSD)",
 					corr: "特徵相關性 (Corr)",
-					alert_title: "可用性分析結果",
+					alert_title: "實用性分析結果",
 					alert_desc: "分佈圖顯示，後的資料依然完美維持了原有的鐘型/長尾趨勢。JSD 值為 {{jsd}}，代表特徵偏差極小，適用於商業智慧 (BI) 與模型訓練。",
 					total_Epsilon:"總消耗隱私預算 (Epsilon)",
 					total_cols_tooltip_k: "只計入實際會被遮蔽或泛化的欄位：識別符需選擇遮蔽策略（非「不處理」）；準識別符需設定完整的泛化參數（如區間、進位單位或分類樹對照表）。敏感與非敏感欄位不會被 K-匿名改動，因此不計入。",
@@ -791,7 +791,7 @@ const translationResourcesDictionary = {
 					singling_risk: "指認性風險:",
 					linkability_risk: "連結性風險:",
 					inference_risk: "推斷性風險:",
-					utility_title: "資料可用性評估",
+					utility_title: "資料實用性評估",
 					retention: "整體資料保留度:",
 					jsd: "分佈散度誤差 (JSD):",
 					corr: "特徵相關保留率:",
