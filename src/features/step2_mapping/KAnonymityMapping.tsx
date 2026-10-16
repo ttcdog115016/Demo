@@ -1895,7 +1895,21 @@ export default function KAnonymityMapping(): React.ReactElement
                         if (rowRecordItem.genStrategy === 'custom_bins') {
                             return <span style={{ color: token.colorTextDescription }}>{translate('step2.custom_bins_count', { count: rowRecordItem.customBins?.length ?? 0 })}</span>;
                         }
-                        return <InputNumber placeholder={translate('step2.ph_rounding_base')} value={rowRecordItem.genParam} onChange={(inputNumberValue) => handleFieldChange(rowRecordItem.id, 'genParam', inputNumberValue)} style={{ width: '100%' }} />;
+                        // ★ 2026-10-15 使用者要求：參數設定禁止負數（捨入單位須大於 0）。
+                        //   輸入 0 或負數時不接受（保留原值）；既有不合法的值以紅框標示。
+                        return (
+                            <InputNumber
+                                placeholder={translate('step2.ph_rounding_base')}
+                                value={rowRecordItem.genParam}
+                                min={0}
+                                status={typeof rowRecordItem.genParam === 'number' && rowRecordItem.genParam <= 0 ? 'error' : undefined}
+                                onChange={(inputNumberValue) => {
+                                    if (typeof inputNumberValue === 'number' && inputNumberValue <= 0) return;
+                                    handleFieldChange(rowRecordItem.id, 'genParam', inputNumberValue);
+                                }}
+                                style={{ width: '100%' }}
+                            />
+                        );
                     }
                     if (rowRecordItem.type === 'temporal') {
                         if (rowRecordItem.genStrategy === 'time_range') {
@@ -1934,7 +1948,21 @@ export default function KAnonymityMapping(): React.ReactElement
                             // ★ 「依字串長度」策略：genParam 對應後端的 bin_size（長度級距寬度），
                             // 實際輸出的長度區間寬度 = bin_size × 最大層級，兩個欄位都會影響結果，
                             // 故此策略維持顯示參數輸入（僅更新 placeholder 文字與說明，見上方 i18n）。
-                            return <InputNumber placeholder={translate('step2.ph_mask_per_level')} value={rowRecordItem.genParam} onChange={(inputNumberValue) => handleFieldChange(rowRecordItem.id, 'genParam', inputNumberValue)} style={{ width: '100%' }} />;
+                            // ★ 2026-10-15：長度級距須為正整數，禁止負數與 0
+                            return (
+                                <InputNumber
+                                    placeholder={translate('step2.ph_mask_per_level')}
+                                    value={rowRecordItem.genParam}
+                                    min={1}
+                                    precision={0}
+                                    status={typeof rowRecordItem.genParam === 'number' && rowRecordItem.genParam <= 0 ? 'error' : undefined}
+                                    onChange={(inputNumberValue) => {
+                                        if (typeof inputNumberValue === 'number' && inputNumberValue <= 0) return;
+                                        handleFieldChange(rowRecordItem.id, 'genParam', inputNumberValue);
+                                    }}
+                                    style={{ width: '100%' }}
+                                />
+                            );
                         }
                     }
                 }
@@ -2645,7 +2673,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                                         <code style={{ background: isDarkModeActive ? '#262626' : '#f0f0f0', padding: '1px 6px', borderRadius: 4 }}>{translate('step2.hierarchy_tree_guide_example_row2', '信義區 → 臺北市 → 北部')}</code>
                                                         {translate('step2.hierarchy_tree_guide_p2_suffix', '，即為兩列各自獨立的對應關係。')}
                                                     </div>
-                                                    <div style={{ marginTop: 6 }}>{translate('step2.hierarchy_tree_guide_p3', '請針對您要涵蓋的每一個原始值各自建立一列；沒有被任何一列涵蓋到的原始值，執行去識別化時會直接以「*」取代（等同完全遮蔽、不會保留原值），請確認清單已涵蓋所有需要保留可用性的值。')}</div>
+                                                    <div style={{ marginTop: 6 }}>{translate('step2.hierarchy_tree_guide_p3', '請針對您要涵蓋的每一個原始值各自建立一列；沒有被任何一列涵蓋到的原始值，執行去識別化時會直接以「*」取代（等同完全遮蔽、不會保留原值），請確認清單已涵蓋所有需要保留實用性的值。')}</div>
                                                     <div style={{ marginTop: 6 }}>{translate('step2.hierarchy_tree_guide_p4', '實際會套用到第幾層，由上方欄位列表中該欄位的「泛化層級 (Level)」設定決定；層級 0 代表不泛化（顯示原始值）。')}</div>
                                                 </div>
                                             }
