@@ -29,7 +29,6 @@ import {
 	EditOutlined,
 	DeleteOutlined,
 	NotificationOutlined,
-	UnlockOutlined,
 	StopOutlined,
 	CheckCircleOutlined,
 	ExclamationCircleFilled
@@ -38,7 +37,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
 import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
-import { useAccountStore, isAccountLocked, type AccountRecord, type AccountRole } from '../../store/useAccountStore';
+import { useAccountStore, isAccountLocked, LOGIN_FAILURE_WINDOW_MS, MAX_FAILED_LOGINS, ACCOUNT_LOCK_DURATION_MS, type AccountRecord, type AccountRole } from '../../store/useAccountStore';
 import { useAnnouncementStore, isAnnouncementActive, useAnnouncementClock, type AnnouncementItem, type AnnouncementLevel, type AnnouncementAudience } from '../../store/useAnnouncementStore';
 import { formatAnnouncementFullTime } from '../../utils/announcementDisplay';
 import { AnnouncementListItem } from '../../components/AnnouncementListItem';
@@ -57,8 +56,6 @@ const DEFAULT_MAX_FAILED_LOGINS_LIMIT = 5;
 const DEFAULT_PASSWORD_EXPIRY_DAYS = 90;
 const MIN_SESSION_TIMEOUT_MINUTES = 1;
 const MAX_SESSION_TIMEOUT_MINUTES = 120;
-const MIN_FAILED_LOGINS_LIMIT = 1;
-const MAX_FAILED_LOGINS_LIMIT = 10;
 const MIN_PASSWORD_EXPIRY_DAYS = 1;
 const MAX_PASSWORD_EXPIRY_DAYS = 365;
 
@@ -355,11 +352,11 @@ export default function SystemPreferences(): React.ReactElement
 				{
 					logSystemEvent('WARN', nextMaintenanceModeStatus ? '啟用系統維護模式（Data Owner 將無法使用系統）' : '關閉系統維護模式', operatorNameString);
 				}
-				logSystemEvent('INFO', `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘、登入失敗上限 ${formValuesObj.maxFailedLogins} 次、密碼過期${formValuesObj.enablePasswordExpiry ? ` ${formValuesObj.passwordExpiryDays} 天` : '停用'}`, operatorNameString);
+				logSystemEvent('INFO', `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘、密碼過期${formValuesObj.enablePasswordExpiry ? ` ${formValuesObj.passwordExpiryDays} 天` : '停用'}`, operatorNameString);
 
 				updateSecuritySettingsAction({
 					sessionTimeout: Number(formValuesObj.sessionTimeout),
-					maxFailedLogins: Number(formValuesObj.maxFailedLogins),
+					maxFailedLogins: maxFailedLoginsCount, // ★ 2026-10-16：鎖定規則改為固定值（同步後端），畫面已移除此設定，沿用原值
 					isMaintenanceMode: !!formValuesObj.maintenanceMode,
 					enablePasswordExpiry: !!formValuesObj.enablePasswordExpiry,
 					passwordExpiryDays: Number(formValuesObj.passwordExpiryDays)
@@ -385,6 +382,9 @@ export default function SystemPreferences(): React.ReactElement
 		const refreshTimerId = window.setInterval(() => setNowTimestampMs(Date.now()), 30000);
 		return () => window.clearInterval(refreshTimerId);
 	}, []);
+	/** ★ 2026-10-16：密碼過期輪替——啟用時，密碼變更時間超過有效天數即視為過期（下次登入須先變更） */
+	const isAccountPasswordExpired = (accountItem: UserRecord): boolean =>
+		isPasswordExpiryEnabled && nowTimestampMs - accountItem.passwordChangedAt > passwordExpiryDaysCount * 24 * 60 * 60 * 1000;
 
 	// Modal 與編輯狀態宣告 (符合規範 g)
 	const [isUserModalVisible, setIsUserModalVisible] = useState<boolean>(false);
@@ -718,7 +718,7 @@ export default function SystemPreferences(): React.ReactElement
 					logSystemEvent('INFO', `新增帳號：${userFormValuesObj.name}（${userFormValuesObj.email}）`, operatorNameString);
 
 					messageApi.success(
-						translate('admin.msg_user_added_with_pwd', '已新增使用者。請將初始密碼交給對方，對方首次登入時須變更密碼。')
+						translate('admin.msg_user_added_with_pwd', '已新增使用者，請將初始密碼交給對方，並提醒登入後自行變更密碼。')
 					);
 				}
 
@@ -760,17 +760,6 @@ export default function SystemPreferences(): React.ReactElement
 	};
 
 	/**
-	 * 函數名稱: handleUnlockUser
-	 * 函數功能: 提前解除因登入失敗過多而鎖定的帳號。
-	 */
-	const handleUnlockUser = (targetUserRecordObj: UserRecord): void =>
-	{
-		accountStoreActions.unlockAccount(targetUserRecordObj.id);
-		logSystemEvent('INFO', `解除帳號鎖定：${targetUserRecordObj.name}`, operatorNameString);
-		messageApi.success(translate('admin.msg_unlocked', '已解除鎖定'));
-	};
-
-	/**
 	 * 函數名稱: handleOpenResetPwd
 	 * 函數功能: 開啟強制重設密碼 Modal，並設定目標使用者。
 	 * 
@@ -800,8 +789,14 @@ export default function SystemPreferences(): React.ReactElement
 			() => 
 			{
 				if (!resetPwdTargetUserObj) return;
+				// ★ 2026-10-16 同步後端：不能重設任何 Admin（含自己）的密碼；Admin 變更自己的密碼請至個人設定
+				if (resetPwdTargetUserObj.role === 'admin')
+				{
+					messageApi.error(translate('admin.msg_cannot_reset_admin_pwd', '不能重設 Admin 帳號的密碼；Admin 請至「個人設定」自行變更。'));
+					return;
+				}
 				accountStoreActions.resetPassword(resetPwdTargetUserObj.id, String(resetPwdFormInstance.getFieldValue('newPassword') || ''));
-				logSystemEvent('WARN', `管理員重設密碼：${resetPwdTargetUserObj.name}（下次登入須變更密碼）`, operatorNameString);
+				logSystemEvent('WARN', `管理員重設密碼：${resetPwdTargetUserObj.name}（已解除鎖定）`, operatorNameString);
 
 				messageApi.success(
 					translate('admin.msg_pwd_reset_success', `已成功重設 ${resetPwdTargetUserObj?.name} 的密碼`)
@@ -867,15 +862,16 @@ export default function SystemPreferences(): React.ReactElement
 					{isAccountLocked(userRecordItem, nowTimestampMs)
 						? <Tag color="warning" style={{ margin: 0 }}>{translate('admin.status_locked', 'LOCKED')}</Tag>
 						: <Tag color={statusNameString === 'active' ? 'success' : 'error'} style={{ margin: 0 }}>{statusNameString.toUpperCase()}</Tag>}
-					{userRecordItem.mustChangePassword && (
-						<Tag color="processing" style={{ margin: 0 }}>{translate('admin.status_must_change_pwd', '待變更密碼')}</Tag>
+					{isAccountPasswordExpired(userRecordItem) && (
+						<Tag color="processing" style={{ margin: 0 }}>{translate('admin.status_pwd_expired', '密碼已過期')}</Tag>
 					)}
 				</Space>
 			)
 		},
+		// ★ 2026-10-16：移除「最後登入時間」（同步後端，後端無此欄位）；改顯示密碼變更時間，供密碼過期輪替參考
 		{
-			title: translate('admin.col_last_login', '最後登入時間'), dataIndex: 'lastLoginAt', key: 'lastLoginAt',
-			render: (lastLoginAtMsValue: number | null) => lastLoginAtMsValue ? formatSystemLogTimestamp(lastLoginAtMsValue) : <Text type="secondary">{translate('admin.never_logged_in', '尚未登入')}</Text>
+			title: translate('admin.col_pwd_changed_at', '密碼變更時間'), dataIndex: 'passwordChangedAt', key: 'passwordChangedAt',
+			render: (passwordChangedAtMsValue: number) => formatSystemLogTimestamp(passwordChangedAtMsValue)
 		},
 		{ 
 			title: translate('admin.col_action', '操作'), 
@@ -893,17 +889,14 @@ export default function SystemPreferences(): React.ReactElement
 						label: translate('admin.action_edit_profile', '編輯帳號資料'),
 						onClick: () => handleEditUser(userRecordItem)
 					},
-					{
+					// ★ 2026-10-16 同步後端：Admin 帳號（含自己）不提供重設密碼；移除「解除鎖定」，改由重設密碼一併解除
+					...(userRecordItem.role !== 'admin' ? [{
 						key: 'reset_pwd',
 						icon: <KeyOutlined />,
-						label: translate('admin.action_reset_pwd', '重設密碼'),
+						label: isAccountLocked(userRecordItem, nowTimestampMs)
+							? translate('admin.action_reset_pwd_unlock', '重設密碼（並解除鎖定）')
+							: translate('admin.action_reset_pwd', '重設密碼'),
 						onClick: () => handleOpenResetPwd(userRecordItem)
-					},
-					...(isAccountLocked(userRecordItem, nowTimestampMs) ? [{
-						key: 'unlock',
-						icon: <UnlockOutlined />,
-						label: translate('admin.action_unlock', '解除鎖定'),
-						onClick: () => handleUnlockUser(userRecordItem)
 					}] : []),
 					{
 						key: 'toggle_status',
@@ -1100,9 +1093,13 @@ export default function SystemPreferences(): React.ReactElement
 									<InputNumber min={MIN_SESSION_TIMEOUT_MINUTES} max={MAX_SESSION_TIMEOUT_MINUTES} style={{ width: '7em' }} />
 								</Form.Item>
 
-								<Form.Item name="maxFailedLogins" label={translate('admin.max_login_attempts', '密碼錯誤鎖定次數')} extra={translate('admin.max_login_desc', '連續登入失敗達此次數後，帳號將被鎖定 15 分鐘。')}>
-									<InputNumber min={MIN_FAILED_LOGINS_LIMIT} max={MAX_FAILED_LOGINS_LIMIT} style={{ width: '7em' }} />
-								</Form.Item>
+								{/* ★ 2026-10-16：登入失敗鎖定改為固定規則（同步後端會員系統），不提供設定 */}
+								<Alert
+									type="info"
+									showIcon
+									message={translate('admin.fixed_lockout_title', '登入失敗鎖定（固定規則）')}
+									description={translate('admin.fixed_lockout_desc', '同一帳號自第一次失敗起 {{window}} 秒內累計失敗 {{count}} 次，即鎖定 {{minutes}} 分鐘；鎖定期間密碼正確也無法登入。管理員重設該帳號密碼可提前解除。', { window: LOGIN_FAILURE_WINDOW_MS / 1000, count: MAX_FAILED_LOGINS, minutes: ACCOUNT_LOCK_DURATION_MS / 60000 })}
+								/>
 							</Card>
 
 							<Card type="inner" title={translate('admin.password_policy_title', '密碼安全政策快速控管')} style={{ marginBottom: '16px' }}>
@@ -1229,7 +1226,7 @@ export default function SystemPreferences(): React.ReactElement
 							<Form.Item
 								name="initialPassword"
 								label={translate('admin.initial_password', '初始密碼')}
-								extra={translate('admin.initial_password_desc', '請將此密碼交給使用者；對方首次登入後系統會要求變更密碼。')}
+								extra={translate('admin.initial_password_desc', '請將此密碼交給使用者，並提醒對方登入後至「個人設定」自行變更。')}
 								rules={[
 									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
 									{ min: 12, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') },
@@ -1275,7 +1272,7 @@ export default function SystemPreferences(): React.ReactElement
 					destroyOnClose
 				>
 					<Alert 
-						message={translate('admin.reset_pwd_alert', '您正在執行管理員權限強制重設密碼。儲存後，原密碼將立即失效。')} 
+						message={translate('admin.reset_pwd_alert', '您正在執行管理員權限強制重設密碼。儲存後，原密碼將立即失效，帳號鎖定一併解除。')} 
 						type="warning" 
 						showIcon 
 						style={{ marginBottom: '16px' }}

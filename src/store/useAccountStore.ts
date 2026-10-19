@@ -8,10 +8,11 @@
  * 資料庫，讓以下流程真的會動：
  *   - Admin 新增的帳號可以登入；停用的帳號不能登入
  *   - 密碼以 PBKDF2-SHA256（每個帳號獨立隨機鹽值）雜湊後保存，不存明碼
- *   - 連續登入失敗達上限（安全參數「密碼錯誤鎖定次數」）→ 鎖定 15 分鐘，Admin 可提前解除
- *   - Admin 重設密碼／新開帳號 → 使用者下次登入必須先變更密碼
- *   - 啟用「密碼過期輪替」時，超過有效天數也必須先變更密碼
- *   - 登入成功更新「最後登入時間」
+ *   - ★ 2026-10-16 同步後端會員系統：自第一次失敗起 180 秒內累計失敗 5 次 → 鎖定 15 分鐘；
+ *     逾 180 秒未達 5 次者重新計數；鎖定期間密碼正確也不放行；登入成功或管理員重設密碼時清除。
+ *     （移除「密碼錯誤鎖定次數」可調設定、管理員手動解除鎖定）
+ *   - ★ 2026-10-16：移除「新帳號／管理員重設後首次登入須先變更密碼」與「最後登入時間」
+ *   - 啟用「密碼過期輪替」時，超過有效天數必須先變更密碼（前端功能，後端尚無此機制）
  *
  * 限制：資料存在「這個瀏覽器」的 localStorage，換電腦／換瀏覽器就看不到；前端驗證
  * 也無法真正防止有心人繞過。正式版需改由後端驗證與保存，屆時替換本檔即可。
@@ -34,21 +35,23 @@ export interface AccountRecord
 	status: AccountStatus;         // 啟用／停用（鎖定另以 lockedUntil 判斷）
 	passwordHash: string;          // PBKDF2-SHA256 雜湊 (hex)
 	passwordSalt: string;          // 隨機鹽值 (hex)
-	mustChangePassword: boolean;   // 下次登入須先變更密碼（新開帳號／管理員重設後）
-	passwordChangedAt: number;     // 最後變更密碼時間 (epoch ms)
-	failedLoginCount: number;      // 連續登入失敗次數
+	passwordChangedAt: number;     // 最後變更密碼時間 (epoch ms)，密碼過期輪替用
+	failedLoginCount: number;      // 本輪登入失敗次數
+	loginFirstFailedAt?: number | null; // 本輪第一次失敗時間 (epoch ms)；對應後端 login_first_failed_at
 	lockedUntil: number | null;    // 鎖定到期時間 (epoch ms)；null 表示未鎖定
-	lastLoginAt: number | null;    // 最後登入時間 (epoch ms)
 	createdAt: number;
 }
 
 // 登入結果
 export type AuthenticateResult =
-	| { ok: true; account: AccountRecord; mustChangePassword: boolean }
+	| { ok: true; account: AccountRecord; isPasswordExpired: boolean }
 	| { ok: false; reason: 'not_found' | 'wrong_password' | 'disabled' | 'locked'; remainingAttempts?: number; lockedUntil?: number };
 
 export const ACCOUNT_STORAGE_KEY = 'privacy_accounts_v1';
-export const ACCOUNT_LOCK_DURATION_MS = 15 * 60 * 1000;   // 鎖定 15 分鐘
+// ★ 2026-10-16：登入失敗鎖定規則同步後端會員系統（固定值，不提供設定）
+export const LOGIN_FAILURE_WINDOW_MS = 180 * 1000;        // 自本輪第一次失敗起 180 秒內
+export const MAX_FAILED_LOGINS = 5;                       // 累計失敗 5 次
+export const ACCOUNT_LOCK_DURATION_MS = 900 * 1000;       // 鎖定 900 秒（15 分鐘）
 const PBKDF2_ITERATIONS = 10000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -98,7 +101,7 @@ const buildSeedAccounts = (): AccountRecord[] =>
 	const nowMs = Date.now();
 	const seed = (name: string, email: string, role: AccountRole, password: string, status: AccountStatus = 'active'): AccountRecord => ({
 		id: generateId(), name, email, role, status, ...createPasswordFields(password),
-		mustChangePassword: false, passwordChangedAt: nowMs, failedLoginCount: 0, lockedUntil: null, lastLoginAt: null, createdAt: nowMs,
+		passwordChangedAt: nowMs, failedLoginCount: 0, loginFirstFailedAt: null, lockedUntil: null, createdAt: nowMs,
 	});
 	return [
 		seed('Admin.Test', 'admin@test.com', 'admin', 'Admin@123456'),
@@ -111,17 +114,16 @@ interface AccountState
 {
 	accounts: AccountRecord[];
 
-	/** 登入驗證；maxFailedLogins 取自安全參數「密碼錯誤鎖定次數」 */
-	authenticate: (email: string, password: string, maxFailedLogins: number, passwordExpiryDays: number | null) => AuthenticateResult;
+	/** 登入驗證；passwordExpiryDays 為 null 表示未啟用密碼過期輪替 */
+	authenticate: (email: string, password: string, passwordExpiryDays: number | null) => AuthenticateResult;
 	findByEmail: (email: string) => AccountRecord | undefined;
 	/** 登入用：先比對 Email，再比對使用者名稱（不分大小寫；名稱須唯一才算數） */
 	findByLoginId: (loginId: string) => AccountRecord | undefined;
 	addAccount: (input: { name: string; email: string; role: AccountRole; password: string }) => { ok: true } | { ok: false; reason: 'duplicate_email' | 'duplicate_name' };
 	updateAccount: (accountId: string, patch: { name: string; email: string; role: AccountRole }) => { ok: true } | { ok: false; reason: 'duplicate_email' | 'duplicate_name' };
 	setAccountStatus: (accountId: string, status: AccountStatus) => void;
-	unlockAccount: (accountId: string) => void;
 	deleteAccount: (accountId: string) => void;
-	/** 管理員重設密碼：舊密碼立即失效、解除鎖定、下次登入須變更密碼 */
+	/** 管理員重設密碼：舊密碼立即失效、解除鎖定（不能重設 Admin 的密碼，由畫面擋下） */
 	resetPassword: (accountId: string, newPassword: string) => void;
 	/** 使用者自行變更密碼：須驗證目前密碼 */
 	changeOwnPassword: (email: string, currentPassword: string, newPassword: string) => { ok: true } | { ok: false; reason: 'not_found' | 'wrong_password' | 'same_password' };
@@ -144,13 +146,14 @@ export const useAccountStore = create<AccountState>()(
 				return nameMatchedAccounts.length === 1 ? nameMatchedAccounts[0] : undefined;
 			},
 
-			authenticate: (email, password, maxFailedLogins, passwordExpiryDays) =>
+			authenticate: (email, password, passwordExpiryDays) =>
 			{
 				const nowMs = Date.now();
 				const targetAccount = getStoreStateAction().findByLoginId(email);
 				if (!targetAccount) return { ok: false, reason: 'not_found' };
-				if (targetAccount.status === 'disabled') return { ok: false, reason: 'disabled' };
+				// 與後端相同：鎖定中一律回報鎖定（即使密碼正確）
 				if (isAccountLocked(targetAccount, nowMs)) return { ok: false, reason: 'locked', lockedUntil: targetAccount.lockedUntil ?? undefined };
+				if (targetAccount.status === 'disabled') return { ok: false, reason: 'disabled' };
 
 				const updateTarget = (patch: Partial<AccountRecord>): void =>
 				{
@@ -161,24 +164,25 @@ export const useAccountStore = create<AccountState>()(
 
 				if (!isSameHash(hashPassword(password, targetAccount.passwordSalt), targetAccount.passwordHash))
 				{
-					// 鎖定已過期的帳號，從 0 重新計算
-					const previousFailedCount = targetAccount.lockedUntil !== null ? 0 : targetAccount.failedLoginCount;
-					const nextFailedCount = previousFailedCount + 1;
-					const safeMaxFailedLogins = Math.max(1, maxFailedLogins);
-					if (nextFailedCount >= safeMaxFailedLogins)
+					// 本輪第一次失敗已超過 180 秒（或從未失敗、或上一輪已鎖定過）→ 重新計數
+					const firstFailedAtMs = targetAccount.loginFirstFailedAt ?? null;
+					const isNewRound = firstFailedAtMs === null || nowMs - firstFailedAtMs > LOGIN_FAILURE_WINDOW_MS || targetAccount.lockedUntil !== null;
+					const nextFailedCount = isNewRound ? 1 : targetAccount.failedLoginCount + 1;
+					const nextFirstFailedAtMs = isNewRound ? nowMs : firstFailedAtMs;
+					if (nextFailedCount >= MAX_FAILED_LOGINS)
 					{
 						const lockedUntilMs = nowMs + ACCOUNT_LOCK_DURATION_MS;
-						updateTarget({ failedLoginCount: nextFailedCount, lockedUntil: lockedUntilMs });
+						updateTarget({ failedLoginCount: nextFailedCount, loginFirstFailedAt: nextFirstFailedAtMs, lockedUntil: lockedUntilMs });
 						return { ok: false, reason: 'locked', lockedUntil: lockedUntilMs };
 					}
-					updateTarget({ failedLoginCount: nextFailedCount, lockedUntil: null });
-					return { ok: false, reason: 'wrong_password', remainingAttempts: safeMaxFailedLogins - nextFailedCount };
+					updateTarget({ failedLoginCount: nextFailedCount, loginFirstFailedAt: nextFirstFailedAtMs, lockedUntil: null });
+					return { ok: false, reason: 'wrong_password', remainingAttempts: MAX_FAILED_LOGINS - nextFailedCount };
 				}
 
 				const isPasswordExpired = passwordExpiryDays !== null && nowMs - targetAccount.passwordChangedAt > passwordExpiryDays * DAY_MS;
-				const updatedAccount: AccountRecord = { ...targetAccount, failedLoginCount: 0, lockedUntil: null, lastLoginAt: nowMs };
-				updateTarget({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: nowMs });
-				return { ok: true, account: updatedAccount, mustChangePassword: targetAccount.mustChangePassword || isPasswordExpired };
+				const updatedAccount: AccountRecord = { ...targetAccount, failedLoginCount: 0, loginFirstFailedAt: null, lockedUntil: null };
+				updateTarget({ failedLoginCount: 0, loginFirstFailedAt: null, lockedUntil: null });
+				return { ok: true, account: updatedAccount, isPasswordExpired };
 			},
 
 			addAccount: ({ name, email, role, password }) =>
@@ -190,7 +194,7 @@ export const useAccountStore = create<AccountState>()(
 				setStoreStateAction((currentState) => ({
 					accounts: [...currentState.accounts, {
 						id: generateId(), name: name.trim(), email: normalizedEmail, role, status: 'active', ...createPasswordFields(password),
-						mustChangePassword: true, passwordChangedAt: nowMs, failedLoginCount: 0, lockedUntil: null, lastLoginAt: null, createdAt: nowMs,
+						passwordChangedAt: nowMs, failedLoginCount: 0, loginFirstFailedAt: null, lockedUntil: null, createdAt: nowMs,
 					}],
 				}));
 				return { ok: true };
@@ -211,17 +215,13 @@ export const useAccountStore = create<AccountState>()(
 				accounts: currentState.accounts.map(account => account.id === accountId ? { ...account, status } : account),
 			})),
 
-			unlockAccount: (accountId) => setStoreStateAction((currentState) => ({
-				accounts: currentState.accounts.map(account => account.id === accountId ? { ...account, failedLoginCount: 0, lockedUntil: null } : account),
-			})),
-
 			deleteAccount: (accountId) => setStoreStateAction((currentState) => ({
 				accounts: currentState.accounts.filter(account => account.id !== accountId),
 			})),
 
 			resetPassword: (accountId, newPassword) => setStoreStateAction((currentState) => ({
 				accounts: currentState.accounts.map(account => account.id === accountId
-					? { ...account, ...createPasswordFields(newPassword), mustChangePassword: true, passwordChangedAt: Date.now(), failedLoginCount: 0, lockedUntil: null }
+					? { ...account, ...createPasswordFields(newPassword), passwordChangedAt: Date.now(), failedLoginCount: 0, loginFirstFailedAt: null, lockedUntil: null }
 					: account),
 			})),
 
@@ -233,7 +233,7 @@ export const useAccountStore = create<AccountState>()(
 				if (isSameHash(hashPassword(newPassword, targetAccount.passwordSalt), targetAccount.passwordHash)) return { ok: false, reason: 'same_password' };
 				setStoreStateAction((currentState) => ({
 					accounts: currentState.accounts.map(account => account.id === targetAccount.id
-						? { ...account, ...createPasswordFields(newPassword), mustChangePassword: false, passwordChangedAt: Date.now() }
+						? { ...account, ...createPasswordFields(newPassword), passwordChangedAt: Date.now() }
 						: account),
 				}));
 				return { ok: true };

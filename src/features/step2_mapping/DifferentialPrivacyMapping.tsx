@@ -202,12 +202,8 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 						{
 							currentFieldHasErrorStatus = true;
 						}
-						// ★ 新增: 邊界範圍未涵蓋實際資料最大/最小值 (例如年齡設 0~1，但實際資料為 20~80)，
-						//   視為與「下限須小於上限」同等級之硬性錯誤，阻擋進入下一步，避免加噪後產生無意義的異常數值。
-						else if (boundRangeCoverageInfoMap[fieldItemRecord.id])
-						{
-							currentFieldHasErrorStatus = true;
-						}
+						// ★ 2026-10-19 使用者要求：邊界範圍未涵蓋全部實際資料 (有值落在邊界外) 改為「警告」不計入錯誤、
+						//   不阻擋——使用者可能本來就只要特定區間。提示見頁面上方 boundRangeCoverageWarningList。
 					}
 					else if (fieldItemRecord.fieldType === 'Text') 
 					{
@@ -227,6 +223,14 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 
 			return { isValid: isAllFieldsValidStatus, errorCount: totalErrorFieldsCount };
 		}, 
+		[currentDpFieldsList]
+	);
+
+	// ★ 2026-10-19：邊界未涵蓋全部資料的欄位清單 (僅提醒，不阻擋)，供頁面上方黃色提示使用
+	const boundRangeCoverageWarningList = useMemo(
+		() => currentDpFieldsList
+			.filter((fieldItemRecord) => !!boundRangeCoverageInfoMap[fieldItemRecord.id])
+			.map((fieldItemRecord) => ({ fieldName: fieldItemRecord.fieldName, ...boundRangeCoverageInfoMap[fieldItemRecord.id] })),
 		[currentDpFieldsList, boundRangeCoverageInfoMap]
 	);
 
@@ -1184,7 +1188,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 							pickedDateValue ? compactDpDateTimeBoundText(pickedDateValue.format('YYYY-MM-DD HH:mm:ss')) : undefined;
 
 						return (
-							<Tooltip title={isDateBoundOrderInvalidStatus ? '下限日期必須早於上限日期！' : undefined} open={isDateBoundOrderInvalidStatus} color="volcano">
+							<Tooltip title={isDateBoundOrderInvalidStatus ? '下限日期必須早於上限日期！' : undefined} color="volcano">
 								<Space.Compact style={{ width: '100%' }}>
 									<DatePicker
 										placeholder={translate('step2.ph_lower_bound_date', '下限日期')}
@@ -1217,17 +1221,20 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					const boundRangeCoverageIssueInfo = boundRangeCoverageInfoMap[rowRecordItem.id];
 					const isBoundRangeCoverageInvalidStatus = !isBoundOrderInvalidStatus && !!boundRangeCoverageIssueInfo;
 
-					const isLowerBoundErrorStatus = isLowerBoundMissingStatus || isBoundOrderInvalidStatus || isBoundRangeCoverageInvalidStatus;
-					const isUpperBoundErrorStatus = isUpperBoundMissingStatus || isBoundOrderInvalidStatus || isBoundRangeCoverageInvalidStatus;
+					// ★ 2026-10-19：邊界未涵蓋全部資料改為警告 (黃框)，缺值／下限不小於上限仍為錯誤 (紅框)
+					const resolveBoundInputStatus = (isMissingStatus: boolean): '' | 'error' | 'warning' =>
+						isMissingStatus || isBoundOrderInvalidStatus ? 'error' : isBoundRangeCoverageInvalidStatus ? 'warning' : '';
 
 					const boundRangeTooltipTitleText = isBoundOrderInvalidStatus
 						? "下限值必須嚴格小於上限值！"
 						: isBoundRangeCoverageInvalidStatus
-							? `此邊界範圍未涵蓋實際資料範圍：有 ${boundRangeCoverageIssueInfo.outOfRangeCount} 筆／共 ${boundRangeCoverageIssueInfo.totalValidValueCount} 筆 (${boundRangeCoverageIssueInfo.percentText}) 資料超出此範圍，請擴大邊界範圍或確認資料。`
+							? `有 ${boundRangeCoverageIssueInfo.outOfRangeCount} 筆／共 ${boundRangeCoverageIssueInfo.totalValidValueCount} 筆 (${boundRangeCoverageIssueInfo.percentText}) 資料在此邊界之外，加噪前會依「數值超出範圍處理方式」處理（預設截斷至邊界）。若只需要這個區間可忽略此提醒。`
 							: undefined;
 
+					// ★ 2026-10-19：拿掉 Tooltip 強制常駐 (open)。常駐提示框不會跟著表格內部捲動被裁切，列捲出可視範圍後
+					//   仍浮在表格上方蓋住其他版面 (跑版)；改為滑鼠移上才顯示，摘要改由頁面上方提示列呈現。
 					return (
-						<Tooltip title={boundRangeTooltipTitleText} open={isBoundOrderInvalidStatus || isBoundRangeCoverageInvalidStatus} color="volcano">
+						<Tooltip title={boundRangeTooltipTitleText} color={isBoundOrderInvalidStatus ? 'volcano' : 'gold'}>
 							<Space.Compact style={{ width: '100%' }}>
 								<InputNumber
 									placeholder={translate('step2.ph_lower_bound', '下限 (Lower Bound)')}
@@ -1235,7 +1242,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 									step={resolveInputNumberStepByDecimals(rowRecordItem.lowerBound)}
 									onChange={(inputNumberValue) => updateFieldLocal(rowRecordItem.id, 'lowerBound', inputNumberValue === null ? undefined : inputNumberValue)}
 									style={{ width: '50%', background: 'transparent' }}
-									status={isLowerBoundErrorStatus ? 'error' : ''}
+									status={resolveBoundInputStatus(isLowerBoundMissingStatus)}
 								/>
 								<InputNumber
 									placeholder={translate('step2.ph_upper_bound', '上限 (Upper Bound)')}
@@ -1243,7 +1250,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 									step={resolveInputNumberStepByDecimals(rowRecordItem.upperBound)}
 									onChange={(inputNumberValue) => updateFieldLocal(rowRecordItem.id, 'upperBound', inputNumberValue === null ? undefined : inputNumberValue)}
 									style={{ width: '50%', background: 'transparent' }}
-									status={isUpperBoundErrorStatus ? 'error' : ''}
+									status={resolveBoundInputStatus(isUpperBoundMissingStatus)}
 								/>
 							</Space.Compact>
 						</Tooltip>
@@ -1342,6 +1349,22 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 						defaultValue: `資料中的 ${datasetColumnsNotConfiguredList.map((columnNameString) => `「${columnNameString}」`).join('、')} 尚未設定，執行時不會加噪、原樣輸出。`
 					})}
 					action={<Button size="small" onClick={addDatasetColumnsNotConfigured}>{translate('step2.btn_add_columns_not_configured', '補上缺漏欄位')}</Button>}
+				/>
+			)}
+			{boundRangeCoverageWarningList.length > 0 && (
+				<Alert
+					type="warning"
+					showIcon
+					style={{ marginBottom: '16px', padding: '8px 16px', borderRadius: '8px' }}
+					title={translate('step2.bound_coverage_warning_title', '部分欄位的邊界未涵蓋全部資料')}
+					description={
+						<span style={{ fontSize: scaleFontSize(13) }}>
+							{boundRangeCoverageWarningList
+								.map((warningItem) => `「${warningItem.fieldName}」有 ${warningItem.outOfRangeCount} 筆（${warningItem.percentText}）在邊界外`)
+								.join('、')}
+							{translate('step2.bound_coverage_warning_suffix', '。加噪前會依「數值超出範圍處理方式」處理（預設截斷至邊界）；若只需要特定區間可忽略，否則請擴大邊界。')}
+						</span>
+					}
 				/>
 			)}
 			{!validationStatusResult.isValid && (

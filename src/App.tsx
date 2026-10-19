@@ -44,8 +44,6 @@ import { getRoleDisplayName } from './utils/roleLabel';
 // (見 utils/googleFormReporter.ts)，全程不影響畫面。
 
 import Login from './features/login/Login';
-import ForgotPassword from './features/login/ForgotPassword';
-import RequestAccess from './features/login/RequestAccess';
 import ProfileSettings from './features/settings/ProfileSettings';
 import SystemPreferences from './features/settings/SystemPreferences';
 import AuditLogHub from './features/audit_logs/AuditLogHub';
@@ -182,7 +180,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
 
     const sessionTimeoutMinutesValue = useWorkspaceStore((state) => (state as unknown as Record<string, unknown>).sessionTimeout as number) || DEFAULT_SESSION_TIMEOUT_MINUTES;
     const isMaintenanceModeActiveStatus = useWorkspaceStore((state) => (state as unknown as Record<string, unknown>).isMaintenanceMode as boolean) || false;
-    // ★ 2026-10-07：改讀登入使用者的 mustChangePassword（由帳號資料庫登入時判定：新帳號／管理員重設／密碼過期）
+    // ★ 2026-10-16：mustChangePassword 只在「密碼過期輪替」到期時為 true（已移除首次登入須變更密碼）
     const isPasswordExpiredActiveStatus = useAuthStore((state) => state.user?.mustChangePassword) || false;
     const currentWorkspaceStepIndexValue = useWorkspaceStore((state) => state.currentStep);
     const currentPrivacyModeTypeStr = useWorkspaceStore((state) => state.privacyMode);
@@ -202,8 +200,8 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
             if (!hasShownPasswordExpireModalRef.current) {
                 hasShownPasswordExpireModalRef.current = true;
                 globalModalApi.warning({
-                    title: translate('profile.password_expired_title', '密碼已過期強制變更'),
-                    content: translate('profile.password_expired_desc', '基於系統安全性政策，您的密碼已過期（或為首次登入）。在變更密碼前，您無法進行其他操作。'),
+                    title: translate('profile.password_expired_modal_title', '密碼已過期，請先變更'),
+                    content: translate('profile.password_expired_desc_rotation', '依系統密碼過期輪替政策，您的密碼已超過有效天數。在變更密碼前，您無法進行其他操作。'),
                     okText: translate('modal.confirm', '立即變更'),
                     keyboard: false,
                     onOk: () => {
@@ -620,8 +618,7 @@ export default function App(): React.ReactElement {
                 <BrowserRouter>
                     <Routes>
                         <Route path="/login" element={<Login />} />
-                        <Route path="/forgot-password" element={<ForgotPassword />} />
-                        <Route path="/request-access" element={<RequestAccess />} />
+                        {/* ★ 2026-10-16：移除「忘記密碼」「申請使用權限」頁（同步後端會員系統：帳號由管理員建立、密碼由管理員重設） */}
                         <Route path="/" element={<RequireAuth><InnerApp isDarkMode={isDarkModeActiveStatus} /></RequireAuth>}>
                             <Route index element={<RoleBasedRedirect />} />
                             <Route element={<RBACGuard key="rbac-guard-data-owner" allowedRoles={['data_owner']} redirectPath="/admin" />}>

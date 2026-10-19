@@ -385,16 +385,16 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             setAuditMetadataObject(generatedNewAuditMetadataObj);
             const formatCurrentTimeForLogString = () => new Date().toLocaleTimeString();
 
-            setSystemSimulationLogsList([
-                translate('step4.log.connect', '[{{time}}] 建立與後端 API 伺服器之連線...', { time: formatCurrentTimeForLogString() }),
-                translate('step4.log.bind', '[{{time}}] 準備動態組裝設定檔與參數', { time: formatCurrentTimeForLogString() })
-            ]);
+            // ★ 2026-10-19 使用者要求：運算 log 只列大致步驟、不加表情符號；細節（上傳欄位數、略過欄位、
+            //   CAP 基線、簽章金鑰等）改寫到瀏覽器主控台（console.info），畫面不顯示。
+            const appendStepLog = (messageText: string) => setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ${messageText}`]);
+            setSystemSimulationLogsList([`[${formatCurrentTimeForLogString()}] ${translate('step4.log.step_start', '開始處理，連線後端服務')}`]);
 
             try {
                 // ★ 2026-10-06：移除原本純展示用的 800ms 等待，直接進入處理階段
                 setCalculationProgressValue(30);
                 setCurrentPipelinePhaseType('processing');
-                setSystemSimulationLogsList(prev => [...prev, translate('step4.log.generate_config', '[{{time}}] ⚙️ 產生 JSON 設定檔 (Config) 並請求 Docker 後端...', { time: formatCurrentTimeForLogString() })]);
+                appendStepLog(translate('step4.log.step_deidentify', '去識別化處理中…'));
 
                 let configObject: Record<string, unknown> = {};
                 // K-匿名與差分隱私的設定檔／表單參數組裝邏輯見 utils/pipelineConfig.ts
@@ -462,7 +462,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 //   這裡直接取用）。相異值數被截斷的極高基數欄位，佔比一律視為 1（保守判定為高唯一值）。
                 const datasetProfileForRisk = await ensureDatasetProfile(originalFile);
 
-                const appendPipelineLog = (messageText: string) => setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ${messageText}`]);
+                const appendPipelineLog = (messageText: string) => console.info('[運算細節]', messageText);
 
                 // ① 去識別化（K-匿名或差分隱私），見 pipeline/deidentificationPhase.ts
                 const deidentificationResult = await runDeidentificationPhase({
@@ -488,10 +488,11 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     setProcessedCsvBlob(finalCsvBlobData);
                     deidentificationResult.logMessages.forEach(appendPipelineLog);
                 }
+                appendStepLog(translate('step4.log.step_deidentify_done', '去識別化完成'));
 
                 setCalculationProgressValue(65);
                 setCurrentPipelinePhaseType('auditing');
-                setSystemSimulationLogsList(prev => [...prev, translate('step4.log.start_risk', '[{{time}}] 🚀 脫敏完成，啟動真實風險評估（三大攻擊模擬）', { time: formatCurrentTimeForLogString() })]);
+                appendStepLog(translate('step4.log.step_risk', '風險評估中…'));
 
                 // ② 風險評估（三攻擊＋CAP），見 pipeline/riskAssessmentPhase.ts
                 const riskAssessmentResult = await runRiskAssessmentPhase({
@@ -518,6 +519,9 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     onCapReport: setCapReportData
                 });
                 const attackReportResult = riskAssessmentResult.attackReport;
+                appendStepLog(attackReportResult
+                    ? translate('step4.log.step_risk_done', '風險評估完成')
+                    : translate('step4.log.step_risk_skipped', '風險評估未執行（未設定敏感欄位或無法評估）'));
 
                 // ③ 結果：筆數統計、風險分數、合規判斷，寫入快取快照與稽核紀錄（見 pipeline/pipelineResults.ts）
                 const generatedDatasetRowStatsObject = await computeDatasetRowStats(cleanedCsvText, finalCsvBlobData ? readProcessedCsvTextOnce : null);
@@ -526,12 +530,17 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 // ★ 2026-10-15：K-匿名資料實用性＝指引保真度三項指標（欄位分布、欄位間關聯、綜合分數，各 ≥ 0.75），以處理前後資料計算
                 let generatedKAnonymityFidelity: KAnonymityFidelityResult | null = null;
                 if (currentPrivacyModeTypeStr === 'k-anonymity' && finalCsvBlobData) {
+                    appendStepLog(translate('step4.log.step_utility', '計算資料實用性中…'));
                     try {
                         generatedKAnonymityFidelity = computeKAnonymityFidelity({
                             originalCsvText: cleanedCsvText,
                             processedCsvText: await readProcessedCsvTextOnce(),
                             evaluatedColumns: actualProcessedColumnsList.filter((columnName) => getCalculatedRole(columnName).role !== 'Identifier'),
-                            anchorColumns: actualProcessedColumnsList.filter((columnName) => ['Sensitive', 'Non-sensitive', 'Retained'].includes(getCalculatedRole(columnName).role))
+                            anchorColumns: actualProcessedColumnsList.filter((columnName) => ['Sensitive', 'Non-sensitive', 'Retained'].includes(getCalculatedRole(columnName).role)),
+                            // ★ 2026-10-16：數值 × 數值欄位對改用相關係數相似度（指引第貳章二之（五））
+                            numericColumns: actualProcessedColumnsList.filter((columnName) => currentColumnTypesMapDict[columnName] === '數值'),
+                            // ★ 2026-10-16：有列被刪除時，依泛化設定輔助處理前後配對（避免常數欄位導致整串錯位）
+                            kAnonymityConfig: (configObject as { k_anonymity?: Record<string, unknown> }).k_anonymity ?? null
                         });
                     } catch (fidelityErrorPayload) {
                         console.error('計算資料實用性（保真度）失敗:', fidelityErrorPayload);
@@ -617,20 +626,20 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 try {
                     const auditIntegrityRecord = await createAuditIntegrity(pipelineAuditLogEntry, { inputFile: safeDataFile, outputFile: finalCsvBlobData });
                     addAuditLogAction({ ...pipelineAuditLogEntry, integrity: auditIntegrityRecord });
-                    setSystemSimulationLogsList(prev => [...prev, auditIntegrityRecord.signature
-                        ? `[${formatCurrentTimeForLogString()}] 🔏 已產生防篡改指紋並完成數位簽章（金鑰 ID ${auditIntegrityRecord.keyId}）`
-                        : `[${formatCurrentTimeForLogString()}] ⚠️ 已產生防篡改指紋，但目前環境無法數位簽章（需以 HTTPS 或 localhost 開啟）`]);
+                    appendPipelineLog(auditIntegrityRecord.signature
+                        ? `已產生防篡改指紋並完成數位簽章（金鑰 ID ${auditIntegrityRecord.keyId}）`
+                        : '已產生防篡改指紋，但目前環境無法數位簽章（需以 HTTPS 或 localhost 開啟）');
                 } catch (integrityErrorPayload) {
                     console.error('產生稽核憑證防篡改資料失敗:', integrityErrorPayload);
                     addAuditLogAction(pipelineAuditLogEntry);
                 }
 
-                setSystemSimulationLogsList(prev => [...prev, translate('step4.log.finished', '[{{time}}] 🎉 後端管線運算完畢，合規憑證生成完成！', { time: formatCurrentTimeForLogString() })]);
+                appendStepLog(translate('step4.log.step_finished', '處理完成，已產生合規報告'));
 
             } catch (error: unknown) {
                 // ★ 2026-09-30：使用者按「取消運算」→ 不是錯誤，不組錯誤卡片、不寫稽核紀錄
                 if (isApiRequestCanceled(error)) {
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏹ 已取消運算`]);
+                    appendStepLog('已取消運算');
                     messageApi.info(translate('step4.msg.canceled', '已取消運算'));
                     setIsPipelineCanceledStatus(true);
                     setPipelineFailedMessage(translate('step4.msg.canceled_detail', '已取消運算。可調整設定後按「重新運算」再執行一次。'));
@@ -640,7 +649,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 if (isApiRequestTimeout(error)) {
                     const timeoutMinutesNumber = Math.round(DEFAULT_API_TIMEOUT_MS / 60000);
                     const timeoutMessageText = translate('step4.msg.timeout_detail', '後端超過 {{minutes}} 分鐘沒有回應，已停止等待。可能是資料量太大、後端服務異常，或透過 cloudflared 等通道連線時被中斷；建議改用 localhost 開啟或縮小資料量後重新運算。', { minutes: timeoutMinutesNumber });
-                    setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ⏱ 請求逾時（${timeoutMinutesNumber} 分鐘）`]);
+                    appendStepLog(`請求逾時（${timeoutMinutesNumber} 分鐘）`);
                     messageApi.error(translate('step4.msg.timeout', '後端回應逾時'));
                     setPipelineFailedMessage(timeoutMessageText);
                     return;
@@ -648,7 +657,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 const { errorMessage, displayNode: friendlyDisplayNode, responseData } = await describePipelineError(error);
 
                 console.error("Pipeline 執行失敗:", error, responseData);
-                setSystemSimulationLogsList(prev => [...prev, `[${formatCurrentTimeForLogString()}] ❌ 處理失敗: ${errorMessage}`]);
+                appendStepLog(`處理失敗：${errorMessage}`);
                 messageApi.error(translate('step4.msg.api_failed', '後端 API 執行失敗，請檢查 Log 訊息'));
                 setPipelineFailedMessage(friendlyDisplayNode);
             } finally {

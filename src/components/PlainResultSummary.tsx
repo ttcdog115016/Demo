@@ -10,7 +10,8 @@
  *   - 可用性：保留多少筆、欄位怎麼處理（保留原值／去識別化／移除或遮蔽），可展開看每個欄位。
  *   只用 inline style 與 antd icon；問號說明由呼叫端傳入 helpIcon（包 antd Tooltip）。
  */
-import type { ReactNode } from 'react';
+import { Fragment } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { CheckCircleFilled, ExclamationCircleFilled, CloseCircleFilled } from '@ant-design/icons';
 import { classifyRiskLevel, RISK_LEVEL_THRESHOLDS } from '../utils/riskLevel';
 import type { OverallRiskSummary } from '../utils/riskLevel';
@@ -159,6 +160,7 @@ export function UtilitySummaryCard({ info, levelTooltip, recordRow, extraRow, co
     colors: PlainCardColors;
     helpIcon?: HelpIconRenderer;
 }) {
+    const hasExampleColumn = columnItems.some((item) => Boolean(item.exampleText));
     const bucketCountMap = BUCKET_ORDER.reduce((countMap, bucket) => ({ ...countMap, [bucket]: columnItems.filter((item) => item.bucket === bucket).length }), {} as Record<ColumnTreatmentBucket, number>);
     const rowList = [recordRow, extraRow].filter((row): row is NonNullable<typeof recordRow> => Boolean(row));
     return (
@@ -193,16 +195,38 @@ export function UtilitySummaryCard({ info, levelTooltip, recordRow, extraRow, co
                         // 2026-10-13 起一律預設收起，點選展開
                         <details style={{ marginTop: 10 }}>
                             <summary style={{ fontSize: scaleFontSize(13), color: colors.muted, cursor: 'pointer' }}>每個欄位怎麼處理</summary>
-                            <div style={{ marginTop: 6 }}>
-                                {columnItems.map((item) => (
-                                    <div key={item.columnName} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: scaleFontSize(13), padding: '4px 0', borderBottom: `1px dashed ${colors.border}` }}>
-                                        <span style={{ color: colors.text, fontWeight: 600, whiteSpace: 'nowrap' }}>{item.columnName}</span>
-                                        <span style={{ color: colors.muted, textAlign: 'right' }}>
-                                            {item.plainText}
-                                            {item.exampleText && <span style={{ color: colors.text, marginLeft: 6 }}>例：{item.exampleText}</span>}
-                                        </span>
-                                    </div>
+                            {/* 2026-10-19 改為三欄對齊表格：欄位｜處理方式｜範例，每列同一位置，方便上下比對 */}
+                            <div
+                                data-testid="column-treatment-table"
+                                style={{
+                                    marginTop: 6,
+                                    display: 'grid',
+                                    gridTemplateColumns: hasExampleColumn ? 'minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1.6fr) minmax(0, 1fr)',
+                                    columnGap: 16,
+                                    fontSize: scaleFontSize(13)
+                                }}
+                            >
+                                {[ '欄位', '處理方式', ...(hasExampleColumn ? ['處理後範例'] : []) ].map((headerText) => (
+                                    <div key={headerText} style={{ color: colors.muted, fontSize: scaleFontSize(12), padding: '4px 0', borderBottom: `1px solid ${colors.border}` }}>{headerText}</div>
                                 ))}
+                                {columnItems.map((item, rowIndex) => {
+                                    const cellStyle: CSSProperties = {
+                                        padding: '5px 0',
+                                        borderBottom: rowIndex === columnItems.length - 1 ? 'none' : `1px dashed ${colors.border}`,
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                    };
+                                    return (
+                                        <Fragment key={item.columnName}>
+                                            <div style={{ ...cellStyle, color: colors.text, fontWeight: 600 }} title={item.columnName}>{item.columnName}</div>
+                                            <div style={{ ...cellStyle, color: colors.muted }}>{item.plainText}</div>
+                                            {hasExampleColumn && (
+                                                <div style={{ ...cellStyle, color: colors.text, fontVariantNumeric: 'tabular-nums' }}>{item.exampleText || '—'}</div>
+                                            )}
+                                        </Fragment>
+                                    );
+                                })}
                             </div>
                         </details>
                     )}

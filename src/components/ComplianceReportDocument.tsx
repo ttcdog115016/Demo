@@ -254,6 +254,8 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                                     <div style={keyValueRowStyle}>
                                         <span>{translate('step4.report.fidelity_verdict', '資料實用性判定（各 ≥ 0.75）：')}</span><span>{utility.fidelity.isPassed ? translate('step4.report.fidelity_pass', '達標') : translate('step4.report.fidelity_fail', '未達標')}</span>
                                     </div>
+                                    {/* ★ 2026-10-16：註明實用性參考保真度判斷的依據 */}
+                                    <div style={mutedTextStyle}>{translate('step4.report.fidelity_basis_note', '註：資料實用性以保真度評估，比較處理前後各欄位的分布、欄位之間的關聯及整體品質，三項分數皆達 0.75 以上即為達標。')}</div>
                                 </>
                             )}
                         </>

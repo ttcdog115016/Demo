@@ -29,7 +29,7 @@ interface User
 	name: string;   // 使用者顯示名稱
 	email: string;  // 使用者電子郵件帳號
 	role: UserRole; // 使用者系統角色
-	mustChangePassword?: boolean; // 須先變更密碼才能使用系統（管理員重設／新帳號／密碼過期）
+	mustChangePassword?: boolean; // 須先變更密碼才能使用系統（★ 2026-10-16 起僅限密碼過期輪替到期）
 }
 
 /**

@@ -59,16 +59,18 @@ export const computeFailedLoginStats = (logs: SystemLogEntry[], accounts: Accoun
 	};
 };
 
-export const computeActiveUserStats = (accounts: AccountRecord[], nowMs: number = Date.now()): ActiveUserStats =>
+// ★ 2026-10-16：移除帳號「最後登入時間」（同步後端，後端無此欄位）→ 最近登入改由本瀏覽器維運日誌的「使用者登入成功」紀錄統計
+export const computeActiveUserStats = (logs: SystemLogEntry[], accounts: AccountRecord[], nowMs: number = Date.now()): ActiveUserStats =>
 {
-	const recentLoginAccounts = accounts
-		.filter(account => account.lastLoginAt !== null && nowMs - account.lastLoginAt <= STATS_WINDOW_MS)
-		.sort((leftAccount, rightAccount) => (rightAccount.lastLoginAt ?? 0) - (leftAccount.lastLoginAt ?? 0));
+	const recentLoginNames = Array.from(new Set(logs
+		.filter(logEntry => nowMs - logEntry.timestamp <= STATS_WINDOW_MS && logEntry.event.startsWith('使用者登入成功'))
+		.sort((leftEntry, rightEntry) => rightEntry.timestamp - leftEntry.timestamp)
+		.map(logEntry => logEntry.source)));
 	return {
-		recentLoginCount: recentLoginAccounts.length,
+		recentLoginCount: recentLoginNames.length,
 		totalAccountCount: accounts.length,
 		disabledAccountCount: accounts.filter(account => account.status === 'disabled').length,
-		recentLoginNames: recentLoginAccounts.map(account => account.name),
+		recentLoginNames,
 	};
 };
 

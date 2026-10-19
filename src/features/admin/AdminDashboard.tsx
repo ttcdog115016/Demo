@@ -114,7 +114,7 @@ export default function AdminDashboard(): React.ReactElement
 
 	const apiCallStats = useMemo(() => computeApiCallStats(systemLogEntriesList, statsNowMs), [systemLogEntriesList, statsNowMs]);
 	const failedLoginStats = useMemo(() => computeFailedLoginStats(systemLogEntriesList, accountRecordsList, statsNowMs), [systemLogEntriesList, accountRecordsList, statsNowMs]);
-	const activeUserStats = useMemo(() => computeActiveUserStats(accountRecordsList, statsNowMs), [accountRecordsList, statsNowMs]);
+	const activeUserStats = useMemo(() => computeActiveUserStats(systemLogEntriesList, accountRecordsList, statsNowMs), [systemLogEntriesList, accountRecordsList, statsNowMs]);
 
 	const navigate = useNavigate();
 

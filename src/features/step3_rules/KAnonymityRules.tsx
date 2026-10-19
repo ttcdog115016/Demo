@@ -25,7 +25,12 @@ import { scaleFontSize, scaleChartFontSize } from '../../utils/fontScale';
  * ============================================================================
  */
 const MIN_K_VALUE = 2;                     // K 值最小限制 (低於 2 等同無匿名效果)
-const MAX_K_VALUE = 100;                    // K 值最大限制 (過大會導致資料破壞嚴重)
+// ★ 2026-10-19：拿掉 K ≤ 100 的硬上限，比照後端（validation.py::_sanity_check 只檢查 k ≤ 資料筆數）。
+//   原本 100 只限制滑桿／輸入框，Step2 匯入設定檔可帶入 K > 100 且下一步不擋，前後不一致；
+//   且敏感欄位極度偏斜時（如銀髮安居資料長照 97% 為 0），要通過 l=2 需要 K 數百。
+//   100 改為「滑桿範圍」與「K 很大提醒」門檻，輸入框可輸入到資料筆數。
+const K_SLIDER_MAX_VALUE = 100;             // 滑桿上限（更大的 K 請用輸入框）
+const K_LARGE_WARNING_THRESHOLD = 100;      // K 超過此值顯示黃色提醒（不阻擋）
 const MIN_L_VALUE = 1;                     // L 值最小限制
 const MAX_L_VALUE = 10;                    // L 值最大限制（僅在尚無 K 值時作為備援上限，見 effectiveMaxLValue）
 const MIN_T_VALUE = 0.01;                  // T 值最小限制
@@ -175,10 +180,12 @@ export default function KAnonymityRules(): React.ReactElement
     const datasetProfileSnapshot = useWorkspaceStore((state) => state.datasetProfile);
     const datasetRowCountValue = datasetProfileSnapshot ? datasetProfileSnapshot.rowCount : datasetRowsListArray.length; // 資料源總筆數 (0 代表尚未載入資料)
 
-    // K 值實際可選上限：不得超過資料源筆數，亦不得超過系統設定之 MAX_K_VALUE
+    // K 值實際可選上限：與後端一致，只限制不得超過資料源筆數（尚未載入資料時不限制）
     const effectiveMaxKValue = datasetRowCountValue > 0
-        ? Math.min(MAX_K_VALUE, datasetRowCountValue)
-        : MAX_K_VALUE;
+        ? datasetRowCountValue
+        : Number.MAX_SAFE_INTEGER;
+    // 滑桿只涵蓋常用範圍（2～100，且不超過資料筆數）；K 大於此值時滑桿停在最右側，數值以輸入框為準
+    const kSliderMaxValue = Math.min(K_SLIDER_MAX_VALUE, effectiveMaxKValue);
 
     const columnPrivacyRolesMapDict = useWorkspaceStore(
         (state) => state.columnRoles
@@ -837,9 +844,15 @@ export default function KAnonymityRules(): React.ReactElement
                                         <span style={{ color: isKValueInvalidStatus ? token.colorError : token.colorText }}>K</span>
                                         {helpIcon(translate('step3.k_value_tooltip'))}
                                     </Col>
-                                    <Col flex="auto"><Slider min={MIN_K_VALUE} max={effectiveMaxKValue} value={currentKValue} onChange={handleKValueChange} /></Col>
+                                    <Col flex="auto"><Slider min={MIN_K_VALUE} max={kSliderMaxValue} value={Math.min(currentKValue ?? MIN_K_VALUE, kSliderMaxValue)} onChange={handleKValueChange} /></Col>
                                     <Col flex="7em"><InputNumber aria-label="k-anonymity (k)" min={MIN_K_VALUE} max={effectiveMaxKValue} value={currentKValue} onChange={handleKValueChange} status={isKValueInvalidStatus ? 'error' : undefined} style={{ width: '100%' }} /></Col>
                                 </Row>
+                            )}
+                            {!isKValueInvalidStatus && Number(currentKValue) > K_LARGE_WARNING_THRESHOLD && (
+                                <div data-testid="kanon-k-large-warning" style={{ marginTop: 8, color: token.colorWarning, fontSize: scaleFontSize(13) }}>
+                                    <WarningOutlined style={{ marginRight: 4 }} />
+                                    {translate('step3.k_large_warning', 'K = {{k}} 很大：筆數不滿 {{k}} 的分組都會被刪除或遮蔽，處理後的資料可能少很多，請到 Step4 確認刪除比例。', { k: currentKValue })}
+                                </div>
                             )}
                             {isKValueInvalidStatus && (
                                 <div style={{ marginTop: 8, color: token.colorError, fontSize: scaleFontSize(13) }}>

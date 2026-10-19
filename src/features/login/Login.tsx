@@ -51,7 +51,6 @@ const DEMO_ACCOUNTS =
 };
 
 // 安全參數預設值（與「系統偏好 → 安全與環境參數」一致）
-const DEFAULT_MAX_FAILED_LOGINS_LIMIT = 5;
 const DEFAULT_PASSWORD_EXPIRY_DAYS = 90;
 
 /**
@@ -111,11 +110,11 @@ export default function Login(): React.ReactElement
 			const emailInputString = (formValuesObj.email || '').trim();
 
 			// 安全參數（Admin 於「安全與環境參數」設定；未設定時用預設值）
-			const securitySettingsSnapshot = useWorkspaceStore.getState() as unknown as { maxFailedLogins?: number; enablePasswordExpiry?: boolean; passwordExpiryDays?: number; isMaintenanceMode?: boolean };
-			const maxFailedLoginsValue = securitySettingsSnapshot.maxFailedLogins ?? DEFAULT_MAX_FAILED_LOGINS_LIMIT;
+			// ★ 2026-10-16：登入失敗鎖定改為固定規則（同步後端：180 秒內 5 次 → 鎖 15 分鐘），不再讀「密碼錯誤鎖定次數」設定
+			const securitySettingsSnapshot = useWorkspaceStore.getState() as unknown as { enablePasswordExpiry?: boolean; passwordExpiryDays?: number; isMaintenanceMode?: boolean };
 			const passwordExpiryDaysValue = securitySettingsSnapshot.enablePasswordExpiry !== false ? (securitySettingsSnapshot.passwordExpiryDays ?? DEFAULT_PASSWORD_EXPIRY_DAYS) : null;
 
-			const authenticateResult = useAccountStore.getState().authenticate(emailInputString, formValuesObj.password || '', maxFailedLoginsValue, passwordExpiryDaysValue);
+			const authenticateResult = useAccountStore.getState().authenticate(emailInputString, formValuesObj.password || '', passwordExpiryDaysValue);
 
 			if (!authenticateResult.ok)
 			{
@@ -128,7 +127,7 @@ export default function Login(): React.ReactElement
 				{
 					const remainingMinutesValue = Math.max(1, Math.ceil(((authenticateResult.lockedUntil ?? Date.now()) - Date.now()) / 60000));
 					logSystemEvent('WARN', `登入失敗（帳號鎖定中，約 ${remainingMinutesValue} 分鐘後解除）`, emailInputString);
-					messageApi.error(translate('login.error_locked', '登入失敗次數過多，帳號已鎖定，請於 {{minutes}} 分鐘後再試，或聯絡系統管理員解除。', { minutes: remainingMinutesValue }));
+					messageApi.error(translate('login.error_locked', '登入失敗次數過多，帳號已鎖定，請於 {{minutes}} 分鐘後再試，或請系統管理員重設密碼。', { minutes: remainingMinutesValue }));
 				}
 				else
 				{
@@ -153,8 +152,9 @@ export default function Login(): React.ReactElement
 				return;
 			}
 
+			// ★ 2026-10-16：移除「首次登入須先變更密碼」；僅密碼過期（密碼過期輪替）時須先變更
 			executeLoginAction(
-				{ name: loggedInAccount.name, email: loggedInAccount.email, role: loggedInAccount.role, mustChangePassword: authenticateResult.mustChangePassword }
+				{ name: loggedInAccount.name, email: loggedInAccount.email, role: loggedInAccount.role, mustChangePassword: authenticateResult.isPasswordExpired }
 			);
 
 			messageApi.success(
@@ -162,7 +162,7 @@ export default function Login(): React.ReactElement
 			);
 
 			setTimeout(
-				() => navigate(authenticateResult.mustChangePassword ? '/settings/profile' : '/', { replace: true }), 
+				() => navigate(authenticateResult.isPasswordExpired ? '/settings/profile' : '/', { replace: true }), 
 				PAGE_NAVIGATION_DELAY_MS
 			);
 		} 
@@ -346,16 +346,13 @@ export default function Login(): React.ReactElement
 							/>
 						</Form.Item>
 
-						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+						{/* ★ 2026-10-16：移除「忘記密碼」（同步後端：密碼由管理員重設） */}
+						<div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
 							<Form.Item name="remember" valuePropName="checked" noStyle>
 								<Checkbox style={{ color: isDarkModeActive ? '#94a3b8' : '#64748b' }}>
 									{translate('login.rememberMe')}
 								</Checkbox>
 							</Form.Item>
-
-							<span onClick={() => navigate('/forgot-password')} style={{ color: '#3f51b5', fontSize: scaleFontSize(14), cursor: 'pointer' }}>
-								{translate('login.forgotPassword')}
-							</span>
 						</div>
 
 						{/* 標準登入按鈕 */}
@@ -407,10 +404,8 @@ export default function Login(): React.ReactElement
 							}
 						}
 					>
-						{translate('login.noAccount')}{' '}
-						<span onClick={() => navigate('/request-access')} style={{ color: '#3f51b5', fontWeight: 'bold', cursor: 'pointer' }}>
-							{translate('login.requestAccess')}
-						</span>
+						{/* ★ 2026-10-16：移除「申請使用權限」（同步後端：帳號由管理員建立） */}
+						{translate('login.no_account_contact_admin', '尚無帳號？請洽系統管理員建立。')}
 						{/* ★ 建置時間：確認瀏覽器載入的是否為最新版本 */}
 						<div style={{ marginTop: 12, fontSize: scaleFontSize(11), opacity: 0.6 }}>
 							{translate('login.build_time', '版本建置時間')}：{__APP_BUILD_TIME__}

@@ -154,7 +154,7 @@ export const resolveColumnTreatment = (input: {
     // 差分隱私只有「加噪／不加噪」（與合規報告欄位對照表一致）
     if (input.privacyMode === 'differential-privacy') {
         return input.isDpNoised
-            ? { columnName, bucket: 'blurred', plainText: '加入隨機雜訊（內容與原值不完全相同）' }
+            ? { columnName, bucket: 'blurred', plainText: '加入雜訊' }
             : { columnName, bucket: 'kept', plainText: '保留原值' };
     }
     if (input.maskStrategy === 'remove') {

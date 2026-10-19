@@ -63,7 +63,7 @@ export default function ProfileSettings(): React.ReactElement
 	);
 	
 	// 擴充型別讀取與切換密碼過期狀態之輔助 Action (符合規範 g)
-	const isPasswordExpiredStatus = currentUserSession?.mustChangePassword || false; // 須先變更密碼（新帳號／管理員重設／密碼過期）
+	const isPasswordExpiredStatus = currentUserSession?.mustChangePassword || false; // ★ 2026-10-16：僅密碼過期輪替到期時須先變更密碼（已移除首次登入強制變更）
 
 	/**
 	 * 函數名稱: setPasswordExpired
