@@ -145,15 +145,19 @@ describe('access token 過期自動換發', () =>
 		expect(window.sessionStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)).toBeNull();
 	});
 
-	it('變更密碼回 401（舊密碼錯誤）不觸發換發', async () =>
+	it('變更密碼：送出前先換發一次 token；回 401（目前密碼錯誤）不再換發重送；欄位為 current_password', async () =>
 	{
-		installFakeBackend((config) => config.url === '/auth/login'
-			? { status: 200, data: { access_token: makeJwt({ sub: 'u', role: 'user' }), refresh_token: 'r1' } }
-			: { status: 401, data: { error_code: 'ERR_UNAUTHORIZED', message: '舊密碼錯誤' } });
+		installFakeBackend((config) =>
+		{
+			if (config.url === '/auth/login') return { status: 200, data: { access_token: makeJwt({ sub: 'u', role: 'user' }), refresh_token: 'r1', username: 'u', role: 'user' } };
+			if (config.url === '/auth/refresh') return { status: 200, data: { access_token: makeJwt({ sub: 'u', role: 'user' }), refresh_token: 'r2' } };
+			return { status: 401, data: { error_code: 'ERR_UNAUTHORIZED', message: '帳號或密碼錯誤。' } };
+		});
 		await memberLogin('u', 'pw');
 		await expect(changeOwnPassword('wrong', 'New@Password123')).rejects.toMatchObject({ status: 401 });
-		expect(requestLog.some(logItem => logItem.url === '/auth/refresh')).toBe(false);
-		expect(requestLog.at(-1)?.data).toEqual({ old_password: 'wrong', new_password: 'New@Password123' });
+		expect(requestLog.filter(logItem => logItem.url === '/auth/refresh')).toHaveLength(1);
+		expect(requestLog.filter(logItem => logItem.url === '/auth/password')).toHaveLength(1);
+		expect(requestLog.at(-1)?.data).toEqual({ current_password: 'wrong', new_password: 'New@Password123' });
 	});
 });
 

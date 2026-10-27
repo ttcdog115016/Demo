@@ -26,7 +26,8 @@ import { useUIStore } from '../../store/useUIStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { logSystemEvent, useSystemLogStore } from '../../store/useSystemLogStore';
-import { useAccountStore } from '../../store/useAccountStore';
+import { listMemberAccounts, type MemberAccount } from '../../api/authApi';
+import { SHOW_PASSWORD_EXPIRY_POLICY } from '../../config/featureFlags';
 import {
 	computeApiCallStats, computeFailedLoginStats, computeActiveUserStats, probeBackendHealth, type BackendHealthState,
 } from '../../utils/adminDashboardStats';
@@ -91,7 +92,8 @@ export default function AdminDashboard(): React.ReactElement
 
 	// ★ 2026-10-08：三張狀態卡片改用真實資料（原本 99.99%／3 次／2 / 12 皆為寫死）
 	const systemLogEntriesList = useSystemLogStore((state) => state.logs);
-	const accountRecordsList = useAccountStore((state) => state.accounts);
+	// ★ 2026-10-27：帳號數改讀後端帳號清單（GET /api/v1/users）；讀取失敗時維持空清單，不影響其他卡片
+	const [accountRecordsList, setAccountRecordsList] = useState<MemberAccount[]>([]);
 	const [statsNowMs, setStatsNowMs] = useState<number>(() => Date.now());
 	const [backendHealthState, setBackendHealthState] = useState<BackendHealthState>({ status: 'checking' });
 
@@ -107,6 +109,7 @@ export default function AdminDashboard(): React.ReactElement
 		let isUnmounted = false;
 		const probeAndStore = (): void => { void probeBackendHealth().then((healthResult) => { if (!isUnmounted) setBackendHealthState(healthResult); }); };
 		probeAndStore();
+		void listMemberAccounts().then((accountsList) => { if (!isUnmounted) setAccountRecordsList(accountsList); }).catch(() => undefined);
 		const healthTimerId = window.setInterval(probeAndStore, BACKEND_HEALTH_RECHECK_INTERVAL_MS);
 		const statsTimerId = window.setInterval(() => setStatsNowMs(Date.now()), STATS_REFRESH_INTERVAL_MS);
 		return () => { isUnmounted = true; window.clearInterval(healthTimerId); window.clearInterval(statsTimerId); };
@@ -358,10 +361,11 @@ export default function AdminDashboard(): React.ReactElement
 			</Row>
 
 			<div style={{ marginTop: '8px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(12), opacity: 0.8 }}>
-				{translate('admin.stats_source_note', '※ 登入與 API 統計來自此瀏覽器的系統維運日誌與帳號資料（Demo 版），尚未集中於後端；後端連線狀態每 60 秒自動檢查一次。')}
+				{translate('admin.stats_source_note_backend', '※ 帳號數來自後端；登入與 API 統計來自此瀏覽器的系統維運日誌，尚未集中於後端；後端連線狀態每 60 秒自動檢查一次。')}
 			</div>
 
-			{/* 密碼安全政策快速控管區塊 */}
+			{/* 密碼安全政策快速控管區塊（★ 2026-10-27 後端無密碼過期機制，先隱藏） */}
+			{SHOW_PASSWORD_EXPIRY_POLICY && (
 			<Card 
 				className="v-card-style" 
 				style={
@@ -442,6 +446,7 @@ export default function AdminDashboard(): React.ReactElement
 					</Col>
 				</Row>
 			</Card>
+			)}
 
 			{/* 單一入口導向橫幅 */}
 			<Card 

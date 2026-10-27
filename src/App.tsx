@@ -11,7 +11,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
 import { 
     ConfigProvider, theme, Layout, Menu, Avatar, 
-    App as AntdApp, Dropdown, Tag 
+    App as AntdApp, Dropdown, Tag, Spin 
 } from 'antd'; 
 import { useTranslation } from 'react-i18next';
 
@@ -27,14 +27,12 @@ import {
     UserOutlined,
     LogoutOutlined,
     AuditOutlined,
-    DashboardOutlined,
-    UserSwitchOutlined
+    DashboardOutlined
 } from '@ant-design/icons';
 
 import { useAuthStore, type UserRole } from './store/useAuthStore';
 import { useUIStore, type FontSizeLevel } from './store/useUIStore';
 import { useWorkspaceStore } from './store/useWorkspaceStore';
-import { useAccountStore } from './store/useAccountStore';
 import NotificationBell from './components/NotificationBell';
 import { getRoleDisplayName } from './utils/roleLabel';
 
@@ -120,6 +118,15 @@ interface RequireAuthProps {
 
 const RequireAuth = ({ children: childComponentsNode }: RequireAuthProps): React.ReactElement => {
     const isUserAuthenticatedStatus = useAuthStore((state) => state.isAuthenticated);
+    // ★ 2026-10-27：重新整理頁面後，正向後端接續登入（refresh token 換發）時先顯示載入中，不要立刻踢回登入頁
+    const isRestoringSessionStatus = useAuthStore((state) => state.isRestoringSession);
+    if (!isUserAuthenticatedStatus && isRestoringSessionStatus) {
+        return (
+            <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Spin size="large" />
+            </div>
+        );
+    }
     if (!isUserAuthenticatedStatus) {
         return <Navigate to="/login" replace />;
     }
@@ -172,7 +179,6 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
     const { message: globalMessageApi, modal: globalModalApi, notification: globalNotificationApi } = AntdApp.useApp();
 
     const currentUserSessionData = useAuthStore((state) => state.user);
-    const executeSetUserRoleAction = useAuthStore((state) => state.setUserRole);
     const executeLogoutAction = useAuthStore((state) => state.logout);
 
     const currentFontSizeLevelValue = useUIStore((state) => state.fontSizeLevel);
@@ -313,12 +319,10 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
         });
     };
 
+    // ★ 2026-10-27：串接後端會員系統，角色由後端決定，移除「切換測試角色 (RBAC Demo)」
     const userDropdownMenuConfiguration: MenuProps = {
-        selectedKeys: [`role_${currentUserRoleNameString}`],
         items: [
-            { key: 'role_header', label: <span style={{ fontWeight: 600, color: '#8c8c8c' }}><UserSwitchOutlined /> {translate('menu.role_switch_demo', '切換測試角色 (RBAC Demo)')}</span>, disabled: true },
-            { key: 'role_admin', label: translate('role.admin', 'Admin') },
-            { key: 'role_data_owner', label: translate('role.data_owner', 'Data Owner') },
+            { key: 'account_header', label: <span style={{ fontWeight: 600, color: '#8c8c8c' }}>{currentUserSessionData?.email}</span>, disabled: true },
             { type: 'divider' },
             { key: 'profile', label: translate('menu.profile_settings', '個人設定'), icon: <UserOutlined /> },
             { key: 'preferences', label: translate('menu.system_preferences', '系統設定'), icon: <SettingOutlined /> },
@@ -329,26 +333,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                 return;
             }
 
-            if (menuClickEventObj.key.startsWith('role_')) {
-                const parsedTargetRoleNameString = menuClickEventObj.key.replace('role_', '') as UserRole;
-                if (parsedTargetRoleNameString === 'data_owner' && isMaintenanceModeActiveStatus) {
-                    globalMessageApi.error(translate('admin.maintenance_block_switch', '系統維護模式已開啟，無法切換為 Data Owner。'));
-                    return;
-                }
-                executeSetUserRoleAction(parsedTargetRoleNameString);
-                // ★ 2026-10-07：切換測試角色時一併切換成該角色的帳號身分（例如 Admin → Admin.Test），
-                //   右上角名稱才會跟著變；找不到對應角色的啟用帳號時只換角色。
-                const switchTargetAccount = useAccountStore.getState().accounts.find(
-                    accountItem => accountItem.role === parsedTargetRoleNameString && accountItem.status === 'active'
-                );
-                if (switchTargetAccount && currentUserSessionData?.email !== switchTargetAccount.email) {
-                    useAuthStore.setState((authState) => ({
-                        user: authState.user ? { ...authState.user, name: switchTargetAccount.name, email: switchTargetAccount.email, role: parsedTargetRoleNameString, mustChangePassword: false } : authState.user,
-                    }));
-                }
-                executeNavigationAction(parsedTargetRoleNameString === 'admin' ? '/admin' : '/workspace?step=1');
-                globalMessageApi.info(translate('message.role_switched', '已將全域角色切換為：{{role}}', { role: getRoleDisplayName(parsedTargetRoleNameString) }));
-            } else if (menuClickEventObj.key === 'profile') {
+            if (menuClickEventObj.key === 'profile') {
                 executeNavigationAction('/settings/profile');
             } else if (menuClickEventObj.key === 'preferences') {
                 executeNavigationAction('/settings/preferences');

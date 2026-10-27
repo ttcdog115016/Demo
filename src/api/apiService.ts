@@ -238,6 +238,53 @@ export const runDifferentialPrivacy = async (
   }
 };
 // ============================================================================
+// 資料前處理 (Preprocess)
+// ============================================================================
+
+export interface PreprocessResponse {
+  success: boolean;
+  data?: Blob;
+  filename?: string;
+  error?: unknown;
+}
+
+/**
+ * 呼叫資料前處理 API — POST /api/v1/preprocess（★ 2026-10-27 最終版後端新增）
+ * 依設定檔 preprocess 區塊的清單，由上往下對指定欄位執行清洗／缺失值處理，沿用輸入格式（CSV）回傳；
+ * 無報告標頭。表單欄位與 /k-anonymity 相同：file／config。
+ * @param dataFile - 原始資料集
+ * @param configFile - 大包設定檔，preprocess 區塊 enabled=true（組裝見 utils/preprocessConfig.ts）
+ */
+export const runPreprocess = async (
+  dataFile: File,
+  configFile: File,
+  requestOptions?: ApiRequestOptions
+): Promise<PreprocessResponse> => {
+  try {
+    const formData = new FormData();
+    formData.append('file', dataFile);
+    formData.append('config', configFile);
+
+    const response = await axios.post(
+      '/api/v1/preprocess',
+      formData,
+      { responseType: 'blob', ...buildAxiosRequestConfig(requestOptions) }
+    );
+
+    const disposition = response.headers['content-disposition'] || response.headers['Content-Disposition'];
+    let filename = 'preprocessed_output.csv';
+    if (disposition && typeof disposition === 'string' && disposition.includes('filename=')) {
+      filename = disposition.split('filename=')[1].replace(/"/g, '').trim();
+    }
+
+    return { success: true, data: new Blob([response.data], { type: 'text/csv;charset=utf-8;' }), filename };
+  } catch (error) {
+    console.error('資料前處理失敗:', error);
+    return { success: false, error };
+  }
+};
+
+// ============================================================================
 // 再識別風險評估 (Risk Assessment) 相關介面宣告
 //
 // 注意：以下四個端點跟上面的 /api/v1/k-anonymity、/api/v1/dp 是完全不同的一組 API，

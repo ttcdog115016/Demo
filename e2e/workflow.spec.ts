@@ -10,10 +10,14 @@ test.describe('Privacy Toolkit 全流程端到端測試 (E2E Workflow Test)', ()
     await page.goto('/login');
     await expect(page.getByText('PRIVACY APP')).toBeVisible();
 
-    // 點擊一鍵快速登入
-    const quickLoginBtn = page.getByRole('button', { name: /一鍵快速登入|One-Click Quick Login/i });
-    await expect(quickLoginBtn).toBeVisible();
-    await quickLoginBtn.click();
+    // ★ 2026-10-27：登入改經後端會員系統，測試帳號（User 角色）由環境變數提供：
+    //   E2E_USERNAME／E2E_PASSWORD（以後端 CLI 建立：python -m app.cli.main create-user -u <帳號> -p <密碼> -r user）
+    const e2eUsername = process.env.E2E_USERNAME ?? '';
+    const e2ePassword = process.env.E2E_PASSWORD ?? '';
+    test.skip(!e2eUsername || !e2ePassword, '未設定 E2E_USERNAME／E2E_PASSWORD');
+    await page.getByLabel(/帳號|Account/).fill(e2eUsername);
+    await page.getByLabel(/密碼|Password/).fill(e2ePassword);
+    await page.getByRole('button', { name: /登入系統|Log In/i }).click();
 
     // 驗證進入主頁面
     await page.waitForURL('**/', { timeout: 10000 });

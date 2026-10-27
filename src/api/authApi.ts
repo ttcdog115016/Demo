@@ -3,9 +3,8 @@
  * 檔案名稱 (File): authApi.ts
  * 模組功能 (Description): 後端會員系統串接（依《會員系統架構圖》民國 115 年 10 月版）。
  *
- * ★ 2026-10-16 狀態：僅完成 API 層，尚未接到畫面。後端會員系統仍在開發中，
- *   登入、帳號管理、變更密碼目前仍使用前端 Demo 帳號資料庫（store/useAccountStore.ts）。
- *   後端上線後的接線步驟見專案文件「修正紀錄_2026-10-16_會員系統串接後端」。
+ * ★ 2026-10-27：依最終版後端（v2.0.0，auth_router.py／users_router.py）接到畫面，
+ *   取代前端 Demo 帳號資料庫。登入、接續登入、登出、變更密碼、帳號管理皆經由本檔。
  *
  *   - 10 個端點：/auth/login、/auth/refresh、/auth/logout、/auth/password、
  *     /users（GET／POST）、/users/{username}/role、/users/{username}/reset-password、
@@ -20,8 +19,9 @@
  * 角色對照：後端 admin／user ↔ 前端 admin／data_owner（前端內部代碼沿用 data_owner，
  * 畫面顯示名稱改為「User」，見 utils/roleLabel.ts）。
  *
- * ★ 架構文件未載明請求／回應主體的欄位名稱，以下依 FastAPI 慣例（snake_case）撰寫，
- *   回應解析時同時接受 camelCase；請後端確認（見專案文件【待後端確認】會員系統欄位名稱）。
+ * ★ 欄位名稱已依最終版後端原始碼核對：登入回應帶 username／role；變更密碼主體為
+ *   { current_password, new_password }；GET /users 回 { users: [{ username, role, is_active, created_at }], total }
+ *   （無失敗次數、鎖定到期、密碼變更時間等欄位）。
  * ============================================================================
  */
 
@@ -31,6 +31,11 @@ export const MEMBER_API_PREFIX = '/api/v1';
 export const REFRESH_TOKEN_STORAGE_KEY = 'ppt_refresh_token';
 export const SESSION_USERNAME_STORAGE_KEY = 'ppt_session_username';
 const MEMBER_API_TIMEOUT_MS = 20 * 1000;
+
+// 後端固定的登入失敗鎖定規則（app/governance/auth.py；不開放調整，畫面僅作說明）
+export const LOGIN_MAX_ATTEMPTS = 5;               // 累計失敗 5 次
+export const LOGIN_ATTEMPT_WINDOW_SECONDS = 180;   // 自本輪第一次失敗起 180 秒內
+export const LOGIN_LOCKOUT_SECONDS = 900;          // 鎖定 900 秒（15 分鐘）
 
 export type BackendRole = 'admin' | 'user';
 export type FrontendRole = 'admin' | 'data_owner';
@@ -379,7 +384,10 @@ export const memberLogout = async (): Promise<void> =>
 /** PATCH /auth/password：變更自己的密碼（須帶舊密碼）；401 表示舊密碼錯誤 */
 export const changeOwnPassword = async (oldPassword: string, newPassword: string): Promise<void> =>
 {
-	await authorizedRequest({ method: 'PATCH', url: '/auth/password', data: { old_password: oldPassword, new_password: newPassword } });
+	// 此端點的 401 代表「目前密碼錯誤」，不會自動換發重送；為免 access token 恰好過期（15 分鐘）被誤判為密碼錯誤，
+	// 送出前先換發一次（換發被拒時會丟出 401 並通知登出）
+	await refreshTokensOnce();
+	await authorizedRequest({ method: 'PATCH', url: '/auth/password', data: { current_password: oldPassword, new_password: newPassword } });
 };
 
 // ============================================================================

@@ -14,7 +14,7 @@ import { UserOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
-import { useAccountStore } from '../../store/useAccountStore';
+import { changeOwnPassword, toMemberApiError } from '../../api/authApi';
 import { logSystemEvent } from '../../store/useSystemLogStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
 import { useUIStore } from '../../store/useUIStore';
@@ -31,7 +31,6 @@ const BASE_PASSWORD_LENGTH_THRESHOLD = 8;
 const HIGH_MEMORABILITY_LENGTH_THRESHOLD = 16;
 const WEAK_STRENGTH_SCORE_THRESHOLD = 40;
 const MEDIUM_STRENGTH_SCORE_THRESHOLD = 80;
-const PASSWORD_UPDATE_SIMULATION_DELAY_MS = 1000;
 
 /**
  * 函數名稱: ProfileSettings
@@ -238,62 +237,61 @@ export default function ProfileSettings(): React.ReactElement
 
 	/**
 	 * 函數名稱: handleUpdatePassword
-	 * 函數功能: 處理變更密碼表單提交，模擬異步 API 更新流程，成功後重置表單並於密碼過期狀態下引導回首頁。
+	 * 函數功能: 處理變更密碼表單提交，呼叫後端變更密碼，成功後重置表單並於密碼過期狀態下引導回首頁。
 	 * 
 	 * 輸入參數 (Input): 無
 	 * 輸出參數 (Output): 無
-	 * 返回值 (Return): void
+	 * 返回值 (Return): Promise<void>
 	 */
-	const handleUpdatePassword = (): void => 
+	const handleUpdatePassword = async (): Promise<void> => 
 	{
-		// ★ 2026-10-07：改為實際驗證「目前密碼」並寫入帳號資料庫 (useAccountStore)
+		// ★ 2026-10-27：改呼叫後端 PATCH /api/v1/auth/password（須帶目前密碼）；後端以 401 表示目前密碼不正確
 		const passwordFormValuesObj = passwordFormInstance.getFieldsValue() as { oldPassword?: string; newPassword?: string };
+		const operatorNameString = currentUserSession?.name || 'System';
+		if ((passwordFormValuesObj.oldPassword || '') === (passwordFormValuesObj.newPassword || ''))
+		{
+			passwordFormInstance.setFields([{ name: 'newPassword', errors: [translate('profile.same_password', '新密碼不可與目前密碼相同')] }]);
+			return;
+		}
 		setIsSubmitting(true);
-
-		setTimeout(
-			() => 
+		try
+		{
+			await changeOwnPassword(passwordFormValuesObj.oldPassword || '', passwordFormValuesObj.newPassword || '');
+		}
+		catch (changeErrorValue)
+		{
+			const memberErrorObj = toMemberApiError(changeErrorValue);
+			if (memberErrorObj.status === 401 && memberErrorObj.errorCode === 'ERR_UNAUTHORIZED')
 			{
-				setIsSubmitting(false);
+				passwordFormInstance.setFields([{ name: 'oldPassword', errors: [translate('profile.wrong_current_password', '目前密碼不正確')] }]);
+				logSystemEvent('WARN', '變更密碼失敗（目前密碼錯誤）', operatorNameString);
+			}
+			else
+			{
+				messageApi.error(memberErrorObj.message);
+				logSystemEvent('ERROR', `變更密碼失敗：${memberErrorObj.message}`, operatorNameString);
+			}
+			return;
+		}
+		finally
+		{
+			setIsSubmitting(false);
+		}
 
-				const changeResult = useAccountStore.getState().changeOwnPassword(
-					currentUserSession?.email || '', passwordFormValuesObj.oldPassword || '', passwordFormValuesObj.newPassword || ''
-				);
+		logSystemEvent('INFO', '使用者自行變更密碼', operatorNameString);
 
-				if (!changeResult.ok)
-				{
-					if (changeResult.reason === 'wrong_password')
-					{
-						passwordFormInstance.setFields([{ name: 'oldPassword', errors: [translate('profile.wrong_current_password', '目前密碼不正確')] }]);
-					}
-					else if (changeResult.reason === 'same_password')
-					{
-						passwordFormInstance.setFields([{ name: 'newPassword', errors: [translate('profile.same_password', '新密碼不可與目前密碼相同')] }]);
-					}
-					else
-					{
-						messageApi.error(translate('profile.account_not_found', '找不到此帳號的資料，請重新登入後再試。'));
-					}
-					logSystemEvent('WARN', '變更密碼失敗（目前密碼錯誤或新舊密碼相同）', currentUserSession?.name || 'System');
-					return;
-				}
-
-				logSystemEvent('INFO', '使用者自行變更密碼', currentUserSession?.name || 'System');
-
-				messageApi.success(
-					translate('profile.password_changed', '密碼已成功變更！請妥善保管新密碼。')
-				);
-
-				passwordFormInstance.resetFields();
-
-				if (isPasswordExpiredStatus) 
-				{
-					setPasswordExpired(false);
-
-					navigate('/', { replace: true });
-				}
-			}, 
-			PASSWORD_UPDATE_SIMULATION_DELAY_MS
+		messageApi.success(
+			translate('profile.password_changed', '密碼已成功變更！請妥善保管新密碼。')
 		);
+
+		passwordFormInstance.resetFields();
+
+		if (isPasswordExpiredStatus) 
+		{
+			setPasswordExpired(false);
+
+			navigate('/', { replace: true });
+		}
 	};
 
 	return (
@@ -335,14 +333,10 @@ export default function ProfileSettings(): React.ReactElement
 					</Title>
 
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+						{/* ★ 2026-10-27：後端只有帳號（帳號即 Email），不另顯示使用者名稱 */}
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<Text type="secondary" style={{ width: '5.5em' }}>{translate('profile.name', '使用者名稱')}:</Text>
-							<Text strong>{currentUserSession?.name}</Text>
-						</div>
-
-						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<Text type="secondary" style={{ width: '5.5em' }}>{translate('profile.email', 'Email')}:</Text>
-							<Text>{currentUserSession?.email}</Text>
+							<Text type="secondary" style={{ width: '5.5em' }}>{translate('profile.account', '帳號')}:</Text>
+							<Text strong>{currentUserSession?.email}</Text>
 						</div>
 
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

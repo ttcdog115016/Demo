@@ -22,6 +22,16 @@ export const BACKEND_ERROR_CODE_CATEGORY_MAP: Record<string, { status: number; c
     ERR_SUBSET_COND_MALFORMED: { status: 400, category: '對象族群限定條件格式錯誤' },
     ERR_SALT_NOT_CONFIGURED: { status: 400, category: '假名化鹽值未設定' },
     ERR_DEID_METHOD_UNKNOWN: { status: 400, category: '去識別化方法不明' },
+    // ★ 2026-10-27：最終版後端（v2.0.0）新增的錯誤碼
+    ERR_DATASET_UNREADABLE: { status: 400, category: '資料集無法讀取' },
+    ERR_PREPROCESS_ACTION_UNKNOWN: { status: 400, category: '資料前處理功能名稱不明' },
+    ERR_PREPROCESS_PARAM_INVALID: { status: 400, category: '資料前處理參數不合法' },
+    ERR_FORBIDDEN: { status: 403, category: '權限不足' },
+    ERR_USER_EXISTS: { status: 409, category: '帳號已存在' },
+    ERR_ACCOUNT_LOCKED: { status: 423, category: '帳號暫時鎖定' },
+    ERR_AUTH_DISABLED: { status: 503, category: '登入功能未啟用' },
+    ERR_PREPROCESS_COLUMN_NOT_FOUND: { status: 422, category: '資料前處理指定的欄位不存在' },
+    ERR_PREPROCESS_TYPE_MISMATCH: { status: 422, category: '資料前處理功能與欄位型態不符' },
     // 413：內容過大
     ERR_PAYLOAD_TOO_LARGE: { status: 413, category: '上傳內容超過大小上限' },
     // 415：檔案格式不在支援清單內
@@ -113,7 +123,17 @@ export const BACKEND_ERROR_CODE_USER_FRIENDLY_MAP: Record<string, { headline: st
     ERR_SPLIT_INFEASIBLE: { headline: '資料筆數不足以進行本次分析', defaultAdvice: '請回到「資料匯入」步驟確認資料筆數是否足夠，或調整相關參數後再試一次；這是資料量的問題，您可以自行處理。' },
     ERR_DEID_CONFIG_MISMATCH: { headline: '去識別化設定與資料不符', defaultAdvice: '請回到「屬性分類」步驟，確認欄位設定與上傳的資料是否一致後再試一次；這是設定與資料不一致的問題，您可以自行處理。' },
     ERR_ANONYMIZATION_SUPPRESSION_EXCEEDED: { headline: '資料遮蔽比例過高，未達到可用標準', defaultAdvice: '請回到「屬性分類」或「隱私設定」步驟，調高相關欄位的泛化層級（Level）後再試一次；這是參數設定問題，您可以自行處理。' },
-    ERR_INTERNAL: { headline: '系統發生非預期的錯誤', defaultAdvice: '請稍後再試一次；若持續發生，請聯絡系統管理員。' }
+    ERR_INTERNAL: { headline: '系統發生非預期的錯誤', defaultAdvice: '請稍後再試一次；若持續發生，請聯絡系統管理員。' },
+    // ★ 2026-10-27：最終版後端新增（資料前處理 /api/v1/preprocess、會員系統）
+    ERR_DATASET_UNREADABLE: { headline: '讀取上傳的資料檔案時發生問題', defaultAdvice: '請先確認該檔案能用 Excel 或文字編輯器正常開啟（無損毀、非空白檔案），若檔案本身沒有問題，請聯絡系統管理員協助排查。' },
+    ERR_PREPROCESS_ACTION_UNKNOWN: { headline: '資料預先處理的清洗步驟無法辨識', defaultAdvice: '這是系統本身的問題，不是您操作有誤，請聯絡系統管理員協助處理。' },
+    ERR_PREPROCESS_PARAM_INVALID: { headline: '資料預先處理的參數設定不正確', defaultAdvice: '請回到「屬性分類」步驟的「資料預先處理」，檢查清洗步驟的參數（例如鎖定字元須為 1 個字、正則表達式是否正確、上下界截斷的下限不可大於上限）後再試一次；這是設定問題，您可以自行處理。' },
+    ERR_PREPROCESS_COLUMN_NOT_FOUND: { headline: '資料預先處理指定的欄位不在資料中', defaultAdvice: '請回到「屬性分類」步驟確認欄位名稱與上傳的資料一致，或重新上傳資料後再試一次。' },
+    ERR_PREPROCESS_TYPE_MISMATCH: { headline: '資料預先處理的步驟不適用於這個欄位', defaultAdvice: '請回到「屬性分類」步驟的「資料預先處理」：上下界截斷、內插法與平均值填補只能用在數值欄位（若內容是數字文字，可先加一個「型態轉換」步驟）；轉成整數時若遇到小數會四捨五入。調整後再試一次；這是設定問題，您可以自行處理。' },
+    ERR_FORBIDDEN: { headline: '您的帳號沒有執行此操作的權限', defaultAdvice: '請確認登入的帳號角色，或聯絡系統管理員。' },
+    ERR_USER_EXISTS: { headline: '帳號已存在', defaultAdvice: '請改用其他帳號名稱。' },
+    ERR_ACCOUNT_LOCKED: { headline: '帳號暫時鎖定', defaultAdvice: '登入失敗次數過多，請稍後再試，或請系統管理員重設密碼。' },
+    ERR_AUTH_DISABLED: { headline: '登入功能尚未啟用', defaultAdvice: '這是系統環境設定問題，請聯絡系統管理員。' }
 };
 
 export const GENERIC_HTTP_STATUS_USER_FRIENDLY_HEADLINE: Record<number, string> = {

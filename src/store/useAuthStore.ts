@@ -1,7 +1,8 @@
 /**
  * ============================================================================
  * 檔案名稱 (File): useAuthStore.ts
- * 模組功能 (Description): 全域使用者身分認證與 Session 狀態管理 (Zustand Auth Store，提供登入、登出與角色切換等全域驗證狀態控制)
+ * 模組功能 (Description): 全域使用者身分認證與 Session 狀態管理 (Zustand Auth Store，提供登入、登出與接續登入等全域驗證狀態控制)
+ * ★ 2026-10-27：串接後端會員系統（/api/v1/auth、/api/v1/users），移除前端 Demo 帳號資料庫與「切換測試角色」。
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅單字元變數與含義不明之縮寫) 以及變數撰寫參考 a) ~ h)
  * ============================================================================
@@ -10,10 +11,10 @@
 import { create } from 'zustand';
 import { logSystemEvent } from './useSystemLogStore';
 import { getRoleDisplayName } from '../utils/roleLabel';
+import { memberLogout, restoreMemberSession, setSessionExpiredListener, clearMemberSession } from '../api/authApi';
 
-// 登出原因：manual 使用者自行登出 | idle 閒置逾時 | maintenance 維護模式強制登出
-export type LogoutReason = 'manual' | 'idle' | 'maintenance';
-
+// 登出原因：manual 使用者自行登出 | idle 閒置逾時 | maintenance 維護模式強制登出 | expired 登入逾期（後端拒絕換發 token、帳號被停用或刪除）
+export type LogoutReason = 'manual' | 'idle' | 'maintenance' | 'expired';
 /**
  * 使用者系統角色型別定義
  * 規範對照: 符合規範 h) 資料結構宣告註記
@@ -26,10 +27,10 @@ export type UserRole = 'admin' | 'data_owner'; // 'admin': 系統管理員 | 'da
  */
 interface User 
 {
-	name: string;   // 使用者顯示名稱
-	email: string;  // 使用者電子郵件帳號
-	role: UserRole; // 使用者系統角色
-	mustChangePassword?: boolean; // 須先變更密碼才能使用系統（★ 2026-10-16 起僅限密碼過期輪替到期）
+	name: string;   // 使用者顯示名稱（★ 2026-10-27 串接後端：後端只有帳號，顯示名稱＝帳號）
+	email: string;  // 登入帳號（帳號即 Email，10/16 決議）
+	role: UserRole; // 使用者系統角色（後端 admin／user ↔ 前端 admin／data_owner）
+	mustChangePassword?: boolean; // 須先變更密碼才能使用系統（密碼過期輪替；★ 2026-10-27 後端無此機制，目前不會被設為 true）
 }
 
 /**
@@ -68,19 +69,16 @@ interface AuthState
 	 */
 	logout: (logoutReasonType?: LogoutReason) => void;
 
+	isRestoringSession: boolean;          // 重新整理頁面後，正以 sessionStorage 的 refresh token 向後端接續登入
+	lastLogoutReason: LogoutReason | null; // 最近一次登出的原因（登入頁據此顯示「登入已逾期」等提示）
+
 	/**
-	 * 函數名稱: setUserRole
-	 * 函數功能: 動態切換當前已登入使用者之系統權限角色 (如測試切換 Admin/Data Owner)。
-	 * 
-	 * 輸入參數 (Input):
-	 *   - targetUserRoleType (UserRole): 目標切換之角色型別
-	 * 輸出參數 (Output): 無
-	 * 返回值 (Return): void
-	 * 呼叫關係 (Call Relations): 被 Header 權限切換選單或測試控制台調用
-	 * 
-	 * 規範對照: 符合規範 b) 函數開頭註記, c) 確保透過正規 Action 修改全域變數
+	 * 函數名稱: restoreSession
+	 * 函數功能: 頁面載入時以 refresh token 向後端換發 access token，接續先前的登入（★ 2026-10-27 串接後端會員系統）。
+	 * 返回值 (Return): Promise<void>
+	 * 呼叫關係 (Call Relations): 被 main.tsx 於應用程式掛載前呼叫一次
 	 */
-	setUserRole: (targetUserRoleType: UserRole) => void;
+	restoreSession: () => Promise<void>;
 }
 
 /**
@@ -88,45 +86,62 @@ interface AuthState
  * 規範對照: 符合規範 i) 全域變數/狀態詳細註記
  */
 export const useAuthStore = create<AuthState>(
-	(setStoreStateAction) => 
+	(setStoreStateAction, getStoreStateAction) => 
 	(
 		{
 			// 初始狀態：未登入，使用者物件為空
 			isAuthenticated: false,
 			user: null,
+			isRestoringSession: false,
+			lastLogoutReason: null,
 			
-			// 實作登入 Action：寫入狀態與使用者物件
+			// 實作登入 Action：寫入狀態與使用者物件（帳密驗證已由 authApi.memberLogin 向後端完成）
 			login: (userSessionData) => 
 			{
-				setStoreStateAction({ isAuthenticated: true, user: userSessionData });
+				setStoreStateAction({ isAuthenticated: true, user: userSessionData, lastLogoutReason: null });
 				logSystemEvent('INFO', `使用者登入成功（角色：${getRoleDisplayName(userSessionData.role)}）`, userSessionData.name);
 			},
 			
-			// 實作登出 Action：清空狀態與使用者物件
-			logout: (logoutReasonType = 'manual') => setStoreStateAction(
-				(currentStoreStateData) => 
+			// 實作登出 Action：清空狀態與使用者物件，並於背景通知後端作廢 refresh token
+			logout: (logoutReasonType = 'manual') =>
+			{
+				const loggedOutUserNameString = getStoreStateAction().user?.name ?? 'System';
+				if (logoutReasonType === 'idle') logSystemEvent('WARN', '閒置逾時，系統自動登出', loggedOutUserNameString);
+				else if (logoutReasonType === 'maintenance') logSystemEvent('WARN', '系統維護模式啟用中，強制登出', loggedOutUserNameString);
+				else if (logoutReasonType === 'expired') logSystemEvent('WARN', '登入已逾期或帳號已停用，系統自動登出', loggedOutUserNameString);
+				else logSystemEvent('INFO', '使用者登出', loggedOutUserNameString);
+				// 逾期時 token 已被後端拒絕，只需清本機；其餘情況呼叫 POST /auth/logout（失敗也一律清除本機）
+				if (logoutReasonType === 'expired') clearMemberSession();
+				else void memberLogout();
+				setStoreStateAction({ isAuthenticated: false, user: null, lastLogoutReason: logoutReasonType });
+			},
+
+			restoreSession: async () =>
+			{
+				if (getStoreStateAction().isAuthenticated) return;
+				setStoreStateAction({ isRestoringSession: true });
+				try
 				{
-					const loggedOutUserNameString = currentStoreStateData.user?.name ?? 'System';
-					if (logoutReasonType === 'idle') logSystemEvent('WARN', '閒置逾時，系統自動登出', loggedOutUserNameString);
-					else if (logoutReasonType === 'maintenance') logSystemEvent('WARN', '系統維護模式啟用中，強制登出', loggedOutUserNameString);
-					else logSystemEvent('INFO', '使用者登出', loggedOutUserNameString);
-					return { isAuthenticated: false, user: null };
-				}
-			),
-			
-			// 實作角色切換 Action：防呆處理，確保使用者存在才更新角色屬性
-			setUserRole: (targetUserRoleType) => setStoreStateAction(
-				(currentStoreStateData) => 
-				{
-					if (currentStoreStateData.user && currentStoreStateData.user.role !== targetUserRoleType)
+					const restoredSession = await restoreMemberSession();
+					if (restoredSession)
 					{
-						logSystemEvent('INFO', `切換測試角色：${getRoleDisplayName(currentStoreStateData.user.role)} → ${getRoleDisplayName(targetUserRoleType)}`, currentStoreStateData.user.name);
+						setStoreStateAction({
+							isAuthenticated: true,
+							user: { name: restoredSession.username, email: restoredSession.username, role: restoredSession.role },
+						});
 					}
-					return { 
-						user: currentStoreStateData.user ? { ...currentStoreStateData.user, role: targetUserRoleType } : null 
-					};
 				}
-			),
+				finally
+				{
+					setStoreStateAction({ isRestoringSession: false });
+				}
+			},
 		}
 	)
 );
+
+// 帶 token 的請求被後端拒絕換發（refresh token 失效、帳號停用或刪除）→ 自動登出並回到登入頁
+setSessionExpiredListener(() =>
+{
+	if (useAuthStore.getState().isAuthenticated) useAuthStore.getState().logout('expired');
+});

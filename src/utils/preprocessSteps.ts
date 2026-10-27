@@ -9,6 +9,8 @@
  */
 import CryptoJS from 'crypto-js';
 import type { PreprocessingRule } from '../store/useWorkspaceStore';
+import { sha3Hex } from './sha3';
+import { normalizePreprocessHashAlgorithm, PREPROCESS_BOOLEAN_TRUE_VALUES, PREPROCESS_BOOLEAN_FALSE_VALUES } from './preprocessConfig';
 
 const DEFAULT_PREVIEW_SYMBOL = '-';
 const HASH_PREVIEW_LENGTH = 16;
@@ -28,13 +30,22 @@ const generateSessionRandomSalt = (): string => {
     }
 };
 const SESSION_RANDOM_HASH_SALT = generateSessionRandomSalt();
-const FULLWIDTH_CHAR_CODE_OFFSET = 0xFEE0;   // 全形字元 (！~～) 與對應半形字元間之 Unicode 編碼差值
-const FULLWIDTH_SPACE_CHAR_CODE = 0x3000;    // 全形空白字元碼
+const FULLWIDTH_CHAR_CODE_OFFSET = 0xFEE0;   // 全形英數字與對應半形字元間之 Unicode 編碼差值
+// 後端「全形轉半形」只轉英數字與空白（app/engines/preprocess/actions/strings.py 的 _CONVERTIBLE），標點符號不轉
+const FULLWIDTH_ALNUM_PATTERN = /[０-９Ａ-Ｚａ-ｚ]/g;
+const FULLWIDTH_SPACE_PATTERN = /\u3000/g;
+// 後端「字串去空白」認定的空白字元（strings.py 的 WHITESPACE_CHARS）：空白、Tab、CR、LF、全形空白、零寬字元、BOM
+const BACKEND_WHITESPACE_ALTERNATION = '(?:\\u0020|\\u0009|\\u000D|\\u000A|\\u3000|\\u200B|\\u200C|\\u200D|\\uFEFF)';
+const BACKEND_WHITESPACE_ALL_PATTERN = new RegExp(BACKEND_WHITESPACE_ALTERNATION, 'g');
+const BACKEND_WHITESPACE_EDGES_PATTERN = new RegExp(`^${BACKEND_WHITESPACE_ALTERNATION}+|${BACKEND_WHITESPACE_ALTERNATION}+$`, 'g');
 
 /**
  * 函數名稱: applyPreprocessStep
  * 函數功能: 依據選定之單一動作與參數集合，對字串執行對應之預處理轉換 (字串去空白、截斷、相對保留與
  *           截斷、型態轉換、文字正規化、上下界截斷、雜湊或正則掃描與替換)。
+ *
+ * ★ 2026-10-27：資料預先處理改由後端 /api/v1/preprocess 實際執行（見 utils/preprocessConfig.ts），
+ *   此處的畫面預覽一併改為與後端相同的規則（app/engines/preprocess/actions/*.py），預覽才不會與結果不符。
  *
  * 輸入參數 (Input):
  *   - cellValueStr (string): 待處理之字串數值
@@ -54,47 +65,48 @@ export const applyPreprocessStep = (cellValueStr: string, stepItemRecord: Prepro
         case 'trim':
         {
             const trimModeStr = String(actionParamsDict.mode || 'edges');
-            return trimModeStr === 'all' ? cellValueStr.replace(/\s+/g, '') : cellValueStr.trim();
+            return trimModeStr === 'all' ? cellValueStr.replace(BACKEND_WHITESPACE_ALL_PATTERN, '') : cellValueStr.replace(BACKEND_WHITESPACE_EDGES_PATTERN, '');
         }
 
         case 'slice':
         {
+            // 後端：從指定的一側「刪掉」count 個字元；長度不足時整格變成空字串
             const sliceDirectionStr = String(actionParamsDict.direction || 'left');
             const sliceCountNum = Math.max(0, Number(actionParamsDict.count) || 0);
+            const characterList = Array.from(cellValueStr); // 以字元計（中文一字算一個）
 
             if (sliceCountNum === 0) return cellValueStr;
+            if (sliceCountNum >= characterList.length) return '';
 
             return sliceDirectionStr === 'left'
-                ? cellValueStr.slice(sliceCountNum)
-                : cellValueStr.slice(0, Math.max(0, cellValueStr.length - sliceCountNum));
+                ? characterList.slice(sliceCountNum).join('')
+                : characterList.slice(0, characterList.length - sliceCountNum).join('');
         }
 
         case 'anchor_truncate':
         {
+            // 後端：以錨點為基準，只裁「選定方向那一側」，保留含錨點在內的 keep 個字元；錨點另一側完全不動。
+            //   前方（before）取第一個錨點：保留錨點與其前 keep−1 字，再接上錨點後的全部內容
+            //   後方（after）取最後一個錨點：保留錨點前的全部內容，再接上錨點與其後 keep−1 字
+            //   keep 為 0 時錨點本身也刪去；找不到錨點時整格不動
             const anchorCharStr = String(actionParamsDict.anchor || '');
             const anchorDirectionStr = String(actionParamsDict.direction || 'front');
             const keepCountNum = Math.max(0, Number(actionParamsDict.keepCount) || 0);
 
-            if (!anchorCharStr) return cellValueStr; // 未設定錨點字元，視同不執行
-
-            const anchorIndexNum = anchorDirectionStr === 'front' ? cellValueStr.indexOf(anchorCharStr) : cellValueStr.lastIndexOf(anchorCharStr);
-
-            if (anchorIndexNum === -1) return cellValueStr; // 找不到錨點字元，不執行任何動作
-
-            if (keepCountNum === 0) return ''; // 總保留字數為 0，僅保留錨點且不含任何鄰近字元時視同全部截斷
-
-            const extraKeepCountNum = keepCountNum - 1; // 總保留字數含錨點本身，鄰近字元數需扣除錨點的 1 個字
+            if (!anchorCharStr) return cellValueStr;
 
             if (anchorDirectionStr === 'front')
             {
-                // 前方：由前往後搜尋首個錨點，僅保留錨點前緊鄰字元 (含錨點本身，總計 N 字)，其餘字元 (含錨點後方) 全數截斷
-                const frontPartStr = cellValueStr.slice(Math.max(0, anchorIndexNum - extraKeepCountNum), anchorIndexNum);
-                return frontPartStr + anchorCharStr;
+                const anchorIndexNum = cellValueStr.indexOf(anchorCharStr);
+                if (anchorIndexNum === -1) return cellValueStr;
+                const beforeAndAnchorStr = cellValueStr.slice(0, anchorIndexNum + 1);
+                const keptStr = keepCountNum > 0 ? Array.from(beforeAndAnchorStr).slice(-keepCountNum).join('') : '';
+                return keptStr + cellValueStr.slice(anchorIndexNum + 1);
             }
 
-            // 後方：從後搜尋首個錨點，僅保留錨點後緊鄰字元 (含錨點本身，總計 N 字)，其餘字元 (含錨點前方) 全數截斷
-            const backPartStr = cellValueStr.slice(anchorIndexNum + 1, Math.min(cellValueStr.length, anchorIndexNum + 1 + extraKeepCountNum));
-            return anchorCharStr + backPartStr;
+            const anchorIndexNum = cellValueStr.lastIndexOf(anchorCharStr);
+            if (anchorIndexNum === -1) return cellValueStr;
+            return cellValueStr.slice(0, anchorIndexNum) + Array.from(cellValueStr.slice(anchorIndexNum)).slice(0, keepCountNum).join('');
         }
 
         case 'type_cast':
@@ -103,80 +115,78 @@ export const applyPreprocessStep = (cellValueStr: string, stepItemRecord: Prepro
 
             if (targetTypeStr === 'boolean')
             {
-                const normalizedValueStr = cellValueStr.trim().toLowerCase();
-                return ['true', '1', 'yes', 'y'].includes(normalizedValueStr) ? 'true' : 'false';
+                // 後端：依對照表轉成 True／False（比對忽略大小寫），表外的值原樣不動
+                const normalizedValueStr = cellValueStr.toLowerCase();
+                if ((PREPROCESS_BOOLEAN_TRUE_VALUES as readonly string[]).includes(normalizedValueStr)) return 'True';
+                if ((PREPROCESS_BOOLEAN_FALSE_VALUES as readonly string[]).includes(normalizedValueStr)) return 'False';
+                return cellValueStr;
             }
+
+            // 後端：只取出數字、小數點與負號（"25歲" → 25、"NT$3,000" → 3000），取不出數字的原樣不動
+            const digitsOnlyStr = Array.from(cellValueStr).filter((characterStr) => '0123456789.-'.includes(characterStr)).join('');
+            const parsedNumber = digitsOnlyStr === '' ? NaN : Number(digitsOnlyStr);
+            if (!Number.isFinite(parsedNumber)) return cellValueStr;
 
             if (targetTypeStr === 'float')
             {
-                const cleanedFloatStr = cellValueStr.replace(/[^0-9.-]/g, '');
-                const parsedFloatNum = parseFloat(cleanedFloatStr);
-                return Number.isNaN(parsedFloatNum) ? '0' : String(parsedFloatNum);
+                return Number.isInteger(parsedNumber) ? `${parsedNumber}.0` : String(parsedNumber); // Python float 輸出整數值帶 .0
             }
 
-            // ★ 修正: 原本以正則表達式移除所有非數字字元 (含小數點) 再轉整數，會將「27.8」誤判為
-            //   字串「278」再轉換，而非先解析為浮點數、四捨五入後才取整數，導致轉換結果嚴重失真
-            //   (例如 27.8 → 278，而非合理的 28)。改為先以浮點數解析，再四捨五入取最接近之整數。
-            const cleanedFloatForIntStr = cellValueStr.replace(/[^0-9.-]/g, '');
-            const parsedFloatForIntNum = parseFloat(cleanedFloatForIntStr);
-            const roundedIntNum = Math.round(parsedFloatForIntNum);
-            return Number.isNaN(roundedIntNum) ? '0' : String(roundedIntNum);
+            // 整數：四捨五入（後端 rounding=round，ROUND_HALF_UP：-2.5 → -3）。
+            // ★ 修正（沿用）：先以浮點數解析再四捨五入，避免「27.8」被當成「278」。
+            const roundedIntNum = Math.sign(parsedNumber) * Math.round(Math.abs(parsedNumber));
+            return String(Object.is(roundedIntNum, -0) ? 0 : roundedIntNum);
         }
 
         case 'normalize':
         {
             let normalizedResultStr = cellValueStr;
 
+            if (actionParamsDict.caseMode === 'upper') normalizedResultStr = normalizedResultStr.toUpperCase();
+            else if (actionParamsDict.caseMode === 'lower') normalizedResultStr = normalizedResultStr.toLowerCase();
+
             if (actionParamsDict.widthMode === 'full_to_half')
             {
                 normalizedResultStr = normalizedResultStr
-                    .replace(/[！-～]/g, (fullWidthCharStr) => String.fromCharCode(fullWidthCharStr.charCodeAt(0) - FULLWIDTH_CHAR_CODE_OFFSET))
-                    .replace(new RegExp(String.fromCharCode(FULLWIDTH_SPACE_CHAR_CODE), 'g'), ' ');
+                    .replace(FULLWIDTH_ALNUM_PATTERN, (fullWidthCharStr) => String.fromCharCode(fullWidthCharStr.charCodeAt(0) - FULLWIDTH_CHAR_CODE_OFFSET))
+                    .replace(FULLWIDTH_SPACE_PATTERN, ' ');
             }
-
-            if (actionParamsDict.caseMode === 'upper') normalizedResultStr = normalizedResultStr.toUpperCase();
-            else if (actionParamsDict.caseMode === 'lower') normalizedResultStr = normalizedResultStr.toLowerCase();
 
             return normalizedResultStr;
         }
 
         case 'clamp':
         {
-            const parsedNumericValue = parseFloat(cellValueStr);
-            if (Number.isNaN(parsedNumericValue)) return cellValueStr;
+            const parsedNumericValue = Number(cellValueStr);
+            if (cellValueStr.trim() === '' || !Number.isFinite(parsedNumericValue)) return cellValueStr;
 
-            const lowerBoundNum = actionParamsDict.min !== undefined ? Number(actionParamsDict.min) : -Infinity;
-            const upperBoundNum = actionParamsDict.max !== undefined ? Number(actionParamsDict.max) : Infinity;
+            const lowerBoundNum = actionParamsDict.min !== undefined && actionParamsDict.min !== '' ? Number(actionParamsDict.min) : -Infinity;
+            const upperBoundNum = actionParamsDict.max !== undefined && actionParamsDict.max !== '' ? Number(actionParamsDict.max) : Infinity;
 
-            return String(Math.min(upperBoundNum, Math.max(lowerBoundNum, parsedNumericValue)));
+            if (parsedNumericValue < lowerBoundNum) return String(lowerBoundNum);
+            if (parsedNumericValue > upperBoundNum) return String(upperBoundNum);
+            return cellValueStr;
         }
 
         case 'hash':
         {
             try
             {
-                const algorithmStr = String(actionParamsDict.algorithm || 'SHA256');
+                // 後端 hash_mask：有鹽值走 HMAC（鹽值為金鑰），沒有就直接雜湊；演算法 sha256／sha3-256／sha3-512
+                const algorithmStr = normalizePreprocessHashAlgorithm(actionParamsDict.algorithm);
                 const seedModeStr = String(actionParamsDict.seedMode || 'none');
 
-                // ★ 2026-10-02：加鹽改用 HMAC（以鹽值為金鑰），取代「原始值＋鹽值字串串接」——串接法有長度延伸等弱點，
-                //   且「值＋鹽」與「另一值＋另一鹽」可能拼出相同字串。舊設定的 'timestamp' 視同系統隨機鹽值。
                 let saltKeyStr = '';
                 if (seedModeStr === 'fixed') saltKeyStr = String(actionParamsDict.seedValue || '');
                 else if (seedModeStr === 'random' || seedModeStr === 'timestamp') saltKeyStr = SESSION_RANDOM_HASH_SALT;
-                const hashInputStr = cellValueStr;
+                // 'none'（使用伺服器預設鹽值）：前端不知道伺服器的鹽值，預覽以不加鹽計算
 
-                // ★ 2026-09-30：Step2 與 K-匿名頁原本各有一份此函式且雜湊判斷不同步——畫面選項實際存的值是
-                //   'SHA256'／'SHA512'，Step2 卻只比對 'SHA3-512'，導致選 512 時 Step2 預覽仍用 256。統一為：
-                //   'SHA512'／'SHA3-512' → 512，'md5' → MD5，其餘 → 256。僅影響畫面預覽，不影響送給後端的設定。
-                //   ★ 2026-10-02：畫面標示原為 SHA3-256／SHA3-512，但實際計算一直是 SHA-2（CryptoJS.SHA256／SHA512），
-                //   標示改為 SHA-256／SHA-512 與實際一致（CryptoJS.SHA3 為 Keccak 舊版，非 FIPS 202 標準 SHA3，故不採用）。
-                const isSha512Status = algorithmStr === 'SHA512' || algorithmStr === 'SHA3-512';
                 let calculatedHashResult = '';
-                if (algorithmStr === 'md5') calculatedHashResult = (saltKeyStr ? CryptoJS.HmacMD5(hashInputStr, saltKeyStr) : CryptoJS.MD5(hashInputStr)).toString();
-                else if (isSha512Status) calculatedHashResult = (saltKeyStr ? CryptoJS.HmacSHA512(hashInputStr, saltKeyStr) : CryptoJS.SHA512(hashInputStr)).toString();
-                else calculatedHashResult = (saltKeyStr ? CryptoJS.HmacSHA256(hashInputStr, saltKeyStr) : CryptoJS.SHA256(hashInputStr)).toString();
+                if (algorithmStr === 'sha3-256') calculatedHashResult = sha3Hex(cellValueStr, 256, saltKeyStr || null);
+                else if (algorithmStr === 'sha3-512') calculatedHashResult = sha3Hex(cellValueStr, 512, saltKeyStr || null);
+                else calculatedHashResult = (saltKeyStr ? CryptoJS.HmacSHA256(cellValueStr, saltKeyStr) : CryptoJS.SHA256(cellValueStr)).toString();
 
-                // 為了 UI 預覽美觀，擷取前 16 碼並加上刪節號
+                // 為了 UI 預覽美觀，擷取前 16 碼並加上刪節號（實際輸出為完整十六進位字串）
                 return calculatedHashResult.substring(0, HASH_PREVIEW_LENGTH) + '...';
             }
             catch (hashingErrorExecution)
@@ -196,7 +206,8 @@ export const applyPreprocessStep = (cellValueStr: string, stepItemRecord: Prepro
             try
             {
                 const regexMatcherInstance = new RegExp(regexPatternStr, 'g');
-                return cellValueStr.replace(regexMatcherInstance, placeholderStr);
+                // 替換文字一律當純文字（不解讀 $1 等群組參照），與後端送出的 replacement 一致
+                return cellValueStr.replace(regexMatcherInstance, () => placeholderStr);
             }
             catch
             {

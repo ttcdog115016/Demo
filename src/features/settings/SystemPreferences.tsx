@@ -2,12 +2,14 @@
  * ============================================================================
  * 檔案名稱 (File): SystemPreferences.tsx
  * 模組功能 (Description): 系統偏好與後台管理控制台組件 (提供深色模式/語系設定、帳號與權限管理、維運日誌檢視與連線安全參數配置)
+ * ★ 2026-10-27：帳號與權限管理改接後端會員系統（GET/POST /users、PATCH /users/{帳號}/role、/active、
+ *   POST /users/{帳號}/reset-password、DELETE /users/{帳號}），帳號即 Email；密碼過期輪替暫時隱藏（後端無此機制）。
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之識別字)
  * ============================================================================
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
 	Card, Switch, Select, Segmented, Space, Divider, theme, Typography,
@@ -31,13 +33,20 @@ import {
 	NotificationOutlined,
 	StopOutlined,
 	CheckCircleOutlined,
-	ExclamationCircleFilled
+	ExclamationCircleFilled,
+	ReloadOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
+import { getRoleDisplayName } from '../../utils/roleLabel';
+import { SHOW_PASSWORD_EXPIRY_POLICY } from '../../config/featureFlags';
 import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
-import { useAccountStore, isAccountLocked, LOGIN_FAILURE_WINDOW_MS, MAX_FAILED_LOGINS, ACCOUNT_LOCK_DURATION_MS, type AccountRecord, type AccountRole } from '../../store/useAccountStore';
+import {
+	listMemberAccounts, createMemberAccount, changeMemberRole, resetMemberPassword, setMemberActive, deleteMemberAccount,
+	toMemberApiError, LOGIN_MAX_ATTEMPTS, LOGIN_ATTEMPT_WINDOW_SECONDS, LOGIN_LOCKOUT_SECONDS,
+	type MemberAccount, type FrontendRole,
+} from '../../api/authApi';
 import { useAnnouncementStore, isAnnouncementActive, useAnnouncementClock, type AnnouncementItem, type AnnouncementLevel, type AnnouncementAudience } from '../../store/useAnnouncementStore';
 import { formatAnnouncementFullTime } from '../../utils/announcementDisplay';
 import { AnnouncementListItem } from '../../components/AnnouncementListItem';
@@ -63,8 +72,9 @@ const MAX_PASSWORD_EXPIRY_DAYS = 365;
  * 系統使用者紀錄資料結構
  * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
  */
-// ★ 2026-10-07：帳號改由帳號資料庫 (useAccountStore) 提供，不再是畫面內的假資料
-type UserRecord = AccountRecord;
+// ★ 2026-10-27：帳號改由後端會員系統提供（GET /api/v1/users）
+type UserRecord = MemberAccount;
+type AccountRole = FrontendRole;
 
 /**
  * 安全與環境參數表單數值介面
@@ -350,16 +360,17 @@ export default function SystemPreferences(): React.ReactElement
 				const nextMaintenanceModeStatus = !!formValuesObj.maintenanceMode;
 				if (nextMaintenanceModeStatus !== isMaintenanceModeActive)
 				{
-					logSystemEvent('WARN', nextMaintenanceModeStatus ? '啟用系統維護模式（Data Owner 將無法使用系統）' : '關閉系統維護模式', operatorNameString);
+					logSystemEvent('WARN', nextMaintenanceModeStatus ? '啟用系統維護模式（User 將無法使用系統）' : '關閉系統維護模式', operatorNameString);
 				}
-				logSystemEvent('INFO', `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘、密碼過期${formValuesObj.enablePasswordExpiry ? ` ${formValuesObj.passwordExpiryDays} 天` : '停用'}`, operatorNameString);
+				logSystemEvent('INFO', SHOW_PASSWORD_EXPIRY_POLICY ? `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘、密碼過期${formValuesObj.enablePasswordExpiry ? ` ${formValuesObj.passwordExpiryDays} 天` : '停用'}` : `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘`, operatorNameString);
 
 				updateSecuritySettingsAction({
 					sessionTimeout: Number(formValuesObj.sessionTimeout),
 					maxFailedLogins: maxFailedLoginsCount, // ★ 2026-10-16：鎖定規則改為固定值（同步後端），畫面已移除此設定，沿用原值
 					isMaintenanceMode: !!formValuesObj.maintenanceMode,
-					enablePasswordExpiry: !!formValuesObj.enablePasswordExpiry,
-					passwordExpiryDays: Number(formValuesObj.passwordExpiryDays)
+					// 密碼過期設定隱藏時欄位不在表單中，沿用原值
+					enablePasswordExpiry: SHOW_PASSWORD_EXPIRY_POLICY ? !!formValuesObj.enablePasswordExpiry : isPasswordExpiryEnabled,
+					passwordExpiryDays: SHOW_PASSWORD_EXPIRY_POLICY ? Number(formValuesObj.passwordExpiryDays) : passwordExpiryDaysCount
 				});
 
 				messageApi.success(
@@ -369,22 +380,67 @@ export default function SystemPreferences(): React.ReactElement
 		);
 	};
 
-	// 使用者清單模擬狀態 (符合規範 g)
-	const userRecordList = useAccountStore((state) => state.accounts);
-	const accountStoreActions = useAccountStore.getState();
-	const currentOperatorEmailString = currentUserSession?.email || '';
-	/** 若排除 excludedAccountId 後，已沒有任何「啟用中的 Admin」→ 回傳 true（用來避免系統變成沒有管理員） */
-	const wouldLeaveNoActiveAdmin = (excludedAccountId: string): boolean =>
-		!userRecordList.some(accountItem => accountItem.id !== excludedAccountId && accountItem.role === 'admin' && accountItem.status === 'active');
-	// 每 30 秒重算一次，讓「鎖定中」狀態到期後自動恢復顯示
-	const [nowTimestampMs, setNowTimestampMs] = useState<number>(() => Date.now());
-	useEffect(() => {
-		const refreshTimerId = window.setInterval(() => setNowTimestampMs(Date.now()), 30000);
-		return () => window.clearInterval(refreshTimerId);
+	// ★ 2026-10-27：帳號清單改由後端提供
+	const [userRecordList, setUserRecordList] = useState<UserRecord[]>([]);
+	const [isUserListLoading, setIsUserListLoading] = useState<boolean>(currentUserRoleName === 'admin');
+	const [userListErrorText, setUserListErrorText] = useState<string | null>(null);
+	const [isUserActionSubmitting, setIsUserActionSubmitting] = useState<boolean>(false);
+	const currentOperatorUsernameString = currentUserSession?.email || '';
+	const isSelfAccount = (userRecordItem: UserRecord): boolean => userRecordItem.username === currentOperatorUsernameString;
+
+	/** 重新向後端讀取帳號清單 */
+	const reloadUserList = useCallback(async (): Promise<void> =>
+	{
+		setIsUserListLoading(true);
+		try
+		{
+			setUserRecordList(await listMemberAccounts());
+			setUserListErrorText(null);
+		}
+		catch (listErrorValue)
+		{
+			setUserListErrorText(toMemberApiError(listErrorValue).message);
+		}
+		finally
+		{
+			setIsUserListLoading(false);
+		}
 	}, []);
-	/** ★ 2026-10-16：密碼過期輪替——啟用時，密碼變更時間超過有效天數即視為過期（下次登入須先變更） */
-	const isAccountPasswordExpired = (accountItem: UserRecord): boolean =>
-		isPasswordExpiryEnabled && nowTimestampMs - accountItem.passwordChangedAt > passwordExpiryDaysCount * 24 * 60 * 60 * 1000;
+
+	// 進入頁面時讀取一次（setState 只在非同步回應後執行，避免於 effect 內同步更新狀態）
+	useEffect(() =>
+	{
+		if (currentUserRoleName !== 'admin') return undefined;
+		let isUnmounted = false;
+		listMemberAccounts()
+			.then((accountsList) => { if (!isUnmounted) { setUserRecordList(accountsList); setUserListErrorText(null); } })
+			.catch((listErrorValue) => { if (!isUnmounted) setUserListErrorText(toMemberApiError(listErrorValue).message); })
+			.finally(() => { if (!isUnmounted) setIsUserListLoading(false); });
+		return () => { isUnmounted = true; };
+	}, [currentUserRoleName]);
+
+	/** 共用：呼叫後端帳號管理 API，成功後重讀清單；失敗顯示後端訊息（409 帳號重複交由表單顯示）並回傳錯誤物件 */
+	const runUserAction = async (actionFn: () => Promise<void>, successMessageText: string): Promise<ReturnType<typeof toMemberApiError> | null> =>
+	{
+		setIsUserActionSubmitting(true);
+		try
+		{
+			await actionFn();
+			messageApi.success(successMessageText);
+			await reloadUserList();
+			return null;
+		}
+		catch (actionErrorValue)
+		{
+			const memberErrorObj = toMemberApiError(actionErrorValue);
+			if (memberErrorObj.status !== 409) messageApi.error(memberErrorObj.message);
+			return memberErrorObj;
+		}
+		finally
+		{
+			setIsUserActionSubmitting(false);
+		}
+	};
 
 	// Modal 與編輯狀態宣告 (符合規範 g)
 	const [isUserModalVisible, setIsUserModalVisible] = useState<boolean>(false);
@@ -412,7 +468,7 @@ export default function SystemPreferences(): React.ReactElement
 
 	const announcementAudienceLabelDict: Record<AnnouncementAudience, string> = {
 		all: translate('admin.announce_audience_all', '所有使用者'),
-		data_owner: 'Data Owner',
+		data_owner: 'User',
 		admin: 'Admin',
 	};
 
@@ -589,49 +645,38 @@ export default function SystemPreferences(): React.ReactElement
 
 	/**
 	 * 函數名稱: handleEditUser
-	 * 函數功能: 開啟編輯使用者 Modal 彈窗，並回填選定使用者之紀錄資料。
+	 * 函數功能: 開啟「變更角色」Modal（後端只有帳號與角色，帳號名稱不可修改）。
 	 * 
 	 * 輸入參數 (Input):
-	 *   - targetUserRecordObj (UserRecord): 被選取欲編輯之使用者紀錄物件
+	 *   - targetUserRecordObj (UserRecord): 被選取之帳號
 	 * 返回值 (Return): void
 	 */
 	const handleEditUser = (targetUserRecordObj: UserRecord): void => 
 	{
 		setEditingUserRecordObj(targetUserRecordObj);
 
-		userFormInstance.setFieldsValue({ name: targetUserRecordObj.name, email: targetUserRecordObj.email, role: targetUserRecordObj.role });
+		userFormInstance.setFieldsValue({ email: targetUserRecordObj.username, role: targetUserRecordObj.role });
 
 		setIsUserModalVisible(true);
 	};
 
 	/**
 	 * 函數名稱: handleDeleteUser
-	 * 函數功能: 依據 ID 刪除使用者清單中對應之帳號紀錄。
+	 * 函數功能: 呼叫後端刪除帳號（DELETE /users/{帳號}）。不得刪除自己（後端亦會擋）。
 	 * 
 	 * 輸入參數 (Input):
-	 *   - targetUserIdStr (string): 使用者 ID
-	 * 返回值 (Return): void
+	 *   - targetUserRecordObj (UserRecord): 欲刪除之帳號
+	 * 返回值 (Return): Promise<void>
 	 */
-	const handleDeleteUser = (targetUserIdStr: string): void => 
+	const handleDeleteUser = async (targetUserRecordObj: UserRecord): Promise<void> => 
 	{
-		const deletedUserRecordObj = userRecordList.find(userRecordItem => userRecordItem.id === targetUserIdStr);
-		if (deletedUserRecordObj && deletedUserRecordObj.email === currentOperatorEmailString)
+		if (isSelfAccount(targetUserRecordObj))
 		{
 			messageApi.error(translate('admin.msg_cannot_delete_self', '不能刪除自己目前登入的帳號'));
 			return;
 		}
-		if (deletedUserRecordObj?.role === 'admin' && wouldLeaveNoActiveAdmin(targetUserIdStr))
-		{
-			messageApi.error(translate('admin.msg_last_admin', '系統至少需要保留一個啟用中的 Admin 帳號'));
-			return;
-		}
-		logSystemEvent('WARN', `刪除帳號：${deletedUserRecordObj?.name ?? targetUserIdStr}`, operatorNameString);
-
-		accountStoreActions.deleteAccount(targetUserIdStr);
-
-		messageApi.success(
-			translate('admin.msg_user_deleted', '使用者已成功刪除')
-		);
+		const actionError = await runUserAction(() => deleteMemberAccount(targetUserRecordObj.username), translate('admin.msg_user_deleted', '使用者已成功刪除'));
+		if (!actionError) logSystemEvent('WARN', `刪除帳號：${targetUserRecordObj.username}`, operatorNameString);
 	};
 
 	/**
@@ -639,10 +684,10 @@ export default function SystemPreferences(): React.ReactElement
 	 * 函數功能: 彈出二次確認 Modal，防止管理員誤觸刪除使用者帳號。
 	 * 
 	 * 輸入參數 (Input):
-	 *   - targetUserIdStr (string): 欲刪除之使用者 ID
+	 *   - targetUserRecordObj (UserRecord): 欲刪除之帳號
 	 * 返回值 (Return): void
 	 */
-	const showDeleteConfirm = (targetUserIdStr: string): void => 
+	const showDeleteConfirm = (targetUserRecordObj: UserRecord): void => 
 	{
 		modalApi.confirm({
 			title: translate('admin.delete_confirm_title', '確認刪除'),
@@ -653,7 +698,7 @@ export default function SystemPreferences(): React.ReactElement
 			cancelText: translate('admin.btn_cancel', '取消'),
 			onOk() 
 			{
-				handleDeleteUser(targetUserIdStr);
+				return handleDeleteUser(targetUserRecordObj);
 			},
 		});
 	};
@@ -668,58 +713,41 @@ export default function SystemPreferences(): React.ReactElement
 	const handleSaveUser = (): void => 
 	{
 		userFormInstance.validateFields().then(
-			(userFormValuesObj: { name: string; email: string; role: AccountRole; initialPassword?: string }) => 
+			async (userFormValuesObj: { email: string; role: AccountRole; initialPassword?: string }) => 
 			{
 				if (editingUserRecordObj) 
 				{
-					const isRoleChangedStatus = editingUserRecordObj.role !== userFormValuesObj.role;
-					if (isRoleChangedStatus && editingUserRecordObj.email === currentOperatorEmailString)
+					if (editingUserRecordObj.role === userFormValuesObj.role)
+					{
+						setIsUserModalVisible(false);
+						return;
+					}
+					if (isSelfAccount(editingUserRecordObj))
 					{
 						userFormInstance.setFields([{ name: 'role', errors: [translate('admin.msg_cannot_change_own_role', '不能變更自己目前登入帳號的角色')] }]);
 						return;
 					}
-					if (isRoleChangedStatus && editingUserRecordObj.role === 'admin' && editingUserRecordObj.status === 'active' && wouldLeaveNoActiveAdmin(editingUserRecordObj.id))
-					{
-						userFormInstance.setFields([{ name: 'role', errors: [translate('admin.msg_last_admin', '系統至少需要保留一個啟用中的 Admin 帳號')] }]);
-						return;
-					}
-
-					const updateResult = accountStoreActions.updateAccount(editingUserRecordObj.id, { name: userFormValuesObj.name, email: userFormValuesObj.email, role: userFormValuesObj.role });
-					if (!updateResult.ok)
-					{
-						userFormInstance.setFields([updateResult.reason === 'duplicate_name'
-							? { name: 'name', errors: [translate('admin.name_duplicate', '此使用者名稱已被其他帳號使用')] }
-							: { name: 'email', errors: [translate('admin.email_duplicate', '此 Email 已被其他帳號使用')] }]);
-						return;
-					}
-
-					logSystemEvent('INFO', `編輯帳號資料：${editingUserRecordObj.name}`, operatorNameString);
-
-					messageApi.success(
-						translate('admin.msg_user_updated', '使用者資料已更新')
+					const actionError = await runUserAction(
+						() => changeMemberRole(editingUserRecordObj.username, userFormValuesObj.role),
+						translate('admin.msg_role_updated', '角色已變更')
 					);
+					if (actionError) return;
+					logSystemEvent('INFO', `變更帳號角色：${editingUserRecordObj.username} → ${getRoleDisplayName(userFormValuesObj.role)}`, operatorNameString);
 				} 
 				else 
 				{
-					const addResult = accountStoreActions.addAccount({
-						name: userFormValuesObj.name,
-						email: userFormValuesObj.email,
-						role: userFormValuesObj.role,
-						password: userFormValuesObj.initialPassword || '',
-					});
-					if (!addResult.ok)
-					{
-						userFormInstance.setFields([addResult.reason === 'duplicate_name'
-							? { name: 'name', errors: [translate('admin.name_duplicate', '此使用者名稱已被其他帳號使用')] }
-							: { name: 'email', errors: [translate('admin.email_duplicate', '此 Email 已被其他帳號使用')] }]);
-						return;
-					}
-
-					logSystemEvent('INFO', `新增帳號：${userFormValuesObj.name}（${userFormValuesObj.email}）`, operatorNameString);
-
-					messageApi.success(
+					const newUsernameString = userFormValuesObj.email.trim();
+					const actionError = await runUserAction(
+						() => createMemberAccount(newUsernameString, userFormValuesObj.initialPassword || '', userFormValuesObj.role),
 						translate('admin.msg_user_added_with_pwd', '已新增使用者，請將初始密碼交給對方，並提醒登入後自行變更密碼。')
 					);
+					if (actionError?.status === 409)
+					{
+						userFormInstance.setFields([{ name: 'email', errors: [translate('admin.account_duplicate', '此帳號已存在')] }]);
+						return;
+					}
+					if (actionError) return;
+					logSystemEvent('INFO', `新增帳號：${newUsernameString}（${getRoleDisplayName(userFormValuesObj.role)}）`, operatorNameString);
 				}
 
 				setIsUserModalVisible(false);
@@ -729,34 +757,25 @@ export default function SystemPreferences(): React.ReactElement
 
 	/**
 	 * 函數名稱: handleToggleStatus
-	 * 函數功能: 切換選定使用者之帳號啟用/停用狀態。
+	 * 函數功能: 呼叫後端切換帳號啟用／停用（PATCH /users/{帳號}/active）。停用後該帳號既有的登入一併失效。
 	 * 
 	 * 輸入參數 (Input):
-	 *   - targetUserIdStr (string): 使用者 ID
-	 *   - currentStatusValue (string): 當前狀態 ('active' | 'disabled')
-	 * 返回值 (Return): void
+	 *   - targetUserRecordObj (UserRecord): 目標帳號
+	 * 返回值 (Return): Promise<void>
 	 */
-	const handleToggleStatus = (targetUserIdStr: string, currentStatusValue: string): void => 
+	const handleToggleStatus = async (targetUserRecordObj: UserRecord): Promise<void> => 
 	{
-		const newStatusResultString = currentStatusValue === 'active' ? 'disabled' : 'active';
-		const toggledUserRecordObj = userRecordList.find(userRecordItem => userRecordItem.id === targetUserIdStr);
-		if (newStatusResultString === 'disabled' && toggledUserRecordObj?.email === currentOperatorEmailString)
+		const nextIsActiveStatus = !targetUserRecordObj.isActive;
+		if (!nextIsActiveStatus && isSelfAccount(targetUserRecordObj))
 		{
 			messageApi.error(translate('admin.msg_cannot_disable_self', '不能停用自己目前登入的帳號'));
 			return;
 		}
-		if (newStatusResultString === 'disabled' && toggledUserRecordObj?.role === 'admin' && wouldLeaveNoActiveAdmin(targetUserIdStr))
-		{
-			messageApi.error(translate('admin.msg_last_admin', '系統至少需要保留一個啟用中的 Admin 帳號'));
-			return;
-		}
-		logSystemEvent(newStatusResultString === 'disabled' ? 'WARN' : 'INFO', `${newStatusResultString === 'disabled' ? '停用' : '啟用'}帳號：${toggledUserRecordObj?.name ?? targetUserIdStr}`, operatorNameString);
-
-		accountStoreActions.setAccountStatus(targetUserIdStr, newStatusResultString);
-
-		messageApi.success(
+		const actionError = await runUserAction(
+			() => setMemberActive(targetUserRecordObj.username, nextIsActiveStatus),
 			translate('admin.msg_status_updated', '帳號狀態已更新')
 		);
+		if (!actionError) logSystemEvent(nextIsActiveStatus ? 'INFO' : 'WARN', `${nextIsActiveStatus ? '啟用' : '停用'}帳號：${targetUserRecordObj.username}`, operatorNameString);
 	};
 
 	/**
@@ -786,21 +805,21 @@ export default function SystemPreferences(): React.ReactElement
 	const handleSaveResetPwd = (): void => 
 	{
 		resetPwdFormInstance.validateFields().then(
-			() => 
+			async () => 
 			{
 				if (!resetPwdTargetUserObj) return;
-				// ★ 2026-10-16 同步後端：不能重設任何 Admin（含自己）的密碼；Admin 變更自己的密碼請至個人設定
+				// 同步後端：不能重設任何 Admin（含自己）的密碼；Admin 變更自己的密碼請至個人設定
 				if (resetPwdTargetUserObj.role === 'admin')
 				{
 					messageApi.error(translate('admin.msg_cannot_reset_admin_pwd', '不能重設 Admin 帳號的密碼；Admin 請至「個人設定」自行變更。'));
 					return;
 				}
-				accountStoreActions.resetPassword(resetPwdTargetUserObj.id, String(resetPwdFormInstance.getFieldValue('newPassword') || ''));
-				logSystemEvent('WARN', `管理員重設密碼：${resetPwdTargetUserObj.name}（已解除鎖定）`, operatorNameString);
-
-				messageApi.success(
-					translate('admin.msg_pwd_reset_success', `已成功重設 ${resetPwdTargetUserObj?.name} 的密碼`)
+				const actionError = await runUserAction(
+					() => resetMemberPassword(resetPwdTargetUserObj.username, String(resetPwdFormInstance.getFieldValue('newPassword') || '')),
+					translate('admin.msg_pwd_reset_success_name', '已重設 {{name}} 的密碼', { name: resetPwdTargetUserObj.username })
 				);
+				if (actionError) return;
+				logSystemEvent('WARN', `管理員重設密碼：${resetPwdTargetUserObj.username}（已解除鎖定、該帳號需重新登入）`, operatorNameString);
 
 				setIsResetPwdModalVisible(false);
 			}
@@ -841,37 +860,36 @@ export default function SystemPreferences(): React.ReactElement
 
 	// 使用者表格欄位定義 (符合規範 g, h)
 	const userTableColumnsConfig = [
-		{ title: translate('admin.col_username', '使用者名稱'), dataIndex: 'name', key: 'name', render: (userNameTextString: string) => <Text strong>{userNameTextString}</Text> },
-		{ title: 'Email', dataIndex: 'email', key: 'email' },
+		{ title: translate('admin.col_account', '帳號（Email）'), dataIndex: 'username', key: 'username', render: (usernameTextString: string, userRecordItem: UserRecord) => (
+			<Space size={6}>
+				<Text strong>{usernameTextString}</Text>
+				{isSelfAccount(userRecordItem) && <Tag style={{ margin: 0 }}>{translate('admin.tag_self', '目前登入')}</Tag>}
+			</Space>
+		) },
 		{ 
 			title: translate('admin.col_role', '系統角色'), 
 			dataIndex: 'role', 
 			key: 'role',
 			render: (roleNameString: string) => (
 				<Tag color={roleNameString === 'admin' ? 'purple' : 'blue'}>
-					{roleNameString === 'admin' ? 'Admin' : 'Data Owner'}
+					{getRoleDisplayName(roleNameString)}
 				</Tag>
 			)
 		},
 		{ 
 			title: translate('admin.col_status', '帳號狀態'), 
-			dataIndex: 'status', 
-			key: 'status',
-			render: (statusNameString: string, userRecordItem: UserRecord) => (
-				<Space size={4} wrap>
-					{isAccountLocked(userRecordItem, nowTimestampMs)
-						? <Tag color="warning" style={{ margin: 0 }}>{translate('admin.status_locked', 'LOCKED')}</Tag>
-						: <Tag color={statusNameString === 'active' ? 'success' : 'error'} style={{ margin: 0 }}>{statusNameString.toUpperCase()}</Tag>}
-					{isAccountPasswordExpired(userRecordItem) && (
-						<Tag color="processing" style={{ margin: 0 }}>{translate('admin.status_pwd_expired', '密碼已過期')}</Tag>
-					)}
-				</Space>
+			dataIndex: 'isActive', 
+			key: 'isActive',
+			render: (isActiveStatus: boolean) => (
+				<Tag color={isActiveStatus ? 'success' : 'error'} style={{ margin: 0 }}>
+					{isActiveStatus ? translate('admin.status_active', '啟用') : translate('admin.status_disabled', '停用')}
+				</Tag>
 			)
 		},
-		// ★ 2026-10-16：移除「最後登入時間」（同步後端，後端無此欄位）；改顯示密碼變更時間，供密碼過期輪替參考
+		// ★ 2026-10-27：後端帳號清單只有建立時間（無最後登入、密碼變更時間、鎖定狀態）
 		{
-			title: translate('admin.col_pwd_changed_at', '密碼變更時間'), dataIndex: 'passwordChangedAt', key: 'passwordChangedAt',
-			render: (passwordChangedAtMsValue: number) => formatSystemLogTimestamp(passwordChangedAtMsValue)
+			title: translate('admin.col_created_at', '建立時間'), dataIndex: 'createdAt', key: 'createdAt',
+			render: (createdAtMsValue: number | null) => createdAtMsValue ? formatSystemLogTimestamp(createdAtMsValue) : '-'
 		},
 		{ 
 			title: translate('admin.col_action', '操作'), 
@@ -880,29 +898,28 @@ export default function SystemPreferences(): React.ReactElement
 			align: 'center' as const,
 			render: (_: unknown, userRecordItem: UserRecord) => 
 			{
-				// ★ 調整：原本「編輯權限」連結與右側「⋮」選單分開，現整合為單一「管理」下拉選單
-				const isUserActiveStatus = userRecordItem.status === 'active';
+				// 後端規則：不得變更自己的角色、停用或刪除自己；不得重設任何 Admin 的密碼
+				const isSelfStatus = isSelfAccount(userRecordItem);
 				const menuDropdownItemsConfig: MenuProps['items'] = [
 					{
 						key: 'edit',
 						icon: <EditOutlined />,
-						label: translate('admin.action_edit_profile', '編輯帳號資料'),
+						label: translate('admin.action_change_role', '變更角色'),
+						disabled: isSelfStatus,
 						onClick: () => handleEditUser(userRecordItem)
 					},
-					// ★ 2026-10-16 同步後端：Admin 帳號（含自己）不提供重設密碼；移除「解除鎖定」，改由重設密碼一併解除
 					...(userRecordItem.role !== 'admin' ? [{
 						key: 'reset_pwd',
 						icon: <KeyOutlined />,
-						label: isAccountLocked(userRecordItem, nowTimestampMs)
-							? translate('admin.action_reset_pwd_unlock', '重設密碼（並解除鎖定）')
-							: translate('admin.action_reset_pwd', '重設密碼'),
+						label: translate('admin.action_reset_pwd_unlock', '重設密碼（並解除鎖定）'),
 						onClick: () => handleOpenResetPwd(userRecordItem)
 					}] : []),
 					{
 						key: 'toggle_status',
-						icon: isUserActiveStatus ? <StopOutlined /> : <CheckCircleOutlined />,
-						label: isUserActiveStatus ? translate('admin.action_disable', '停用帳號') : translate('admin.action_enable', '啟用帳號'),
-						onClick: () => handleToggleStatus(userRecordItem.id, userRecordItem.status)
+						icon: userRecordItem.isActive ? <StopOutlined /> : <CheckCircleOutlined />,
+						label: userRecordItem.isActive ? translate('admin.action_disable', '停用帳號') : translate('admin.action_enable', '啟用帳號'),
+						disabled: isSelfStatus,
+						onClick: () => { void handleToggleStatus(userRecordItem); }
 					},
 					{ type: 'divider' },
 					{
@@ -910,12 +927,13 @@ export default function SystemPreferences(): React.ReactElement
 						icon: <DeleteOutlined />,
 						label: translate('admin.action_delete', '刪除帳號'),
 						danger: true,
-						onClick: () => showDeleteConfirm(userRecordItem.id)
+						disabled: isSelfStatus,
+						onClick: () => showDeleteConfirm(userRecordItem)
 					}
 				];
 
 				return (
-					<Dropdown menu={{ items: menuDropdownItemsConfig }} trigger={['click']} placement="bottomRight" rootClassName="user-manage-dropdown">
+					<Dropdown menu={{ items: menuDropdownItemsConfig }} trigger={['click']} placement="bottomRight" rootClassName="user-manage-dropdown" disabled={isUserActionSubmitting}>
 						<Button
 							type="text"
 							shape="circle"
@@ -961,15 +979,24 @@ export default function SystemPreferences(): React.ReactElement
 						<div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
 							<div>
 								<Title level={5} style={{ margin: 0 }}>{translate('admin.user_list', '系統使用者列表')}</Title>
-								<Text type="secondary">{translate('admin.user_list_desc', '負責開通 Data Owner／Admin 帳號、設定角色與密碼，不包含任何資料授權。')}</Text>
+								<Text type="secondary">{translate('admin.user_list_desc_backend', '負責開通 User／Admin 帳號、設定角色與密碼，不包含任何資料授權。帳號資料保存在後端伺服器。')}</Text>
 							</div>
 
-							<Button type="primary" icon={<PlusOutlined />} onClick={handleAddUser}>
-								{translate('admin.add_user', '新增使用者')}
-							</Button>
+							<Space>
+								<Button icon={<ReloadOutlined />} onClick={() => { void reloadUserList(); }} loading={isUserListLoading}>
+									{translate('admin.reload', '重新整理')}
+								</Button>
+								<Button type="primary" icon={<PlusOutlined />} onClick={handleAddUser}>
+									{translate('admin.add_user', '新增使用者')}
+								</Button>
+							</Space>
 						</div>
 
-						<Table columns={userTableColumnsConfig} dataSource={userRecordList} rowKey="id" pagination={{ pageSize: 5 }} size="middle" />
+						{userListErrorText && (
+							<Alert type="error" showIcon style={{ marginBottom: 16 }} message={translate('admin.user_list_load_failed', '無法取得帳號清單')} description={userListErrorText} />
+						)}
+
+						<Table columns={userTableColumnsConfig} dataSource={userRecordList} rowKey="username" loading={isUserListLoading} pagination={{ pageSize: 10 }} size="middle" />
 					</div>
 				),
 			},
@@ -1098,10 +1125,11 @@ export default function SystemPreferences(): React.ReactElement
 									type="info"
 									showIcon
 									message={translate('admin.fixed_lockout_title', '登入失敗鎖定（固定規則）')}
-									description={translate('admin.fixed_lockout_desc', '同一帳號自第一次失敗起 {{window}} 秒內累計失敗 {{count}} 次，即鎖定 {{minutes}} 分鐘；鎖定期間密碼正確也無法登入。管理員重設該帳號密碼可提前解除。', { window: LOGIN_FAILURE_WINDOW_MS / 1000, count: MAX_FAILED_LOGINS, minutes: ACCOUNT_LOCK_DURATION_MS / 60000 })}
+									description={translate('admin.fixed_lockout_desc', '同一帳號自第一次失敗起 {{window}} 秒內累計失敗 {{count}} 次，即鎖定 {{minutes}} 分鐘；鎖定期間密碼正確也無法登入。管理員重設該帳號密碼可提前解除。', { window: LOGIN_ATTEMPT_WINDOW_SECONDS, count: LOGIN_MAX_ATTEMPTS, minutes: LOGIN_LOCKOUT_SECONDS / 60 })}
 								/>
 							</Card>
 
+							{SHOW_PASSWORD_EXPIRY_POLICY && (
 							<Card type="inner" title={translate('admin.password_policy_title', '密碼安全政策快速控管')} style={{ marginBottom: '16px' }}>
 								<div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
 									<Form.Item name="enablePasswordExpiry" valuePropName="checked" style={{ marginBottom: 0 }}>
@@ -1136,6 +1164,7 @@ export default function SystemPreferences(): React.ReactElement
 									}
 								</Form.Item>
 							</Card>
+							)}
 							
 							<Card type="inner" title={translate('admin.maintenance_mode', '系統維護模式')}>
 								<div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
@@ -1192,34 +1221,28 @@ export default function SystemPreferences(): React.ReactElement
 				</Card>
 
 				<Modal
-					title={editingUserRecordObj ? translate('admin.edit_user', '編輯使用者') : translate('admin.add_user_title', '新增使用者')}
+					title={editingUserRecordObj ? translate('admin.change_role_title', '變更角色') : translate('admin.add_user_title', '新增使用者')}
 					open={isUserModalVisible}
 					onOk={handleSaveUser}
 					onCancel={() => setIsUserModalVisible(false)}
 					okText={translate('admin.btn_save', '儲存')}
 					cancelText={translate('admin.btn_cancel', '取消')}
+					confirmLoading={isUserActionSubmitting}
 					destroyOnClose
 				>
 					<Form form={userFormInstance} layout="vertical" style={{ marginTop: '20px' }}>
-						<Form.Item 
-							name="name" 
-							label={translate('admin.col_username', '使用者名稱')} 
-							rules={[{ required: true, message: translate('admin.name_required', '請輸入使用者名稱') }]}
-						>
-							<Input placeholder="e.g. Data.Owner.C" />
-						</Form.Item>
-
+						{/* ★ 2026-10-27：後端只有帳號，帳號即 Email（10/16 決議）；建立後不可修改 */}
 						<Form.Item 
 							name="email" 
-							label="Email" 
+							label={translate('admin.col_account', '帳號（Email）')} 
 							rules={
 								[
 									{ required: true, message: translate('admin.email_required', '請輸入 Email') },
-									{ type: 'email', message: translate('admin.email_required', '請輸入有效的 Email 格式') }
+									{ type: 'email', message: translate('admin.email_invalid', '請輸入有效的 Email 格式') }
 								]
 							}
 						>
-							<Input placeholder="user@company.com" />
+							<Input placeholder="user@company.com" disabled={!!editingUserRecordObj} />
 						</Form.Item>
 
 						{!editingUserRecordObj && (
@@ -1248,7 +1271,7 @@ export default function SystemPreferences(): React.ReactElement
 							<Select 
 								options={
 									[
-										{ value: 'data_owner', label: translate('admin.role_data_owner', 'Data Owner') },
+										{ value: 'data_owner', label: translate('admin.role_data_owner', 'User') },
 										{ value: 'admin', label: translate('admin.role_admin', 'Admin') }
 									]
 								} 
@@ -1261,18 +1284,19 @@ export default function SystemPreferences(): React.ReactElement
 					title={
 						<Space>
 							<KeyOutlined style={{ color: '#faad14' }} />
-							{translate('admin.reset_pwd_modal_title', '強制重設密碼')} - {resetPwdTargetUserObj?.name}
+							{translate('admin.reset_pwd_modal_title', '強制重設密碼')} - {resetPwdTargetUserObj?.username}
 						</Space>
 					}
 					open={isResetPwdModalVisible}
 					onOk={handleSaveResetPwd}
 					onCancel={() => setIsResetPwdModalVisible(false)}
+					confirmLoading={isUserActionSubmitting}
 					okText={translate('admin.btn_confirm', '確認')}
 					cancelText={translate('admin.btn_cancel', '取消')}
 					destroyOnClose
 				>
 					<Alert 
-						message={translate('admin.reset_pwd_alert', '您正在執行管理員權限強制重設密碼。儲存後，原密碼將立即失效，帳號鎖定一併解除。')} 
+						message={translate('admin.reset_pwd_alert_backend', '您正在執行管理員權限強制重設密碼。儲存後，原密碼將立即失效、帳號鎖定一併解除，該帳號目前的登入也會失效，需以新密碼重新登入。')} 
 						type="warning" 
 						showIcon 
 						style={{ marginBottom: '16px' }}

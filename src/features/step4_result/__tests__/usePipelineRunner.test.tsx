@@ -14,6 +14,8 @@ vi.mock('antd', async (importOriginal) => {
 const phaseMocks = vi.hoisted(() => ({ runDeidentificationPhase: vi.fn(), runRiskAssessmentPhase: vi.fn(), ensureDatasetProfile: vi.fn() }));
 vi.mock('../pipeline/deidentificationPhase', () => ({ runDeidentificationPhase: phaseMocks.runDeidentificationPhase }));
 vi.mock('../pipeline/riskAssessmentPhase', () => ({ runRiskAssessmentPhase: phaseMocks.runRiskAssessmentPhase }));
+// ★ 2026-10-27：資料預先處理階段（/api/v1/preprocess）；本測試未設定清洗步驟，固定略過
+vi.mock('../pipeline/preprocessPhase', () => ({ runPreprocessPhase: () => Promise.resolve(null) }));
 vi.mock('../../../utils/datasetProfile', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../../../utils/datasetProfile')>()),
     ensureDatasetProfile: phaseMocks.ensureDatasetProfile

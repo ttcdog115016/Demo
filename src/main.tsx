@@ -27,11 +27,14 @@ import AppErrorBoundary from './components/AppErrorBoundary';
 // 供測試人員一鍵匯出診斷紀錄回報 (見 apiErrorInterceptor.ts／apiErrorLogger.ts)。
 import { registerGlobalApiErrorInterceptor } from './api/apiErrorInterceptor';
 import { logSystemEvent } from './store/useSystemLogStore';
-import { ensureSeedAccounts } from './store/useAccountStore';
+import { useAuthStore } from './store/useAuthStore';
 registerGlobalApiErrorInterceptor();
 
-// ★ 2026-10-07：帳號資料庫（前端 Demo 版）第一次使用時建立預設帳號
-ensureSeedAccounts();
+// ★ 2026-10-27：改由後端會員系統驗證帳號，清除舊版前端 Demo 帳號資料庫留在瀏覽器的資料（含密碼雜湊）
+try { window.localStorage.removeItem('privacy_accounts_v1'); } catch { /* 無法存取 localStorage 時略過 */ }
+
+// ★ 2026-10-27：重新整理頁面時以 sessionStorage 的 refresh token 向後端接續登入（期間 RequireAuth 顯示載入中）
+void useAuthStore.getState().restoreSession();
 
 // ★ 2026-10-07：系統維運日誌——記錄前端頁面載入（含重新整理）
 logSystemEvent('INFO', `前端頁面載入（${window.location.host}）`);

@@ -1,22 +1,23 @@
 /**
  * ============================================================================
  * 檔案名稱 (File): Login.tsx
- * 模組功能 (Description): 使用者登入驗證頁面組件 (提供標準帳密登入、Demo 帳號自動填入與快速免密登入)
+ * 模組功能 (Description): 使用者登入驗證頁面組件 (帳密登入，經後端會員系統 POST /api/v1/auth/login 驗證)
+ * ★ 2026-10-27：串接後端會員系統；移除 Demo 帳號提示、一鍵快速登入與「記住我」（refresh token 存於 sessionStorage，關閉分頁即需重新登入）。
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之識別字)
  * ============================================================================
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Form, Input, Button, Checkbox, ConfigProvider, theme, App as AntdApp, Alert } from 'antd';
+import { Card, Form, Input, Button, ConfigProvider, theme, App as AntdApp } from 'antd';
 import { Mail, Lock, LogIn } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
 import { logSystemEvent } from '../../store/useSystemLogStore';
-import { useAccountStore } from '../../store/useAccountStore';
+import { memberLogin, toMemberApiError, isMemberServiceUnavailable, clearMemberSession } from '../../api/authApi';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
 import { scaleFontSize } from '../../utils/fontScale';
@@ -24,9 +25,7 @@ import { scaleFontSize } from '../../utils/fontScale';
  * 預設時間常數宣告 (單位: 毫秒)
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  */
-const LOGIN_SIMULATION_DELAY_MS = 800;
 const PAGE_NAVIGATION_DELAY_MS = 500;
-const QUICK_LOGIN_NAVIGATION_DELAY_MS = 100;
 
 /**
  * 登入表單欄位數值介面
@@ -34,24 +33,9 @@ const QUICK_LOGIN_NAVIGATION_DELAY_MS = 100;
  */
 interface LoginFormValues 
 {
-	email?: string;    // 使用者電子郵件帳號
+	email?: string;    // 登入帳號（帳號即 Email）
 	password?: string; // 使用者密碼
-	remember?: boolean;// 是否記住登入狀態 (開關)
 }
-
-/**
- * 模擬後端帳號資料庫常數 (Mock Demo Accounts)
- * 規範對照: 符合規範 g) 物理含義常數宣告時加以註記
- */
-// ★ 2026-10-07：登入改為比對帳號資料庫 (useAccountStore)，此處只保留登入頁「點擊自動填入」的提示用帳密
-const DEMO_ACCOUNTS = 
-{
-	'owner@test.com': { password: 'password', label: 'Data Owner' },
-	'admin@test.com': { password: 'Admin@123456', label: 'Admin' },
-};
-
-// 安全參數預設值（與「系統偏好 → 安全與環境參數」一致）
-const DEFAULT_PASSWORD_EXPIRY_DAYS = 90;
 
 /**
  * 函數名稱: Login
@@ -69,7 +53,7 @@ const DEFAULT_PASSWORD_EXPIRY_DAYS = 90;
  */
 export default function Login(): React.ReactElement 
 {
-	const { t: translate, i18n: i18nInstance } = useTranslation();
+	const { t: translate } = useTranslation();
 
 	const navigate = useNavigate();
 
@@ -87,7 +71,16 @@ export default function Login(): React.ReactElement
 
 	const { message: messageApi } = AntdApp.useApp();
 
-	const isChineseLanguageEnabled = i18nInstance.language?.toLowerCase().startsWith('zh');
+	// ★ 2026-10-27：因登入逾期（後端拒絕換發 token、帳號被停用或刪除）被登出時，回到登入頁提示一次
+	const lastLogoutReasonValue = useAuthStore((state) => state.lastLogoutReason);
+	useEffect(() =>
+	{
+		if (lastLogoutReasonValue === 'expired')
+		{
+			messageApi.warning(translate('login.session_expired', '登入已逾期或帳號已被停用，請重新登入。'));
+			useAuthStore.setState({ lastLogoutReason: null });
+		}
+	}, [lastLogoutReasonValue, messageApi, translate]);
 
 	/**
 	 * 函數名稱: handleLogin
@@ -100,61 +93,26 @@ export default function Login(): React.ReactElement
 	const handleLogin = async (formValuesObj: LoginFormValues): Promise<void> => 
 	{
 		setIsSubmitting(true);
+		const usernameInputString = (formValuesObj.email || '').trim();
 		
 		try 
 		{
-			await new Promise(
-				(resolveSimulationDelay) => setTimeout(resolveSimulationDelay, LOGIN_SIMULATION_DELAY_MS)
-			);
+			// ★ 2026-10-27：改由後端驗證帳密。帳號不存在／密碼錯誤／帳號停用，後端一律回 401 同一句話（避免探測帳號）；
+			//   180 秒內失敗 5 次鎖 15 分鐘（423，帶 Retry-After）；後端未設定 JWT 金鑰回 503。不回退到前端帳號。
+			const memberSession = await memberLogin(usernameInputString, formValuesObj.password || '');
 
-			const emailInputString = (formValuesObj.email || '').trim();
-
-			// 安全參數（Admin 於「安全與環境參數」設定；未設定時用預設值）
-			// ★ 2026-10-16：登入失敗鎖定改為固定規則（同步後端：180 秒內 5 次 → 鎖 15 分鐘），不再讀「密碼錯誤鎖定次數」設定
-			const securitySettingsSnapshot = useWorkspaceStore.getState() as unknown as { enablePasswordExpiry?: boolean; passwordExpiryDays?: number; isMaintenanceMode?: boolean };
-			const passwordExpiryDaysValue = securitySettingsSnapshot.enablePasswordExpiry !== false ? (securitySettingsSnapshot.passwordExpiryDays ?? DEFAULT_PASSWORD_EXPIRY_DAYS) : null;
-
-			const authenticateResult = useAccountStore.getState().authenticate(emailInputString, formValuesObj.password || '', passwordExpiryDaysValue);
-
-			if (!authenticateResult.ok)
+			// 維護模式期間僅允許 Admin 登入（維護模式目前為前端設定）
+			const securitySettingsSnapshot = useWorkspaceStore.getState() as unknown as { isMaintenanceMode?: boolean };
+			if (securitySettingsSnapshot.isMaintenanceMode && memberSession.role !== 'admin')
 			{
-				if (authenticateResult.reason === 'disabled')
-				{
-					logSystemEvent('WARN', '登入失敗（帳號已停用）', emailInputString || '(未填帳號)');
-					messageApi.error(translate('login.error_disabled', '此帳號已停用，請聯絡系統管理員。'));
-				}
-				else if (authenticateResult.reason === 'locked')
-				{
-					const remainingMinutesValue = Math.max(1, Math.ceil(((authenticateResult.lockedUntil ?? Date.now()) - Date.now()) / 60000));
-					logSystemEvent('WARN', `登入失敗（帳號鎖定中，約 ${remainingMinutesValue} 分鐘後解除）`, emailInputString);
-					messageApi.error(translate('login.error_locked', '登入失敗次數過多，帳號已鎖定，請於 {{minutes}} 分鐘後再試，或請系統管理員重設密碼。', { minutes: remainingMinutesValue }));
-				}
-				else
-				{
-					// 帳號不存在與密碼錯誤顯示相同訊息，避免被用來探測哪些帳號存在
-					logSystemEvent('WARN', authenticateResult.reason === 'not_found' ? '登入失敗（帳號不存在）' : `登入失敗（密碼錯誤，剩餘 ${authenticateResult.remainingAttempts} 次）`, emailInputString || '(未填帳號)');
-					messageApi.error(
-						authenticateResult.reason === 'wrong_password' && authenticateResult.remainingAttempts !== undefined && authenticateResult.remainingAttempts <= 2
-							? translate('login.error_remaining', '帳號或密碼錯誤。再錯 {{count}} 次帳號將被鎖定。', { count: authenticateResult.remainingAttempts })
-							: translate('login.error')
-					);
-				}
-				return;
-			}
-
-			const loggedInAccount = authenticateResult.account;
-
-			// 維護模式期間僅允許 Admin 登入
-			if (securitySettingsSnapshot.isMaintenanceMode && loggedInAccount.role !== 'admin')
-			{
-				logSystemEvent('WARN', '登入被拒（系統維護模式中，僅允許 Admin）', loggedInAccount.name);
+				clearMemberSession();
+				logSystemEvent('WARN', '登入被拒（系統維護模式中，僅允許 Admin）', memberSession.username);
 				messageApi.warning(translate('admin.maintenance_active_desc', '系統已進入維護模式，僅允許管理員存取。'));
 				return;
 			}
 
-			// ★ 2026-10-16：移除「首次登入須先變更密碼」；僅密碼過期（密碼過期輪替）時須先變更
 			executeLoginAction(
-				{ name: loggedInAccount.name, email: loggedInAccount.email, role: loggedInAccount.role, mustChangePassword: authenticateResult.isPasswordExpired }
+				{ name: memberSession.username, email: memberSession.username, role: memberSession.role }
 			);
 
 			messageApi.success(
@@ -162,67 +120,39 @@ export default function Login(): React.ReactElement
 			);
 
 			setTimeout(
-				() => navigate(authenticateResult.isPasswordExpired ? '/settings/profile' : '/', { replace: true }), 
+				() => navigate('/', { replace: true }), 
 				PAGE_NAVIGATION_DELAY_MS
 			);
 		} 
 		catch (loginExecutionError) 
 		{
-			console.error('Login Error:', loginExecutionError);
-
-			logSystemEvent('ERROR', `登入程序發生例外：${String(loginExecutionError)}`, formValuesObj.email || '(未填帳號)');
-
-			messageApi.error(
-				translate('login.networkError')
-			);
+			const memberErrorObj = toMemberApiError(loginExecutionError);
+			if (memberErrorObj.status === 423)
+			{
+				const remainingMinutesValue = Math.max(1, Math.ceil((memberErrorObj.retryAfterSeconds ?? 900) / 60));
+				logSystemEvent('WARN', `登入失敗（帳號鎖定中，約 ${remainingMinutesValue} 分鐘後解除）`, usernameInputString);
+				messageApi.error(translate('login.error_locked', '登入失敗次數過多，帳號已鎖定，請於 {{minutes}} 分鐘後再試，或請系統管理員重設密碼。', { minutes: remainingMinutesValue }));
+			}
+			else if (memberErrorObj.status === 503)
+			{
+				logSystemEvent('ERROR', '登入失敗（後端會員系統未啟用）', usernameInputString || '(未填帳號)');
+				messageApi.error(translate('login.error_auth_disabled', '登入功能尚未啟用，請聯繫系統管理員。'));
+			}
+			else if (isMemberServiceUnavailable(memberErrorObj))
+			{
+				logSystemEvent('ERROR', `登入失敗（無法連線至後端：${memberErrorObj.message}）`, usernameInputString || '(未填帳號)');
+				messageApi.error(translate('login.networkError'));
+			}
+			else
+			{
+				logSystemEvent('WARN', '登入失敗（帳號或密碼錯誤）', usernameInputString || '(未填帳號)');
+				messageApi.error(translate('login.error'));
+			}
 		} 
 		finally 
 		{
 			setIsSubmitting(false);
 		}
-	};
-
-	/**
-	 * 函數名稱: handleQuickLogin
-	 * 函數功能: 一鍵快速測試登入，以預設 Data Owner 身份寫入 AuthStore 並跳轉首頁。
-	 * 
-	 * 輸入參數 (Input): 無
-	 * 返回值 (Return): void
-	 */
-	const handleQuickLogin = (): void => 
-	{
-		// 一鍵快速登入（測試用，繞過密碼）：以帳號資料庫中的 owner@test.com 身分登入
-		const quickLoginAccount = useAccountStore.getState().findByEmail('owner@test.com');
-		executeLoginAction(
-			{ name: quickLoginAccount?.name ?? 'Data.Owner.A', email: 'owner@test.com', role: 'data_owner' }
-		);
-
-		messageApi.success(
-			translate('login.quickSuccess')
-		);
-		
-		setTimeout(
-			() => 
-			{
-				navigate('/', { replace: true });
-			}, 
-			QUICK_LOGIN_NAVIGATION_DELAY_MS
-		);
-	};
-
-	/**
-	 * 函數名稱: fillDemoAccount
-	 * 函數功能: 點擊 Demo 帳號提示區時，自動將選定之測試帳密填入 Form 表單中。
-	 * 
-	 * 輸入參數 (Input):
-	 *   - targetAccountEmailKey (keyof typeof DEMO_ACCOUNTS): 測試帳戶之 Email 鍵值
-	 * 返回值 (Return): void
-	 */
-	const fillDemoAccount = (targetAccountEmailKey: keyof typeof DEMO_ACCOUNTS): void => 
-	{
-		loginFormInstance.setFieldsValue(
-			{ email: targetAccountEmailKey, password: DEMO_ACCOUNTS[targetAccountEmailKey].password }
-		);
 	};
 
 	return (
@@ -278,35 +208,11 @@ export default function Login(): React.ReactElement
 						</p>
 					</div>
 
-					{/* Demo 測試帳號提示區 (點擊可自動填入) */}
-					<Alert
-						message={<span style={{ fontSize: scaleFontSize(13), fontWeight: 'bold' }}>{isChineseLanguageEnabled ? 'Demo 測試帳號 (點擊自動填入)' : 'Demo Account (Click to fill)'}</span>}
-						description={
-							<div style={{ fontSize: scaleFontSize(12), marginTop: 4 }}>
-								{(Object.keys(DEMO_ACCOUNTS) as (keyof typeof DEMO_ACCOUNTS)[]).map((demoEmailKey) => (
-									<div key={demoEmailKey} onClick={() => fillDemoAccount(demoEmailKey)} style={{ cursor: 'pointer', color: '#10b981' }}>
-										{DEMO_ACCOUNTS[demoEmailKey].label}: <b>{demoEmailKey}</b> / <b>{DEMO_ACCOUNTS[demoEmailKey].password}</b>
-									</div>
-								))}
-							</div>
-						}
-						type="success"
-						showIcon
-						style={
-							{ 
-								marginBottom: 24, 
-								backgroundColor: isDarkModeActive ? 'rgba(16, 185, 129, 0.1)' : '#d1fae5', 
-								borderColor: isDarkModeActive ? 'rgba(16, 185, 129, 0.3)' : '#a7f3d0' 
-							}
-						}
-					/>
-
 					{/* 表單區塊 */}
 					<Form
 						form={loginFormInstance}
 						layout="vertical"
 						onFinish={handleLogin}
-						initialValues={{ remember: true }}
 						size="large"
 					>
 						<Form.Item
@@ -346,17 +252,9 @@ export default function Login(): React.ReactElement
 							/>
 						</Form.Item>
 
-						{/* ★ 2026-10-16：移除「忘記密碼」（同步後端：密碼由管理員重設） */}
-						<div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
-							<Form.Item name="remember" valuePropName="checked" noStyle>
-								<Checkbox style={{ color: isDarkModeActive ? '#94a3b8' : '#64748b' }}>
-									{translate('login.rememberMe')}
-								</Checkbox>
-							</Form.Item>
-						</div>
-
+						{/* ★ 2026-10-16：移除「忘記密碼」（同步後端：密碼由管理員重設）；★ 2026-10-27：移除「記住我」 */}
 						{/* 標準登入按鈕 */}
-						<Form.Item style={{ marginBottom: 16 }}>
+						<Form.Item style={{ marginBottom: 0 }}>
 							<Button 
 								type="primary" 
 								htmlType="submit" 
@@ -369,26 +267,7 @@ export default function Login(): React.ReactElement
 							</Button>
 						</Form.Item>
 
-						{/* 快速登入按鈕 */}
-						<Form.Item style={{ marginBottom: 0 }}>
-							<Button 
-								type="default" 
-								block 
-								onClick={handleQuickLogin}  
-								style={
-									{ 
-										height: 44, 
-										borderRadius: 8, 
-										borderColor: '#10b981', 
-										color: '#10b981', 
-										background: 'transparent',
-										fontWeight: 'bold'
-									}
-								}
-							>
-								{translate('login.quickLoginBtn')}
-							</Button>
-						</Form.Item>
+						{/* ★ 2026-10-27：移除「一鍵快速登入（測試用）」，一律經後端帳密驗證 */}
 					</Form>
 
 					{/* 底部提示 */}

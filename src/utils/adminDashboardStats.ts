@@ -1,11 +1,14 @@
 /**
  * 檔案名稱 (File): adminDashboardStats.ts
  * 模組功能 (Description): Admin「系統管理大廳」三張狀態卡片的統計計算（純函式，方便測試）。
- * 資料來源：系統維運日誌 (useSystemLogStore) 與帳號資料庫 (useAccountStore)，
- * 兩者目前都存在瀏覽器 localStorage，統計結果代表「這個瀏覽器」上的紀錄（Demo 版）。
+ * 資料來源：系統維運日誌 (useSystemLogStore，存在瀏覽器 localStorage，代表「這個瀏覽器」上的紀錄)
+ * 與後端帳號清單 (★ 2026-10-27 改為 GET /api/v1/users)。
  */
 import type { SystemLogEntry } from '../store/useSystemLogStore';
-import type { AccountRecord } from '../store/useAccountStore';
+import type { MemberAccount } from '../api/authApi';
+
+/** 統計只用到的帳號欄位（後端帳號清單 MemberAccount 即符合） */
+type AccountForStats = Pick<MemberAccount, 'isActive' | 'lockedUntil'>;
 
 export const STATS_WINDOW_MS = 24 * 60 * 60 * 1000; // 統計區間：過去 24 小時
 
@@ -22,7 +25,7 @@ export interface FailedLoginStats
 {
 	count: number;              // 過去 24 小時登入失敗次數（含鎖定、停用、帳號不存在）
 	distinctSources: string[];  // 涉及的帳號（登入時輸入的帳號），依最近發生排序
-	lockedAccountCount: number; // 目前仍在鎖定中的帳號數
+	lockedAccountCount: number; // 目前仍在鎖定中的帳號數（★ 2026-10-27 後端帳號清單不含鎖定資訊，目前恆為 0）
 }
 
 /** 登入使用者統計 */
@@ -47,7 +50,7 @@ export const computeApiCallStats = (logs: SystemLogEntry[], nowMs: number = Date
 	};
 };
 
-export const computeFailedLoginStats = (logs: SystemLogEntry[], accounts: AccountRecord[], nowMs: number = Date.now()): FailedLoginStats =>
+export const computeFailedLoginStats = (logs: SystemLogEntry[], accounts: AccountForStats[], nowMs: number = Date.now()): FailedLoginStats =>
 {
 	const failedLoginLogs = logs
 		.filter(logEntry => nowMs - logEntry.timestamp <= STATS_WINDOW_MS && logEntry.event.startsWith('登入失敗'))
@@ -60,7 +63,7 @@ export const computeFailedLoginStats = (logs: SystemLogEntry[], accounts: Accoun
 };
 
 // ★ 2026-10-16：移除帳號「最後登入時間」（同步後端，後端無此欄位）→ 最近登入改由本瀏覽器維運日誌的「使用者登入成功」紀錄統計
-export const computeActiveUserStats = (logs: SystemLogEntry[], accounts: AccountRecord[], nowMs: number = Date.now()): ActiveUserStats =>
+export const computeActiveUserStats = (logs: SystemLogEntry[], accounts: AccountForStats[], nowMs: number = Date.now()): ActiveUserStats =>
 {
 	const recentLoginNames = Array.from(new Set(logs
 		.filter(logEntry => nowMs - logEntry.timestamp <= STATS_WINDOW_MS && logEntry.event.startsWith('使用者登入成功'))
@@ -69,7 +72,7 @@ export const computeActiveUserStats = (logs: SystemLogEntry[], accounts: Account
 	return {
 		recentLoginCount: recentLoginNames.length,
 		totalAccountCount: accounts.length,
-		disabledAccountCount: accounts.filter(account => account.status === 'disabled').length,
+		disabledAccountCount: accounts.filter(account => !account.isActive).length,
 		recentLoginNames,
 	};
 };

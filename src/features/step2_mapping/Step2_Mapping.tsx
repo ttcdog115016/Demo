@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type PreprocessingRule, type MissingValueRule } from '../../store/useWorkspaceStore';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
+import { normalizePreprocessHashAlgorithm, DEFAULT_PREPROCESS_HASH_ALGORITHM } from '../../utils/preprocessConfig';
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { pickPreviewSampleValue, countMissingInPreviewRows } from '../../utils/preprocessPreviewSample';
 import { scrollTableRowIntoView } from '../../utils/tableRowScroll';
@@ -229,7 +230,7 @@ export default function Step2_Mapping(): React.ReactElement
                         { value: 'back', label: translate('step2.anchor_direction_back', '後方') }
                     ]
                 },
-                { key: 'keepCount', type: 'number', label: translate('step2.param_keep_count', '總保留字數'), defaultValue: DEFAULT_ANCHOR_KEEP_COUNT, min: 0 }
+                { key: 'keepCount', type: 'number', label: translate('step2.param_keep_count', '保留字數（含鎖定字元）'), defaultValue: DEFAULT_ANCHOR_KEEP_COUNT, min: 0 }
             ]
         },
         {
@@ -280,20 +281,22 @@ export default function Step2_Mapping(): React.ReactElement
             label: translate('step2.action_hash', '雜湊 (Hash)'),
             paramFields: [
                 {
-                    key: 'algorithm', type: 'select', label: translate('step2.param_hash_algorithm', '演算法'), defaultValue: 'SHA256',
+                    key: 'algorithm', type: 'select', label: translate('step2.param_hash_algorithm', '演算法'), defaultValue: DEFAULT_PREPROCESS_HASH_ALGORITHM,
+                    // ★ 2026-10-27：改用後端 /api/v1/preprocess 支援的三種演算法（舊選項 SHA-512 後端不支援，讀入時改為 SHA3-512）；
+                    //   後端整份清單共用一個演算法，任一欄改了演算法，其他欄的雜湊步驟一併改（見 handleStepParamChange）
                     options: [
-                        // ★ 2026-10-02：原標示 SHA3-256／SHA3-512，但實際計算為 SHA-2，標示改為與實際一致
-                        { value: 'SHA256', label: 'SHA-256' },
-                        { value: 'SHA512', label: 'SHA-512' }
+                        { value: 'sha256', label: 'SHA-256' },
+                        { value: 'sha3-256', label: 'SHA3-256' },
+                        { value: 'sha3-512', label: 'SHA3-512' }
                     ]
                 },
                 {
                     key: 'seedMode', type: 'select', label: translate('step2.param_hash_seed_mode', '鹽值 (Salt)'), defaultValue: 'none',
                     options: [
-                        { value: 'none', label: translate('step2.hash_seed_none', '不添加鹽值') },
+                        { value: 'none', label: translate('step2.hash_seed_none', '伺服器預設鹽值') },
                         { value: 'fixed', label: translate('step2.hash_seed_fixed', '自訂鹽值') },
                         // ★ 2026-10-02：「目前時間戳」改為「系統隨機鹽值」（時間戳可被猜測），舊設定的 'timestamp' 仍可讀取並視同隨機鹽值
-                        { value: 'random', label: translate('step2.hash_seed_random', '系統隨機鹽值') }
+                        { value: 'random', label: translate('step2.hash_seed_random', '系統隨機鹽值（每次執行不同）') }
                     ],
                     optionHintMap: {
                         none: translate('step2.hint_hash_seed_none', '效果：直接對原始值雜湊，同一個值永遠得到相同結果。適用情境：需跨批次比對同一個值（如流水號、代碼）時使用；但對手機、身分證字號等值域較小的欄位，仍有被查表反推的風險。'),
@@ -399,6 +402,12 @@ export default function Step2_Mapping(): React.ReactElement
         const matchedActionDef = preprocessActionDefList.find((actionDefItem) => actionDefItem.value === newActionValueStr);
         const defaultParamsDict: Record<string, string | number> = {};
         matchedActionDef?.paramFields.forEach((paramFieldDefItem) => { defaultParamsDict[paramFieldDefItem.key] = paramFieldDefItem.defaultValue; });
+        // ★ 2026-10-27：後端整份清單共用一個雜湊演算法，新加的雜湊步驟沿用其他欄位已選的演算法
+        if (newActionValueStr === 'hash')
+        {
+            const existingHashStep = Object.values(preprocessingRulesMap).flat().find((stepItemRecord) => stepItemRecord?.action === 'hash');
+            if (existingHashStep) defaultParamsDict.algorithm = normalizePreprocessHashAlgorithm(existingHashStep.params?.algorithm);
+        }
 
         const updatedStepsArray = getFieldPreprocessSteps(targetColumnNameStr).map(
             (stepItemRecord, stepIndexNumber) =>
@@ -429,6 +438,21 @@ export default function Step2_Mapping(): React.ReactElement
         const updatedStepsArray = getFieldPreprocessSteps(targetColumnNameStr).map(
             (stepItemRecord, stepIndexNumber) => stepIndexNumber === targetStepIndexNumber ? { ...stepItemRecord, params: { ...stepItemRecord.params, [paramKeyStr]: newParamValueData } } : stepItemRecord
         );
+
+        // ★ 2026-10-27：雜湊演算法為後端 preprocess 區塊的共用參數（不能逐欄不同），改一欄即同步所有欄位的雜湊步驟
+        const isHashAlgorithmChangeStatus = paramKeyStr === 'algorithm' && getFieldPreprocessSteps(targetColumnNameStr)[targetStepIndexNumber]?.action === 'hash';
+        if (isHashAlgorithmChangeStatus)
+        {
+            const syncedRulesMap: Record<string, PreprocessingRule[]> = {};
+            Object.entries(preprocessingRulesMap).forEach(([columnNameStr, stepsArray]) =>
+            {
+                syncedRulesMap[columnNameStr] = Array.isArray(stepsArray)
+                    ? stepsArray.map((stepItemRecord) => stepItemRecord.action === 'hash' ? { ...stepItemRecord, params: { ...stepItemRecord.params, algorithm: newParamValueData } } : stepItemRecord)
+                    : stepsArray;
+            });
+            setPreprocessingRulesAction({ ...syncedRulesMap, [targetColumnNameStr]: updatedStepsArray });
+            return;
+        }
 
         setPreprocessingRulesAction({ ...preprocessingRulesMap, [targetColumnNameStr]: updatedStepsArray });
     };
@@ -573,7 +597,9 @@ export default function Step2_Mapping(): React.ReactElement
             return (
                 <AdaptivePopupSelect
                     size="small"
-                    value={String(currentParamsDict[paramFieldDefItem.key] ?? paramFieldDefItem.defaultValue)}
+                    value={paramFieldDefItem.key === 'algorithm'
+                        ? normalizePreprocessHashAlgorithm(currentParamsDict.algorithm ?? paramFieldDefItem.defaultValue) // 舊設定 SHA256／SHA512 轉為後端支援的名稱
+                        : String(currentParamsDict[paramFieldDefItem.key] ?? paramFieldDefItem.defaultValue)}
                     onChange={(selectedValueStr) => onValueChange(selectedValueStr)}
                     disabled={!isUserAllowedToEditRulesStatus}
                     placeholder={paramFieldDefItem.label}
@@ -889,14 +915,14 @@ export default function Step2_Mapping(): React.ReactElement
                 style={{ background: token.colorBgContainer, padding: 0 }}
                 styles={{ body: { padding: '16px' } }}
             >
-                {/* ★ 2026-10-01：資料預先處理（缺失值處理、清洗策略鏈）由後端負責執行，目前後端仍在開發中；
-                    此處設定僅影響本頁預覽，尚未送給後端、不會套用到 Step4 去識別化結果，先明確提示避免 Demo 時被誤認為 bug。 */}
+                {/* ★ 2026-10-27：最終版後端已提供 /api/v1/preprocess，Step4 會先依此處設定清洗資料，再進行去識別化與風險評估
+                    （組裝見 utils/preprocessConfig.ts；預覽規則與後端相同，見 utils/preprocessSteps.ts）。 */}
                 <Alert
-                    type="warning"
+                    type="info"
                     showIcon
                     style={{ marginBottom: 12 }}
-                    title={translate('step2.preprocess_backend_pending_title', '此功能後端開發中')}
-                    description={translate('step2.preprocess_backend_pending_desc', '目前設定僅供預覽，不會套用到去識別化結果。')}
+                    title={translate('step2.preprocess_backend_pending_title', '清洗設定會在 Step4 先交由後端處理')}
+                    description={translate('step2.preprocess_backend_pending_desc', '執行時會先依這裡的清洗步驟與缺失值處理整理資料（後端資料前處理），再以整理後的資料進行去識別化與風險評估；右側預覽為依相同規則計算的範例。')}
                 />
                 <div ref={preprocessTableWrapperRef}>
                 <Table dataSource={mappingTableDataList} columns={preprocessTableColumnsConfig} pagination={false} size="small" bordered={false} rowKey="key" scroll={{ y: PREPROCESS_TABLE_SCROLL_HEIGHT_PX }} style={{ background: isDarkModeActive ? '#141414' : '#fafafa', borderRadius: 8, border: `1px solid ${token.colorBorderSecondary}` }} />

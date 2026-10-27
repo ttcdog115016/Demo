@@ -20,6 +20,7 @@ import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, wrapBackendConfi
 import { isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
 import { describePipelineError } from './backendErrorCatalog';
 import { runDeidentificationPhase } from './pipeline/deidentificationPhase';
+import { runPreprocessPhase } from './pipeline/preprocessPhase';
 import { runRiskAssessmentPhase } from './pipeline/riskAssessmentPhase';
 import { computeDatasetRowStats, computeSimulationMetrics, evaluateComplianceValidity, buildPipelineAuditLogEntry, type SimulationResult, type PipelinePhase, type DatasetRowStats } from './pipeline/pipelineResults';
 
@@ -79,6 +80,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
     const currentColumnTypesMapDict = useMemo(() => rawColumnTypesMapDict || {}, [rawColumnTypesMapDict]);
 
     const currentPreprocessingRulesMapDict = useWorkspaceStore((state) => state.preprocessingRules);
+    // ★ 2026-10-27：資料預先處理改由後端執行，缺失值處理也會影響結果，納入參數指紋
+    const currentMissingValueRulesMapDict = useWorkspaceStore((state) => state.missingValueRules);
     const currentDatasetFileNameString = useWorkspaceStore((state) => state.fileName);
     const simulatedQueryCountValue = useWorkspaceStore((state) => state.queryCount);
 
@@ -109,6 +112,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             columnRoles: columnPrivacyRolesMapDict,
             columnTypes: currentColumnTypesMapDict,
             preprocessingRules: currentPreprocessingRulesMapDict,
+            missingValueRules: currentMissingValueRulesMapDict,
             kAnonymityFields: kAnonymityFieldsList,
             kAnonymityHierarchies: kAnonymityHierarchiesList,
             // ★ 2026-10-01（第 16 項）：以下四項都會送給後端、影響結果，先前卻沒有納入雜湊——快取有效時改了
@@ -125,7 +129,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             currentPrivacyModeTypeStr, currentKValueNumber, currentLValueNumber, currentTValueNumber,
             isEnableLDiversityStatus, isEnableTClosenessStatus, currentMaxSuppressionNumber,
             currentSuppressionMethodStr, currentLimitExceededActionStr, simulatedQueryCountValue,
-            currentDpFieldsListArray, columnPrivacyRolesMapDict, currentColumnTypesMapDict, currentPreprocessingRulesMapDict,
+            currentDpFieldsListArray, columnPrivacyRolesMapDict, currentColumnTypesMapDict, currentPreprocessingRulesMapDict, currentMissingValueRulesMapDict,
             kAnonymityFieldsList, kAnonymityHierarchiesList,
             currentCellFillMethodStr, cellFillValuesByColumnMap, riskSubgroupFiltersMapDict, globalTargetDeltaValue, dataFile
         ]
@@ -443,13 +447,29 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
 
                 const originalFile = dataFile as File;
                 const rawCsvText = await originalFile.text();
-                const cleanedCsvText = rawCsvText.replace(/^[\uFEFF\u200B]+/, '');
+                let cleanedCsvText = rawCsvText.replace(/^[\uFEFF\u200B]+/, '');
 
-                const safeDataFile = new File(
+                let safeDataFile = new File(
                     [cleanedCsvText],
                     'input_dataset.csv',
                     { type: 'text/csv;charset=utf-8' }
                 );
+
+                // ⓪ 資料預先處理（★ 2026-10-27 後端 /api/v1/preprocess）：Step2 有設定清洗步驟或缺失值處理時先執行，
+                //   之後的去識別化、風險評估、實用性計算都改用清洗後的資料。見 pipeline/preprocessPhase.ts
+                const preprocessResult = await runPreprocessPhase({
+                    columnNames: actualProcessedColumnsList,
+                    preprocessingRules: currentPreprocessingRulesMapDict,
+                    missingValueRules: currentMissingValueRulesMapDict,
+                    datasetFileName: currentDatasetFileNameString,
+                    safeDataFile,
+                    requestOptions: pipelineRequestOptions
+                });
+                if (preprocessResult) {
+                    cleanedCsvText = preprocessResult.csvText;
+                    safeDataFile = preprocessResult.dataFile;
+                    appendStepLog(translate('step4.log.step_preprocess_done', '資料預先處理完成（{{columns}} 個欄位）', { columns: preprocessResult.columnCount }));
+                }
                 // 去識別化結果（可達上百 MB）的文字內容只讀一次，CAP 分級距與輸出筆數統計共用
                 let processedCsvTextPromise: Promise<string> | null = null;
                 const readProcessedCsvTextOnce = (): Promise<string> => {
@@ -460,7 +480,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 // ★ 2026-09-30：不再把整份原始 CSV 另外 Papa.parse 成列物件陣列（100 萬筆時非常吃記憶體），
                 //   改用 utils/datasetProfile.ts 整份資料集只掃描一次的欄位統計快照（Step2／Step3 通常已掃描過，
                 //   這裡直接取用）。相異值數被截斷的極高基數欄位，佔比一律視為 1（保守判定為高唯一值）。
-                const datasetProfileForRisk = await ensureDatasetProfile(originalFile);
+                const datasetProfileForRisk = await ensureDatasetProfile(preprocessResult ? safeDataFile : originalFile);
 
                 const appendPipelineLog = (messageText: string) => console.info('[運算細節]', messageText);
 
@@ -669,7 +689,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             }
 
         },
-        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, deidentifiedColumnsCount, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentParametersHashString, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, resolveQiGeneralizationTech, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
+        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, deidentifiedColumnsCount, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentMissingValueRulesMapDict, currentParametersHashString, currentPreprocessingRulesMapDict, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, resolveQiGeneralizationTech, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
     );
 
     // ★ 2026-10-01（第 16 項）：自動執行只在「使用者可調整的參數」（currentParametersHashString）改變、且這組
