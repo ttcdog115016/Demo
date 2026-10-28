@@ -7,6 +7,8 @@
 import { mapOutOfBoundsStrategyToBackend, alignDpBoundsToMinimumUnit, alignDpDateTimeBoundsToNoiseGrid, resolveIsDateTimeDpField, resolveDpDatetimeNoiseUnit, DP_DATETIME_NOISE_UNIT_MILLISECONDS, parseDpDateTimeBoundTimestamp } from './dpFieldHelpers';
 import { TEMPORAL_GRANULARITY_UNITS } from './temporalGranularity';
 import { buildQiLevelValue } from './kAnonymityConfigImport';
+import { buildPreprocessBlock } from './preprocessConfig';
+import type { PreprocessingRule, MissingValueRule } from '../store/useWorkspaceStore';
 
 /** Step2／Step3 存在 useWorkspaceStore.dpFields 的單一欄位設定 */
 export interface DpStoreField {
@@ -583,7 +585,20 @@ export interface WorkspaceConfigSource {
     dpAccumulatedEpsilon?: number | null;
     dpAccumulatedDelta?: number | null;
     targetDelta?: number | null;
+    preprocessingRules?: Record<string, PreprocessingRule[]> | null;
+    missingValueRules?: Record<string, MissingValueRule> | null;
 }
+
+/**
+ * ★ 2026-10-28：匯出設定檔一併帶 Step2 的資料預先處理（後端 preprocess 區塊，放在隱私區塊之前，與統合版設定檔相同），
+ *   匯出再匯入才不會遺失清洗設定。沒有任何清洗／缺失值處理時不加此區塊（與 Step4 不呼叫 /preprocess 一致）。
+ */
+const withPreprocessBlock = (workspaceState: WorkspaceConfigSource, configDocument: Record<string, unknown>): Record<string, unknown> => {
+    const preprocessBlock = buildPreprocessBlock(workspaceState.columns || [], workspaceState.preprocessingRules, workspaceState.missingValueRules);
+    if (!preprocessBlock) return configDocument;
+    const { version, dataset, input_format: inputFormat, ...privacyBlocks } = configDocument;
+    return { version, dataset, input_format: inputFormat, preprocess: preprocessBlock, ...privacyBlocks };
+};
 
 /**
  * 依目前工作區設定組出後端完整設定檔（與 Step4 實際送出的內容相同組裝邏輯），供 Step3 匯出與 Step2 即時預覽使用。
@@ -598,7 +613,7 @@ export const buildBackendConfigDocumentFromWorkspace = (
         const processedColumnNames = (workspaceState.columns && workspaceState.columns.length > 0)
             ? workspaceState.columns.map((columnName) => columnName.replace(/^[\uFEFF\u200B]+/, '').trim())
             : kAnonymityFields.map((fieldItem) => String((fieldItem as { name?: string }).name || '')).filter(Boolean);
-        return wrapBackendConfigDocument(workspaceState.fileName, buildKAnonymityConfig({
+        return withPreprocessBlock(workspaceState, wrapBackendConfigDocument(workspaceState.fileName, buildKAnonymityConfig({
             kValue: workspaceState.kValue, lValue: workspaceState.lValue, tValue: workspaceState.tValue,
             enableLDiversity: workspaceState.enableLDiversity, enableTCloseness: workspaceState.enableTCloseness,
             maxSuppression: workspaceState.maxSuppression, suppressionMethod: workspaceState.suppressionMethod,
@@ -608,16 +623,16 @@ export const buildBackendConfigDocumentFromWorkspace = (
             kAnonymityFields,
             kAnonymityHierarchies: workspaceState.kAnonymityHierarchies || [],
             resolveFallbackUiRole: options.resolveFallbackUiRole ?? ((cleanColumnName) => workspaceState.columnRoles?.[cleanColumnName] || 'Non-sensitive')
-        }));
+        })));
     }
     if (workspaceState.privacyMode === 'differential-privacy') {
-        return wrapBackendConfigDocument(workspaceState.fileName, buildDifferentialPrivacyConfig({
+        return withPreprocessBlock(workspaceState, wrapBackendConfigDocument(workspaceState.fileName, buildDifferentialPrivacyConfig({
             dpFields: workspaceState.dpFields,
             columnTypes: workspaceState.columnTypes,
             accumulatedEpsilon: workspaceState.dpAccumulatedEpsilon,
             accumulatedDelta: workspaceState.dpAccumulatedDelta,
             targetDelta: workspaceState.targetDelta
-        }));
+        })));
     }
     return null;
 };

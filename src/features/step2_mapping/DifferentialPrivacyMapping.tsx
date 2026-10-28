@@ -30,6 +30,8 @@ import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineCon
 import { parseBackendDpColumnBudgets, type BackendDpColumnBudget } from '../../utils/dpConfigImport';
 import { resolveDpFieldRiskRole, isDpFieldSelectableAsRiskSensitive } from '../../utils/riskAssessment';
 import { detectConfigPrivacyMode } from '../../utils/configModeDetect';
+import { importPreprocessFromConfig } from '../../utils/preprocessConfigImport';
+import { applyPreprocessImportToWorkspace } from './preprocessImportMessages';
 import { buildDatasetColumnNameSet, isFieldNameInDataset, findFieldsNotInDataset, findDatasetColumnsNotConfigured, describeFieldsNotInDatasetError, normalizeDatasetColumnName } from '../../utils/datasetFieldConsistency';
 
 import { scaleFontSize } from '../../utils/fontScale';
@@ -306,6 +308,20 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					messageApi.error(translate('message.import_json_mode_mismatch_kanon', '此設定檔為「K-匿名化」模式，無法匯入差分隱私欄位設定。請改用差分隱私設定檔，或回到 Step1 切換為 K-匿名化模式後再匯入。'));
 					return;
 				}
+
+				// ★ 2026-10-28：後端格式的 preprocess 區塊（單一入口 config_preprocess.json、統合版設定檔）。
+				//   純前處理設定檔只更新清洗設定，不再落到最後的「JSON 格式不符合規範」。
+				const preprocessImportResult = importPreprocessFromConfig(parsedJsonContentData, datasetColumnsList);
+				const hasDifferentialPrivacyContent = Array.isArray(parsedJsonContentData) || Boolean(
+					parsedJsonContentData.differential_privacy?.column_budgets || parsedJsonContentData.column_budgets ||
+					parsedJsonContentData.field_attributes || parsedJsonContentData.privacy_targets?.differential_privacy?.field_mechanisms ||
+					parsedJsonContentData.differential_privacy_rules
+				);
+				if (preprocessImportResult)
+				{
+					applyPreprocessImportToWorkspace(preprocessImportResult, messageApi, !hasDifferentialPrivacyContent);
+					if (!hasDifferentialPrivacyContent) return;
+				}
 				
 				type DpRuleItem = {
 					id?: string; fieldName?: string; field_name?: string; field?: string;
@@ -490,7 +506,8 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 						}
 					);
 
-					if (parsedJsonContentData.preprocessing_rules)
+					// 舊版匯出格式的 preprocessing_rules；已讀到後端 preprocess 區塊時以後者為準
+					if (!preprocessImportResult && parsedJsonContentData.preprocessing_rules)
 					{
 						// ★ 相容匯入舊版單一策略物件格式 ({action, param})，統一正規化為新版多策略陣列格式 ({action, params})
 						const rawImportedPreprocessingRulesMap = parsedJsonContentData.preprocessing_rules as Record<string, unknown>;

@@ -620,7 +620,7 @@ export default function Step2_Mapping(): React.ReactElement
             return (
                 <InputNumber
                     size="small"
-                    value={Number(currentParamsDict[paramFieldDefItem.key] ?? paramFieldDefItem.defaultValue)}
+                    value={currentParamsDict[paramFieldDefItem.key] === '' ? null : Number(currentParamsDict[paramFieldDefItem.key] ?? paramFieldDefItem.defaultValue)} // 空字串＝不限制（例如上下界只設一側），顯示空白而非預設值
                     onChange={(inputNumberValue) => onValueChange(inputNumberValue ?? paramFieldDefItem.defaultValue)}
                     disabled={!isUserAllowedToEditRulesStatus}
                     min={paramFieldDefItem.min}
@@ -631,7 +631,8 @@ export default function Step2_Mapping(): React.ReactElement
         }
 
         const currentTextValueStr = String(currentParamsDict[paramFieldDefItem.key] ?? paramFieldDefItem.defaultValue);
-        const hasRequiredValueMissingStatus = Boolean(paramFieldDefItem.required) && currentTextValueStr.trim() === '';
+        // ★ 2026-10-28：鎖定字元可以是空白（期末測資以空白切開日期與時間），只有完全沒填才標紅
+        const hasRequiredValueMissingStatus = Boolean(paramFieldDefItem.required) && (paramFieldDefItem.key === 'anchor' ? currentTextValueStr === '' : currentTextValueStr.trim() === '');
 
         return (
             <Input

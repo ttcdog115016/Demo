@@ -1,0 +1,424 @@
+{
+  "version": "open-pets-2.0.0-example",
+  "dataset": "範例資料",
+  "input_format": "csv",
+  "preprocess": {
+    "enabled": true,
+    "algorithm": "sha3-256",
+    "columns": [
+      {
+        "column": "姓名",
+        "actions": [
+          {
+            "action": "hash",
+            "params": {
+              "salt": "use_timestamp"
+            }
+          }
+        ]
+      },
+      {
+        "column": "身分證號",
+        "actions": [
+          {
+            "action": "normalize",
+            "params": {
+              "case": "upper",
+              "width": "half"
+            }
+          },
+          {
+            "action": "hash",
+            "params": {
+              "salt": "use_timestamp"
+            }
+          }
+        ]
+      },
+      {
+        "column": "地址",
+        "actions": [
+          {
+            "action": "trim",
+            "params": {
+              "mode": "edges"
+            }
+          },
+          {
+            "action": "regex_replace",
+            "params": {
+              "pattern": "(?<=區).*$",
+              "replacement": ""
+            }
+          }
+        ]
+      },
+      {
+        "column": "出生日期",
+        "actions": [
+          {
+            "action": "anchor_truncate",
+            "params": {
+              "anchor": "-",
+              "direction": "after",
+              "keep": 0
+            }
+          }
+        ]
+      },
+      {
+        "column": "醫療費用",
+        "actions": [
+          {
+            "action": "clamp",
+            "params": {
+              "min": 0,
+              "max": 100000
+            }
+          },
+          {
+            "action": "cast",
+            "params": {
+              "type": "int",
+              "rounding": "round"
+            }
+          }
+        ]
+      },
+      {
+        "column": "檢驗值_血糖",
+        "actions": [
+          {
+            "action": "cast",
+            "params": {
+              "type": "float"
+            }
+          }
+        ]
+      },
+      {
+        "column": "職業",
+        "actions": [
+          {
+            "action": "fill_default",
+            "params": {
+              "value": "未填"
+            }
+          }
+        ]
+      },
+      {
+        "column": "保險別",
+        "actions": [
+          {
+            "action": "drop_nulls",
+            "params": {}
+          }
+        ]
+      }
+    ]
+  },
+  "k_anonymity": {
+    "enabled": true,
+    "k": 5,
+    "l": 2,
+    "t": 0.7,
+    "suppression_limit_percent": 20,
+    "limit_exceeded_action": "allow_with_warning",
+    "suppression_method": "cell_suppression",
+    "cell_fill": "star",
+    "algorithm": "sha3-256",
+    "columns": {
+      "姓名": {
+        "role": "identifier",
+        "type": "string",
+        "strategy": "hash"
+      },
+      "身分證號": {
+        "role": "identifier",
+        "type": "string",
+        "strategy": "clear"
+      },
+      "年齡": {
+        "role": "quasi_identifier",
+        "type": "numeric"
+      },
+      "地址": {
+        "role": "quasi_identifier",
+        "type": "categorical",
+        "cell_fill_value": "臺北市"
+      },
+      "出生日期": {
+        "role": "quasi_identifier",
+        "type": "temporal"
+      },
+      "就診時間": {
+        "role": "quasi_identifier",
+        "type": "temporal"
+      },
+      "疾病": {
+        "role": "sensitive",
+        "type": "categorical"
+      },
+      "職業": {
+        "role": "non_sensitive",
+        "type": "categorical",
+        "strategy": "none"
+      },
+      "醫療費用": {
+        "role": "non_sensitive",
+        "type": "numeric",
+        "strategy": "none"
+      },
+      "檢驗值_血糖": {
+        "role": "non_sensitive",
+        "type": "numeric",
+        "strategy": "none"
+      },
+      "就醫次數": {
+        "role": "non_sensitive",
+        "type": "numeric",
+        "strategy": "none"
+      },
+      "婚姻狀況": {
+        "role": "non_sensitive",
+        "type": "categorical",
+        "strategy": "none"
+      },
+      "保險別": {
+        "role": "non_sensitive",
+        "type": "categorical",
+        "strategy": "none"
+      }
+    },
+    "generalization_hierarchies": {
+      "年齡": {
+        "bins": [
+          {
+            "min": null,
+            "max": 40,
+            "label": "40歲以下"
+          },
+          {
+            "min": 40,
+            "max": 44,
+            "label": "40-43歲"
+          },
+          {
+            "min": 44,
+            "max": null,
+            "label": "44歲以上"
+          }
+        ]
+      },
+      "出生日期": {
+        "levels": [
+          "day",
+          "month",
+          "year"
+        ]
+      },
+      "就診時間": {
+        "levels": [
+          "hour",
+          "day",
+          "month"
+        ],
+        "time_periods": [
+          {
+            "min": "00:00",
+            "max": "06:00",
+            "label": "凌晨"
+          },
+          {
+            "min": "06:00",
+            "max": "12:00",
+            "label": "上午"
+          },
+          {
+            "min": "12:00",
+            "max": "18:00",
+            "label": "下午"
+          },
+          {
+            "min": "18:00",
+            "max": "24:00",
+            "label": "晚間"
+          }
+        ]
+      }
+    },
+    "generalization_matrices": {
+      "地址": {
+        "mapping": {
+          "臺北市中正區": [
+            "臺北市中正區",
+            "臺北市"
+          ],
+          "臺北市信義區": [
+            "臺北市信義區",
+            "臺北市"
+          ],
+          "臺北市南港區": [
+            "臺北市南港區",
+            "臺北市"
+          ],
+          "臺北市大安區": [
+            "臺北市大安區",
+            "臺北市"
+          ],
+          "臺北市松山區": [
+            "臺北市松山區",
+            "臺北市"
+          ],
+          "臺北市板橋區": [
+            "臺北市板橋區",
+            "臺北市"
+          ]
+        }
+      }
+    },
+    "qi_generalization_levels": {
+      "地址": [
+        0,
+        1
+      ],
+      "出生日期": 3,
+      "就診時間": 1
+    }
+  },
+  "differential_privacy": {
+    "enabled": true,
+    "accumulated_epsilon": 0.0,
+    "accumulated_delta": 0.0,
+    "default_delta": 1e-05,
+    "column_budgets": {
+      "年齡": {
+        "type": "continuous",
+        "epsilon_budget": 2.0,
+        "delta_budget": 1e-05,
+        "sensitivity": 1.0,
+        "minimum_unit": 1,
+        "clipping_bounds": [
+          0,
+          120
+        ],
+        "out_of_bounds_strategy": "clamp"
+      },
+      "醫療費用": {
+        "type": "continuous",
+        "epsilon_budget": 1.0,
+        "delta_budget": 0.0,
+        "sensitivity": 5000.0,
+        "minimum_unit": 100,
+        "clipping_bounds": [
+          0,
+          100000
+        ],
+        "out_of_bounds_strategy": "fold"
+      },
+      "地址": {
+        "type": "categorical",
+        "epsilon_budget": 2.0
+      },
+      "就診時間": {
+        "type": "datetime",
+        "epsilon_budget": 2.0,
+        "delta_budget": 1e-05,
+        "sensitivity": 10.0,
+        "noise_unit": "minute",
+        "noise_step": 5,
+        "time_clipping_bounds": [
+          "2025-06-16 00:00:00",
+          "2025-06-16 23:59:59"
+        ],
+        "time_out_of_bounds_strategy": "clamp"
+      }
+    }
+  },
+  "risk_attacks": {
+    "enabled": true,
+    "columns": {
+      "年齡": {
+        "role": "quasi_identifier",
+        "type": "numeric"
+      },
+      "地址": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "職業": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "婚姻狀況": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "疾病": {
+        "role": "sensitive",
+        "type": "categorical"
+      }
+    },
+    "linkability": {
+      "A": [
+        "年齡",
+        "婚姻狀況"
+      ],
+      "B": [
+        "地址",
+        "職業"
+      ]
+    },
+    "subgroup": {
+      "年齡": {
+        "min": 38,
+        "max": 45
+      },
+      "職業": [
+        "工程師",
+        "醫師",
+        "教師"
+      ]
+    },
+    "n_iter": 500,
+    "ctrl_ratio": 0.2,
+    "seed": 42,
+    "n_subset": 500,
+    "n_repeats": 3,
+    "overlap_ratio": 0.1
+  },
+  "risk_cap": {
+    "enabled": true,
+    "columns": {
+      "年齡": {
+        "role": "quasi_identifier",
+        "type": "numeric"
+      },
+      "地址": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "職業": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "婚姻狀況": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "疾病": {
+        "role": "sensitive",
+        "type": "categorical"
+      }
+    },
+    "subgroup": {
+      "職業": [
+        "工程師",
+        "醫師",
+        "教師"
+      ]
+    },
+    "processed_format": "csv"
+  }
+}

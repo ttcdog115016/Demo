@@ -30,6 +30,8 @@ import { TEMPORAL_GRANULARITY_UNITS, TEMPORAL_DEFAULT_GRANULARITY_LEVEL, tempora
 import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, findNumericMinMax, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
 import { detectConfigPrivacyMode } from '../../utils/configModeDetect';
+import { importPreprocessFromConfig } from '../../utils/preprocessConfigImport';
+import { applyPreprocessImportToWorkspace } from './preprocessImportMessages';
 import { buildDatasetColumnNameSet, isFieldNameInDataset, findFieldsNotInDataset, findDatasetColumnsNotConfigured, countBlankFieldNames, describeFieldsNotInDatasetError, describeBlankFieldNamesError, normalizeDatasetColumnName } from '../../utils/datasetFieldConsistency';
 
 import { scaleFontSize } from '../../utils/fontScale';
@@ -948,6 +950,20 @@ export default function KAnonymityMapping(): React.ReactElement
                 //   才不會讓既有「匯出 JSON」產生的舊檔案匯入失效。
                 const importedKAnonymityBlock = parsedJsonContentData.k_anonymity || parsedJsonContentData.privacy_targets?.k_anonymity;
 
+                // ★ 2026-10-28：後端格式的 preprocess 區塊（單一入口 config_preprocess.json、統合版設定檔）。
+                //   純前處理設定檔只更新清洗設定就結束，不可往下走——先前會讀不到任何欄位而把欄位設定整個清空。
+                const preprocessImportResult = importPreprocessFromConfig(parsedJsonContentData, storeColumnsList);
+                const hasKAnonymityContent = Boolean(
+                    importedKAnonymityBlock || parsedJsonContentData.field_attributes || parsedJsonContentData.columns ||
+                    parsedJsonContentData.masking_rules || parsedJsonContentData.generalization_rules ||
+                    parsedJsonContentData.generalization_hierarchies || parsedJsonContentData.generalization_matrices ||
+                    parsedJsonContentData.qi_generalization_levels || parsedJsonContentData.categorical_hierarchies
+                );
+                if (preprocessImportResult) {
+                    applyPreprocessImportToWorkspace(preprocessImportResult, messageApi, !hasKAnonymityContent);
+                    if (!hasKAnonymityContent) return;
+                }
+
                 if (importedKAnonymityBlock?.enabled) {
                     useWorkspaceStore.setState({
                         privacyMode: 'k-anonymity',
@@ -1070,7 +1086,11 @@ export default function KAnonymityMapping(): React.ReactElement
                     });
                 });
 
-                useWorkspaceStore.setState({ preprocessingRules: normalizedImportedPreprocessingRulesMap });
+                // 舊版匯出格式的 preprocessing_rules；已讀到後端 preprocess 區塊時以後者為準。
+                // ★ 2026-10-28：設定檔完全沒有前處理設定時不再清空畫面上的清洗設定（後端 K-匿名設定檔本來就不含前處理）。
+                if (!preprocessImportResult && parsedJsonContentData.preprocessing_rules) {
+                    useWorkspaceStore.setState({ preprocessingRules: normalizedImportedPreprocessingRulesMap });
+                }
 
                 const updatedKAnonymityFieldsList: FieldDef[] = [];
                 const updatedColumnRolesMap: Record<string, string> = {};
