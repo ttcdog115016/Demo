@@ -32,6 +32,7 @@ vi.mock('antd', async () => {
 import KAnonymityMapping from '../../features/step2_mapping/KAnonymityMapping';
 import DifferentialPrivacyMapping from '../../features/step2_mapping/DifferentialPrivacyMapping';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { buildBackendConfigDocumentFromWorkspace } from '../pipelineConfig';
 import RiskAssessmentSettingsPanel from '../../features/step3_rules/RiskAssessmentSettingsPanel';
 
 // 期末交付包 04_系統設定檔/範例資料.csv 的表頭
@@ -67,6 +68,19 @@ describe('K-匿名頁匯入後端 preprocess 區塊', () => {
         expect(state.missingValueRules).toEqual({ 職業: { strategy: 'constant', constantValue: '未填' }, 保險別: { strategy: 'drop' } });
         expect(messageMock.info).toHaveBeenCalledWith('已匯入資料預先處理設定（8 個欄位）');
         expect(messageMock.error).not.toHaveBeenCalled();
+    });
+
+    it('統合版就診時間 18:00～24:00：送後端的 time_periods 最後一段仍是 24:00（先前變成 00:00 被後端擋下）', async () => {
+        resetStore('k-anonymity');
+        await importFile(KAnonymityMapping, unifiedConfigText);
+        const state = useWorkspaceStore.getState();
+        const configDocument = buildBackendConfigDocumentFromWorkspace(state) as { k_anonymity: { generalization_hierarchies: Record<string, { time_periods?: { min: string; max: string }[] }> } };
+        expect(configDocument.k_anonymity.generalization_hierarchies['就診時間'].time_periods).toEqual([
+            { min: '00:00', max: '06:00', label: '凌晨' },
+            { min: '06:00', max: '12:00', label: '上午' },
+            { min: '12:00', max: '18:00', label: '下午' },
+            { min: '18:00', max: '24:00', label: '晚間' },
+        ]);
     });
 
     it('純前處理設定檔：只更新清洗設定，先前匯入的欄位設定保持不變', async () => {

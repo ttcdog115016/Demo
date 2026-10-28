@@ -127,7 +127,8 @@ describe('K-匿名 config.json 組裝', () => {
             resolveFallbackUiRole: () => 'Non-sensitive'
         }).k_anonymity as Record<string, unknown>;
         expect(config.generalization_hierarchies).toEqual({
-            就診時間: { levels: ['hour'], time_periods: [{ min: null, max: '12:00', label: '上午' }, { min: '12:00', max: '00:00', label: '下午' }] }
+            // ★ 2026-10-28：上界 1440（當天結束）送 "24:00"；先前送 "00:00" 會被後端以「min 必須小於 max」擋下
+            就診時間: { levels: ['hour'], time_periods: [{ min: null, max: '12:00', label: '上午' }, { min: '12:00', max: '24:00', label: '下午' }] }
         });
     });
 

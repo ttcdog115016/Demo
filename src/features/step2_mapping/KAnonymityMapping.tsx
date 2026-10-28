@@ -33,6 +33,7 @@ import { detectConfigPrivacyMode } from '../../utils/configModeDetect';
 import { importPreprocessFromConfig } from '../../utils/preprocessConfigImport';
 import { applyPreprocessImportToWorkspace, applyRiskImportToWorkspace } from './preprocessImportMessages';
 import { importRiskFromConfig } from '../../utils/riskConfigImport';
+import { buildBackendTimePeriod, isMinuteInTimePeriod, isEndOfDayUpperBound, MINUTES_PER_DAY } from '../../utils/timePeriodBounds';
 import { buildDatasetColumnNameSet, isFieldNameInDataset, findFieldsNotInDataset, findDatasetColumnsNotConfigured, countBlankFieldNames, describeFieldsNotInDatasetError, describeBlankFieldNamesError, normalizeDatasetColumnName } from '../../utils/datasetFieldConsistency';
 
 import { scaleFontSize } from '../../utils/fontScale';
@@ -134,17 +135,7 @@ const DEFAULT_GEN_STRATEGY_BY_TYPE: Record<string, string> = {
  */
 const resolveDefaultGenStrategyForType = (fieldTypeValue: string): string => DEFAULT_GEN_STRATEGY_BY_TYPE[fieldTypeValue] || 'prefix';
 
-/**
- * 函數名稱: formatMinutesOfDayAsHHMM
- * 函數功能: 將 TimePicker 內部使用的「當日第幾分鐘」整數，轉換為後端 time_periods 界線格式所需的
- *           "HH:MM" 字串（JSON 匯出、即時送出後端共用同一套轉換，避免兩處各自實作出現落差）。
- */
-const formatMinutesOfDayAsHHMM = (totalMinutesValue: number): string => {
-    const wrappedMinutesValue = ((Math.round(totalMinutesValue) % 1440) + 1440) % 1440;
-    const hourTextValue = String(Math.floor(wrappedMinutesValue / 60)).padStart(2, '0');
-    const minuteTextValue = String(wrappedMinutesValue % 60).padStart(2, '0');
-    return `${hourTextValue}:${minuteTextValue}`;
-};
+// ★ 2026-10-28：formatMinutesOfDayAsHHMM 移到 utils/timePeriodBounds.ts（time_periods 上界 24:00 修正，與 pipelineConfig 共用）
 
 /**
  * 函數名稱: parseHHMMToMinutesOfDay
@@ -332,11 +323,7 @@ const buildExportJSON = (fieldsList: FieldDef[], hierarchiesList: HierarchyTable
                 } else if (fieldItemRecord.genStrategy === 'time_range' && fieldItemRecord.customBins) {
                     temporalHierarchySpecValue = {
                         levels: ['hour'],
-                        time_periods: fieldItemRecord.customBins.map((binItemRecord) => ({
-                            min: binItemRecord.min === null ? null : formatMinutesOfDayAsHHMM(binItemRecord.min),
-                            max: binItemRecord.max === null ? null : formatMinutesOfDayAsHHMM(binItemRecord.max),
-                            label: binItemRecord.label
-                        }))
+                        time_periods: fieldItemRecord.customBins.map((binItemRecord) => buildBackendTimePeriod(binItemRecord as { min: number | null; max: number | null; label: string }))
                     };
                 }
                 if (temporalHierarchySpecValue) {
@@ -666,7 +653,11 @@ export default function KAnonymityMapping(): React.ReactElement
                     //   也一併擋掉會落入同一類「Step2 能過、Step4 才報錯」的其他缺漏（例如中間段
                     //   忘記填下限/上限、下限大於上限、兩段順序顛倒），讓使用者在這個畫面就能看到
                     //   明確指出是哪一個欄位、第幾段、什麼原因的錯誤訊息。
-                    const currentBinsListArray = fieldItemRecord.customBins || [];
+                    // ★ 2026-10-28：時間區間的上界 00:00（下界在其後）或 24:00 代表當天結束，以 1440 分鐘檢查（送出時為 "24:00"）
+                    const currentBinsListArray = (fieldItemRecord.customBins || []).map((binItemRecord) =>
+                        fieldItemRecord.genStrategy === 'time_range' && isEndOfDayUpperBound(binItemRecord.min, binItemRecord.max)
+                            ? { ...binItemRecord, max: MINUTES_PER_DAY }
+                            : binItemRecord);
 
                     if (currentBinsListArray.length === 0) {
                         validationErrorMessageString = `欄位 [${fieldItemRecord.name}] 尚未設定任何區間，請至「泛化階層對照」分頁新增至少一段並填寫顯示標籤。`;
@@ -875,7 +866,7 @@ export default function KAnonymityMapping(): React.ReactElement
                     if (timeOfDayMatchResultArray) {
                         const totalMinutesOfDayValue = parseInt(timeOfDayMatchResultArray[1], 10) * 60 + parseInt(timeOfDayMatchResultArray[2], 10);
                         const matchedTimeRangeItemRecord = fieldItemConfigRecord.customBins.find(
-                            (binItemRecord) => (binItemRecord.min === null || totalMinutesOfDayValue >= binItemRecord.min) && (binItemRecord.max === null || totalMinutesOfDayValue < binItemRecord.max)
+                            (binItemRecord) => isMinuteInTimePeriod(totalMinutesOfDayValue, binItemRecord as { min: number | null; max: number | null })
                         );
                         if (matchedTimeRangeItemRecord) return matchedTimeRangeItemRecord.label || parsedStringValue;
                     }

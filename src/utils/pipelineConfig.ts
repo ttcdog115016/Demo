@@ -7,6 +7,7 @@
 import { mapOutOfBoundsStrategyToBackend, alignDpBoundsToMinimumUnit, alignDpDateTimeBoundsToNoiseGrid, resolveIsDateTimeDpField, resolveDpDatetimeNoiseUnit, DP_DATETIME_NOISE_UNIT_MILLISECONDS, parseDpDateTimeBoundTimestamp } from './dpFieldHelpers';
 import { TEMPORAL_GRANULARITY_UNITS } from './temporalGranularity';
 import { buildQiLevelValue } from './kAnonymityConfigImport';
+import { buildBackendTimePeriod } from './timePeriodBounds';
 import { buildPreprocessBlock } from './preprocessConfig';
 import type { PreprocessingRule, MissingValueRule } from '../store/useWorkspaceStore';
 
@@ -217,20 +218,10 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
                         { min: number | null; max: number | null; label: string }[] | undefined;
 
                     if (Array.isArray(rawTimeRangeBinsList) && rawTimeRangeBinsList.length > 0) {
-                        const formatMinutesOfDayAsHHMM = (totalMinutesValue: number): string => {
-                            const wrappedMinutesValue = ((Math.round(totalMinutesValue) % 1440) + 1440) % 1440;
-                            const hourTextValue = String(Math.floor(wrappedMinutesValue / 60)).padStart(2, '0');
-                            const minuteTextValue = String(wrappedMinutesValue % 60).padStart(2, '0');
-                            return `${hourTextValue}:${minuteTextValue}`;
-                        };
-
+                        // ★ 2026-10-28：上界為當天結束（24:00，或選成 00:00 而下界在其後）時送 "24:00"，見 utils/timePeriodBounds.ts
                         generalizationHierarchiesMap[cleanName] = {
                             levels: ['hour'],
-                            time_periods: rawTimeRangeBinsList.map((binItemRecord) => ({
-                                min: binItemRecord.min === null ? null : formatMinutesOfDayAsHHMM(binItemRecord.min),
-                                max: binItemRecord.max === null ? null : formatMinutesOfDayAsHHMM(binItemRecord.max),
-                                label: binItemRecord.label
-                            }))
+                            time_periods: rawTimeRangeBinsList.map(buildBackendTimePeriod)
                         };
                     }
                 }
