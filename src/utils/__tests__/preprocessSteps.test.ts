@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyPreprocessSteps, applyPreprocessStep } from '../preprocessSteps';
+import { applyPreprocessSteps, applyPreprocessStep, SERVER_SALT_HASH_PREVIEW_TEXT } from '../preprocessSteps';
 import { sha3Hex } from '../sha3';
 
 // ★ 2026-10-27：預覽規則改為與後端 /api/v1/preprocess 相同（app/engines/preprocess/actions/*.py）
@@ -43,16 +43,21 @@ describe('資料預先處理預覽', () => {
     });
 
     it('雜湊：三種演算法與後端相同（預覽截斷至 16 碼）；舊選項 SHA512 視為 SHA3-512', () => {
-        const sha256Preview = applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256' } }]);
+        // ★ 2026-10-28：以自訂鹽值驗證演算法（伺服器預設鹽值不顯示雜湊值）
+        const fixedSalt = { seedMode: 'fixed', seedValue: 'k' };
+        const sha256Preview = applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256', ...fixedSalt } }]);
         expect(sha256Preview).toMatch(/^[0-9a-f]{16}\.\.\.$/);
-        expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'SHA256' } }])).toBe(sha256Preview);
-        expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha3-256' } }])).toBe(`${sha3Hex('A123', 256).slice(0, 16)}...`);
-        expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'SHA512' } }])).toBe(`${sha3Hex('A123', 512).slice(0, 16)}...`);
+        expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'SHA256', ...fixedSalt } }])).toBe(sha256Preview);
+        expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha3-256', ...fixedSalt } }])).toBe(`${sha3Hex('A123', 256, 'k').slice(0, 16)}...`);
+        expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'SHA512', ...fixedSalt } }])).toBe(`${sha3Hex('A123', 512, 'k').slice(0, 16)}...`);
         expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha3-512', seedMode: 'fixed', seedValue: 'k' } }])).toBe(`${sha3Hex('A123', 512, 'k').slice(0, 16)}...`);
     });
 
     it('雜湊加鹽：自訂鹽值以 HMAC 計算，不同鹽值結果不同；系統隨機鹽值同一次操作內結果一致', () => {
-        const unsaltedPreview = applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256', seedMode: 'none' } }]);
+        // ★ 2026-10-28：伺服器預設鹽值（none／未指定）只顯示說明文字
+        expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256', seedMode: 'none' } }])).toBe(SERVER_SALT_HASH_PREVIEW_TEXT);
+        expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256' } }])).toBe(SERVER_SALT_HASH_PREVIEW_TEXT);
+        const unsaltedPreview = SERVER_SALT_HASH_PREVIEW_TEXT;
         const saltedPreviewA = applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256', seedMode: 'fixed', seedValue: 'salt-A' } }]);
         const saltedPreviewB = applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256', seedMode: 'fixed', seedValue: 'salt-B' } }]);
         expect(saltedPreviewA).not.toBe(unsaltedPreview);

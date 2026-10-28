@@ -14,6 +14,11 @@ import { normalizePreprocessHashAlgorithm, PREPROCESS_BOOLEAN_TRUE_VALUES, PREPR
 
 const DEFAULT_PREVIEW_SYMBOL = '-';
 const HASH_PREVIEW_LENGTH = 16;
+/**
+ * ★ 2026-10-28：「伺服器預設鹽值」的雜湊預覽改顯示說明文字。伺服器鹽值（.env OPEN_PETS_DEFAULT_SALT）不應、也不會傳到瀏覽器，
+ *   先前以不加鹽計算的預覽與實際輸出不同，容易誤導；改為只標示處理方式（比照 K-匿名識別欄位雜湊的預覽）。
+ */
+export const SERVER_SALT_HASH_PREVIEW_TEXT = '（雜湊後的代碼，依伺服器鹽值計算）';
 
 /**
  * ★ 2026-10-02：「系統隨機鹽值」——本次頁面載入時以密碼學亂數產生一次（32 bytes），之後同一個值在本次操作內
@@ -179,7 +184,8 @@ export const applyPreprocessStep = (cellValueStr: string, stepItemRecord: Prepro
                 let saltKeyStr = '';
                 if (seedModeStr === 'fixed') saltKeyStr = String(actionParamsDict.seedValue || '');
                 else if (seedModeStr === 'random' || seedModeStr === 'timestamp') saltKeyStr = SESSION_RANDOM_HASH_SALT;
-                // 'none'（使用伺服器預設鹽值）：前端不知道伺服器的鹽值，預覽以不加鹽計算
+                // 'none'（使用伺服器預設鹽值）：前端拿不到伺服器鹽值，不算假的雜湊值，只標示處理方式
+                else return SERVER_SALT_HASH_PREVIEW_TEXT;
 
                 let calculatedHashResult = '';
                 if (algorithmStr === 'sha3-256') calculatedHashResult = sha3Hex(cellValueStr, 256, saltKeyStr || null);

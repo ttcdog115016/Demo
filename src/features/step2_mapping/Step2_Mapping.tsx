@@ -299,7 +299,7 @@ export default function Step2_Mapping(): React.ReactElement
                         { value: 'random', label: translate('step2.hash_seed_random', '執行時間鹽值（每次執行不同）') }
                     ],
                     optionHintMap: {
-                        none: translate('step2.hint_hash_seed_none', '效果：直接對原始值雜湊，同一個值永遠得到相同結果。適用情境：需跨批次比對同一個值（如流水號、代碼）時使用；但對手機、身分證字號等值域較小的欄位，仍有被查表反推的風險。'),
+                        none: translate('step2.hint_hash_seed_none', '效果：使用伺服器設定的預設鹽值（部署時自動產生並固定）。同一台伺服器上同一個值永遠得到相同結果，可跨批次比對，外部也無法查表反推。鹽值只存在伺服器上，預覽不顯示雜湊值，只標示處理方式。'),
                         fixed: translate('step2.hint_hash_seed_fixed', '效果：以您輸入的鹽值一起計算雜湊，同一個鹽值下，相同的值會得到相同結果。適用情境：需要「跨批次比對」又要「防止被查表反推」時使用；鹽值建議至少 16 個字元並妥善保管，一旦外流就會失去保護效果。'),
                         random: translate('step2.hint_hash_seed_random', '效果：以本次執行的時間（精確到微秒）當鹽值，同一次執行內相同的值結果相同，下次執行即不同、不會保存。適用情境：只需遮蔽本批資料、不需要跨批次比對時使用。注意：鹽值是執行時間，知道大約執行時間的人可縮小猜測範圍，防查表能力不如「伺服器預設鹽值」。')
                     }
