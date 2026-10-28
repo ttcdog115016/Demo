@@ -473,10 +473,10 @@ export default function Step4_Result(): React.ReactElement
             generalizationTechKey: role === 'Quasi-identifier' ? resolveQiGeneralizationTechKey(columnNameString) : undefined,
             isDpNoised: (currentDpFieldsListArray || []).some((field: DpStoreField) => field.enabled && String(field.fieldName || '').replace(/^[\uFEFF\u200B]+/, '').trim() === cleanColName)
         });
-        // 「去識別化」（blurred）的欄位附一個處理後的範例值（取自去識別化結果預覽），讓使用者看到實際長相
-        return treatmentItem.bucket === 'blurred'
-            ? { ...treatmentItem, exampleText: pickExampleValue(realMaskedDataRows as Record<string, unknown>[], columnNameString) }
-            : treatmentItem;
+        // 每個欄位附一個處理後的範例值（取自去識別化結果預覽），讓使用者看到實際長相。
+        // ★ 2026-10-28 使用者要求：「保留原值」等欄位也顯示實際值（原本只有「去識別化」欄位有範例，其餘顯示「—」）；
+        //   已移除的欄位在處理後資料中不存在，取不到值時仍顯示「—」。
+        return { ...treatmentItem, exampleText: pickExampleValue(realMaskedDataRows as Record<string, unknown>[], columnNameString) };
     });
     const isCellSuppressionUnitStatus = kReport?.suppression_unit === 'cell';
     // ★ 2026-10-14 使用者決定：差分隱私不顯示可用性等級（只用 ε 合計判斷不準，後端也沒有可用性指標）。
