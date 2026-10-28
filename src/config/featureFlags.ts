@@ -9,3 +9,12 @@
  *   後端補上 password_changed_at 與過期判斷後改回 true，並把過期判斷接到登入流程（Login.tsx）。
  */
 export const SHOW_PASSWORD_EXPIRY_POLICY = false;
+
+/**
+ * ★ 2026-10-28：單機版執行檔（packaging/build_exe.ps1 以 `vite build --mode desktop` 建置，讀 .env.desktop）。
+ *   單機版：不顯示 Demo 測試帳號（帳號由使用者第一次啟動時自建）、API 錯誤不自動送 Google 表單（資料不離開本機）。
+ *   一般 Demo 建置（npm run build）不受影響。
+ */
+export const IS_DESKTOP_BUILD = import.meta.env.VITE_BUILD_TARGET === 'desktop';
+export const SHOW_DEMO_ACCOUNTS = !IS_DESKTOP_BUILD;
+export const ENABLE_REMOTE_ERROR_REPORT = !IS_DESKTOP_BUILD;

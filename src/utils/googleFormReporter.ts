@@ -27,6 +27,7 @@
  * ============================================================================
  */
 import type { ApiErrorLogEntry } from './apiErrorLogger';
+import { ENABLE_REMOTE_ERROR_REPORT } from '../config/featureFlags';
 
 // ★ 依使用者提供之表單網址與欄位 entry ID 設定，變更表單時需同步更新
 const GOOGLE_FORM_RESPONSE_URL =
@@ -88,6 +89,8 @@ const shouldSuppressAsDuplicateReport = (logEntryObj: ApiErrorLogEntry): boolean
  *           不拋出例外、不影響任何其他錯誤處理流程。
  */
 export const reportApiErrorToGoogleForm = (logEntryObj: ApiErrorLogEntry): void => {
+    // ★ 2026-10-28：單機版不對外傳送（見 featureFlags.ENABLE_REMOTE_ERROR_REPORT）
+    if (!ENABLE_REMOTE_ERROR_REPORT) return;
     if (shouldSuppressAsDuplicateReport(logEntryObj)) return;
 
     // ★ 新增：發生時間欄位。logEntryObj.timestamp 是 recordApiError 寫入當下產生的 ISO

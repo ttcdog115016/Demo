@@ -21,6 +21,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { logSystemEvent } from '../../store/useSystemLogStore';
 import { memberLogin, toMemberApiError, isMemberServiceUnavailable, clearMemberSession } from '../../api/authApi';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { SHOW_DEMO_ACCOUNTS } from '../../config/featureFlags';
 
 import { scaleFontSize } from '../../utils/fontScale';
 /**
@@ -238,28 +239,30 @@ export default function Login(): React.ReactElement
 						</p>
 					</div>
 
-					{/* Demo 測試帳號提示區 (點擊可自動填入) */}
-					<Alert
-						message={<span style={{ fontSize: scaleFontSize(13), fontWeight: 'bold' }}>{isChineseLanguageEnabled ? 'Demo 測試帳號 (點擊自動填入)' : 'Demo Account (Click to fill)'}</span>}
-						description={
-							<div style={{ fontSize: scaleFontSize(12), marginTop: 4 }}>
-								{(Object.keys(DEMO_ACCOUNTS) as (keyof typeof DEMO_ACCOUNTS)[]).map((demoEmailKey) => (
-									<div key={demoEmailKey} onClick={() => fillDemoAccount(demoEmailKey)} style={{ cursor: 'pointer', color: '#10b981' }}>
-										{DEMO_ACCOUNTS[demoEmailKey].label}: <b>{demoEmailKey}</b> / <b>{DEMO_ACCOUNTS[demoEmailKey].password}</b>
-									</div>
-								))}
-							</div>
-						}
-						type="success"
-						showIcon
-						style={
-							{ 
-								marginBottom: 24, 
-								backgroundColor: isDarkModeActive ? 'rgba(16, 185, 129, 0.1)' : '#d1fae5', 
-								borderColor: isDarkModeActive ? 'rgba(16, 185, 129, 0.3)' : '#a7f3d0' 
+					{/* Demo 測試帳號提示區 (點擊可自動填入)；★ 2026-10-28 單機版不顯示 */}
+					{SHOW_DEMO_ACCOUNTS && (
+						<Alert
+							message={<span style={{ fontSize: scaleFontSize(13), fontWeight: 'bold' }}>{isChineseLanguageEnabled ? 'Demo 測試帳號 (點擊自動填入)' : 'Demo Account (Click to fill)'}</span>}
+							description={
+								<div style={{ fontSize: scaleFontSize(12), marginTop: 4 }}>
+									{(Object.keys(DEMO_ACCOUNTS) as (keyof typeof DEMO_ACCOUNTS)[]).map((demoEmailKey) => (
+										<div key={demoEmailKey} onClick={() => fillDemoAccount(demoEmailKey)} style={{ cursor: 'pointer', color: '#10b981' }}>
+											{DEMO_ACCOUNTS[demoEmailKey].label}: <b>{demoEmailKey}</b> / <b>{DEMO_ACCOUNTS[demoEmailKey].password}</b>
+										</div>
+									))}
+								</div>
 							}
-						}
-					/>
+							type="success"
+							showIcon
+							style={
+								{ 
+									marginBottom: 24, 
+									backgroundColor: isDarkModeActive ? 'rgba(16, 185, 129, 0.1)' : '#d1fae5', 
+									borderColor: isDarkModeActive ? 'rgba(16, 185, 129, 0.3)' : '#a7f3d0' 
+								}
+							}
+						/>
+					)}
 
 					{/* 表單區塊 */}
 					<Form

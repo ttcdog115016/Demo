@@ -29,3 +29,7 @@ dist-ssr
 # 本機工具設定與待刪除暫存區
 .claude/
 _to_delete/
+
+# 單機版打包產出
+packaging/build/
+packaging/dist/
