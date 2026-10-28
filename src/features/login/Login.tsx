@@ -3,6 +3,8 @@
  * 檔案名稱 (File): Login.tsx
  * 模組功能 (Description): 使用者登入驗證頁面組件 (帳密登入，經後端會員系統 POST /api/v1/auth/login 驗證)
  * ★ 2026-10-27：串接後端會員系統；移除 Demo 帳號提示、一鍵快速登入與「記住我」（refresh token 存於 sessionStorage，關閉分頁即需重新登入）。
+ * ★ 2026-10-28：加回「一鍵快速登入（測試用）」供外部人員測試——以 .env.local 設定的測試帳號經後端真實登入，
+ *   未設定時不顯示按鈕。
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之識別字)
  * ============================================================================
@@ -26,6 +28,17 @@ import { scaleFontSize } from '../../utils/fontScale';
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  */
 const PAGE_NAVIGATION_DELAY_MS = 500;
+
+/**
+ * ★ 2026-10-28：一鍵快速登入（測試用）的帳密，於建置時由 .env.local 讀入：
+ *   VITE_QUICK_LOGIN_USERNAME=<後端已建立的測試帳號>
+ *   VITE_QUICK_LOGIN_PASSWORD=<該帳號密碼>
+ * 兩者都有值才顯示按鈕；仍經後端 POST /api/v1/auth/login 驗證，角色、停用、鎖定規則與一般登入相同。
+ * 注意：帳密會被打包進前端程式（任何人都看得到），請只用權限為 User 的測試專用帳號，測試結束後於後端停用或刪除。
+ */
+const QUICK_LOGIN_USERNAME = String(import.meta.env.VITE_QUICK_LOGIN_USERNAME ?? '').trim();
+const QUICK_LOGIN_PASSWORD = String(import.meta.env.VITE_QUICK_LOGIN_PASSWORD ?? '');
+const IS_QUICK_LOGIN_ENABLED = QUICK_LOGIN_USERNAME !== '' && QUICK_LOGIN_PASSWORD !== '';
 
 /**
  * 登入表單欄位數值介面
@@ -155,6 +168,14 @@ export default function Login(): React.ReactElement
 		}
 	};
 
+	/**
+	 * 函數名稱: handleQuickLogin
+	 * 函數功能: 一鍵快速登入（測試用）：以 .env.local 設定的測試帳號走與一般登入相同的後端驗證流程。
+	 * 返回值 (Return): Promise<void>
+	 */
+	const handleQuickLogin = (): Promise<void> =>
+		handleLogin({ email: QUICK_LOGIN_USERNAME, password: QUICK_LOGIN_PASSWORD });
+
 	return (
 		<ConfigProvider 
 			theme={
@@ -267,7 +288,29 @@ export default function Login(): React.ReactElement
 							</Button>
 						</Form.Item>
 
-						{/* ★ 2026-10-27：移除「一鍵快速登入（測試用）」，一律經後端帳密驗證 */}
+						{/* ★ 2026-10-28：加回快速登入按鈕（設定 VITE_QUICK_LOGIN_USERNAME／PASSWORD 才顯示），仍經後端驗證 */}
+						{IS_QUICK_LOGIN_ENABLED && (
+							<Form.Item style={{ marginTop: 16, marginBottom: 0 }}>
+								<Button 
+									type="default" 
+									block 
+									disabled={isSubmitting}
+									onClick={() => { void handleQuickLogin(); }}  
+									style={
+										{ 
+											height: 44, 
+											borderRadius: 8, 
+											borderColor: '#10b981', 
+											color: '#10b981', 
+											background: 'transparent',
+											fontWeight: 'bold'
+										}
+									}
+								>
+									{translate('login.quickLoginBtn')}
+								</Button>
+							</Form.Item>
+						)}
 					</Form>
 
 					{/* 底部提示 */}
