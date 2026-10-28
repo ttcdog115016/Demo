@@ -22,7 +22,7 @@ const { Text } = Typography;
 
 /** 實驗參數的畫面標籤與說明（後端 2.0.0 設定檔說明第六節） */
 const RISK_ATTACK_PARAM_LABELS: Record<keyof RiskAttackParams, { label: string; hint: string; step: number }> = {
-    n_iter: { label: '指認性攻擊迭代次數', hint: '指認性攻擊嘗試的次數。越多結果越穩定，但越慢（後端預設 500，本工具預設 50）。', step: 50 },
+    n_iter: { label: '指認性攻擊迭代次數', hint: '指認性攻擊嘗試的次數。越多結果越穩定，但越慢（預設 500）。', step: 50 },
     ctrl_ratio: { label: '控制組比例', hint: '從原始資料切出多少比例當控制組，用來扣除「亂猜也猜得中」的基準。須小於 1。', step: 0.05 },
     seed: { label: '亂數種子', hint: '固定種子時，同一組設定每次評估的結果相同，可重現。', step: 1 },
     n_subset: { label: '連結性評估樣本數', hint: '連結性攻擊抽樣評估的筆數。', step: 100 },

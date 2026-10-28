@@ -111,7 +111,8 @@ describe('qi_generalization_levels 層級範圍 [最小, 最大]', () => {
         }
 
         const exportedConfig = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: Record<string, Record<string, unknown>> };
-        expect(exportedConfig.k_anonymity.qi_generalization_levels).toEqual({ 地區: 2, 職業: [1, 3], 生日: 5 });
+        // ★ 2026-10-28：時間粒度加回「秒」，「年」為層級 6
+        expect(exportedConfig.k_anonymity.qi_generalization_levels).toEqual({ 地區: 2, 職業: [1, 3], 生日: 6 });
     });
 
     it('正規化與組回：陣列取最小為實際層級、最大為上限；上下限相同或無上限時為單一整數', () => {
@@ -201,7 +202,7 @@ describe('匯入設定檔後再「套用系統推薦設定」：Step3 還原為�
         cleanup();
         expect(useWorkspaceStore.getState()).toMatchObject({
             kValue: 3, lValue: 2, tValue: 0.15, enableLDiversity: false, enableTCloseness: false,
-            maxSuppression: 5, suppressionMethod: 'row_suppression', limitExceededAction: 'stop_and_error', cellFillValuesByColumn: {}
+            maxSuppression: 20, suppressionMethod: 'row_suppression', limitExceededAction: 'stop_and_error', cellFillValuesByColumn: {}
         });
 
         const { getByTestId, container } = render(<KAnonymityRules />);
@@ -209,7 +210,7 @@ describe('匯入設定檔後再「套用系統推薦設定」：Step3 還原為�
         expect(container.querySelector('[data-testid="kanon-plain-advanced"] [role="button"]')?.getAttribute('aria-expanded')).toBe('false');
 
         const exportedConfig = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: Record<string, unknown> };
-        expect(exportedConfig.k_anonymity).toMatchObject({ k: 3, suppression_limit_percent: 5, limit_exceeded_action: 'stop_and_error', suppression_method: 'row_suppression' });
+        expect(exportedConfig.k_anonymity).toMatchObject({ k: 3, suppression_limit_percent: 20, limit_exceeded_action: 'stop_and_error', suppression_method: 'row_suppression' });
         expect(exportedConfig.k_anonymity).not.toHaveProperty('l');
         expect(exportedConfig.k_anonymity).not.toHaveProperty('t');
 

@@ -51,6 +51,8 @@ export const SHOW_LEVEL_RANGE_TRIAL = false;
  */
 const DEFAULT_PREPROCESS_SYMBOL = '-';
 const DEFAULT_MASK_KEEP_CHARS = 2;
+// ★ 2026-10-28：部分遮蔽（partial）保留字數預設，與後端 keep_chars 預設一致
+const PARTIAL_MASK_DEFAULT_KEEP_CHARS = 3;
 const DEFAULT_GENERALIZATION_PARAM = 10;
 const DEFAULT_MAX_GENERALIZATION_LEVEL = 2;
 const MIN_HIERARCHY_COLUMN_COUNT = 2;
@@ -92,13 +94,14 @@ const STRING_PREFIX_STRATEGY_DEFAULT_LEVEL = 4;
 const BASE_DEFAULT_K_ANONYMITY_VALUE = 3;
 const BASE_DEFAULT_L_DIVERSITY_VALUE = 2;
 const BASE_DEFAULT_T_CLOSENESS_VALUE = 0.15;
-const BASE_DEFAULT_SUPPRESSION_LIMIT = 10;
+const BASE_DEFAULT_SUPPRESSION_LIMIT = 20; // ★ 2026-10-28 與後端預設一致
 
 // JSON 匯入時，"strategy" 欄位之同義字正規化對照表 (符合規範 e) 避免使用不易理解之魔術字串)
 const MASK_STRATEGY_ALIAS_MAP: Record<string, string> = {
     'none': 'none',
-    'keep': 'keep', 'keep_prefix': 'keep',
-    'full': 'full', 'full_mask': 'full', 'mask': 'full',
+    // ★ 2026-10-28：後端 v2.0.0 的 mask（全遮蔽）／partial（部分遮蔽）；舊版 full／keep 名稱一併對應
+    'keep': 'partial', 'keep_prefix': 'partial', 'partial': 'partial',
+    'full': 'mask', 'full_mask': 'mask', 'mask': 'mask',
     'remove': 'remove', 'drop': 'remove',
     'hash': 'hash',
     'clear': 'clear',
@@ -110,12 +113,13 @@ const MASK_STRATEGY_ALIAS_MAP: Record<string, string> = {
 const VALID_MASK_STRATEGIES_BY_ROLE: Record<string, string[]> = {
     'Identifier': ['remove', 'hash', 'clear'],
     'Sensitive': ['none', 'remove'],
-    'Non-sensitive': ['none', 'remove'],
+    // ★ 2026-10-28（TTC Wei 決議：只開放給非敏感欄位）：全遮蔽／部分遮蔽／雜湊／清空
+    'Non-sensitive': ['none', 'remove', 'mask', 'partial', 'hash', 'clear'],
 };
 
 // 依隱私角色分類之預設遮蔽策略 (Open-PETs API：identifier 為 remove，其餘為 none)
 const DEFAULT_MASK_STRATEGY_BY_ROLE: Record<string, string> = {
-    'Identifier': 'remove',
+    'Identifier': 'hash', // ★ 2026-10-28 與後端預設一致（identifier 未填 strategy 為 hash），原為 remove
     'Sensitive': 'none',
     'Non-sensitive': 'none',
 };
@@ -127,7 +131,7 @@ const DEFAULT_GEN_STRATEGY_BY_TYPE: Record<string, string> = {
     categorical: 'tree',
 };
 
-// 時間型間接識別欄位「時間粒度」策略之泛化層級：層級 1~5 依序對應 分/時/日/月/年（2026-10-01 移除「秒」），
+// 時間型間接識別欄位「時間粒度」策略之泛化層級：層級 1~6 依序對應 秒/分/時/日/月/年（2026-10-28 加回「秒」），
 // 預設為「月」。匯入時依設定檔自己的 levels 清單換算，見 utils/temporalGranularity.ts。
 
 /**
@@ -207,6 +211,8 @@ interface FieldDef
     maskStrategy: string;  
     maskKeepChars: number; 
     maskChar: string;      
+    maskLength?: number;              // ★ 2026-10-28：全遮蔽（mask）固定輸出長度；未設或 0＝沿用原值長度
+    maskMode?: 'prefix' | 'suffix';   // ★ 2026-10-28：部分遮蔽（partial）保留前綴或後綴
     hashType: string;      
     genStrategy: string;
     genParam: number;
@@ -832,6 +838,24 @@ export default function KAnonymityMapping(): React.ReactElement
 
         if (fieldItemConfigRecord.role !== 'Quasi-identifier') {
             if (fieldItemConfigRecord.maskStrategy === 'drop' || fieldItemConfigRecord.maskStrategy === 'remove') return translate('step2.removed');
+            // ★ 2026-10-28：非敏感欄位遮蔽預覽（與後端 strategies/masking.py apply_masking 相同規則）
+            if (fieldItemConfigRecord.role === 'Non-sensitive') {
+                const maskCharText = fieldItemConfigRecord.maskChar || '*';
+                if (fieldItemConfigRecord.maskStrategy === 'mask') {
+                    const fixedLength = Number(fieldItemConfigRecord.maskLength) > 0 ? Number(fieldItemConfigRecord.maskLength) : Array.from(parsedStringValue).length;
+                    return maskCharText.repeat(fixedLength);
+                }
+                if (fieldItemConfigRecord.maskStrategy === 'partial') {
+                    const characters = Array.from(parsedStringValue);
+                    const keepCount = Math.max(0, Math.floor(Number(fieldItemConfigRecord.maskKeepChars) || 0));
+                    if (characters.length <= keepCount) return maskCharText.repeat(characters.length);
+                    return fieldItemConfigRecord.maskMode === 'suffix'
+                        ? maskCharText.repeat(characters.length - keepCount) + characters.slice(characters.length - keepCount).join('')
+                        : characters.slice(0, keepCount).join('') + maskCharText.repeat(characters.length - keepCount);
+                }
+                if (fieldItemConfigRecord.maskStrategy === 'hash') return translate('step2.preview_hashed', '（雜湊後的代碼）');
+                if (fieldItemConfigRecord.maskStrategy === 'clear') return translate('step2.preview_cleared', '（清空）');
+            }
             if (fieldItemConfigRecord.role === 'Identifier') {
                 // ★ 2026-10-28：雜湊值由後端以伺服器鹽值計算，畫面無法預先算出，只標示處理方式
                 if (fieldItemConfigRecord.maskStrategy === 'hash') return translate('step2.preview_hashed', '（雜湊後的代碼）');
@@ -864,7 +888,7 @@ export default function KAnonymityMapping(): React.ReactElement
             } else if (fieldItemConfigRecord.type === 'temporal') {
                 if (fieldItemConfigRecord.genStrategy === 'time_rounding') {
                     // 時間粒度（分/時/日/月/年）；假設欄位格式為 "YYYY-MM-DD HH:MM:SS"（或其可辨識前綴），僅作即時預覽用途。
-                    const previewPrefixLengthByUnit: Record<string, number> = { minute: 16, hour: 13, day: 10, month: 7, year: 4 };
+                    const previewPrefixLengthByUnit: Record<string, number> = { second: 19, minute: 16, hour: 13, day: 10, month: 7, year: 4 };
                     const previewUnitName = temporalUnitOfLevel(fieldItemConfigRecord.genMaxLevel);
                     if (previewUnitName) return parsedStringValue.substring(0, previewPrefixLengthByUnit[previewUnitName]);
                 } else if (fieldItemConfigRecord.genStrategy === 'time_range' && fieldItemConfigRecord.customBins) {
@@ -1247,8 +1271,12 @@ export default function KAnonymityMapping(): React.ReactElement
                         type: mappedFieldTypeValue,
                         role: mappedPrivacyRoleValue,
                         maskStrategy: calculatedMaskingStrategyValue,
-                        maskKeepChars: currentMaskingConfig?.keep_chars ?? DEFAULT_MASK_KEEP_CHARS,
-                        maskChar: currentMaskingConfig?.mask_char ?? '*',
+                        // ★ 2026-10-28：後端格式的遮蔽參數寫在 columns.<欄> 上（keep_chars／mask_char／mask_mode／mask_length）
+                        maskKeepChars: currentMaskingConfig?.keep_chars ?? (currentAttributeConfig as { keep_chars?: number }).keep_chars
+                            ?? (calculatedMaskingStrategyValue === 'partial' ? PARTIAL_MASK_DEFAULT_KEEP_CHARS : DEFAULT_MASK_KEEP_CHARS),
+                        maskChar: currentMaskingConfig?.mask_char ?? (currentAttributeConfig as { mask_char?: string }).mask_char ?? '*',
+                        ...(typeof (currentAttributeConfig as { mask_length?: unknown }).mask_length === 'number' ? { maskLength: (currentAttributeConfig as { mask_length: number }).mask_length } : {}),
+                        ...(mappedPrivacyRoleValue !== 'Quasi-identifier' && (currentAttributeConfig as { mask_mode?: unknown }).mask_mode === 'suffix' ? { maskMode: 'suffix' as const } : {}),
                         hashType: currentMaskingConfig?.hash_type || 'SHA256',
                         genStrategy: calculatedGeneralizationStrategyValue,
                         genParam: calculatedGeneralizationParamValue,
@@ -1551,6 +1579,12 @@ export default function KAnonymityMapping(): React.ReactElement
                         //   切換角色時一律套用該角色預設策略，避免 identifier 卡在 UI 未提供之 'none' 選項
                         updatedFieldObjectItem.maskStrategy = DEFAULT_MASK_STRATEGY_BY_ROLE[updatedFieldObjectItem.role] || 'none';
                     }
+                }
+
+                // ★ 2026-10-28：切換為部分遮蔽時，保留字數帶後端預設 3、預設保留前綴
+                if (targetAttributeKeyName === 'maskStrategy' && normalizedAttributeValueData === 'partial') {
+                    updatedFieldObjectItem.maskKeepChars = PARTIAL_MASK_DEFAULT_KEEP_CHARS;
+                    updatedFieldObjectItem.maskMode = updatedFieldObjectItem.maskMode ?? 'prefix';
                 }
 
                 if (updatedFieldObjectItem.type === 'numeric' && updatedFieldObjectItem.genStrategy === 'rounding') {
@@ -1865,6 +1899,17 @@ export default function KAnonymityMapping(): React.ReactElement
                         : [
                             { value: 'none', label: strategyOptionLabel(translate('step2.opt_keep_original'), translate('step2.opt_keep_original_tooltip', '不做任何處理，維持原始內容。')) },
                             { value: 'remove', label: strategyOptionLabel(translate('step2.opt_drop'), translate('step2.opt_drop_tooltip', '把這個欄位完全刪除，不會出現在輸出資料中。')) },
+                            // ★ 2026-10-28：非敏感欄位新增全遮蔽／部分遮蔽／雜湊／清空（敏感欄位維持不處理／刪除，避免 l/t 與風險評估失去意義）
+                            ...(rowRecordItem.role === 'Non-sensitive'
+                                ? [
+                                    ...(rowRecordItem.type !== 'temporal'
+                                        ? [{ value: 'mask', label: strategyOptionLabel(translate('step2.opt_mask_full', '全遮蔽'), translate('step2.opt_mask_full_tooltip', '整個值換成遮蔽字元（例如 ****）。可指定固定長度，避免從長度看出原值。日期欄位不適用。')) }]
+                                        : []),
+                                    { value: 'partial', label: strategyOptionLabel(translate('step2.opt_mask_partial', '部分遮蔽'), translate('step2.opt_mask_partial_tooltip', '只保留開頭或結尾幾個字，其餘換成遮蔽字元（例如 091*******）。')) },
+                                    { value: 'hash', label: strategyOptionLabel(translate('step2.opt_identifier_hash', '雜湊（假名化）'), translate('step2.opt_identifier_hash_tooltip', '把每個值換成一串固定長度的代碼：同一個值永遠得到同一個代碼，可用來串接或計數，但看不出原值。')) },
+                                    { value: 'clear', label: strategyOptionLabel(translate('step2.opt_identifier_clear', '清空（保留欄位）'), translate('step2.opt_identifier_clear_tooltip', '把值全部清空，但欄位本身保留。適用於下游資料表欄位固定、少一欄就無法匯入的情況。')) },
+                                ]
+                                : []),
                         ];
 
                     const maskStrategySelect = <Select value={rowRecordItem.maskStrategy} onChange={(dropdownSelectedValue) => handleFieldChange(rowRecordItem.id, 'maskStrategy', dropdownSelectedValue)} style={{ width: '100%' }} options={maskStrategyOptionList} />;
@@ -1886,6 +1931,48 @@ export default function KAnonymityMapping(): React.ReactElement
                                         ]}
                                     />
                                 </Tooltip>
+                            </Space>
+                        );
+                    }
+                    // ★ 2026-10-28：全遮蔽可指定固定長度；部分遮蔽指定保留前／後幾個字
+                    if (rowRecordItem.role === 'Non-sensitive' && rowRecordItem.maskStrategy === 'mask') {
+                        return (
+                            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                {maskStrategySelect}
+                                <InputNumber
+                                    size="small" min={0} precision={0} style={{ width: '100%' }}
+                                    data-testid="kanon-mask-length"
+                                    addonBefore={translate('step2.mask_length_label', '固定長度')}
+                                    placeholder={translate('step2.mask_length_placeholder', '同原值長度')}
+                                    value={Number(rowRecordItem.maskLength) > 0 ? Number(rowRecordItem.maskLength) : null}
+                                    onChange={(lengthValue) => handleFieldChange(rowRecordItem.id, 'maskLength', lengthValue && lengthValue > 0 ? lengthValue : 0)}
+                                />
+                            </Space>
+                        );
+                    }
+                    if (rowRecordItem.role === 'Non-sensitive' && rowRecordItem.maskStrategy === 'partial') {
+                        return (
+                            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                {maskStrategySelect}
+                                <Space.Compact style={{ width: '100%' }}>
+                                    <Select
+                                        size="small" style={{ width: '50%' }}
+                                        data-testid="kanon-partial-mode"
+                                        value={rowRecordItem.maskMode === 'suffix' ? 'suffix' : 'prefix'}
+                                        onChange={(modeValue) => handleFieldChange(rowRecordItem.id, 'maskMode', modeValue)}
+                                        options={[
+                                            { value: 'prefix', label: translate('step2.partial_keep_prefix', '保留開頭') },
+                                            { value: 'suffix', label: translate('step2.partial_keep_suffix', '保留結尾') },
+                                        ]}
+                                    />
+                                    <InputNumber
+                                        size="small" min={0} precision={0} style={{ width: '50%' }}
+                                        data-testid="kanon-partial-keep"
+                                        addonAfter={translate('step2.partial_keep_unit', '字')}
+                                        value={Number(rowRecordItem.maskKeepChars) || 0}
+                                        onChange={(keepValue) => handleFieldChange(rowRecordItem.id, 'maskKeepChars', keepValue ?? 0)}
+                                    />
+                                </Space.Compact>
                             </Space>
                         );
                     }
@@ -2038,15 +2125,16 @@ export default function KAnonymityMapping(): React.ReactElement
                     let segmentedLevelOptionList: { label: string; value: number }[] = [];
 
                     if (rowRecordItem.type === 'temporal') {
-                        // ★ 時間粒度不提供「精確」(不泛化) 與「秒」，最細到「分」。2026-10-01 起「秒」自送給後端的
-                        //   levels 清單中移除，層級改為 1～5 依序對應 分/時/日/月/年（見 utils/temporalGranularity.ts）。
+                        // ★ 時間粒度不提供「精確」(不泛化)。2026-10-28 加回「秒」（後端 v2.0.0 支援），
+                        //   層級 1～6 依序對應 秒/分/時/日/月/年（見 utils/temporalGranularity.ts）。
                         segmentedLevelOptionList = rowRecordItem.genStrategy === 'time_rounding'
                             ? [
-                                { label: translate('step2.lvl_minute', '分'), value: 1 },
-                                { label: translate('step2.lvl_hour', '時'), value: 2 },
-                                { label: translate('step2.lvl_day'), value: 3 },
-                                { label: translate('step2.lvl_month'), value: 4 },
-                                { label: translate('step2.lvl_year'), value: 5 },
+                                { label: translate('step2.lvl_second', '秒'), value: 1 },
+                                { label: translate('step2.lvl_minute', '分'), value: 2 },
+                                { label: translate('step2.lvl_hour', '時'), value: 3 },
+                                { label: translate('step2.lvl_day'), value: 4 },
+                                { label: translate('step2.lvl_month'), value: 5 },
+                                { label: translate('step2.lvl_year'), value: 6 },
                             ]
                             : [{ label: translate('step2.lvl_original'), value: 0 }, { label: translate('step2.lvl_enable'), value: 1 }];
                     } else if (rowRecordItem.type === 'categorical') {

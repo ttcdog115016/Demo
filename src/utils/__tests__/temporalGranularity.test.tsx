@@ -38,7 +38,7 @@ const exportedBirthdayUnit = (): string => {
         k_anonymity: { generalization_hierarchies: Record<string, { levels: string[] }>; qi_generalization_levels: Record<string, number> };
     };
     const levels = config.k_anonymity.generalization_hierarchies.生日.levels;
-    expect(levels).toEqual(['minute', 'hour', 'day', 'month', 'year']);
+    expect(levels).toEqual(['second', 'minute', 'hour', 'day', 'month', 'year']);
     return levels[config.k_anonymity.qi_generalization_levels.生日 - 1];
 };
 
@@ -63,32 +63,33 @@ describe('時間粒度：依設定檔自己的 levels 判定層級', () => {
 
     it('config_kanon.json（levels=[day, month, year]、層級 3）匯入後為「年」，送出設定檔仍是「年」', async () => {
         await importThroughStep2(backendConfigKanonText);
-        expect(birthdayFieldOf()).toMatchObject({ genStrategy: 'time_rounding', genMaxLevel: 5 });
+        expect(birthdayFieldOf()).toMatchObject({ genStrategy: 'time_rounding', genMaxLevel: 6 }); // ★ 2026-10-28 加回「秒」，年＝6
         expect(temporalUnitOfLevel(birthdayFieldOf()!.genMaxLevel)).toBe('year');
         expect(exportedBirthdayUnit()).toBe('year');
     });
 
     it('先前匯出的六級檔（[second, …, year]、層級 3）匯入後為「時」，送出設定檔仍是「時」', async () => {
         await importThroughStep2(sixLevelExportText);
-        expect(birthdayFieldOf()).toMatchObject({ genStrategy: 'time_rounding', genMaxLevel: 2 });
+        expect(birthdayFieldOf()).toMatchObject({ genStrategy: 'time_rounding', genMaxLevel: 3 });
         expect(exportedBirthdayUnit()).toBe('hour');
     });
 
-    it('時間粒度的層級範圍：[1, 3]（levels=[day, month, year]）換算為日～年，送出為 [3, 5]', async () => {
+    it('時間粒度的層級範圍：[1, 3]（levels=[day, month, year]）換算為日～年，送出為 [4, 6]', async () => {
         const rangedConfig = JSON.parse(backendConfigKanonText);
         rangedConfig.k_anonymity.qi_generalization_levels.生日 = [1, 3];
         await importThroughStep2(JSON.stringify(rangedConfig));
-        expect(birthdayFieldOf()).toMatchObject({ genMaxLevel: 3, genLevelRangeUpper: 5 });
+        expect(birthdayFieldOf()).toMatchObject({ genMaxLevel: 4, genLevelRangeUpper: 6 });
         const config = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: { qi_generalization_levels: Record<string, unknown> } };
-        expect(config.k_anonymity.qi_generalization_levels.生日).toEqual([3, 5]);
+        expect(config.k_anonymity.qi_generalization_levels.生日).toEqual([4, 6]);
     });
 
-    it('換算規則：second 對應到最細的「分」、層級 0 維持不泛化、超出清單或缺漏時交給預設值', () => {
-        expect(TEMPORAL_GRANULARITY_UNITS).not.toContain('second');
-        expect(resolveImportedTemporalLevel(['day', 'month', 'year'], 1)).toBe(3);
-        expect(resolveImportedTemporalLevel(['day', 'month', 'year'], 2)).toBe(4);
+    it('換算規則（2026-10-28 加回「秒」）：second＝層級 1、層級 0 維持不泛化、超出清單或缺漏時交給預設值', () => {
+        expect(TEMPORAL_GRANULARITY_UNITS).toEqual(['second', 'minute', 'hour', 'day', 'month', 'year']);
+        expect(resolveImportedTemporalLevel(['day', 'month', 'year'], 1)).toBe(4);
+        expect(resolveImportedTemporalLevel(['day', 'month', 'year'], 2)).toBe(5);
         expect(resolveImportedTemporalLevel(['second', 'minute', 'hour', 'day', 'month', 'year'], 1)).toBe(1);
-        expect(resolveImportedTemporalLevel(['Month', 'YEAR'], 1)).toBe(4);
+        expect(resolveImportedTemporalLevel(['minute', 'hour'], 1)).toBe(2);
+        expect(resolveImportedTemporalLevel(['Month', 'YEAR'], 1)).toBe(5);
         expect(resolveImportedTemporalLevel(['day', 'month', 'year'], 0)).toBe(0);
         expect(resolveImportedTemporalLevel(['day', 'month', 'year'], 4)).toBeNull();
         expect(resolveImportedTemporalLevel(undefined, 3)).toBeNull();

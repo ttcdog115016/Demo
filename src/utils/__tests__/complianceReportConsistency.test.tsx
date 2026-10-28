@@ -12,6 +12,7 @@ import { App as AntdApp } from 'antd';
 import ComplianceReportDocument from '../../components/ComplianceReportDocument';
 import AuditLogHub from '../../features/audit_logs/AuditLogHub';
 import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import { buildComplianceReportSnapshot, computeReportOverallRisk, resolveSensitiveGuessRisk } from '../complianceReport';
 import { buildPipelineAuditLogEntry } from '../../features/step4_result/pipeline/pipelineResults';
 import { RISK_ATTACK_DEFAULT_PARAMS } from '../riskAssessment';
@@ -88,7 +89,8 @@ describe('合規報告快照', () => {
 });
 
 describe('Step4 報告與歷史檢測紀錄調閱內容一致', () => {
-    beforeEach(() => { cleanup(); useAuditStore.setState({ auditLogs: [] }); });
+    // ★ 2026-10-28：歷史檢測紀錄只顯示目前帳號的紀錄，測試以紀錄的操作者 tester 登入
+    beforeEach(() => { cleanup(); useAuditStore.setState({ auditLogs: [] }); useAuthStore.setState({ isAuthenticated: true, user: { name: 'tester', email: 'tester', role: 'data_owner' } } as Partial<ReturnType<typeof useAuthStore.getState>>); });
 
     it('調閱視窗與 Step4 報告元件呈現相同文字', async () => {
         const entry = buildEntry();

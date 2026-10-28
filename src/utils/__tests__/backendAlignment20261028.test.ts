@@ -46,6 +46,6 @@ describe('其他預設值', () => {
             dpAccumulatedEpsilon: 0, dpAccumulatedDelta: 0, dpDefaultDelta: 0, riskAttackParams: RISK_ATTACK_DEFAULT_PARAMS,
             attackRisks: null, capReport: null, suppressionRatePercent: 0, consumedEpsilon: null, deidentifiedColumnsCount: 0, totalColumnsCount: 0
         });
-        expect(snapshot.kAnonymityConfig).toMatchObject({ maxSuppressionPercent: 5, limitExceededAction: 'allow_with_warning' });
+        expect(snapshot.kAnonymityConfig).toMatchObject({ maxSuppressionPercent: 20, limitExceededAction: 'allow_with_warning' });
     });
 });

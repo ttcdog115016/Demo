@@ -40,7 +40,7 @@ import { scaleFontSize } from '../../utils/fontScale';
  * 預設隱私參數常數宣告
  */
 const DEFAULT_EPSILON_BUDGET = 1.0;
-const DEFAULT_DELTA_BUDGET = 0.0001;
+const DEFAULT_DELTA_BUDGET = 1e-5; // ★ 2026-10-28 與後端預設一致
 const DEFAULT_NUMERIC_LOWER_BOUND = 0;
 const DEFAULT_NUMERIC_UPPER_BOUND = 100;
 const DP_RECOMMEND_MINMAX_PARSE_MESSAGE_KEY = 'dp-recommend-minmax-parse';

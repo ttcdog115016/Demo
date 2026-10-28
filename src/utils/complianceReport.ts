@@ -128,9 +128,9 @@ export const buildComplianceReportSnapshot = (input: BuildComplianceReportSnapsh
             ? {
                 kAnonymityConfig: {
                     kValue: input.kValue,
-                    // ★ 2026-10-28：缺值時的預設與實際送出的設定檔一致（pipelineConfig：抑制上限 ?? 5、超限行為 || allow_with_warning）；
+                    // ★ 2026-10-28：缺值時的預設與實際送出的設定檔一致（pipelineConfig：抑制上限 ?? 20、超限行為 || allow_with_warning）；
                     //   超限行為原寫 stop_and_error，與前端 Step3 預設、後端預設皆不符
-                    maxSuppressionPercent: input.maxSuppressionPercent ?? 5,
+                    maxSuppressionPercent: input.maxSuppressionPercent ?? 20,
                     limitExceededAction: input.limitExceededAction || 'allow_with_warning',
                     suppressionMethod: input.suppressionMethod || 'row',
                     cellFillMethod: input.cellFillMethod || 'star',
@@ -144,7 +144,7 @@ export const buildComplianceReportSnapshot = (input: BuildComplianceReportSnapsh
                 dpConfig: {
                     accumulatedEpsilon: input.dpAccumulatedEpsilon ?? 0,
                     accumulatedDelta: input.dpAccumulatedDelta ?? 0,
-                    defaultDelta: input.dpDefaultDelta ?? 0.0001
+                    defaultDelta: input.dpDefaultDelta ?? 1e-5
                 }
             }),
         riskAttackParams: { ...input.riskAttackParams },
@@ -230,6 +230,15 @@ export const resolveReportColumnTechText = (
     } else if ((role === 'Sensitive' || role === 'Non-sensitive') && maskStrategy === 'remove' && entry.privacyMode === 'k-anonymity') {
         // ★ 2026-10-28：敏感／非敏感欄位選「刪除」現在會實際送到後端刪欄
         techText = translate('step4.report.tech_removed', '直接移除');
+    } else if (role === 'Non-sensitive' && entry.privacyMode === 'k-anonymity' && maskStrategy && ['mask', 'partial', 'hash', 'clear'].includes(maskStrategy)) {
+        // ★ 2026-10-28：非敏感欄位遮蔽
+        const nonSensitiveTechLabels: Record<string, [string, string]> = {
+            mask: ['step4.report.tech_mask_full', '全遮蔽'],
+            partial: ['step4.report.tech_mask_partial', '部分遮蔽'],
+            hash: ['step4.report.tech_hashed', '雜湊（假名化）'],
+            clear: ['step4.report.tech_cleared', '清空值（保留欄位）'],
+        };
+        techText = translate(nonSensitiveTechLabels[maskStrategy][0], nonSensitiveTechLabels[maskStrategy][1]);
     } else if (role === 'Quasi-identifier' && entry.privacyMode === 'k-anonymity') {
         techText = getKAnonymityGeneralizationTechLabel(entry.qiGeneralizationTechSnapshot?.[columnName], translate);
     } else if (entry.privacyMode === 'differential-privacy' && (entry.dpEnabledFieldNamesSnapshot || []).includes(columnName)) {

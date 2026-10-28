@@ -254,6 +254,14 @@ export default function Step4_Result(): React.ReactElement
                 return !!(maskStrategyValue && maskStrategyValue !== 'none');
             }
 
+            // ★ 2026-10-28：非敏感欄位選全遮蔽／部分遮蔽／雜湊／清空／刪除時，後端確實會處理該欄位
+            if (calculatedRoleNameString === 'Non-sensitive' || calculatedRoleNameString === 'Sensitive') {
+                const nonIdentifierStrategy = String(matchedField?.maskStrategy || '');
+                return calculatedRoleNameString === 'Non-sensitive'
+                    ? ['remove', 'mask', 'partial', 'hash', 'clear'].includes(nonIdentifierStrategy)
+                    : nonIdentifierStrategy === 'remove';
+            }
+
             if (calculatedRoleNameString === 'Quasi-identifier') {
                 if (!matchedField) return false;
                 const colType = String(matchedField.type) || 'string';
@@ -816,7 +824,7 @@ export default function Step4_Result(): React.ReactElement
                                             對非技術背景的使用者來說文字量過大、看不出重點。改為只保留一行
                                             「哪裡沒過」＋一行「怎麼改」的極簡提示，不顯示後端原始長篇文字。 */}
                                         {currentPrivacyModeTypeStr === 'k-anonymity' && kReport && (() => {
-                                            const isSuppressionExceededStatus = kReport.suppression_rate_percent > (currentMaxSuppressionNumber ?? 5);
+                                            const isSuppressionExceededStatus = kReport.suppression_rate_percent > (currentMaxSuppressionNumber ?? 20);
                                             // ★ 未啟用 l-多樣性／t-緊密度檢測時，即使報告內 l_passed／t_passed 剛好是
                                             // false（例如後端對「未檢測」的預設值不是 true），畫面上也不歸咎於 l／t，
                                             // 避免使用者誤以為自己沒關掉的 l/t 造成失敗。
@@ -841,7 +849,7 @@ export default function Step4_Result(): React.ReactElement
                                                 : failedCheckSummaryText;
                                             const isCellSuppressionModeStatus = currentSuppressionMethodStr === 'cell' || currentSuppressionMethodStr === 'cell_suppression';
                                             const suppressionActionVerbText = isCellSuppressionModeStatus ? '遮蔽' : '刪除';
-                                            const currentSuppressionCapForDisplay = currentMaxSuppressionNumber ?? 5;
+                                            const currentSuppressionCapForDisplay = currentMaxSuppressionNumber ?? 20;
 
                                             // ★ 使用者反映：改為依失敗項目挑選後端建議文字後，內容仍偏技術（等價類／
                                             // l-diversity／t-closeness／QI 等專有名詞＋長句），沒有相關背景的使用者
@@ -957,7 +965,7 @@ export default function Step4_Result(): React.ReactElement
                                             }
 
                                             if (isSuppressionExceededStatus) {
-                                                const currentSuppressionCapNumber = currentMaxSuppressionNumber ?? 5;
+                                                const currentSuppressionCapNumber = currentMaxSuppressionNumber ?? 20;
                                                 const suggestedSuppressionCapNumber = Math.min(100, Math.ceil(kReport.suppression_rate_percent) + 1);
                                                 failureGuidanceSectionsList.push({
                                                     key: 'suppression',

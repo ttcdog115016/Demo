@@ -8,6 +8,7 @@
  */
 
 import { create } from 'zustand';
+import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware';
 import type { AuditIntegrityRecord } from '../utils/auditIntegrity';
 import type { ComplianceReportSnapshot } from '../utils/complianceReport';
 
@@ -88,10 +89,55 @@ const generateAuditLogId = (): string => {
 };
 
 /**
+ * ★ 2026-10-28：歷史檢測紀錄持久化（先前只存在記憶體，重新整理頁面即消失）。
+ *   - 存在瀏覽器 localStorage（鍵名 AUDIT_LOG_STORAGE_KEY），只在這台電腦、這個瀏覽器有效；
+ *     簽章金鑰原本就存在 IndexedDB（utils/auditIntegrity.ts），重新整理後仍可驗證。
+ *   - 最多保留 MAX_AUDIT_LOG_ENTRIES_COUNT 筆（新的在前）；寫入超出瀏覽器容量時自動捨棄最舊的一半再重試，
+ *     仍失敗則放棄寫入（不影響畫面與主流程）。
+ *   - 同一台瀏覽器可能有多個帳號登入：畫面以 selectAuditLogsForUser 只顯示目前帳號的紀錄。
+ */
+export const AUDIT_LOG_STORAGE_KEY = 'privacy_audit_logs_v1';
+export const MAX_AUDIT_LOG_ENTRIES_COUNT = 200;
+
+const isQuotaExceededError = (errorValue: unknown): boolean =>
+	errorValue instanceof DOMException && (errorValue.name === 'QuotaExceededError' || errorValue.name === 'NS_ERROR_DOM_QUOTA_REACHED' || errorValue.code === 22);
+
+/** localStorage 包一層：容量不足時捨棄最舊的紀錄後重試 */
+export const quotaSafeAuditLogStorage: StateStorage = {
+	getItem: (storageKey) => {
+		try { return localStorage.getItem(storageKey); } catch { return null; }
+	},
+	setItem: (storageKey, storageValue) => {
+		let valueToWrite = storageValue;
+		for (let attempt = 0; attempt < 8; attempt++) {
+			try { localStorage.setItem(storageKey, valueToWrite); return; }
+			catch (storageError) {
+				if (!isQuotaExceededError(storageError)) { console.warn('[稽核紀錄] 寫入瀏覽器儲存失敗：', storageError); return; }
+				try {
+					const parsedValue = JSON.parse(valueToWrite) as { state?: { auditLogs?: unknown[] } };
+					const currentLogs = parsedValue.state?.auditLogs || [];
+					if (currentLogs.length <= 1) return;
+					parsedValue.state = { ...parsedValue.state, auditLogs: currentLogs.slice(0, Math.ceil(currentLogs.length / 2)) };
+					valueToWrite = JSON.stringify(parsedValue);
+					console.warn(`[稽核紀錄] 瀏覽器儲存空間不足，僅保留最新 ${parsedValue.state.auditLogs?.length} 筆`);
+				} catch { return; }
+			}
+		}
+	},
+	removeItem: (storageKey) => {
+		try { localStorage.removeItem(storageKey); } catch { /* 忽略 */ }
+	},
+};
+
+/** 目前帳號的紀錄（依 operator 比對；未登入時不顯示任何紀錄） */
+export const selectAuditLogsForUser = (auditLogs: AuditLogItem[], operatorName: string | null | undefined): AuditLogItem[] =>
+	operatorName ? auditLogs.filter((logItem) => logItem.operator === operatorName) : [];
+
+/**
  * 全域歷史審計軌跡 Store 實例 (useAuditStore)
  * 規範對照: 符合規範 i) 全域變數/狀態詳細註記
  */
-export const useAuditStore = create<AuditState>(
+export const useAuditStore = create<AuditState>()(persist(
 	(setStoreStateAction) => 
 	(
 		{
@@ -108,10 +154,24 @@ export const useAuditStore = create<AuditState>(
 						auditLogs: [
 							{ ...auditLogEntryData, id: generateAuditLogId() }, 
 							...currentStoreStateData.auditLogs
-						]
+						].slice(0, MAX_AUDIT_LOG_ENTRIES_COUNT)
 					}
 				)
 			),
 		}
-	)
-);
+	),
+	{
+		name: AUDIT_LOG_STORAGE_KEY,
+		storage: createJSONStorage(() => quotaSafeAuditLogStorage),
+		partialize: (state) => ({ auditLogs: state.auditLogs }),
+	}
+));
+
+// 跨分頁同步：其他分頁寫入紀錄時，本分頁重新讀取
+if (typeof window !== 'undefined')
+{
+	window.addEventListener('storage', (storageEventObj) =>
+	{
+		if (storageEventObj.key === AUDIT_LOG_STORAGE_KEY) void useAuditStore.persist.rehydrate();
+	});
+}

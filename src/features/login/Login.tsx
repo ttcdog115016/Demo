@@ -32,12 +32,13 @@ const PAGE_NAVIGATION_DELAY_MS = 500;
 /**
  * Demo 測試帳號（登入頁「點擊自動填入」提示用）。
  * ★ 2026-10-28：登入改由後端驗證，這兩個帳號必須先在後端建立，否則會顯示「帳號或密碼錯誤」：
- *   python -m app.cli.main create-user -u owner@test.com -p password -r user
+ *   python -m app.cli.main create-user -u owner@test.com -p Owner@123456 -r user
+ *   （同日後端加了密碼至少 12 字，owner 的 Demo 密碼由 password 改為 Owner@123456）
  *   python -m app.cli.main create-user -u admin@test.com -p Admin@123456 -r admin
  */
 const DEMO_ACCOUNTS = 
 {
-	'owner@test.com': { password: 'password', label: 'Data Owner' },
+	'owner@test.com': { password: 'Owner@123456', label: 'Data Owner' },
 	'admin@test.com': { password: 'Admin@123456', label: 'Admin' },
 };
 

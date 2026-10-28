@@ -92,7 +92,7 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
         limitExceededAction: currentLimitExceededActionStr
     } = input;
 
-    const columnsMap: Record<string, { role: string; type: string; strategy?: string; mask_mode?: string; mask_char?: string; cell_fill_value?: string; }> = {};
+    const columnsMap: Record<string, { role: string; type: string; strategy?: string; mask_mode?: string; mask_char?: string; cell_fill_value?: string; keep_chars?: number; mask_length?: number; }> = {};
     const isCellSuppressionActiveStatus = isCellSuppressionMethod(input.suppressionMethod);
     const qiGeneralizationLevelsMap: Record<string, number | [number, number]> = {};
     // 後端要求每欄位的類別階層以 { mapping: { 原始值: [原始值, 上一層, ...] } } 包裝
@@ -119,6 +119,7 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
         // columnsMap[cleanName]。
         let qiMaskModeValue: string | undefined = undefined;
         let qiMaskCharValue: string | undefined = undefined;
+        let nonSensitiveMaskParams: { mask_char?: string; mask_mode?: string; keep_chars?: number; mask_length?: number } = {};
 
         if (matchedField) {
             const privacyRoleMappingDict: Record<string, string> = { 
@@ -139,6 +140,24 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
                 maskStrategy = uiMaskStrategy;
             } else if ((backendRole === 'sensitive' || backendRole === 'non_sensitive') && uiMaskStrategy === 'remove') {
                 maskStrategy = 'remove';
+            } else if (backendRole === 'non_sensitive' && ['mask', 'partial', 'hash', 'clear'].includes(uiMaskStrategy)) {
+                // ★ 2026-10-28：非敏感欄位遮蔽（全遮蔽 mask：mask_char＋選填 mask_length；部分遮蔽 partial：keep_chars＋mask_mode＋mask_char）
+                //   日期欄位後端不接受 mask（畫面不提供；保險起見不送）
+                if (!(uiMaskStrategy === 'mask' && colType === 'temporal')) {
+                    maskStrategy = uiMaskStrategy;
+                    const maskCharText = String(matchedField.maskChar || '*').slice(0, 1) || '*';
+                    if (uiMaskStrategy === 'mask') {
+                        nonSensitiveMaskParams = { mask_char: maskCharText };
+                        const fixedLength = Math.floor(Number(matchedField.maskLength) || 0);
+                        if (fixedLength > 0) nonSensitiveMaskParams.mask_length = fixedLength;
+                    } else if (uiMaskStrategy === 'partial') {
+                        nonSensitiveMaskParams = {
+                            mask_char: maskCharText,
+                            mask_mode: matchedField.maskMode === 'suffix' ? 'suffix' : 'prefix',
+                            keep_chars: Math.max(0, Math.floor(Number(matchedField.maskKeepChars ?? 3) || 0))
+                        };
+                    }
+                }
             }
 
             if (backendRole === 'quasi_identifier') {
@@ -278,7 +297,8 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
             ...(maskStrategy ? { strategy: String(maskStrategy) } : {}),
             ...(qiMaskModeValue ? { mask_mode: qiMaskModeValue } : {}),
             ...(qiMaskCharValue ? { mask_char: qiMaskCharValue } : {}),
-            ...(cellFillValueText ? { cell_fill_value: cellFillValueText } : {})
+            ...(cellFillValueText ? { cell_fill_value: cellFillValueText } : {}),
+            ...nonSensitiveMaskParams
         };
     });
 
@@ -337,7 +357,7 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
             // 才送出這兩個欄位，關閉時完全不寫入，讓後端依規格略過該項檢測。
             ...(isEnableLDiversityStatus ? { l: currentLValueNumber } : {}),
             ...(isEnableTClosenessStatus ? { t: currentTValueNumber } : {}),
-            suppression_limit_percent: currentMaxSuppressionNumber ?? 5,
+            suppression_limit_percent: currentMaxSuppressionNumber ?? 20, // ★ 2026-10-28 與後端預設一致
             limit_exceeded_action: (currentLimitExceededActionStr || 'stop_and_error') as 'stop_and_error' | 'allow_with_warning',
             suppression_method: (isCellSuppressionMethod(currentSuppressionMethodStr) ? 'cell_suppression' : 'row_suppression') as 'row_suppression' | 'cell_suppression',
             // ★ cell_fill 僅在「值抑制」(cell_suppression) 模式下才有意義，未啟用時完全不送出，
@@ -462,7 +482,7 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
             column_budgets: columnBudgetsMap,
             accumulated_epsilon: dpAccumulatedEpsilonValue ?? 0,
             accumulated_delta: dpAccumulatedDeltaValue ?? 0,
-            default_delta: globalTargetDeltaValue ?? 0.0001
+            default_delta: globalTargetDeltaValue ?? 1e-5 // ★ 2026-10-28 與後端預設一致
         }
     };
 };

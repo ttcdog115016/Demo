@@ -53,7 +53,7 @@ describe('K-匿名 config.json 組裝', () => {
                     婚姻狀況: { role: 'non_sensitive', type: 'categorical' }
                 },
                 generalization_hierarchies: {
-                    生日: { levels: ['minute', 'hour', 'day', 'month', 'year'] },
+                    生日: { levels: ['second', 'minute', 'hour', 'day', 'month', 'year'] }, // ★ 2026-10-28 加回「秒」
                     年齡: { bins: [{ min: null, max: 18, label: '未成年' }, { min: 18, max: 40, label: '青年' }, { min: 40, max: 65, label: '中年' }, { min: 65, max: null, label: '銀髮族' }] },
                     薪資: { rounding: 50000 },
                     就醫次數: { rounding: 10 }
@@ -76,9 +76,9 @@ describe('K-匿名 config.json 組裝', () => {
         expect(buildKanon().k_anonymity).not.toHaveProperty('cell_fill');
     });
 
-    it('缺值時套用預設（抑制率 5、超限即停止）', () => {
+    it('缺值時套用預設（抑制率 20、超限即停止）', () => {
         const kanonBlock = buildKanon({ maxSuppression: null, limitExceededAction: '' }).k_anonymity as Record<string, unknown>;
-        expect(kanonBlock.suppression_limit_percent).toBe(5);
+        expect(kanonBlock.suppression_limit_percent).toBe(20);
         expect(kanonBlock.limit_exceeded_action).toBe('stop_and_error');
     });
 

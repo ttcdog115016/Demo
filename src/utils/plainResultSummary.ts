@@ -160,12 +160,18 @@ export const resolveColumnTreatment = (input: {
     if (input.maskStrategy === 'remove') {
         return { columnName, bucket: 'removed', plainText: '已移除' };
     }
-    // ★ 2026-10-28：識別欄位新增「雜湊（假名化）」與「清空（保留欄位）」
-    if (input.role === 'Identifier' && input.maskStrategy === 'clear') {
+    // ★ 2026-10-28：識別欄位與非敏感欄位的「雜湊（假名化）」「清空（保留欄位）」；非敏感欄位另有全遮蔽／部分遮蔽
+    if ((input.role === 'Identifier' || input.role === 'Non-sensitive') && input.maskStrategy === 'clear') {
         return { columnName, bucket: 'removed', plainText: '已清空' };
     }
-    if (input.role === 'Identifier' && input.maskStrategy === 'hash') {
+    if ((input.role === 'Identifier' || input.role === 'Non-sensitive') && input.maskStrategy === 'hash') {
         return { columnName, bucket: 'blurred', plainText: '換成代碼（雜湊）' };
+    }
+    if (input.role === 'Non-sensitive' && input.maskStrategy === 'mask') {
+        return { columnName, bucket: 'blurred', plainText: '全部遮蔽' };
+    }
+    if (input.role === 'Non-sensitive' && input.maskStrategy === 'partial') {
+        return { columnName, bucket: 'blurred', plainText: '部分遮蔽' };
     }
     if (input.role === 'Identifier' && input.isActuallyDeidentified) {
         return { columnName, bucket: 'removed', plainText: '已遮蔽' };

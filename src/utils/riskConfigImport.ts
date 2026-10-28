@@ -13,11 +13,11 @@ import type { RiskColumnOverrides, RiskLinkabilityGroups, RiskAttackParams, Risk
 import { buildDatasetColumnNameSet, isFieldNameInDataset, normalizeDatasetColumnName } from './datasetFieldConsistency';
 
 /**
- * 前端預設的三攻擊實驗參數（後端未填時 n_iter 為 500，前端為縮短運算時間刻意調低為 50）。
+ * 前端預設的三攻擊實驗參數（★ 2026-10-28 與後端預設一致：n_iter 500，原為縮短運算時間調低的 50）。
  * 原定義於 utils/riskAssessment.ts（該檔仍轉出同名常數），2026-10-28 移到這裡供匯入與 Step3 共用。
  */
 export const RISK_ATTACK_DEFAULT_PARAMS: RiskAttackParams = {
-    n_iter: 50,
+    n_iter: 500,
     ctrl_ratio: 0.2,
     seed: 42,
     n_subset: 500,

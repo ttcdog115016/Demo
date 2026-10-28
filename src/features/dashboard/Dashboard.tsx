@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
-import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
+import { useAuditStore, selectAuditLogsForUser, type AuditLogItem } from '../../store/useAuditStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useAnnouncementStore, isAnnouncementShownToRole, getAnnouncementUserKey, useAnnouncementClock } from '../../store/useAnnouncementStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
@@ -46,7 +46,9 @@ export const Dashboard: React.FC = () => {
   );
 
   // 讀取全域歷史審計紀錄 (真實紀錄，非假資料)，最新紀錄已由 addAuditLog 插入於陣列最前端
-  const auditLogsList = useAuditStore((state) => state.auditLogs);
+  // ★ 2026-10-28：紀錄改存瀏覽器，只統計目前帳號的紀錄
+  const allAuditLogsList = useAuditStore((state) => state.auditLogs);
+  const auditLogsList = useMemo(() => selectAuditLogsForUser(allAuditLogsList, currentUserSession?.name), [allAuditLogsList, currentUserSession?.name]);
 
   const recentLogs = useMemo(
     () => auditLogsList.slice(0, RECENT_LOGS_DISPLAY_LIMIT),

@@ -20,7 +20,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import { getRoleDisplayName } from '../../utils/roleLabel';
 
-import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
+import { useAuditStore, selectAuditLogsForUser, type AuditLogItem } from '../../store/useAuditStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import ComplianceReportDocument from '../../components/ComplianceReportDocument';
 import RiskLevelBadge from '../../components/RiskLevelBadge';
 import { computeReportOverallRisk } from '../../utils/complianceReport';
@@ -77,9 +78,12 @@ export default function AuditLogHub(): React.ReactElement
 
 	const { t: translate } = useTranslation();
 
-	const auditLogsList = useAuditStore(
+	// ★ 2026-10-28：紀錄改存瀏覽器（重新整理不消失）；同一台瀏覽器可能有多個帳號，只顯示目前帳號的紀錄
+	const allAuditLogsList = useAuditStore(
 		(state) => state.auditLogs
 	);
+	const currentOperatorName = useAuthStore((state) => state.user?.name);
+	const auditLogsList = useMemo(() => selectAuditLogsForUser(allAuditLogsList, currentOperatorName), [allAuditLogsList, currentOperatorName]);
 	
 	const [searchKeywordText, setSearchKeywordText] = useState<string>('');
 

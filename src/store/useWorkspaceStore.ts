@@ -18,12 +18,12 @@ const MIN_STEP_INDEX = 0;
 const DEFAULT_K_ANONYMITY_VALUE = 3; // ★ 修正：K-匿名 K 值預設由 5 改為 3 (依需求調整)
 const DEFAULT_L_DIVERSITY_VALUE = 2;
 const DEFAULT_T_CLOSENESS_VALUE = 0.15;
-const DEFAULT_MAX_SUPPRESSION_PERCENT = 5;
+const DEFAULT_MAX_SUPPRESSION_PERCENT = 20; // ★ 2026-10-28 與後端預設一致（suppression_limit_percent 未填為 20），原為 5
 const DEFAULT_EPSILON_BUDGET = 1.0;
 const DEFAULT_DELTA_BUDGET = 1e-5;
 const DEFAULT_SIMULATE_QUERY_COUNT = 1;
 const DEFAULT_BUDGET_LIMIT_EPSILON = 20;
-const DEFAULT_TARGET_DELTA = 0.0001;
+const DEFAULT_TARGET_DELTA = 1e-5; // ★ 2026-10-28 與後端預設一致（後端範例 default_delta 皆為 1e-5），原為 0.0001
 
 /**
  * ★ 2026-10-08：K-匿名 Step3 參數（保護強度、l／t、資料抑制）的系統預設值，集中一處。
