@@ -3,8 +3,8 @@
  * 檔案名稱 (File): Login.tsx
  * 模組功能 (Description): 使用者登入驗證頁面組件 (帳密登入，經後端會員系統 POST /api/v1/auth/login 驗證)
  * ★ 2026-10-27：串接後端會員系統；移除 Demo 帳號提示、一鍵快速登入與「記住我」（refresh token 存於 sessionStorage，關閉分頁即需重新登入）。
- * ★ 2026-10-28：加回「一鍵快速登入（測試用）」供外部人員測試——以 .env.local 設定的測試帳號經後端真實登入，
- *   未設定時不顯示按鈕。
+ * ★ 2026-10-28：依 TTC Wei 指示，登入頁畫面改回原樣（Demo 測試帳號提示、保持登入狀態、一鍵快速登入），
+ *   但帳密驗證仍經後端 POST /api/v1/auth/login——Demo 帳號須先在後端建立（見下方 DEMO_ACCOUNTS 註解）。
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之識別字)
  * ============================================================================
@@ -12,7 +12,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Form, Input, Button, ConfigProvider, theme, App as AntdApp } from 'antd';
+import { Card, Form, Input, Button, Checkbox, ConfigProvider, theme, App as AntdApp, Alert } from 'antd';
 import { Mail, Lock, LogIn } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -30,15 +30,23 @@ import { scaleFontSize } from '../../utils/fontScale';
 const PAGE_NAVIGATION_DELAY_MS = 500;
 
 /**
- * ★ 2026-10-28：一鍵快速登入（測試用）的帳密，於建置時由 .env.local 讀入：
- *   VITE_QUICK_LOGIN_USERNAME=<後端已建立的測試帳號>
- *   VITE_QUICK_LOGIN_PASSWORD=<該帳號密碼>
- * 兩者都有值才顯示按鈕；仍經後端 POST /api/v1/auth/login 驗證，角色、停用、鎖定規則與一般登入相同。
- * 注意：帳密會被打包進前端程式（任何人都看得到），請只用權限為 User 的測試專用帳號，測試結束後於後端停用或刪除。
+ * Demo 測試帳號（登入頁「點擊自動填入」提示用）。
+ * ★ 2026-10-28：登入改由後端驗證，這兩個帳號必須先在後端建立，否則會顯示「帳號或密碼錯誤」：
+ *   python -m app.cli.main create-user -u owner@test.com -p password -r user
+ *   python -m app.cli.main create-user -u admin@test.com -p Admin@123456 -r admin
  */
-const QUICK_LOGIN_USERNAME = String(import.meta.env.VITE_QUICK_LOGIN_USERNAME ?? '').trim();
-const QUICK_LOGIN_PASSWORD = String(import.meta.env.VITE_QUICK_LOGIN_PASSWORD ?? '');
-const IS_QUICK_LOGIN_ENABLED = QUICK_LOGIN_USERNAME !== '' && QUICK_LOGIN_PASSWORD !== '';
+const DEMO_ACCOUNTS = 
+{
+	'owner@test.com': { password: 'password', label: 'Data Owner' },
+	'admin@test.com': { password: 'Admin@123456', label: 'Admin' },
+};
+
+/**
+ * 一鍵快速登入（測試用）的帳號：預設為上方 Data Owner 測試帳號，仍經後端驗證。
+ * 可於 .env.local 以 VITE_QUICK_LOGIN_USERNAME／VITE_QUICK_LOGIN_PASSWORD 改用其他測試帳號（重新建置後生效）。
+ */
+const QUICK_LOGIN_USERNAME = String(import.meta.env.VITE_QUICK_LOGIN_USERNAME ?? '').trim() || 'owner@test.com';
+const QUICK_LOGIN_PASSWORD = String(import.meta.env.VITE_QUICK_LOGIN_PASSWORD ?? '') || DEMO_ACCOUNTS['owner@test.com'].password;
 
 /**
  * 登入表單欄位數值介面
@@ -48,6 +56,7 @@ interface LoginFormValues
 {
 	email?: string;    // 登入帳號（帳號即 Email）
 	password?: string; // 使用者密碼
+	remember?: boolean;// 保持登入狀態（畫面保留；登入狀態仍依後端 token 規則，關閉分頁需重新登入）
 }
 
 /**
@@ -66,7 +75,7 @@ interface LoginFormValues
  */
 export default function Login(): React.ReactElement 
 {
-	const { t: translate } = useTranslation();
+	const { t: translate, i18n: i18nInstance } = useTranslation();
 
 	const navigate = useNavigate();
 
@@ -176,6 +185,19 @@ export default function Login(): React.ReactElement
 	const handleQuickLogin = (): Promise<void> =>
 		handleLogin({ email: QUICK_LOGIN_USERNAME, password: QUICK_LOGIN_PASSWORD });
 
+	/**
+	 * 函數名稱: fillDemoAccount
+	 * 函數功能: 點擊 Demo 帳號提示區時，自動將選定之測試帳密填入 Form 表單中（不自動送出）。
+	 */
+	const fillDemoAccount = (targetAccountEmailKey: keyof typeof DEMO_ACCOUNTS): void => 
+	{
+		loginFormInstance.setFieldsValue(
+			{ email: targetAccountEmailKey, password: DEMO_ACCOUNTS[targetAccountEmailKey].password }
+		);
+	};
+
+	const isChineseLanguageEnabled = i18nInstance.language?.toLowerCase().startsWith('zh');
+
 	return (
 		<ConfigProvider 
 			theme={
@@ -229,11 +251,35 @@ export default function Login(): React.ReactElement
 						</p>
 					</div>
 
+					{/* Demo 測試帳號提示區 (點擊可自動填入) */}
+					<Alert
+						message={<span style={{ fontSize: scaleFontSize(13), fontWeight: 'bold' }}>{isChineseLanguageEnabled ? 'Demo 測試帳號 (點擊自動填入)' : 'Demo Account (Click to fill)'}</span>}
+						description={
+							<div style={{ fontSize: scaleFontSize(12), marginTop: 4 }}>
+								{(Object.keys(DEMO_ACCOUNTS) as (keyof typeof DEMO_ACCOUNTS)[]).map((demoEmailKey) => (
+									<div key={demoEmailKey} onClick={() => fillDemoAccount(demoEmailKey)} style={{ cursor: 'pointer', color: '#10b981' }}>
+										{DEMO_ACCOUNTS[demoEmailKey].label}: <b>{demoEmailKey}</b> / <b>{DEMO_ACCOUNTS[demoEmailKey].password}</b>
+									</div>
+								))}
+							</div>
+						}
+						type="success"
+						showIcon
+						style={
+							{ 
+								marginBottom: 24, 
+								backgroundColor: isDarkModeActive ? 'rgba(16, 185, 129, 0.1)' : '#d1fae5', 
+								borderColor: isDarkModeActive ? 'rgba(16, 185, 129, 0.3)' : '#a7f3d0' 
+							}
+						}
+					/>
+
 					{/* 表單區塊 */}
 					<Form
 						form={loginFormInstance}
 						layout="vertical"
 						onFinish={handleLogin}
+						initialValues={{ remember: true }}
 						size="large"
 					>
 						<Form.Item
@@ -273,9 +319,17 @@ export default function Login(): React.ReactElement
 							/>
 						</Form.Item>
 
-						{/* ★ 2026-10-16：移除「忘記密碼」（同步後端：密碼由管理員重設）；★ 2026-10-27：移除「記住我」 */}
+						{/* ★ 2026-10-16：移除「忘記密碼」（同步後端：密碼由管理員重設） */}
+						<div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
+							<Form.Item name="remember" valuePropName="checked" noStyle>
+								<Checkbox style={{ color: isDarkModeActive ? '#94a3b8' : '#64748b' }}>
+									{translate('login.rememberMe')}
+								</Checkbox>
+							</Form.Item>
+						</div>
+
 						{/* 標準登入按鈕 */}
-						<Form.Item style={{ marginBottom: 0 }}>
+						<Form.Item style={{ marginBottom: 16 }}>
 							<Button 
 								type="primary" 
 								htmlType="submit" 
@@ -288,29 +342,27 @@ export default function Login(): React.ReactElement
 							</Button>
 						</Form.Item>
 
-						{/* ★ 2026-10-28：加回快速登入按鈕（設定 VITE_QUICK_LOGIN_USERNAME／PASSWORD 才顯示），仍經後端驗證 */}
-						{IS_QUICK_LOGIN_ENABLED && (
-							<Form.Item style={{ marginTop: 16, marginBottom: 0 }}>
-								<Button 
-									type="default" 
-									block 
-									disabled={isSubmitting}
-									onClick={() => { void handleQuickLogin(); }}  
-									style={
-										{ 
-											height: 44, 
-											borderRadius: 8, 
-											borderColor: '#10b981', 
-											color: '#10b981', 
-											background: 'transparent',
-											fontWeight: 'bold'
-										}
+						{/* ★ 2026-10-28：快速登入按鈕改回常駐顯示，仍經後端驗證 */}
+						<Form.Item style={{ marginBottom: 0 }}>
+							<Button 
+								type="default" 
+								block 
+								disabled={isSubmitting}
+								onClick={() => { void handleQuickLogin(); }}  
+								style={
+									{ 
+										height: 44, 
+										borderRadius: 8, 
+										borderColor: '#10b981', 
+										color: '#10b981', 
+										background: 'transparent',
+										fontWeight: 'bold'
 									}
-								>
-									{translate('login.quickLoginBtn')}
-								</Button>
-							</Form.Item>
-						)}
+								}
+							>
+								{translate('login.quickLoginBtn')}
+							</Button>
+						</Form.Item>
 					</Form>
 
 					{/* 底部提示 */}
