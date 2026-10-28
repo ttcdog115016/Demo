@@ -562,6 +562,8 @@ export default function Step4_Result(): React.ReactElement
     //   找不到紀錄時（例如紀錄尚未寫入）才以目前畫面狀態即時組出同格式內容。
     //   報告「隱私強化處理配置」的三攻擊固定參數直接取 RISK_ATTACK_DEFAULT_PARAMS（與實際送給後端的值相同）。
     const currentUserSession = useAuthStore((state) => state.user);
+    // ★ 2026-10-28：實驗參數可由設定檔匯入／Step3 調整，報告顯示實際送出的值
+    const riskAttackParamsForReport = useWorkspaceStore((state) => state.riskAttackParams) ?? RISK_ATTACK_DEFAULT_PARAMS;
     const complianceReportEntry: ComplianceReportEntry | null = (() => {
         if (currentAuditLogEntry) return currentAuditLogEntry;
         if (!datasetRowStatsData) return null;
@@ -593,7 +595,7 @@ export default function Step4_Result(): React.ReactElement
                 dpAccumulatedEpsilon: dpAccumulatedEpsilonValue,
                 dpAccumulatedDelta: dpAccumulatedDeltaValue,
                 dpDefaultDelta: globalTargetDeltaValue,
-                riskAttackParams: RISK_ATTACK_DEFAULT_PARAMS,
+                riskAttackParams: riskAttackParamsForReport,
                 attackRisks: attackSimulationMetricsData
                     ? { singling: attackSimulationMetricsData.singling.risk, linkability: attackSimulationMetricsData.linkability.risk, inference: attackSimulationMetricsData.inference.risk }
                     : null,

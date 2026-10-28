@@ -31,7 +31,8 @@ import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributed
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
 import { detectConfigPrivacyMode } from '../../utils/configModeDetect';
 import { importPreprocessFromConfig } from '../../utils/preprocessConfigImport';
-import { applyPreprocessImportToWorkspace } from './preprocessImportMessages';
+import { applyPreprocessImportToWorkspace, applyRiskImportToWorkspace } from './preprocessImportMessages';
+import { importRiskFromConfig } from '../../utils/riskConfigImport';
 import { buildDatasetColumnNameSet, isFieldNameInDataset, findFieldsNotInDataset, findDatasetColumnsNotConfigured, countBlankFieldNames, describeFieldsNotInDatasetError, describeBlankFieldNamesError, normalizeDatasetColumnName } from '../../utils/datasetFieldConsistency';
 
 import { scaleFontSize } from '../../utils/fontScale';
@@ -959,10 +960,12 @@ export default function KAnonymityMapping(): React.ReactElement
                     parsedJsonContentData.generalization_hierarchies || parsedJsonContentData.generalization_matrices ||
                     parsedJsonContentData.qi_generalization_levels || parsedJsonContentData.categorical_hierarchies
                 );
-                if (preprocessImportResult) {
-                    applyPreprocessImportToWorkspace(preprocessImportResult, messageApi, !hasKAnonymityContent);
-                    if (!hasKAnonymityContent) return;
-                }
+                // ★ 2026-10-28：統合版／單一入口風險評估設定檔的 risk_attacks／risk_cap 區塊
+                const riskImportResult = importRiskFromConfig(parsedJsonContentData, storeColumnsList);
+                if (preprocessImportResult) applyPreprocessImportToWorkspace(preprocessImportResult, messageApi, !hasKAnonymityContent);
+                if (riskImportResult) applyRiskImportToWorkspace(riskImportResult, messageApi);
+                // 只有前處理／風險評估區塊的設定檔：到此為止，不可往下走（會讀不到欄位而清空欄位設定，或報格式錯誤）
+                if (!hasKAnonymityContent && (preprocessImportResult || riskImportResult)) return;
 
                 if (importedKAnonymityBlock?.enabled) {
                     useWorkspaceStore.setState({

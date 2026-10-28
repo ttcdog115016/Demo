@@ -19,6 +19,7 @@ import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineCon
 import KAnonymityRules from './KAnonymityRules';
 import DifferentialPrivacyRules from './DifferentialPrivacyRules';
 import RiskSubgroupFilterPanel from './RiskSubgroupFilterPanel';
+import RiskAssessmentSettingsPanel from './RiskAssessmentSettingsPanel';
 
 /**
  * 函數名稱: Step3_Rules
@@ -185,6 +186,9 @@ export default function Step3_Rules(): React.ReactElement
 
 			{/* ★ 新增：風險評估「對象族群限定條件」設定面板，與 K-匿名／差分隱私模式無關，故共用渲染一份 */}
 			<RiskSubgroupFilterPanel />
+
+			{/* ★ 2026-10-28：風險評估進階設定（匯入的欄位角色、連結性分組、三攻擊實驗參數） */}
+			<RiskAssessmentSettingsPanel />
 		</div>
 	);
 }

@@ -31,7 +31,8 @@ import { parseBackendDpColumnBudgets, type BackendDpColumnBudget } from '../../u
 import { resolveDpFieldRiskRole, isDpFieldSelectableAsRiskSensitive } from '../../utils/riskAssessment';
 import { detectConfigPrivacyMode } from '../../utils/configModeDetect';
 import { importPreprocessFromConfig } from '../../utils/preprocessConfigImport';
-import { applyPreprocessImportToWorkspace } from './preprocessImportMessages';
+import { applyPreprocessImportToWorkspace, applyRiskImportToWorkspace } from './preprocessImportMessages';
+import { importRiskFromConfig } from '../../utils/riskConfigImport';
 import { buildDatasetColumnNameSet, isFieldNameInDataset, findFieldsNotInDataset, findDatasetColumnsNotConfigured, describeFieldsNotInDatasetError, normalizeDatasetColumnName } from '../../utils/datasetFieldConsistency';
 
 import { scaleFontSize } from '../../utils/fontScale';
@@ -317,11 +318,12 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					parsedJsonContentData.field_attributes || parsedJsonContentData.privacy_targets?.differential_privacy?.field_mechanisms ||
 					parsedJsonContentData.differential_privacy_rules
 				);
-				if (preprocessImportResult)
-				{
-					applyPreprocessImportToWorkspace(preprocessImportResult, messageApi, !hasDifferentialPrivacyContent);
-					if (!hasDifferentialPrivacyContent) return;
-				}
+				// ★ 2026-10-28：統合版／單一入口風險評估設定檔的 risk_attacks／risk_cap 區塊
+				const riskImportResult = importRiskFromConfig(parsedJsonContentData, datasetColumnsList);
+				if (preprocessImportResult) applyPreprocessImportToWorkspace(preprocessImportResult, messageApi, !hasDifferentialPrivacyContent);
+				if (riskImportResult) applyRiskImportToWorkspace(riskImportResult, messageApi);
+				// 只有前處理／風險評估區塊的設定檔：到此為止，不可往下走（會讀不到欄位而清空欄位設定，或報格式錯誤）
+				if (!hasDifferentialPrivacyContent && (preprocessImportResult || riskImportResult)) return;
 				
 				type DpRuleItem = {
 					id?: string; fieldName?: string; field_name?: string; field?: string;

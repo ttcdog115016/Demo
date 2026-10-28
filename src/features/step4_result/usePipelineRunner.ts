@@ -75,6 +75,11 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
     const currentDpFieldsListArray = useWorkspaceStore((state) => state.dpFields);
     const columnPrivacyRolesMapDict = useWorkspaceStore((state) => state.columnRoles);
     const riskSubgroupFiltersMapDict = useWorkspaceStore((state) => state.riskSubgroupFilters); // ★ 新增：風險評估「對象族群限定條件」
+    // ★ 2026-10-28：自設定檔匯入／Step3 調整的風險評估設定（欄位角色、連結性分組、三攻擊實驗參數）
+    const riskColumnOverridesMap = useWorkspaceStore((state) => state.riskColumnOverrides);
+    const riskLinkabilityGroups = useWorkspaceStore((state) => state.riskLinkability);
+    const riskAttackParamsValue = useWorkspaceStore((state) => state.riskAttackParams);
+    const effectiveRiskAttackParams = riskAttackParamsValue ?? RISK_ATTACK_DEFAULT_PARAMS;
     
     const rawColumnTypesMapDict = useWorkspaceStore((state) => state.columnTypes);
     const currentColumnTypesMapDict = useMemo(() => rawColumnTypesMapDict || {}, [rawColumnTypesMapDict]);
@@ -121,6 +126,9 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             cellFillMethod: currentCellFillMethodStr,
             cellFillValuesByColumn: cellFillValuesByColumnMap,
             riskSubgroupFilters: riskSubgroupFiltersMapDict,
+            riskColumnOverrides: riskColumnOverridesMap,
+            riskLinkability: riskLinkabilityGroups,
+            riskAttackParams: riskAttackParamsValue,
             targetDelta: globalTargetDeltaValue,
             // 換上傳檔案時 step4Cache 不會被清空，欄位設定又相同時會誤用上一份資料的結果
             datasetFileKey: dataFile ? `${dataFile.name}|${dataFile.size}|${dataFile.lastModified}` : null
@@ -131,7 +139,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             currentSuppressionMethodStr, currentLimitExceededActionStr, simulatedQueryCountValue,
             currentDpFieldsListArray, columnPrivacyRolesMapDict, currentColumnTypesMapDict, currentPreprocessingRulesMapDict, currentMissingValueRulesMapDict,
             kAnonymityFieldsList, kAnonymityHierarchiesList,
-            currentCellFillMethodStr, cellFillValuesByColumnMap, riskSubgroupFiltersMapDict, globalTargetDeltaValue, dataFile
+            currentCellFillMethodStr, cellFillValuesByColumnMap, riskSubgroupFiltersMapDict, riskColumnOverridesMap, riskLinkabilityGroups, riskAttackParamsValue, globalTargetDeltaValue, dataFile
         ]
     );
 
@@ -530,6 +538,9 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     configObject,
                     datasetFileName: currentDatasetFileNameString,
                     riskSubgroupFilters: riskSubgroupFiltersMapDict,
+                    riskColumnOverrides: riskColumnOverridesMap,
+                    riskLinkability: riskLinkabilityGroups,
+                    riskAttackParams: riskAttackParamsValue,
                     processedCsvBlob: finalCsvBlobData,
                     readProcessedCsvText: readProcessedCsvTextOnce,
                     requestOptions: pipelineRequestOptions,
@@ -629,7 +640,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                         dpAccumulatedEpsilon: finalDpAccumulated ? finalDpAccumulated.epsilon : dpAccumulatedEpsilonValue,
                         dpAccumulatedDelta: finalDpAccumulated ? finalDpAccumulated.delta : dpAccumulatedDeltaValue,
                         dpDefaultDelta: globalTargetDeltaValue,
-                        riskAttackParams: RISK_ATTACK_DEFAULT_PARAMS,
+                        riskAttackParams: effectiveRiskAttackParams,
                         attackRisks: attackReportResult
                             ? { singling: generatedSimulationMetricsObject.singling.risk, linkability: generatedSimulationMetricsObject.linkability.risk, inference: generatedSimulationMetricsObject.inference.risk }
                             : null,
@@ -689,7 +700,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             }
 
         },
-        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, deidentifiedColumnsCount, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentMissingValueRulesMapDict, currentParametersHashString, currentPreprocessingRulesMapDict, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, resolveQiGeneralizationTech, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
+        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, deidentifiedColumnsCount, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentMissingValueRulesMapDict, currentParametersHashString, currentPreprocessingRulesMapDict, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, resolveQiGeneralizationTech, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, riskColumnOverridesMap, riskLinkabilityGroups, riskAttackParamsValue, effectiveRiskAttackParams, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
     );
 
     // ★ 2026-10-01（第 16 項）：自動執行只在「使用者可調整的參數」（currentParametersHashString）改變、且這組

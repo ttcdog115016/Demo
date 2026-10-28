@@ -12,19 +12,15 @@ import { analyzeNumericColumnRange, computeBinnedColumnStats, computeAutoNiceBin
 import { isDateTimeDpField, resolveIsDateTimeDpField } from './dpFieldHelpers';
 import { extractCapRequestFailureReasonText, buildCapUnavailableReceipt } from './riskResultHelpers';
 import type { DpStoreField } from './pipelineConfig';
+import { RISK_ATTACK_DEFAULT_PARAMS } from './riskConfigImport';
+import type { RiskAttackParams, RiskLinkabilityGroups } from '../store/useWorkspaceStore';
 
 /**
- * 三攻擊官方範例參數（docs/manual_test/config_risk_*.json 及 report_request.json 的 risk_params 預設值），
- * 目前畫面未開放調整。實際送給後端與合規報告「隱私強化處理配置」段落顯示的都是這一份。
+ * 三攻擊官方範例參數（docs/manual_test/config_risk_*.json 及 report_request.json 的 risk_params 預設值）。
+ * ★ 2026-10-28：定義移到 utils/riskConfigImport.ts；可由設定檔匯入或 Step3 調整（工作區 riskAttackParams），
+ *   未調整時實際送給後端與合規報告顯示的都是這一份。
  */
-export const RISK_ATTACK_DEFAULT_PARAMS = {
-    n_iter: 50,
-    ctrl_ratio: 0.2,
-    seed: 42,
-    n_subset: 500,
-    n_repeats: 1,
-    overlap_ratio: 0.0
-};
+export { RISK_ATTACK_DEFAULT_PARAMS };
 
 /** 敏感欄位「非空值中的相異值佔比」超過此門檻即視為高唯一值（採 sklearn 警告訊息本身引用的 50%） */
 export const HIGH_CARDINALITY_SENSITIVE_RATIO_THRESHOLD = 0.5;
@@ -177,6 +173,24 @@ export const buildKAnonymityRiskColumnsForCandidate = (
 ): RiskColumnsMap => {
     const columnsMapResult: RiskColumnsMap = {};
     Object.entries(riskColumnsMap).forEach(([colName, colInfo]) => {
+        columnsMapResult[colName] = {
+            role: colName === candidateSensitiveFieldName ? 'sensitive' : 'quasi_identifier',
+            type: binWidthMap[colName] ? 'categorical' : colInfo.type
+        };
+    });
+    return columnsMapResult;
+};
+
+/**
+ * ★ 2026-10-28：使用匯入的風險評估欄位角色（risk_attacks.columns）時，以某個敏感欄位為本輪敏感欄位：
+ *   其餘間接識別照舊、其他敏感欄位不放進 columns（攻擊者不應已知其他敏感屬性，與差分隱私模式相同）；已分級距的欄位改宣告為類別型。
+ */
+export const buildOverrideRiskColumnsForCandidate = (
+    overrideColumnsMap: RiskColumnsMap, binWidthMap: Record<string, number>, candidateSensitiveFieldName: string
+): RiskColumnsMap => {
+    const columnsMapResult: RiskColumnsMap = {};
+    Object.entries(overrideColumnsMap).forEach(([colName, colInfo]) => {
+        if (colInfo.role === 'sensitive' && colName !== candidateSensitiveFieldName) return;
         columnsMapResult[colName] = {
             role: colName === candidateSensitiveFieldName ? 'sensitive' : 'quasi_identifier',
             type: binWidthMap[colName] ? 'categorical' : colInfo.type
@@ -371,14 +385,19 @@ export const buildDifferentialPrivacyConfigBlockForRisk = (originalDpBlock: unkn
 /** 三攻擊設定檔；privacyBlock 為 { k_anonymity } 或 { differential_privacy } */
 export const buildRiskAttackConfigObject = (input: {
     version: string; dataset: string; columns: RiskColumnsMap; subgroup: unknown; privacyBlock: Record<string, unknown>;
+    /** ★ 2026-10-28：匯入／Step3 調整的實驗參數；未提供時用前端預設 */
+    attackParams?: RiskAttackParams | null;
+    /** ★ 2026-10-28：連結性分組；未提供時由後端自 QI 對半導出 */
+    linkability?: RiskLinkabilityGroups | null;
 }): Record<string, unknown> => ({
     version: input.version,
     dataset: input.dataset,
     risk_attacks: {
         enabled: true,
         columns: input.columns,
+        ...(input.linkability ? { linkability: { A: input.linkability.A, B: input.linkability.B } } : {}),
         ...(input.subgroup ? { subgroup: input.subgroup } : {}),
-        ...RISK_ATTACK_DEFAULT_PARAMS
+        ...(input.attackParams ?? RISK_ATTACK_DEFAULT_PARAMS)
     },
     ...input.privacyBlock
 });

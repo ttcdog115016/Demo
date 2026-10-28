@@ -103,6 +103,29 @@ export type RiskSubgroupCondition =
     | { kind: 'categorical'; values: string[] };             // 類別／文字型：允許值清單，任一值符合即入選
 
 /**
+ * ★ 2026-10-28：自設定檔（統合版 risk_attacks／risk_cap 區塊）匯入的風險評估設定。三項皆為 null 時沿用前端原本的做法。
+ *   - RiskColumnOverrides：風險評估用欄位角色，取代「依 K-匿名角色／已啟用 DP 欄位推導」的間接識別與敏感欄位
+ *   - RiskLinkabilityGroups：連結性攻擊的特徵分組 A／B（未設定時由後端自 QI 對半導出）
+ *   - RiskAttackParams：三攻擊實驗參數（未設定時用 utils/riskAssessment.ts 的 RISK_ATTACK_DEFAULT_PARAMS）
+ * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
+ */
+export type RiskColumnOverrides = Record<string, { role: 'quasi_identifier' | 'sensitive'; type: string }>;
+export interface RiskLinkabilityGroups
+{
+    A: string[];                                         // 攻擊者手上第一份資料的欄位
+    B: string[];                                         // 第二份資料的欄位（不可與 A 重疊）
+}
+export interface RiskAttackParams
+{
+    n_iter: number;                                      // 指認性攻擊迭代次數
+    ctrl_ratio: number;                                  // 控制組（holdout）切分比例
+    seed: number;                                        // 亂數種子
+    n_subset: number;                                    // 每次抽樣筆數
+    n_repeats: number;                                   // 重複次數
+    overlap_ratio: number;                               // 連結性攻擊兩份資料重疊比例
+}
+
+/**
  * 步驟四模擬與驗證檢測快照介面
  * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
  */
@@ -173,6 +196,9 @@ interface WorkspaceState
     datasetColumnNumericValuesMap: Record<string, number[]>;                  // 數值型欄位防呆檢查快取：完整解析資料集後，各欄位之實際有效數值陣列 (供跨步驟邊界涵蓋率校驗使用)
     datasetProfile: DatasetProfile | null;                                   // ★ 2026-09-30：整份資料集只掃描一次的欄位統計快照 (筆數、相異值數、常見值、數值)，見 utils/datasetProfile.ts
     riskSubgroupFilters: Record<string, RiskSubgroupCondition>;              // ★ 新增：風險評估「對象族群限定條件」，未設定 (空物件) 時評估全體，見上方 RiskSubgroupCondition 註記
+    riskColumnOverrides: RiskColumnOverrides | null;                         // ★ 2026-10-28：匯入的風險評估欄位角色；null＝依 K-匿名角色／DP 欄位推導
+    riskLinkability: RiskLinkabilityGroups | null;                           // ★ 2026-10-28：匯入的連結性攻擊分組；null＝由後端自動導出
+    riskAttackParams: RiskAttackParams | null;                               // ★ 2026-10-28：三攻擊實驗參數；null＝前端預設
     // ★ 新增：「限定特定族群評估風險」類別型欄位之完整資料集相異值快取——使用者反映手動輸入
     // 篩選值（如誤打「北區/南區」，但資料集實際存的是「大安區/板橋區」等行政區名稱）會導致
     // 篩選後查無資料，故改為完整解析原始上傳檔案 (不受 Step1 預覽 1000 筆上限)，取得每個欄位
@@ -294,6 +320,9 @@ export const useWorkspaceStore = create<WorkspaceState>(
             datasetColumnNumericValuesMap: {},
             datasetProfile: null,
             riskSubgroupFilters: {},
+            riskColumnOverrides: null,
+            riskLinkability: null,
+            riskAttackParams: null,
             columnCategoricalUniqueValues: {},
             isColumnCategoricalValuesScanning: false,
             step4Cache: null,
@@ -347,6 +376,9 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 datasetColumnNumericValuesMap: {},
                 datasetProfile: null,
                 riskSubgroupFilters: {}, // ★ 新增：換一份資料集，原欄位名稱可能已不存在，條件一併清空
+                riskColumnOverrides: null,
+                riskLinkability: null,
+                riskAttackParams: null,
                 columnCategoricalUniqueValues: {}, // ★ 新增：換一份資料集，快取之相異值已不適用，一併清空觸發重新掃描
                 isColumnCategoricalValuesScanning: false,
                 // ★ 累計隱私預算追蹤與資料集綁定：換一份資料集即視為全新的追蹤起點，歸零重新累計。
@@ -379,6 +411,9 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 datasetColumnNumericValuesMap: {},
                 datasetProfile: null,
                 riskSubgroupFilters: {}, // ★ 新增
+                riskColumnOverrides: null,
+                riskLinkability: null,
+                riskAttackParams: null,
                 columnCategoricalUniqueValues: {}, // ★ 新增
                 isColumnCategoricalValuesScanning: false, // ★ 新增
                 step4Cache: null,
