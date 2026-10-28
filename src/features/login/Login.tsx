@@ -3,7 +3,7 @@
  * 檔案名稱 (File): Login.tsx
  * 模組功能 (Description): 使用者登入驗證頁面組件 (帳密登入，經後端會員系統 POST /api/v1/auth/login 驗證)
  * ★ 2026-10-27：串接後端會員系統；移除 Demo 帳號提示、一鍵快速登入與「記住我」（refresh token 存於 sessionStorage，關閉分頁即需重新登入）。
- * ★ 2026-10-28：依 TTC Wei 指示，登入頁畫面改回原樣（Demo 測試帳號提示、保持登入狀態、一鍵快速登入），
+ * ★ 2026-10-28：依 TTC Wei 指示，登入頁畫面改回原樣（Demo 測試帳號提示、保持登入狀態；一鍵快速登入已移除），
  *   但帳密驗證仍經後端 POST /api/v1/auth/login——Demo 帳號須先在後端建立（見下方 DEMO_ACCOUNTS 註解）。
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之識別字)
@@ -41,12 +41,6 @@ const DEMO_ACCOUNTS =
 	'admin@test.com': { password: 'Admin@123456', label: 'Admin' },
 };
 
-/**
- * 一鍵快速登入（測試用）的帳號：預設為上方 Data Owner 測試帳號，仍經後端驗證。
- * 可於 .env.local 以 VITE_QUICK_LOGIN_USERNAME／VITE_QUICK_LOGIN_PASSWORD 改用其他測試帳號（重新建置後生效）。
- */
-const QUICK_LOGIN_USERNAME = String(import.meta.env.VITE_QUICK_LOGIN_USERNAME ?? '').trim() || 'owner@test.com';
-const QUICK_LOGIN_PASSWORD = String(import.meta.env.VITE_QUICK_LOGIN_PASSWORD ?? '') || DEMO_ACCOUNTS['owner@test.com'].password;
 
 /**
  * 登入表單欄位數值介面
@@ -176,14 +170,6 @@ export default function Login(): React.ReactElement
 			setIsSubmitting(false);
 		}
 	};
-
-	/**
-	 * 函數名稱: handleQuickLogin
-	 * 函數功能: 一鍵快速登入（測試用）：以 .env.local 設定的測試帳號走與一般登入相同的後端驗證流程。
-	 * 返回值 (Return): Promise<void>
-	 */
-	const handleQuickLogin = (): Promise<void> =>
-		handleLogin({ email: QUICK_LOGIN_USERNAME, password: QUICK_LOGIN_PASSWORD });
 
 	/**
 	 * 函數名稱: fillDemoAccount
@@ -329,7 +315,7 @@ export default function Login(): React.ReactElement
 						</div>
 
 						{/* 標準登入按鈕 */}
-						<Form.Item style={{ marginBottom: 16 }}>
+						<Form.Item style={{ marginBottom: 0 }}>
 							<Button 
 								type="primary" 
 								htmlType="submit" 
@@ -342,27 +328,7 @@ export default function Login(): React.ReactElement
 							</Button>
 						</Form.Item>
 
-						{/* ★ 2026-10-28：快速登入按鈕改回常駐顯示，仍經後端驗證 */}
-						<Form.Item style={{ marginBottom: 0 }}>
-							<Button 
-								type="default" 
-								block 
-								disabled={isSubmitting}
-								onClick={() => { void handleQuickLogin(); }}  
-								style={
-									{ 
-										height: 44, 
-										borderRadius: 8, 
-										borderColor: '#10b981', 
-										color: '#10b981', 
-										background: 'transparent',
-										fontWeight: 'bold'
-									}
-								}
-							>
-								{translate('login.quickLoginBtn')}
-							</Button>
-						</Form.Item>
+						{/* ★ 2026-10-28：移除「一鍵快速登入（測試用）」，改用上方 Demo 測試帳號點擊自動填入 */}
 					</Form>
 
 					{/* 底部提示 */}
