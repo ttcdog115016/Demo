@@ -128,8 +128,10 @@ export const buildComplianceReportSnapshot = (input: BuildComplianceReportSnapsh
             ? {
                 kAnonymityConfig: {
                     kValue: input.kValue,
+                    // ★ 2026-10-28：缺值時的預設與實際送出的設定檔一致（pipelineConfig：抑制上限 ?? 5、超限行為 || allow_with_warning）；
+                    //   超限行為原寫 stop_and_error，與前端 Step3 預設、後端預設皆不符
                     maxSuppressionPercent: input.maxSuppressionPercent ?? 5,
-                    limitExceededAction: input.limitExceededAction || 'stop_and_error',
+                    limitExceededAction: input.limitExceededAction || 'allow_with_warning',
                     suppressionMethod: input.suppressionMethod || 'row',
                     cellFillMethod: input.cellFillMethod || 'star',
                     lValue: toFiniteOrNull(input.lValue),

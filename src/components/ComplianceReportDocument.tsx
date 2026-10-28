@@ -64,7 +64,7 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                 ? [
                     { label: translate('step4.report.k_value_label', 'k 值'), value: String(kConfig.kValue) },
                     { label: translate('step4.report.suppress_limit_label', '抑制上限（%）'), value: String(kConfig.maxSuppressionPercent) },
-                    { label: translate('step4.report.exceed_behavior_label', '超限行為'), value: kConfig.limitExceededAction === 'stop_and_error' ? translate('step3.stop_and_error', '停止並報錯') : translate('step3.force_suppress', '強制抑制(降效用)') },
+                    { label: translate('step4.report.exceed_behavior_label', '超限行為'), value: kConfig.limitExceededAction === 'stop_and_error' ? translate('step3.stop_and_error', '停止並報錯') : translate('step3.plain_exceed_allow', '仍產出（標示未達標）') }, // ★ 2026-10-28：allow_with_warning 原顯示舊選項名「強制抑制(降效用)」，改與 Step3 一致
                     { label: translate('step4.report.suppress_method_label', '抑制方式'), value: isCellSuppression ? translate('step3.cell_suppression', '值抑制 ') : translate('step3.row_suppression', '列抑制 ') },
                     ...(isCellSuppression
                         ? [{ label: translate('step4.report.cell_fill_label', '值抑制填法'), value: kConfig.cellFillMethod === 'missing' ? translate('step3.cell_fill_missing', '缺失值 (missing)') : translate('step3.cell_fill_star', '星號遮蔽 (star)') }]

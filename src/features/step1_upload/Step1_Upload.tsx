@@ -27,13 +27,14 @@ const { Text, Title } = Typography;
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  * 
  * 詳細說明:
- * - MAX_FILE_SIZE_LIMIT_MB: 允許上傳之單一檔案大小上限 (2048 MB / 2 GB)，防止前端記憶體溢出。
+ * - MAX_FILE_SIZE_LIMIT_MB: 允許上傳之單一檔案大小上限 (1024 MB / 1 GB)，與後端 OPEN_PETS_MAX_UPLOAD_MB 預設值一致（2026-10-28 由 2 GB 下修）。
  * - MAX_COLUMN_COUNT: 允許上傳之資料集最大欄位 (column) 數量上限，超過則拒絕解析結果。
  * - PARSE_PREVIEW_ROW_LIMIT: PapaParse 執行時，僅解析前 1000 筆資料供預覽，加速大檔案載入。
  * - UI_CARD_PREVIEW_ROW_LIMIT: 成功載入後，UI 表格上實際僅顯示前 5 筆紀錄。
  * - BYTES_PER_MEGABYTE: 1 MB 對應的 Bytes 數 (1024 * 1024 = 1048576)。
  */
-const MAX_FILE_SIZE_LIMIT_MB = 2048;
+// ★ 2026-10-28：與後端上傳上限一致（app/core/settings.py DEFAULT_MAX_UPLOAD_MB = 1024），先前 2 GB 會讓 1～2 GB 的檔案在 Step4 才被後端以 413 拒絕
+const MAX_FILE_SIZE_LIMIT_MB = 1024;
 const MAX_COLUMN_COUNT = 50;
 const PARSE_PREVIEW_ROW_LIMIT = 1000;
 
@@ -444,7 +445,7 @@ export default function Step1_Upload(): React.ReactElement
 
     /**
      * 函數名稱: handleFileUpload
-     * 函數功能: 驗證上傳檔案大小限制 (最大 2GB)。CSV 檔案會先偵測實際文字編碼 (見上方
+     * 函數功能: 驗證上傳檔案大小限制 (最大 1GB)。CSV 檔案會先偵測實際文字編碼 (見上方
      *           detectCsvBytesEncoding／decodeCsvBytesToText)：偵測到純 utf-8 (不含 BOM) 則
      *           原樣送出；偵測到其他編碼 (含 utf-8-bom、Big5、GBK、Shift-JIS 等) 則在瀏覽器端
      *           先解碼、去除 BOM 後重新編碼為乾淨 UTF-8 位元組再送出 (詳見
@@ -457,12 +458,12 @@ export default function Step1_Upload(): React.ReactElement
     const handleFileUpload = (targetFileObj: File): boolean =>
     {
         // 防呆處理：驗證檔案大小是否超出 MAX_FILE_SIZE_LIMIT_MB 限制
-        const isFileSizeValid = targetFileObj.size / BYTES_PER_MEGABYTE < MAX_FILE_SIZE_LIMIT_MB;
+        const isFileSizeValid = targetFileObj.size / BYTES_PER_MEGABYTE <= MAX_FILE_SIZE_LIMIT_MB;
 
         if (!isFileSizeValid)
         {
             messageApi.error(
-                translate('step1.error_file_too_large', '檔案大小不能超過 2GB！')
+                translate('step1.error_file_too_large', '檔案大小不能超過 1GB！')
             );
             return false;
         }

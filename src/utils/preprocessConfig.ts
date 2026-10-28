@@ -27,7 +27,8 @@
 import type { PreprocessingRule, MissingValueRule } from '../store/useWorkspaceStore';
 
 export type PreprocessHashAlgorithm = 'sha256' | 'sha3-256' | 'sha3-512';
-export const DEFAULT_PREPROCESS_HASH_ALGORITHM: PreprocessHashAlgorithm = 'sha256';
+// ★ 2026-10-28：預設改為 sha3-256，與後端 preprocess.algorithm 未填時的預設、K-匿名識別欄位雜湊預設一致（原為 sha256）
+export const DEFAULT_PREPROCESS_HASH_ALGORITHM: PreprocessHashAlgorithm = 'sha3-256';
 
 /** 型態轉換為布林時的對照表（比對忽略大小寫；表外的值後端原樣不動） */
 export const PREPROCESS_BOOLEAN_TRUE_VALUES = ['true', '1', 'yes', 'y'] as const;
@@ -38,15 +39,16 @@ export const PREPROCESS_TIMESTAMP_SALT_KEYWORD = 'use_timestamp';
 
 /**
  * 函數名稱: normalizePreprocessHashAlgorithm
- * 函數功能: 畫面／舊設定檔的演算法值 → 後端支援的三種。舊版選項 SHA256 → sha256；
- *           SHA512（SHA-2，後端不支援）與 SHA3-512 → sha3-512；SHA3-256 → sha3-256；其餘 → sha256。
+ * 函數功能: 畫面／舊設定檔的演算法值 → 後端支援的三種。SHA256／SHA-256 → sha256；
+ *           SHA512（SHA-2，後端不支援）與 SHA3-512 → sha3-512；SHA3-256 → sha3-256；
+ *           ★ 2026-10-28：未填或無法辨識 → sha3-256（與後端預設一致；原為 sha256）。
  */
 export const normalizePreprocessHashAlgorithm = (algorithmValue: unknown): PreprocessHashAlgorithm =>
 {
 	const normalizedText = String(algorithmValue ?? '').trim().toLowerCase().replace(/_/g, '-');
-	if (normalizedText === 'sha3-256') return 'sha3-256';
+	if (normalizedText === 'sha256' || normalizedText === 'sha-256') return 'sha256';
 	if (normalizedText === 'sha3-512' || normalizedText === 'sha512' || normalizedText === 'sha-512') return 'sha3-512';
-	return 'sha256';
+	return DEFAULT_PREPROCESS_HASH_ALGORITHM;
 };
 
 export interface BackendPreprocessAction

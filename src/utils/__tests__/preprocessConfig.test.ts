@@ -31,7 +31,9 @@ describe('資料預先處理設定檔組裝', () => {
         expect(normalizePreprocessHashAlgorithm('SHA256')).toBe('sha256');
         expect(normalizePreprocessHashAlgorithm('SHA512')).toBe('sha3-512');
         expect(normalizePreprocessHashAlgorithm('sha3-256')).toBe('sha3-256');
-        expect(normalizePreprocessHashAlgorithm(undefined)).toBe('sha256');
+        // ★ 2026-10-28：未填時改為 sha3-256（與後端預設一致）
+        expect(normalizePreprocessHashAlgorithm(undefined)).toBe('sha3-256');
+        expect(normalizePreprocessHashAlgorithm('SHA-256')).toBe('sha256');
     });
 
     it('缺失值：丟棄／常數（數字以數字送出）／策略填充', () => {

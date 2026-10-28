@@ -428,7 +428,8 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
                     // ★ 2026-10-01：先前固定送 day；改送使用者選的單位（後端支援 day／hour／minute／second），敏感度已依同一單位換算
                     baseBudgetConfig.noise_unit = resolveDpDatetimeNoiseUnit(field);
                     if (field.noiseStep !== undefined) baseBudgetConfig.noise_step = Number(field.noiseStep);
-                    baseBudgetConfig.time_out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(field.outOfBoundsStrategy);
+                    // ★ 2026-10-28：後端規定「填了超界策略卻未填上下界」即拒絕（ERR_DP_INVALID_BUDGET），有上下界時才送
+                    if (baseBudgetConfig.time_clipping_bounds) baseBudgetConfig.time_out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(field.outOfBoundsStrategy);
                 } else if (mappedBackendType === 'continuous') {
                     if (hasValidBoundsStatus) {
                         baseBudgetConfig.sensitivity = Number(field.upperBound) - Number(field.lowerBound);
@@ -441,7 +442,8 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
                     }
                     applyExplicitDpSensitivity(baseBudgetConfig, field.sensitivity);
                     baseBudgetConfig.minimum_unit = field.minimumUnit ?? 1;
-                    baseBudgetConfig.out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(field.outOfBoundsStrategy);
+                    // ★ 2026-10-28：有上下界時才送超界策略（同上）
+                    if (baseBudgetConfig.clipping_bounds) baseBudgetConfig.out_of_bounds_strategy = mapOutOfBoundsStrategyToBackend(field.outOfBoundsStrategy);
                 }
             }
 

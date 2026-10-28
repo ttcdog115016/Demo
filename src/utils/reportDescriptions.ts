@@ -39,7 +39,7 @@ export const describePreprocessStep = (stepItem: PreprocessingRule): string | nu
             return `限制範圍 ${lower || '不限'}～${upper || '不限'}`;
         }
         case 'hash': {
-            const saltText = params.seedMode === 'fixed' ? '自訂鹽值' : (params.seedMode === 'random' || params.seedMode === 'timestamp') ? '系統隨機鹽值' : '伺服器預設鹽值';
+            const saltText = params.seedMode === 'fixed' ? '自訂鹽值' : (params.seedMode === 'random' || params.seedMode === 'timestamp') ? '執行時間鹽值' : '伺服器預設鹽值';
             return `雜湊（${formatHashAlgorithmLabel(normalizePreprocessHashAlgorithm(params.algorithm))}，${saltText}）`;
         }
         case 'regex_replace':
