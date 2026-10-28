@@ -30,7 +30,10 @@ describe('resolveColumnTreatment', () => {
     const base = { columnName: 'x', privacyMode: 'k-anonymity', isActuallyDeidentified: true, isDpNoised: false };
     it('移除、遮蔽、泛化、保留原值', () => {
         expect(resolveColumnTreatment({ ...base, role: 'Identifier', maskStrategy: 'remove' }).bucket).toBe('removed');
-        expect(resolveColumnTreatment({ ...base, role: 'Identifier', maskStrategy: 'hash' }).plainText).toBe('已遮蔽');
+        // ★ 2026-10-28：識別欄位雜湊／清空分開標示
+        expect(resolveColumnTreatment({ ...base, role: 'Identifier', maskStrategy: 'hash' }).plainText).toBe('換成代碼（雜湊）');
+        expect(resolveColumnTreatment({ ...base, role: 'Identifier', maskStrategy: 'clear' }).plainText).toBe('已清空');
+        expect(resolveColumnTreatment({ ...base, role: 'Identifier', maskStrategy: 'full' }).plainText).toBe('已遮蔽');
         expect(resolveColumnTreatment({ ...base, role: 'Quasi-identifier', generalizationTechKey: 'custom_bins' }).plainText).toBe('改成數值區間');
         expect(resolveColumnTreatment({ ...base, role: 'Quasi-identifier', generalizationTechKey: 'none', isActuallyDeidentified: false }).bucket).toBe('kept');
         expect(resolveColumnTreatment({ ...base, role: 'Sensitive', maskStrategy: 'none', isActuallyDeidentified: false }).bucket).toBe('kept');

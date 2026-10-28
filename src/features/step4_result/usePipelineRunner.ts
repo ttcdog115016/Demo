@@ -22,6 +22,7 @@ import { describePipelineError } from './backendErrorCatalog';
 import { runDeidentificationPhase } from './pipeline/deidentificationPhase';
 import { runPreprocessPhase } from './pipeline/preprocessPhase';
 import { runRiskAssessmentPhase } from './pipeline/riskAssessmentPhase';
+import { describePreprocessingForReport, describeRiskSubgroupForReport } from '../../utils/reportDescriptions';
 import { computeDatasetRowStats, computeSimulationMetrics, evaluateComplianceValidity, buildPipelineAuditLogEntry, type SimulationResult, type PipelinePhase, type DatasetRowStats } from './pipeline/pipelineResults';
 
 /** 運算完成後延遲關閉「運算中」狀態，讓進度條停在 100% 一下 */
@@ -80,6 +81,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
     const riskLinkabilityGroups = useWorkspaceStore((state) => state.riskLinkability);
     const riskAttackParamsValue = useWorkspaceStore((state) => state.riskAttackParams);
     const effectiveRiskAttackParams = riskAttackParamsValue ?? RISK_ATTACK_DEFAULT_PARAMS;
+    // ★ 2026-10-28：K-匿名識別欄位雜湊演算法
+    const kAnonymityHashAlgorithmValue = useWorkspaceStore((state) => state.kAnonymityHashAlgorithm);
     
     const rawColumnTypesMapDict = useWorkspaceStore((state) => state.columnTypes);
     const currentColumnTypesMapDict = useMemo(() => rawColumnTypesMapDict || {}, [rawColumnTypesMapDict]);
@@ -129,6 +132,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             riskColumnOverrides: riskColumnOverridesMap,
             riskLinkability: riskLinkabilityGroups,
             riskAttackParams: riskAttackParamsValue,
+            kAnonymityHashAlgorithm: kAnonymityHashAlgorithmValue,
             targetDelta: globalTargetDeltaValue,
             // 換上傳檔案時 step4Cache 不會被清空，欄位設定又相同時會誤用上一份資料的結果
             datasetFileKey: dataFile ? `${dataFile.name}|${dataFile.size}|${dataFile.lastModified}` : null
@@ -139,7 +143,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             currentSuppressionMethodStr, currentLimitExceededActionStr, simulatedQueryCountValue,
             currentDpFieldsListArray, columnPrivacyRolesMapDict, currentColumnTypesMapDict, currentPreprocessingRulesMapDict, currentMissingValueRulesMapDict,
             kAnonymityFieldsList, kAnonymityHierarchiesList,
-            currentCellFillMethodStr, cellFillValuesByColumnMap, riskSubgroupFiltersMapDict, riskColumnOverridesMap, riskLinkabilityGroups, riskAttackParamsValue, globalTargetDeltaValue, dataFile
+            currentCellFillMethodStr, cellFillValuesByColumnMap, riskSubgroupFiltersMapDict, riskColumnOverridesMap, riskLinkabilityGroups, riskAttackParamsValue, kAnonymityHashAlgorithmValue, globalTargetDeltaValue, dataFile
         ]
     );
 
@@ -420,7 +424,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     suppressionMethod: currentSuppressionMethodStr,
                     cellFillMethod: currentCellFillMethodStr,
                     cellFillValuesByColumn: cellFillValuesByColumnMap,
-                    limitExceededAction: currentLimitExceededActionStr
+                    limitExceededAction: currentLimitExceededActionStr,
+                    hashAlgorithm: kAnonymityHashAlgorithmValue
                 };
                 const dpPipelineConfigInput: DifferentialPrivacyConfigInput = {
                     dpFields: currentDpFieldsListArray,
@@ -611,6 +616,36 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     currentParametersHashString
                 );
 
+                const buildReportSupplements = () => {
+                    const isKAnonymityMode = currentPrivacyModeTypeStr === 'k-anonymity';
+                    const kReport = isKAnonymityMode ? (finalApiReportData as KAnonymityQualityReport | null) : null;
+                    const dpReport = !isKAnonymityMode ? (finalApiReportData as DpQualityReport | null) : null;
+                    const sentConfig = configObject as { k_anonymity?: { columns?: Record<string, { strategy?: string }>; algorithm?: string }; differential_privacy?: { column_budgets?: Record<string, { epsilon_budget?: number }> } };
+                    const isHashUsed = Object.values(sentConfig.k_anonymity?.columns || {}).some((columnSpec) => columnSpec?.strategy === 'hash');
+                    const evaluatedTargets = riskAssessmentResult.evaluatedRiskTargets;
+                    return {
+                        lValue: isKAnonymityMode && isEnableLDiversityStatus ? currentLValueNumber : null,
+                        tValue: isKAnonymityMode && isEnableTClosenessStatus ? currentTValueNumber : null,
+                        hashAlgorithm: isHashUsed ? (kReport?.hash_algorithm || sentConfig.k_anonymity?.algorithm || 'sha3-256') : null,
+                        hashSalted: isHashUsed && typeof kReport?.hash_salted === 'boolean' ? kReport.hash_salted : null,
+                        consumedDelta: dpReport?.consumed_delta ?? null,
+                        preprocessing: preprocessResult
+                            ? describePreprocessingForReport(actualProcessedColumnsList, currentPreprocessingRulesMapDict, currentMissingValueRulesMapDict)
+                            : [],
+                        riskTargets: evaluatedTargets
+                            ? { ...evaluatedTargets, subgroupLines: describeRiskSubgroupForReport(riskSubgroupFiltersMapDict) }
+                            : null,
+                        dpColumnEpsilon: Object.fromEntries(Object.entries(sentConfig.differential_privacy?.column_budgets || {})
+                            .filter(([, budget]) => typeof budget?.epsilon_budget === 'number')
+                            .map(([columnName, budget]) => [columnName, budget.epsilon_budget as number])),
+                        backendNotes: [
+                            kReport?.message, dpReport?.message,
+                            ...(Array.isArray(kReport?.applied_defaults) ? kReport!.applied_defaults.map((item) => `系統套用預設值：${String(item)}`) : []),
+                            attackReportResult?.message, riskAssessmentResult.capReport?.message
+                        ].filter((noteText): noteText is string => typeof noteText === 'string' && noteText.trim() !== '')
+                    };
+                };
+
                 const pipelineAuditLogEntry = buildPipelineAuditLogEntry({
                     certificateId: generatedNewAuditMetadataObj.certificateId,
                     auditTime: generatedNewAuditMetadataObj.auditTime,
@@ -649,7 +684,9 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                         consumedEpsilon: currentPrivacyModeTypeStr === 'differential-privacy' ? (finalApiReportData as DpQualityReport | null)?.consumed_epsilon : null,
                         deidentifiedColumnsCount: deidentifiedColumnsCount ?? 0,
                         totalColumnsCount: actualProcessedColumnsList.length,
-                        fidelity: generatedKAnonymityFidelity
+                        fidelity: generatedKAnonymityFidelity,
+                        // ★ 2026-10-28：合規報告補充資訊（l／t、雜湊演算法、本次消耗 δ、資料預先處理、風險評估對象、DP 各欄 ε、後端說明）
+                        ...buildReportSupplements()
                     })
                 });
                 // ★ 2026-10-02：簽發前計算防篡改指紋（憑證內容＋原始檔／輸出檔 SHA-256）並以 ECDSA 簽章（見 utils/auditIntegrity.ts）；
@@ -700,7 +737,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             }
 
         },
-        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, deidentifiedColumnsCount, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentMissingValueRulesMapDict, currentParametersHashString, currentPreprocessingRulesMapDict, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, resolveQiGeneralizationTech, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, riskColumnOverridesMap, riskLinkabilityGroups, riskAttackParamsValue, effectiveRiskAttackParams, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
+        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, deidentifiedColumnsCount, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentMissingValueRulesMapDict, currentParametersHashString, currentPreprocessingRulesMapDict, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, resolveQiGeneralizationTech, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, riskColumnOverridesMap, riskLinkabilityGroups, riskAttackParamsValue, effectiveRiskAttackParams, kAnonymityHashAlgorithmValue, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
     );
 
     // ★ 2026-10-01（第 16 項）：自動執行只在「使用者可調整的參數」（currentParametersHashString）改變、且這組

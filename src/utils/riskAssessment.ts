@@ -91,7 +91,9 @@ export const resolveKAnonymityRiskColumns = (input: {
             resolvedBackendRole: backendRole
         });
 
-        if (backendRole === 'quasi_identifier' || backendRole === 'sensitive') {
+        // ★ 2026-10-28：敏感欄位選「刪除」現在會實際送到後端刪欄，處理後資料沒有這一欄，不能再當風險評估欄位
+        const isRemovedFromOutput = backendRole === 'sensitive' && String(matchedField?.maskStrategy || '') === 'remove';
+        if ((backendRole === 'quasi_identifier' || backendRole === 'sensitive') && !isRemovedFromOutput) {
             riskColumnsMap[cleanName] = { role: backendRole as RiskColumnRole, type: colType };
         }
     });

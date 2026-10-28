@@ -39,6 +39,12 @@ export interface ComplianceReportSnapshot {
         limitExceededAction: string;
         suppressionMethod: string;
         cellFillMethod: string;
+        /** ★ 2026-10-28：l／t（未啟用該檢測時為 null；舊紀錄無此欄位） */
+        lValue?: number | null;
+        tValue?: number | null;
+        /** ★ 2026-10-28：識別欄位雜湊演算法（後端品質報告回填；沒有欄位用雜湊時為 null） */
+        hashAlgorithm?: string | null;
+        hashSalted?: boolean | null;
     };
     /** 差分隱私參數（K-匿名時不存在）；累計值為本次執行「之後」的值，與 Step4 畫面一致 */
     dpConfig?: {
@@ -59,7 +65,23 @@ export interface ComplianceReportSnapshot {
         totalColumnsCount: number;             // 總欄位數
         /** K-匿名資料實用性：指引保真度三項指標（2026-10-15 起；舊紀錄無此欄位） */
         fidelity?: { columnShapes: number; columnPairTrends: number | null; overall: number; isPassed: boolean } | null;
+        /** ★ 2026-10-28：差分隱私本次消耗 δ */
+        consumedDelta?: number | null;
     };
+    /** ★ 2026-10-28：資料預先處理（去識別化前的清洗；沒有時為空陣列；舊紀錄無此欄位） */
+    preprocessing?: { columnName: string; stepsText: string }[];
+    /** ★ 2026-10-28：風險評估對象（評估欄位來源、間接識別、敏感欄位、族群條件、連結性分組）；未評估時為 null */
+    riskTargets?: {
+        source: 'imported' | 'derived';
+        quasiIdentifiers: string[];
+        sensitive: string[];
+        subgroupLines: string[];
+        linkability: { A: string[]; B: string[] } | null;
+    } | null;
+    /** ★ 2026-10-28：差分隱私各加噪欄位的 ε */
+    dpColumnEpsilon?: Record<string, number>;
+    /** ★ 2026-10-28：後端回傳的處理與量測說明（套用的預設值、族群筆數、降級等） */
+    backendNotes?: string[];
 }
 
 export interface BuildComplianceReportSnapshotInput {
@@ -80,6 +102,16 @@ export interface BuildComplianceReportSnapshotInput {
     deidentifiedColumnsCount: number;
     totalColumnsCount: number;
     fidelity?: Pick<KAnonymityFidelityResult, 'columnShapes' | 'columnPairTrends' | 'overall' | 'isPassed'> | null;
+    /** ★ 2026-10-28 補充資訊（皆選填） */
+    lValue?: number | null;
+    tValue?: number | null;
+    hashAlgorithm?: string | null;
+    hashSalted?: boolean | null;
+    consumedDelta?: number | null;
+    preprocessing?: { columnName: string; stepsText: string }[];
+    riskTargets?: ComplianceReportSnapshot['riskTargets'];
+    dpColumnEpsilon?: Record<string, number>;
+    backendNotes?: string[];
 }
 
 const toFiniteOrNull = (value: unknown): number | null => {
@@ -99,7 +131,11 @@ export const buildComplianceReportSnapshot = (input: BuildComplianceReportSnapsh
                     maxSuppressionPercent: input.maxSuppressionPercent ?? 5,
                     limitExceededAction: input.limitExceededAction || 'stop_and_error',
                     suppressionMethod: input.suppressionMethod || 'row',
-                    cellFillMethod: input.cellFillMethod || 'star'
+                    cellFillMethod: input.cellFillMethod || 'star',
+                    lValue: toFiniteOrNull(input.lValue),
+                    tValue: toFiniteOrNull(input.tValue),
+                    hashAlgorithm: input.hashAlgorithm || null,
+                    hashSalted: typeof input.hashSalted === 'boolean' ? input.hashSalted : null
                 }
             }
             : {
@@ -127,8 +163,13 @@ export const buildComplianceReportSnapshot = (input: BuildComplianceReportSnapsh
             totalColumnsCount: input.totalColumnsCount,
             fidelity: isKAnonymity && input.fidelity
                 ? { columnShapes: input.fidelity.columnShapes, columnPairTrends: input.fidelity.columnPairTrends, overall: input.fidelity.overall, isPassed: input.fidelity.isPassed }
-                : null
-        }
+                : null,
+            consumedDelta: isKAnonymity ? null : toFiniteOrNull(input.consumedDelta)
+        },
+        preprocessing: input.preprocessing ? input.preprocessing.map((item) => ({ ...item })) : [],
+        riskTargets: input.riskTargets ? { ...input.riskTargets, subgroupLines: [...input.riskTargets.subgroupLines] } : null,
+        ...(!isKAnonymity && input.dpColumnEpsilon ? { dpColumnEpsilon: { ...input.dpColumnEpsilon } } : {}),
+        backendNotes: (input.backendNotes || []).filter((noteText) => typeof noteText === 'string' && noteText.trim() !== '')
     };
 };
 
@@ -177,14 +218,23 @@ export const resolveReportColumnTechText = (
 ): { role: string; techText: string } => {
     const role = entry.columnRoleSnapshot?.[columnName] || 'Non-sensitive';
     let techText = translate('step4.report.tech_keep_original', '保留原文');
+    const maskStrategy = entry.identifierMaskStrategySnapshot?.[columnName];
     if (role === 'Identifier') {
-        techText = entry.identifierMaskStrategySnapshot?.[columnName] === 'remove'
-            ? translate('step4.report.tech_removed', '直接移除')
-            : translate('step4.report.tech_full_masking', '完全遮蔽');
+        // ★ 2026-10-28：識別欄位支援 刪除／雜湊／清空（舊紀錄只有 remove 與完全遮蔽）
+        if (maskStrategy === 'remove') techText = translate('step4.report.tech_removed', '直接移除');
+        else if (maskStrategy === 'hash') techText = translate('step4.report.tech_hashed', '雜湊（假名化）');
+        else if (maskStrategy === 'clear') techText = translate('step4.report.tech_cleared', '清空值（保留欄位）');
+        else techText = translate('step4.report.tech_full_masking', '完全遮蔽');
+    } else if ((role === 'Sensitive' || role === 'Non-sensitive') && maskStrategy === 'remove' && entry.privacyMode === 'k-anonymity') {
+        // ★ 2026-10-28：敏感／非敏感欄位選「刪除」現在會實際送到後端刪欄
+        techText = translate('step4.report.tech_removed', '直接移除');
     } else if (role === 'Quasi-identifier' && entry.privacyMode === 'k-anonymity') {
         techText = getKAnonymityGeneralizationTechLabel(entry.qiGeneralizationTechSnapshot?.[columnName], translate);
     } else if (entry.privacyMode === 'differential-privacy' && (entry.dpEnabledFieldNamesSnapshot || []).includes(columnName)) {
         techText = translate('step4.report.tech_dp', '差分隱私加噪');
+        // ★ 2026-10-28：列出該欄位的 ε
+        const columnEpsilon = entry.reportSnapshot?.dpColumnEpsilon?.[columnName];
+        if (typeof columnEpsilon === 'number') techText = `${techText}（ε = ${formatEpsilonForDisplay(columnEpsilon)}）`;
     }
     return { role, techText };
 };

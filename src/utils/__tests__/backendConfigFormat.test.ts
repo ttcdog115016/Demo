@@ -100,6 +100,7 @@ describe('K-匿名後端設定檔外層格式', () => {
             version: '1.2.0', dataset: 'input_test.csv', input_format: 'csv',
             k_anonymity: {
                 enabled: true, k: 5, suppression_limit_percent: 20, limit_exceeded_action: 'allow_with_warning', suppression_method: 'row_suppression',
+                algorithm: 'sha3-256',
                 columns: {
                     姓名: { role: 'identifier', type: 'string', strategy: 'hash' },
                     疾病: { role: 'sensitive', type: 'string' },

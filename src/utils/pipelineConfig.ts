@@ -48,6 +48,8 @@ export interface KAnonymityPipelineSettings {
     /** 值抑制時逐欄填值（準識別符欄位名稱 → 填入值），送出為 columns.<欄>.cell_fill_value；空字串視為未填、沿用 cell_fill */
     cellFillValuesByColumn?: Record<string, string> | null;
     limitExceededAction: string | null | undefined;
+    /** ★ 2026-10-28：識別欄位「雜湊」所用演算法（k_anonymity.algorithm）；只有欄位使用雜湊時送出 */
+    hashAlgorithm?: 'sha256' | 'sha3-256' | 'sha3-512' | null;
 }
 
 export interface KAnonymityConfigInput extends KAnonymityPipelineSettings {
@@ -128,14 +130,17 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
             backendRole = privacyRoleMappingDict[String(matchedField.role)] || 'non_sensitive';
             colType = String(matchedField.type) || 'string';
             
-            if (backendRole === 'identifier' && matchedField.maskStrategy && matchedField.maskStrategy !== 'none') {
-                maskStrategy = String(matchedField.maskStrategy);
-                // ★ 強制將 drop 轉換為 remove，防止舊快取污染
-                if (maskStrategy === 'drop') {
-                    maskStrategy = 'remove';
-                }
+            // ★ 2026-10-28：依後端 v2.0.0（app/core/config.py、anonymization/pipeline.py）——
+            //   識別欄位支援 remove（刪欄）／hash（假名化）／clear（清空值、保留欄位）；未填時後端預設為 hash。
+            //   非識別欄位（敏感／非敏感）明確設 remove 亦會刪欄；先前只對識別欄位送 strategy，
+            //   畫面上選「刪除」的敏感／非敏感欄位實際上沒有被刪。
+            const uiMaskStrategy = matchedField.maskStrategy === 'drop' ? 'remove' : String(matchedField.maskStrategy || '');
+            if (backendRole === 'identifier' && ['remove', 'hash', 'clear'].includes(uiMaskStrategy)) {
+                maskStrategy = uiMaskStrategy;
+            } else if ((backendRole === 'sensitive' || backendRole === 'non_sensitive') && uiMaskStrategy === 'remove') {
+                maskStrategy = 'remove';
             }
-            
+
             if (backendRole === 'quasi_identifier') {
                 // ★ 使用者反映：匯入 config_kanon.json 後，明明原始檔案的 qi_generalization_levels
                 // 只列出「地區」「職業」兩個類別型欄位，但實際送給後端的設定檔卻多出「年齡」
@@ -338,6 +343,8 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
             // ★ cell_fill 僅在「值抑制」(cell_suppression) 模式下才有意義，未啟用時完全不送出，
             //   避免像上方 l／t 一樣把無效參數塞進設定檔造成誤解（見上方新增選單處的完整說明）。
             ...(isCellSuppressionMethod(currentSuppressionMethodStr) ? { cell_fill: currentCellFillMethodStr ?? 'star' } : {}),
+            // ★ 2026-10-28：有欄位用雜湊時才送演算法（未送時後端為 sha3-256）
+            ...(Object.values(columnsMap).some((columnSpec) => columnSpec.strategy === 'hash') ? { algorithm: input.hashAlgorithm || 'sha3-256' } : {}),
             columns: columnsMap,
             ...(Object.keys(generalizationHierarchiesMap).length > 0 && { generalization_hierarchies: generalizationHierarchiesMap }),
             ...(Object.keys(generalizationMatricesMap).length > 0 && { generalization_matrices: generalizationMatricesMap }),
@@ -578,6 +585,7 @@ export interface WorkspaceConfigSource {
     targetDelta?: number | null;
     preprocessingRules?: Record<string, PreprocessingRule[]> | null;
     missingValueRules?: Record<string, MissingValueRule> | null;
+    kAnonymityHashAlgorithm?: 'sha256' | 'sha3-256' | 'sha3-512' | null;
 }
 
 /**
@@ -610,6 +618,7 @@ export const buildBackendConfigDocumentFromWorkspace = (
             maxSuppression: workspaceState.maxSuppression, suppressionMethod: workspaceState.suppressionMethod,
             cellFillMethod: workspaceState.cellFillMethod, cellFillValuesByColumn: workspaceState.cellFillValuesByColumn,
             limitExceededAction: workspaceState.limitExceededAction,
+            hashAlgorithm: workspaceState.kAnonymityHashAlgorithm,
             processedColumnNames,
             kAnonymityFields,
             kAnonymityHierarchies: workspaceState.kAnonymityHierarchies || [],

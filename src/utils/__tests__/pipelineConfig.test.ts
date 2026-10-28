@@ -40,6 +40,7 @@ describe('K-匿名 config.json 組裝', () => {
             k_anonymity: {
                 enabled: true, k: 5, l: 2, t: 0.7,
                 suppression_limit_percent: 20, limit_exceeded_action: 'allow_with_warning', suppression_method: 'row_suppression',
+                algorithm: 'sha3-256', // ★ 2026-10-28：有欄位用雜湊時送演算法（未指定為後端預設 sha3-256）
                 columns: {
                     姓名: { role: 'identifier', type: 'string', strategy: 'hash' },
                     身分證號: { role: 'identifier', type: 'string', strategy: 'hash' },

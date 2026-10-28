@@ -64,6 +64,18 @@ export interface RiskAssessmentPhaseResult {
     capReport: CapReport | null;
     /** 本次高唯一值欄位處理結果（寫入 Step4 快取快照用；DP 模式沒有高唯一值欄位時為空陣列） */
     highCardinalityInfo: HighCardinalitySensitiveInfo[];
+    /** ★ 2026-10-28：本次實際評估的對象（合規報告用）；沒有任何候選敏感欄位時為 null */
+    evaluatedRiskTargets: EvaluatedRiskTargets | null;
+}
+
+export interface EvaluatedRiskTargets {
+    /** imported＝依匯入的風險評估設定；derived＝依去識別化設定推導 */
+    source: 'imported' | 'derived';
+    quasiIdentifiers: string[];
+    /** 逐一輪流評估的敏感欄位 */
+    sensitive: string[];
+    /** 實際送出的連結性分組（未送＝後端自動分組） */
+    linkability: RiskLinkabilityGroups | null;
 }
 
 export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): Promise<RiskAssessmentPhaseResult> => {
@@ -108,7 +120,16 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
     const riskDatasetNameText = currentDatasetFileNameString || 'dataset';
 
     // ★ 2026-10-28：匯入的風險評估設定（統合版 risk_attacks）。欄位角色只保留實際處理的欄位，缺間接識別或敏感欄位時退回原本推導。
-    const resolvedRiskColumnOverrides = resolveRiskColumnOverridesForDataset(riskColumnOverrides, actualProcessedColumnsList);
+    // K-匿名：處理方式為「刪除／清空」的欄位不在處理後資料中（或已無值），不能當風險評估欄位
+    const kAnonymityRemovedColumnNames = new Set(currentPrivacyModeTypeStr === 'k-anonymity'
+        ? (kAnonymityFieldsList as { name?: unknown; maskStrategy?: unknown }[])
+            .filter((fieldItem) => ['remove', 'clear'].includes(String(fieldItem?.maskStrategy || '')))
+            .map((fieldItem) => String(fieldItem.name || '').replace(/^[\uFEFF\u200B]+/, '').trim())
+        : []);
+    const resolvedRiskColumnOverrides = resolveRiskColumnOverridesForDataset(
+        riskColumnOverrides,
+        actualProcessedColumnsList.filter((columnName) => !kAnonymityRemovedColumnNames.has(columnName.replace(/^[\uFEFF\u200B]+/, '').trim()))
+    );
     if (resolvedRiskColumnOverrides) {
         const describeRole = (role: string) => Object.keys(resolvedRiskColumnOverrides).filter((name) => resolvedRiskColumnOverrides[name].role === role).map((name) => `「${name}」`).join('、');
         appendPipelineLog(`ℹ️ 風險評估欄位依匯入設定：間接識別 ${describeRole('quasi_identifier')}；敏感 ${describeRole('sensitive')}`);
@@ -436,5 +457,23 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
         appendPipelineLog('⚠️ 未取得脫敏後資料集，略過 CAP 前後對比');
     }
 
-    return { attackReport: attackReportResult, capReport: capReportResult, highCardinalityInfo: finalHighCardinalitySensitiveWarningInfo };
+    // ★ 2026-10-28：合規報告記錄本次實際評估的欄位（間接識別取各輪聯集）
+    let evaluatedRiskTargets: EvaluatedRiskTargets | null = null;
+    if (buildCapRiskColumnsMapForCandidateFn && capCandidateColumnNamesList.length > 0) {
+        const quasiIdentifierNameSet = new Set<string>();
+        let sentLinkability: RiskLinkabilityGroups | null = null;
+        capCandidateColumnNamesList.forEach((candidateName) => {
+            const roundColumns = buildCapRiskColumnsMapForCandidateFn!(candidateName);
+            Object.entries(roundColumns).forEach(([columnName, spec]) => { if (spec.role === 'quasi_identifier') quasiIdentifierNameSet.add(columnName); });
+            sentLinkability = sentLinkability ?? resolveLinkabilityForRound(riskLinkability, roundColumns);
+        });
+        evaluatedRiskTargets = {
+            source: resolvedRiskColumnOverrides ? 'imported' : 'derived',
+            quasiIdentifiers: Array.from(quasiIdentifierNameSet),
+            sensitive: [...capCandidateColumnNamesList],
+            linkability: sentLinkability
+        };
+    }
+
+    return { attackReport: attackReportResult, capReport: capReportResult, highCardinalityInfo: finalHighCardinalitySensitiveWarningInfo, evaluatedRiskTargets };
 };

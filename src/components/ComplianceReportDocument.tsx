@@ -18,6 +18,7 @@ import AuditIntegrityPanel from './AuditIntegrityPanel';
 import { OverallRiskLevelPanel } from './RiskLevelBadge';
 import { computeReportOverallRisk, formatEpsilonForDisplay, isCapEvaluated, resolveReportColumnTechText, type ComplianceReportEntry } from '../utils/complianceReport';
 import { scaleFontSize } from '../utils/fontScale';
+import { formatHashAlgorithmLabel } from '../utils/reportDescriptions';
 
 export type { ComplianceReportEntry } from '../utils/complianceReport';
 
@@ -67,6 +68,15 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                     { label: translate('step4.report.suppress_method_label', '抑制方式'), value: isCellSuppression ? translate('step3.cell_suppression', '值抑制 ') : translate('step3.row_suppression', '列抑制 ') },
                     ...(isCellSuppression
                         ? [{ label: translate('step4.report.cell_fill_label', '值抑制填法'), value: kConfig.cellFillMethod === 'missing' ? translate('step3.cell_fill_missing', '缺失值 (missing)') : translate('step3.cell_fill_star', '星號遮蔽 (star)') }]
+                        : []),
+                    // ★ 2026-10-28：l／t 與識別欄位雜湊演算法
+                    ...(typeof kConfig.lValue === 'number' ? [{ label: translate('step4.report.l_value_label', 'l 值（l-多樣性）'), value: String(kConfig.lValue) }] : []),
+                    ...(typeof kConfig.tValue === 'number' ? [{ label: translate('step4.report.t_value_label', 't 值（t-緊密度）'), value: String(kConfig.tValue) }] : []),
+                    ...(kConfig.hashAlgorithm
+                        ? [{
+                            label: translate('step4.report.hash_algorithm_label', '識別欄位雜湊演算法'),
+                            value: `${formatHashAlgorithmLabel(kConfig.hashAlgorithm)}${kConfig.hashSalted === true ? translate('step4.report.hash_salted_suffix', '（加鹽）') : kConfig.hashSalted === false ? translate('step4.report.hash_unsalted_suffix', '（未加鹽）') : ''}`
+                        }]
                         : [])
                 ]
                 : [legacyParameterRow])
@@ -92,7 +102,38 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
             { label: translate('step4.report.overlap_ratio_label', '跨輪重疊比例'), value: String(attackParams.overlap_ratio) }
         ]
         : [];
-    const privacyConfigRowsList = [...deidConfigRowsList, ...riskAttackParamRowsList];
+    // ★ 2026-10-28：資料預先處理（去識別化前的清洗）；舊紀錄沒有此項時不列
+    const preprocessingRowsList: { label: string; value: string }[] = snapshot?.preprocessing
+        ? (snapshot.preprocessing.length > 0
+            ? snapshot.preprocessing.map((item) => ({ label: `${translate('step4.report.preprocess_label', '資料預先處理')}：${item.columnName}`, value: item.stepsText }))
+            : [{ label: translate('step4.report.preprocess_label', '資料預先處理'), value: translate('step4.report.preprocess_none', '無') }])
+        : [];
+    const privacyConfigRowsList = [...preprocessingRowsList, ...deidConfigRowsList, ...riskAttackParamRowsList];
+
+    // ★ 2026-10-28：風險評估對象（評估欄位依據、間接識別、敏感欄位、族群條件、連結性分組）
+    const riskTargets = snapshot?.riskTargets;
+    const riskTargetRowsList: { label: string; value: string }[] = riskTargets
+        ? [
+            {
+                label: translate('step4.report.risk_target_source', '評估欄位依據'),
+                value: riskTargets.source === 'imported'
+                    ? translate('step4.report.risk_target_source_imported', '依匯入的風險評估設定（與去識別化的欄位角色不同）')
+                    : translate('step4.report.risk_target_source_derived', '依去識別化的欄位設定')
+            },
+            { label: translate('step4.report.risk_target_qi', '間接識別欄位'), value: riskTargets.quasiIdentifiers.join('、') || '—' },
+            {
+                label: translate('step4.report.risk_target_sensitive', '敏感欄位'),
+                value: `${riskTargets.sensitive.join('、') || '—'}${riskTargets.sensitive.length > 1 ? translate('step4.report.risk_target_sensitive_rounds', '（逐一評估，取風險最高者）') : ''}`
+            },
+            { label: translate('step4.report.risk_target_subgroup', '評估對象'), value: riskTargets.subgroupLines.length > 0 ? riskTargets.subgroupLines.join('；') : translate('step4.report.risk_target_all', '全部資料') },
+            {
+                label: translate('step4.report.risk_target_linkability', '連結性攻擊分組'),
+                value: riskTargets.linkability
+                    ? `A：${riskTargets.linkability.A.join('、')}／B：${riskTargets.linkability.B.join('、')}`
+                    : translate('step4.report.risk_target_linkability_auto', '系統自動分組')
+            }
+        ]
+        : [];
 
     // 三、再識別風險：整體等級與 Step4 畫面同一算法（utils/complianceReport.ts）
     const attackRisks = snapshot?.attackRisks ?? null;
@@ -167,6 +208,7 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                 {renderKeyValueTable(privacyConfigRowsList)}
 
                 <h4 className="pdf-page-break" style={{ ...sectionHeadingStyle, pageBreakInside: 'avoid' }}>三、 {translate('step4.report.risk_title', '再識別風險量測結果')}</h4>
+                {riskTargetRowsList.length > 0 && <div data-testid="compliance-report-risk-targets">{renderKeyValueTable(riskTargetRowsList)}</div>}
                 <div className="pdf-page-break" data-testid="compliance-report-risk" style={{ marginBottom: '20px', pageBreakInside: 'avoid' }}>
                     {snapshot ? (
                         <>
@@ -236,6 +278,11 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                                 <span>{isKAnonymity ? translate('step4.report.suppression', '資料紀錄抑制率：') : translate('step4.report.total_epsilon', '總消耗隱私預算 (Epsilon)：')}</span>
                                 <span>{isKAnonymity ? `${(utility.suppressionRatePercent ?? 0).toFixed(3)}%` : `${formatEpsilonForDisplay(utility.consumedEpsilon ?? 0)} ε`}</span>
                             </div>
+                            {!isKAnonymity && typeof utility.consumedDelta === 'number' && (
+                                <div style={keyValueRowStyle}>
+                                    <span>{translate('step4.report.consumed_delta', '本次消耗 δ：')}</span><span>{String(utility.consumedDelta)}</span>
+                                </div>
+                            )}
                             <div style={keyValueRowStyle}>
                                 <span>{translate('step4.report.total_cols', '實際去識別數 / 總欄位數：')}</span><span>{utility.deidentifiedColumnsCount} / {utility.totalColumnsCount}</span>
                             </div>
@@ -323,6 +370,15 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                                 before: cap.cap_before.toFixed(2),
                                 after: cap.cap_after.toFixed(2)
                             })}
+                        </div>
+                    )}
+                    {/* ★ 2026-10-28：後端回傳的處理與量測說明（套用的預設值、族群筆數、降級等），比照後端 /api/v1/report 的「量測說明」 */}
+                    {(snapshot?.backendNotes || []).length > 0 && (
+                        <div data-testid="compliance-report-backend-notes" style={{ marginTop: '6px' }}>
+                            <div>{translate('step4.report.backend_notes_title', '系統處理說明：')}</div>
+                            <ul style={{ margin: '2px 0 0', paddingLeft: '20px' }}>
+                                {(snapshot?.backendNotes || []).map((noteText, noteIndex) => <li key={noteIndex}>{noteText}</li>)}
+                            </ul>
                         </div>
                     )}
                 </div>

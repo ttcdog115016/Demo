@@ -58,3 +58,14 @@ export const extractImportedCellFillValues = (importedColumnsBlock: unknown): Re
     });
     return cellFillValuesByColumn;
 };
+
+/**
+ * ★ 2026-10-28：k_anonymity.algorithm（識別欄位雜湊演算法）正規化：認得 sha256／sha3-256／sha3-512，
+ *   其餘或未填一律為後端預設 sha3-256。
+ */
+export const normalizeKAnonymityHashAlgorithm = (rawAlgorithm: unknown): 'sha256' | 'sha3-256' | 'sha3-512' => {
+    const normalizedText = String(rawAlgorithm ?? '').trim().toLowerCase().replace(/_/g, '-');
+    if (normalizedText === 'sha256' || normalizedText === 'sha-256') return 'sha256';
+    if (normalizedText === 'sha3-512') return 'sha3-512';
+    return 'sha3-256';
+};

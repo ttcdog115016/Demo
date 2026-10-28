@@ -199,6 +199,7 @@ interface WorkspaceState
     riskColumnOverrides: RiskColumnOverrides | null;                         // ★ 2026-10-28：匯入的風險評估欄位角色；null＝依 K-匿名角色／DP 欄位推導
     riskLinkability: RiskLinkabilityGroups | null;                           // ★ 2026-10-28：匯入的連結性攻擊分組；null＝由後端自動導出
     riskAttackParams: RiskAttackParams | null;                               // ★ 2026-10-28：三攻擊實驗參數；null＝前端預設
+    kAnonymityHashAlgorithm: 'sha256' | 'sha3-256' | 'sha3-512';             // ★ 2026-10-28：K-匿名識別欄位「雜湊」所用演算法（k_anonymity.algorithm，整份共用；後端未填為 sha3-256）
     // ★ 新增：「限定特定族群評估風險」類別型欄位之完整資料集相異值快取——使用者反映手動輸入
     // 篩選值（如誤打「北區/南區」，但資料集實際存的是「大安區/板橋區」等行政區名稱）會導致
     // 篩選後查無資料，故改為完整解析原始上傳檔案 (不受 Step1 預覽 1000 筆上限)，取得每個欄位
@@ -323,6 +324,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
             riskColumnOverrides: null,
             riskLinkability: null,
             riskAttackParams: null,
+            kAnonymityHashAlgorithm: 'sha3-256',
             columnCategoricalUniqueValues: {},
             isColumnCategoricalValuesScanning: false,
             step4Cache: null,
@@ -379,6 +381,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 riskColumnOverrides: null,
                 riskLinkability: null,
                 riskAttackParams: null,
+                kAnonymityHashAlgorithm: 'sha3-256',
                 columnCategoricalUniqueValues: {}, // ★ 新增：換一份資料集，快取之相異值已不適用，一併清空觸發重新掃描
                 isColumnCategoricalValuesScanning: false,
                 // ★ 累計隱私預算追蹤與資料集綁定：換一份資料集即視為全新的追蹤起點，歸零重新累計。
@@ -414,6 +417,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 riskColumnOverrides: null,
                 riskLinkability: null,
                 riskAttackParams: null,
+                kAnonymityHashAlgorithm: 'sha3-256',
                 columnCategoricalUniqueValues: {}, // ★ 新增
                 isColumnCategoricalValuesScanning: false, // ★ 新增
                 step4Cache: null,
