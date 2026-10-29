@@ -31,6 +31,8 @@ export const Dashboard: React.FC = () => {
   // ★ 2026-10-07：改讀登入中的使用者，不再寫死；角色以「Data Owner」顯示而非 DATA_OWNER
   const currentUserSession = useAuthStore((state) => state.user);
   const userInfo = { name: currentUserSession?.name ?? 'Data.Owner.A', role: getRoleDisplayName(currentUserSession?.role ?? 'data_owner') };
+  // ★ 2026-10-29：歡迎詞只顯示使用者名稱（帳號為 Email 時取 @ 前面那段，例如 owner@test.com → owner）
+  const welcomeNameString = userInfo.name.includes('@') ? userInfo.name.split('@')[0] : userInfo.name;
 
   // ★ 2026-10-07：Admin 發布之「重要」公告，以可關閉橫幅顯示於首頁（一般公告只在右上角鈴鐺）
   const allAnnouncementsList = useAnnouncementStore((state) => state.announcements);
@@ -146,7 +148,7 @@ export const Dashboard: React.FC = () => {
 
         {/* --- 1. 歡迎與狀態區塊 --- */}
         <div>
-          <Title level={2} style={{ margin: 0 }}>{translate('dashboard.welcome_back', '歡迎回來，{{name}}', { name: userInfo.name })}</Title>
+          <Title level={2} style={{ margin: 0 }}>{translate('dashboard.welcome_back', '歡迎回來 {{name}}', { name: welcomeNameString })}</Title>
           <Space size="middle" style={{ marginTop: '12px' }}>
             <Badge status="processing" color="#52c41a" text={<Text type="secondary">{translate('dashboard.system_normal', '系統運作正常')}</Text>} />
             <Text type="secondary" style={{ opacity: 0.5 }}>|</Text>

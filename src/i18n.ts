@@ -254,7 +254,7 @@ const translationResourcesDictionary = {
 				networkError: "無法連線至伺服器，請稍後再試。"
 			},
 			dashboard: {
-				welcome_back: "歡迎回來，{{name}}",
+				welcome_back: "歡迎回來 {{name}}",
 				system_normal: "系統運作正常",
 				role_label: "權限身份：",
 				new_task_title: "建立新的去識別化任務",
