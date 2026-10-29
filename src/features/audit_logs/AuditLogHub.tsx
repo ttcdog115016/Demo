@@ -7,21 +7,22 @@
  * ============================================================================
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
 	Card, Table, Tag, Input, Select, Button, Space, Typography, 
-	Statistic, Row, Col, Modal, theme, App as AntdApp, Tooltip
+	Statistic, Row, Col, Modal, theme, App as AntdApp, Tooltip, Alert
 } from 'antd';
 import { 
 	SearchOutlined, FileTextOutlined, 
 	 SafetyCertificateOutlined,
-	 FilterOutlined, DownloadOutlined
+	 FilterOutlined, DownloadOutlined, CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { getRoleDisplayName } from '../../utils/roleLabel';
 
 import { useAuditStore, selectAuditLogsForUser, type AuditLogItem } from '../../store/useAuditStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { fetchHistory } from '../../api/systemApi';
 import ComplianceReportDocument from '../../components/ComplianceReportDocument';
 import RiskLevelBadge from '../../components/RiskLevelBadge';
 import { computeReportOverallRisk } from '../../utils/complianceReport';
@@ -71,7 +72,9 @@ const { Text, Title } = Typography;
  * 
  * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素
  */
-export default function AuditLogHub(): React.ReactElement 
+const FAILED_ROW_STYLE_TEXT = '.audit-row-failed > td { background: rgba(220, 38, 38, 0.08) !important; } .audit-row-failed > td:first-child { box-shadow: inset 4px 0 0 #dc2626; }';
+
+export default function AuditLogHub(): React.ReactElement
 {
 	const { token } = theme.useToken();
 
@@ -79,13 +82,41 @@ export default function AuditLogHub(): React.ReactElement
 
 	const { t: translate } = useTranslation();
 
-	// ★ 2026-10-29：紀錄存後端（登入後自 GET /api/v1/history 載入）；只顯示目前帳號的紀錄
+	// ★ 2026-10-29：紀錄存後端。Data Owner 看自己的（開頁時重新載入）；Admin 看所有人的（GET /history?all=1）
 	const allAuditLogsList = useAuditStore(
 		(state) => state.auditLogs
 	);
+	const loadAuditLogsAction = useAuditStore((state) => state.loadAuditLogs);
 	const currentOperatorName = useAuthStore((state) => state.user?.name);
-	const auditLogsList = useMemo(() => selectAuditLogsForUser(allAuditLogsList, currentOperatorName), [allAuditLogsList, currentOperatorName]);
-	
+	const isAdminViewer = useAuthStore((state) => state.user?.role) === 'admin';
+	const [adminAuditLogsList, setAdminAuditLogsList] = useState<AuditLogItem[]>([]);
+	const [isAuditLogsLoading, setIsAuditLogsLoading] = useState<boolean>(true);
+	const [isAuditLogsLoadFailed, setIsAuditLogsLoadFailed] = useState<boolean>(false);
+
+	const reloadAuditLogs = useCallback(async (): Promise<void> =>
+	{
+		setIsAuditLogsLoading(true);
+		let isLoaded = true;
+		if (isAdminViewer)
+		{
+			try { setAdminAuditLogsList(await fetchHistory({ all: true })); }
+			catch (loadErrorValue) { console.warn('[處理紀錄] 載入所有使用者紀錄失敗：', loadErrorValue); isLoaded = false; }
+		}
+		else
+		{
+			isLoaded = await loadAuditLogsAction();
+		}
+		setIsAuditLogsLoadFailed(!isLoaded);
+		setIsAuditLogsLoading(false);
+	}, [isAdminViewer, loadAuditLogsAction]);
+
+	useEffect(() => { void reloadAuditLogs(); }, [reloadAuditLogs]);
+
+	const auditLogsList = useMemo(
+		() => (isAdminViewer ? adminAuditLogsList : selectAuditLogsForUser(allAuditLogsList, currentOperatorName)),
+		[isAdminViewer, adminAuditLogsList, allAuditLogsList, currentOperatorName]
+	);
+
 	const [searchKeywordText, setSearchKeywordText] = useState<string>('');
 
 	const [privacyFilterMode, setPrivacyFilterMode] = useState<string>('all'); 
@@ -129,9 +160,11 @@ export default function AuditLogHub(): React.ReactElement
 				(logItemRecord) => logItemRecord.status === 'passed'
 			).length;
 
+			// ★ 2026-10-29：總數改稱「處理紀錄總數」（原「合規簽發」也算進未達標的紀錄），另分列達標／未達標
 			return {
 				totalCount: totalAuditLogsCount,
-				passedRatePercent: totalAuditLogsCount > 0 ? ((passedAuditLogsCount / totalAuditLogsCount) * 100).toFixed(0) : '100',
+				passedCount: passedAuditLogsCount,
+				failedCount: totalAuditLogsCount - passedAuditLogsCount,
 			};
 		}, 
 		[auditLogsList]
@@ -261,6 +294,15 @@ export default function AuditLogHub(): React.ReactElement
 				<Text strong style={{ color: token.colorPrimary }}>{certificateIdTextString}</Text>
 			),
 		},
+		// ★ 2026-10-29：未達合規標準的紀錄原本要調閱才看得到，列表一律顯示「合規結果」，未達標以紅色標示
+		{
+			title: translate('audit.col_compliance', '合規結果'),
+			dataIndex: 'status',
+			key: 'status',
+			render: (statusValue: AuditLogItem['status']) => (statusValue === 'failed'
+				? <Tag color="error" icon={<CloseCircleOutlined />} style={{ fontWeight: 700 }} data-testid="audit-row-failed">{translate('audit.compliance_failed', '未達合規標準')}</Tag>
+				: <Tag color="success" icon={<CheckCircleOutlined />}>{translate('audit.compliance_passed', '達標')}</Tag>),
+		},
 		{
 			title: translate('audit.col_file_name', '處置檔案名稱'),
 			dataIndex: 'fileName',
@@ -329,12 +371,34 @@ export default function AuditLogHub(): React.ReactElement
 		<div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 			
 			<Row gutter={24}>
-				<Col span={8}>
+				<Col xs={24} md={8}>
 					<Card variant="borderless" style={{ background: token.colorBgContainer }}>
-						<Statistic 
-							title={translate('audit.stats_total', '累積合規簽發憑證總數')} 
-							value={auditDashboardStatistics.totalCount} 
-							prefix={<SafetyCertificateOutlined style={{ color: token.colorPrimary }} />} 
+						<Statistic
+							title={translate('audit.stats_total', '處理紀錄總數')}
+							value={auditDashboardStatistics.totalCount}
+							prefix={<SafetyCertificateOutlined style={{ color: token.colorPrimary }} />}
+							suffix={translate('audit.unit_certificates', '份')}
+						/>
+					</Card>
+				</Col>
+				<Col xs={24} md={8}>
+					<Card variant="borderless" style={{ background: token.colorBgContainer }}>
+						<Statistic
+							title={translate('audit.stats_passed', '達合規標準')}
+							value={auditDashboardStatistics.passedCount}
+							valueStyle={{ color: '#16a34a' }}
+							prefix={<CheckCircleOutlined />}
+							suffix={translate('audit.unit_certificates', '份')}
+						/>
+					</Card>
+				</Col>
+				<Col xs={24} md={8}>
+					<Card variant="borderless" style={{ background: token.colorBgContainer, ...(auditDashboardStatistics.failedCount > 0 ? { border: '1px solid #dc2626' } : {}) }}>
+						<Statistic
+							title={translate('audit.stats_failed', '未達合規標準')}
+							value={auditDashboardStatistics.failedCount}
+							valueStyle={{ color: auditDashboardStatistics.failedCount > 0 ? '#dc2626' : undefined }}
+							prefix={<CloseCircleOutlined />}
 							suffix={translate('audit.unit_certificates', '份')}
 						/>
 					</Card>
@@ -344,13 +408,23 @@ export default function AuditLogHub(): React.ReactElement
 
 			<Card variant="borderless" style={{ background: token.colorBgContainer }}>
 				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-					<Title level={4} style={{ margin: 0 }}>
-						<FilterOutlined style={{ marginRight: 8, color: token.colorPrimary }} />
-						{translate('audit.hub_title', '歷史審計軌跡與憑證數據庫 (Audit Logs & Certificates Hub)')}
-					</Title>
+					<div>
+						<Title level={4} style={{ margin: 0 }}>
+							<FilterOutlined style={{ marginRight: 8, color: token.colorPrimary }} />
+							{translate('audit.hub_title', '處理紀錄')}
+						</Title>
+						{/* ★ 2026-10-29：原名「歷史檢測軌跡與紀錄資料庫」讓人以為存有處理過的資料，改名並註明只存紀錄 */}
+						<Text type="secondary" style={{ fontSize: scaleFontSize(12) }} data-testid="audit-hub-note">
+							{translate('audit.hub_note', '這裡只保存每次處理的設定與結果摘要（含伺服器簽章），不保存原始資料，也不保存去識別化後的資料。')}
+							{isAdminViewer && <> {translate('audit.hub_note_admin', '管理員檢視：列出所有使用者的處理紀錄。')}</>}
+						</Text>
+					</div>
 
 					<Space>
-						<Input 
+						<Button icon={<ReloadOutlined />} loading={isAuditLogsLoading} onClick={() => void reloadAuditLogs()}>
+							{translate('audit.btn_reload', '重新載入')}
+						</Button>
+						<Input
 							placeholder={translate('audit.search_placeholder', '搜尋憑證編號、檔案名稱、操作者...')} 
 							prefix={<SearchOutlined />} 
 							value={searchKeywordText}
@@ -372,10 +446,18 @@ export default function AuditLogHub(): React.ReactElement
 					</Space>
 				</div>
 
-				<Table 
+				{isAuditLogsLoadFailed && (
+					<Alert type="error" showIcon style={{ marginBottom: 12 }} message={translate('audit.load_failed', '處理紀錄載入失敗，請確認後端連線後重新載入。')} />
+				)}
+
+				{/* 未達合規標準的列整列淡紅底、左側紅條，與達標紀錄一眼可分 */}
+				<style>{FAILED_ROW_STYLE_TEXT}</style>
+				<Table
 					dataSource={filteredAuditLogsList}
 					columns={dataTableColumnsConfig}
 					rowKey="id"
+					loading={isAuditLogsLoading}
+					rowClassName={(auditLogRecordItem: AuditLogItem) => (auditLogRecordItem.status === 'failed' ? 'audit-row-failed' : '')}
 					pagination={{ pageSize: DEFAULT_PAGE_SIZE }}
 					size="middle"
 					scroll={{ x: 'max-content' }}

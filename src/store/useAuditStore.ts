@@ -42,6 +42,7 @@ export interface AuditLogItem
 	qiGeneralizationTechSnapshot?: Record<string, string>; // ★ 2026-10-05：K-匿名間接識別欄位實際套用之泛化技術代碼快照（見 utils/kAnonymityTechLabel.ts）；舊紀錄無此欄位，顯示退回「區間/時間泛化」
 	reportSnapshot?: ComplianceReportSnapshot;        // ★ 2026-10-08：簽發當下合規報告所需數值（處理配置、三攻擊、CAP、效用），Step4 報告與歷史紀錄調閱共用同一份，內容一致；舊紀錄無此欄位
 	integrity?: AuditIntegrityRecord;                 // ★ 2026-10-02：防篡改指紋（SHA-256）與數位簽章（ECDSA P-256），見 utils/auditIntegrity.ts；舊紀錄無此欄位
+	runId?: string;                                   // ★ 2026-10-29：對應的後端處理呼叫（X-Run-Id），存紀錄時後端驗證
 }
 
 /**
@@ -66,7 +67,7 @@ interface AuditState
 	 */
 	addAuditLog: (auditLogEntry: Omit<AuditLogItem, 'id'>) => Promise<boolean>;
 	/** ★ 2026-10-29：自後端載入目前帳號的處理紀錄（登入／重新整理接續登入後呼叫） */
-	loadAuditLogs: () => Promise<void>;
+	loadAuditLogs: () => Promise<boolean>; // ★ 2026-10-29：回傳是否載入成功（紀錄頁失敗時顯示錯誤與重新載入）
 	/** 登出時清空畫面上的紀錄（後端資料不動） */
 	clearAuditLogs: () => void;
 }
@@ -145,10 +146,12 @@ export const useAuditStore = create<AuditState>()(
 				{
 					const historyRecordsList = await fetchHistory();
 					setStoreStateAction({ auditLogs: historyRecordsList.slice(0, MAX_AUDIT_LOG_ENTRIES_COUNT) });
+					return true;
 				}
 				catch (loadErrorValue)
 				{
 					console.warn('[處理紀錄] 自後端載入失敗：', loadErrorValue);
+					return false;
 				}
 			},
 

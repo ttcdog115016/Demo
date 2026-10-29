@@ -55,7 +55,7 @@ interface LoginFormValues
 
 /**
  * 函數名稱: Login
- * 函數功能: 渲染登入介面，提供用戶輸入帳密登入、快速測試填入、免密登入與跳轉至權限申請/忘記密碼等導頁功能。
+ * 函數功能: 渲染登入介面，以帳號密碼經後端 POST /api/v1/auth/login 登入。
  * 
  * 輸入參數 (Input): 無 (React 無參數 Functional Component)
  * 輸出參數 (Output): 無
@@ -100,7 +100,7 @@ export default function Login(): React.ReactElement
 
 	/**
 	 * 函數名稱: handleLogin
-	 * 函數功能: 處理標準登入表單送出事件，模擬網路延遲、比對 Demo 帳戶庫並寫入 AuthStore。
+	 * 函數功能: 處理登入表單送出：向後端驗證帳密，成功後寫入 AuthStore。
 	 * 
 	 * 輸入參數 (Input):
 	 *   - formValuesObj (LoginFormValues): 包含 email, password 之表單數值物件

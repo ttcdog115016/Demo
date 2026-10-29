@@ -33,8 +33,6 @@ import {
 import { useAuthStore, type UserRole } from './store/useAuthStore';
 import { useUIStore, type FontSizeLevel } from './store/useUIStore';
 import { useWorkspaceStore } from './store/useWorkspaceStore';
-import NotificationBell from './components/NotificationBell';
-import { SHOW_ANNOUNCEMENTS } from './config/featureFlags';
 import { getRoleDisplayName } from './utils/roleLabel';
 
 // ★ 修正：使用者反映不希望外部測試人員在畫面上看到任何 API 錯誤提示或匯出按鈕。原本
@@ -51,7 +49,6 @@ import MainLayout from './features/workspace/MainLayout';
 import { validateProgression } from './features/workspace/validateProgression';
 import { useIdleTimeout } from './features/settings/useIdleTimeout';
 import { DEFAULT_SESSION_TIMEOUT_MINUTES, loadSystemSettings } from './utils/systemSettingsSync';
-import { useAnnouncementStore, getAnnouncementUserKey } from './store/useAnnouncementStore';
 
 import { scaleFontSize, FONT_SCALE_BASE_PX } from './utils/fontScale';
 const { Header, Content, Sider } = Layout;
@@ -105,7 +102,10 @@ export const DEBUG_ERRORS_LOCAL_STORAGE_KEY = 'ppt_debug_errors_enabled';
 try {
     const initialPageLoadUrlSearchParams = new URLSearchParams(window.location.search);
     const debugErrorsUrlParamValue = initialPageLoadUrlSearchParams.get('debugErrors');
-    if (debugErrorsUrlParamValue === '1') {
+    // ★ 2026-10-29：測試面板只在開發建置（npm run dev）可開；正式建置一律清除旗標，外部使用者無法開啟
+    if (!import.meta.env.DEV) {
+        window.localStorage.removeItem(DEBUG_ERRORS_LOCAL_STORAGE_KEY);
+    } else if (debugErrorsUrlParamValue === '1') {
         window.localStorage.setItem(DEBUG_ERRORS_LOCAL_STORAGE_KEY, '1');
     } else if (debugErrorsUrlParamValue === '0') {
         window.localStorage.removeItem(DEBUG_ERRORS_LOCAL_STORAGE_KEY);
@@ -145,8 +145,7 @@ const RBACGuard = ({ allowedRoles, redirectPath }: RBACGuardProps): React.ReactE
     const { message: globalMessageApi } = AntdApp.useApp();
     const { t: translate } = useTranslation();
     const currentRoleNameString = currentUserSessionData?.role || 'data_owner';
-    // ★ 修正：使用者從右上選單「切換測試角色」時，舊頁面的守衛會先看到新角色而誤跳「權限不足」。
-    // 只有「進入頁面當下角色就不符」（例如直接輸入網址）才提示；頁面停留期間角色被切換，則靜默導向即可。
+    // 只有「進入頁面當下角色就不符」（例如直接輸入網址）才提示「權限不足」；頁面停留期間角色改變則靜默導向。
     const [roleNameOnMountString] = useState<string>(currentRoleNameString);
     const isRoleSwitchedWhileMountedStatus = roleNameOnMountString !== currentRoleNameString;
 
@@ -195,17 +194,14 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
 
     useIdleTimeout(sessionTimeoutMinutesValue);
 
-    // ★ 2026-10-29：系統設定與公告存在後端，登入期間每 60 秒重新讀取一次——
-    //   管理員修改閒置登出時間、發布新公告，其他電腦上已登入的使用者 1 分鐘內就會套用／看到
-    const announcementUserKeyString = currentUserSessionData ? getAnnouncementUserKey(currentUserSessionData) : null;
+    // ★ 2026-10-29：系統設定存在後端，登入期間每 60 秒重新讀取一次——管理員修改閒置登出時間，其他電腦 1 分鐘內套用
+    //   （同日曾一併輪詢的系統公告已移除）
+    const isUserSignedInStatus = !!currentUserSessionData;
     useEffect(() => {
-        if (!announcementUserKeyString) return;
-        const refreshTimerId = window.setInterval(() => {
-            void loadSystemSettings();
-            if (SHOW_ANNOUNCEMENTS) void useAnnouncementStore.getState().loadAnnouncements(announcementUserKeyString);
-        }, SERVER_DATA_REFRESH_INTERVAL_MS);
+        if (!isUserSignedInStatus) return;
+        const refreshTimerId = window.setInterval(() => { void loadSystemSettings(); }, SERVER_DATA_REFRESH_INTERVAL_MS);
         return () => window.clearInterval(refreshTimerId);
-    }, [announcementUserKeyString]);
+    }, [isUserSignedInStatus]);
 
     const [searchParamsObject] = useSearchParams();
     const stepQueryParameterString = searchParamsObject.get('step');
@@ -356,13 +352,16 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
             { key: '2', icon: <PieChartOutlined />, label: translate('menu.privacy_settings', '隱私設定'), onClick: () => handleSidebarStepChange(2) },
             { key: '3', icon: <DownloadOutlined />, label: translate('menu.preview_export', '預覽匯出'), onClick: () => handleSidebarStepChange(3) },
             { type: 'divider' },
-            { key: 'audit', icon: <AuditOutlined />, label: translate('menu.audit_log', '歷史審計憑證 (Audit Log)'), onClick: () => {
+            { key: 'audit', icon: <AuditOutlined />, label: translate('menu.audit_log', '處理紀錄'), onClick: () => {
                 executeNavigationAction('/audit');
             }}
         ]
         : [
             { key: 'admin_dashboard', icon: <DashboardOutlined />, label: translate('menu.admin_dashboard', '系統管理大廳'), onClick: () => {
                 executeNavigationAction('/admin');
+            }},
+            { key: 'audit', icon: <AuditOutlined />, label: translate('menu.audit_log_all', '處理紀錄（所有使用者）'), onClick: () => {
+                executeNavigationAction('/audit');
             }}
         ];
 
@@ -454,9 +453,9 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                                 {translate('header.privacy_toolkit', '隱私強化工具包')}
                             </span>
 
-                            {currentUserRoleNameString === 'data_owner' && currentLocationData.pathname === '/audit' && (
+                            {currentLocationData.pathname === '/audit' && (
                                 <span style={{ color: '#3f51b5', fontWeight: 'bold' }}>
-                                    &nbsp;/ {translate('header.audit_log', '歷史審計紀錄與憑證管理')}
+                                    &nbsp;/ {translate('header.audit_log', '處理紀錄')}
                                 </span>
                             )}
 
@@ -473,9 +472,6 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                         </div>
                         
                         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                            {/* ★ 2026-10-07：鈴鐺改為動態公告面板（左圖示｜中訊息｜右時間），見 components/NotificationBell.tsx */}
-                            {/* ★ 2026-10-29：單機版不顯示公告鈴鐺（見 config/featureFlags.ts） */}
-                            {SHOW_ANNOUNCEMENTS && <NotificationBell iconColor={themeDynamicColorsConfiguration.textMuted} />}
 
                             <Dropdown menu={userDropdownMenuConfiguration} placement="bottomRight" trigger={['click']}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '4px 8px', borderRadius: '8px' }} className="user-profile-hover">
@@ -570,8 +566,9 @@ export default function App(): React.ReactElement {
                             <Route element={<RBACGuard key="rbac-guard-data-owner" allowedRoles={['data_owner']} redirectPath="/admin" />}>
                                 <Route path="dashboard" element={<Dashboard />} />
                                 <Route path="workspace" element={<MainLayout />} />
-                                <Route path="audit" element={<AuditLogHub />} />
                             </Route>
+                            {/* ★ 2026-10-29：處理紀錄頁 Data Owner 看自己的、Admin 看所有人的（GET /history?all=1） */}
+                            <Route path="audit" element={<AuditLogHub />} />
                             <Route element={<RBACGuard key="rbac-guard-admin" allowedRoles={['admin']} redirectPath="/workspace?step=1" />}>
                                 <Route path="admin" element={<AdminDashboard />} />
                             </Route>

@@ -108,7 +108,7 @@ def ensure_env_file(base: Path) -> Path:
         "OPEN_PETS_LOG_FILE=data/logs/open-pets.log",
         "# 單次上傳上限（MB）；前端也限制 1024 MB，要改需一起改",
         "OPEN_PETS_MAX_UPLOAD_MB=1024",
-        "# 服務埠號（只在本機 127.0.0.1）。改了之後瀏覽器網址不同，「歷史檢測紀錄」會看不到（存在瀏覽器、依網址區分）",
+        "# 服務埠號（只在本機 127.0.0.1）。處理紀錄存在 data/system.db，改埠號不影響",
         f"OPEN_PETS_PORT={DEFAULT_PORT}",
     ]
     # 無 BOM 的 UTF-8；後端以 utf-8-sig 讀，有無 BOM 皆可

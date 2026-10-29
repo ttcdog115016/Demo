@@ -39,8 +39,12 @@ export interface ActiveUserStats
 
 const API_SOURCE_PATTERN = /^[A-Z]+ \/api\//;
 
-export const computeApiCallStats = (logs: SystemLogEntry[], nowMs: number = Date.now()): ApiCallStats =>
+/** ★ 2026-10-29：統計只採後端自行記錄的事件（origin=server）；前端回報的可被假造 */
+const onlyServerLogs = (logs: SystemLogEntry[]): SystemLogEntry[] => logs.filter((logEntry) => logEntry.origin === 'server');
+
+export const computeApiCallStats = (allLogs: SystemLogEntry[], nowMs: number = Date.now()): ApiCallStats =>
 {
+	const logs = onlyServerLogs(allLogs);
 	const recentApiLogs = logs.filter(logEntry => nowMs - logEntry.timestamp <= STATS_WINDOW_MS && API_SOURCE_PATTERN.test(logEntry.source));
 	const failureLogs = recentApiLogs.filter(logEntry => logEntry.level !== 'INFO');
 	return {
@@ -50,8 +54,9 @@ export const computeApiCallStats = (logs: SystemLogEntry[], nowMs: number = Date
 	};
 };
 
-export const computeFailedLoginStats = (logs: SystemLogEntry[], accounts: AccountForStats[], nowMs: number = Date.now()): FailedLoginStats =>
+export const computeFailedLoginStats = (allLogs: SystemLogEntry[], accounts: AccountForStats[], nowMs: number = Date.now()): FailedLoginStats =>
 {
+	const logs = onlyServerLogs(allLogs);
 	const failedLoginLogs = logs
 		.filter(logEntry => nowMs - logEntry.timestamp <= STATS_WINDOW_MS && logEntry.event.startsWith('登入失敗'))
 		.sort((leftEntry, rightEntry) => rightEntry.timestamp - leftEntry.timestamp);
@@ -63,8 +68,9 @@ export const computeFailedLoginStats = (logs: SystemLogEntry[], accounts: Accoun
 };
 
 // ★ 2026-10-16：移除帳號「最後登入時間」（同步後端，後端無此欄位）→ 最近登入改由維運日誌（2026-10-29 起存後端）的「使用者登入成功」紀錄統計
-export const computeActiveUserStats = (logs: SystemLogEntry[], accounts: AccountForStats[], nowMs: number = Date.now()): ActiveUserStats =>
+export const computeActiveUserStats = (allLogs: SystemLogEntry[], accounts: AccountForStats[], nowMs: number = Date.now()): ActiveUserStats =>
 {
+	const logs = onlyServerLogs(allLogs);
 	const recentLoginNames = Array.from(new Set(logs
 		.filter(logEntry => nowMs - logEntry.timestamp <= STATS_WINDOW_MS && logEntry.event.startsWith('使用者登入成功'))
 		.sort((leftEntry, rightEntry) => rightEntry.timestamp - leftEntry.timestamp)

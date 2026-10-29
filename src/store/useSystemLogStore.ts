@@ -28,14 +28,17 @@ export interface SystemLogEntry
 	level: SystemLogLevel;
 	event: string;       // 事件描述 (白話)
 	source: string;      // 來源 (使用者名稱／API 路徑／System)
+	username?: string | null;          // ★ 2026-10-29：寫入這筆的登入帳號（後端回傳）
+	origin?: 'server' | 'client';      // ★ 2026-10-29：server＝後端自行記錄（可信）、client＝前端回報；本機剛寫入、尚未讀回者為 undefined
 }
 
 interface SystemLogState
 {
 	logs: SystemLogEntry[];                                       // 由新到舊排序
-	addLog: (entry: Omit<SystemLogEntry, 'id' | 'timestamp'>) => void;
+	/** 回傳送後端的 Promise（未登入、未送出時為已完成的 Promise）；呼叫端通常不必等候 */
+	addLog: (entry: Omit<SystemLogEntry, 'id' | 'timestamp'>) => Promise<void>;
 	/** 自後端載入（限 Admin）；sinceMs 只載入該時間之後的紀錄（管理大廳 24 小時統計用）；失敗時保留畫面上現有的紀錄 */
-	loadLogs: (sinceMs?: number) => Promise<void>;
+	loadLogs: (sinceMs?: number) => Promise<boolean>; // ★ 2026-10-29：回傳是否成功（管理大廳顯示「無法取得」）
 	/** 清除後端與畫面上的日誌（限 Admin） */
 	clearLogs: () => Promise<void>;
 	/**
@@ -45,16 +48,17 @@ interface SystemLogState
 	pollNewLogs: () => Promise<number | null>;
 	recentlyArrivedIds: string[];   // 最近一次 pollNewLogs 新到的紀錄 id（畫面短暫標色用）
 	lastSyncedAt: number | null;    // 最後一次成功自後端同步的時間（epoch 毫秒）
+	consecutivePollFailures: number; // ★ 2026-10-29：連續同步失敗次數（畫面顯示「連線中斷」）
 }
 
 /** 後端紀錄的 id 是流水號；本機剛寫入、尚未自後端讀回的紀錄 id 不是純數字 */
 const isServerLogId = (logId: string): boolean => /^\d+$/.test(logId);
 
-/** 本機寫入的紀錄送後端時帶同一個時間，讀回後以（時間＋事件＋來源）辨認是同一筆，避免重複顯示 */
-const logIdentityKey = (logEntry: SystemLogEntry): string => `${logEntry.timestamp}|${logEntry.event}|${logEntry.source}`;
+/** 本機寫入的紀錄自後端讀回後以（事件＋來源）辨認是同一筆，避免重複顯示（後端改用伺服器時間，不能比時間） */
+const logIdentityKey = (logEntry: SystemLogEntry): string => `${logEntry.event}|${logEntry.source}`;
 
 export const LEGACY_SYSTEM_LOG_STORAGE_KEY = 'privacy_system_logs_v1';
-const MAX_SYSTEM_LOG_ENTRIES_COUNT = 2000; // 畫面上保留的筆數上限
+const MAX_SYSTEM_LOG_ENTRIES_COUNT = 5000; // 畫面上保留的筆數上限（與後端 GET /system-logs 上限一致；★ 2026-10-29 原 2000，輪詢後會把 7 天／全部裁掉）
 
 /**
  * 函數名稱: generateSystemLogId
@@ -78,6 +82,7 @@ export const useSystemLogStore = create<SystemLogState>()(
 		logs: [],
 		recentlyArrivedIds: [],
 		lastSyncedAt: null,
+		consecutivePollFailures: 0,
 		addLog: (entry) =>
 		{
 			const newLogEntry: SystemLogEntry = { ...entry, id: generateSystemLogId(), timestamp: Date.now() };
@@ -85,22 +90,24 @@ export const useSystemLogStore = create<SystemLogState>()(
 				logs: [newLogEntry, ...currentState.logs].slice(0, MAX_SYSTEM_LOG_ENTRIES_COUNT),
 			}));
 			// 必須在呼叫當下就送出：登出時 token 隨後即被清除，延後送會變成未登入而被拒
-			if (hasAccessToken())
-			{
-				postSystemLogs([{ level: newLogEntry.level, event: newLogEntry.event, source: newLogEntry.source, ts: newLogEntry.timestamp }])
-					.catch((saveErrorValue) => console.warn('[系統維運日誌] 寫入後端失敗：', saveErrorValue));
-			}
+			if (!hasAccessToken()) return Promise.resolve();
+			return postSystemLogs([{ level: newLogEntry.level, event: newLogEntry.event, source: newLogEntry.source, ts: newLogEntry.timestamp }])
+				.then(() => undefined)
+				.catch((saveErrorValue) => console.warn('[系統維運日誌] 寫入後端失敗：', saveErrorValue));
 		},
 		loadLogs: async (sinceMs) =>
 		{
 			try
 			{
 				// 指定時間區間時取到後端上限（5000），避免統計只算到最新 2000 筆
-				setStoreStateAction({ logs: await fetchSystemLogs(sinceMs ? 5000 : MAX_SYSTEM_LOG_ENTRIES_COUNT, sinceMs), recentlyArrivedIds: [], lastSyncedAt: Date.now() });
+				setStoreStateAction({ logs: await fetchSystemLogs(MAX_SYSTEM_LOG_ENTRIES_COUNT, sinceMs), recentlyArrivedIds: [], lastSyncedAt: Date.now(), consecutivePollFailures: 0 });
+				return true;
 			}
 			catch (loadErrorValue)
 			{
 				console.warn('[系統維運日誌] 自後端載入失敗：', loadErrorValue);
+				setStoreStateAction((currentState) => ({ consecutivePollFailures: currentState.consecutivePollFailures + 1 }));
+				return false;
 			}
 		},
 		clearLogs: async () =>
@@ -127,12 +134,14 @@ export const useSystemLogStore = create<SystemLogState>()(
 					].sort((leftEntry, rightEntry) => rightEntry.timestamp - leftEntry.timestamp).slice(0, MAX_SYSTEM_LOG_ENTRIES_COUNT),
 					recentlyArrivedIds: arrivedLogsList.map((logEntry) => logEntry.id),
 					lastSyncedAt: Date.now(),
+					consecutivePollFailures: 0,
 				}));
 				return arrivedLogsList.length;
 			}
 			catch (pollErrorValue)
 			{
 				console.warn('[系統維運日誌] 即時更新失敗：', pollErrorValue);
+				setStoreStateAction((currentState) => ({ consecutivePollFailures: currentState.consecutivePollFailures + 1 }));
 				return null;
 			}
 		},
@@ -150,12 +159,22 @@ export const useSystemLogStore = create<SystemLogState>()(
  */
 export const logSystemEvent = (level: SystemLogLevel, event: string, source: string = 'System'): void =>
 {
+	void logSystemEventAndWait(level, event, source);
+};
+
+/**
+ * ★ 2026-10-29：同 logSystemEvent，但回傳送後端的 Promise——登出前要先等日誌送達再清除 token
+ *   （access token 過期時 authorizedRequest 會用 refresh token 換發，清掉就送不出去）。
+ */
+export const logSystemEventAndWait = (level: SystemLogLevel, event: string, source: string = 'System'): Promise<void> =>
+{
 	try
 	{
-		useSystemLogStore.getState().addLog({ level, event, source });
+		return useSystemLogStore.getState().addLog({ level, event, source });
 	}
 	catch (logWriteErrorObj)
 	{
 		console.warn('寫入系統維運日誌失敗:', logWriteErrorObj);
+		return Promise.resolve();
 	}
 };

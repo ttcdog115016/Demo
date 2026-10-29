@@ -362,21 +362,6 @@ export interface RiskCapResponse {
   error?: unknown;
 }
 
-// 對應後端 ReportRequest：無狀態端點，把前面風險端點回傳的報告原封帶回來即可，
-// attack_report／cap_report 至少要提供一包（兩個都給，PDF 會兩節都產出）。
-export interface ReportRequestPayload {
-  task_id?: string;
-  attack_report?: AttackReport | null;
-  cap_report?: CapReport | null;
-}
-
-export interface ReportResponse {
-  success: boolean;
-  data?: Blob;
-  filename?: string;
-  error?: unknown;
-}
-
 /**
  * 三攻擊風險評估（K-匿名 Mode1）— POST /api/v1/risk/k-anonymity
  * 只上傳原始資料，引擎自己切 80/20、對 80% 以 K-匿名產 syn、20% 為真 holdout 跑三攻擊。
@@ -473,37 +458,3 @@ export const runRiskCap = async (
   }
 };
 
-/**
- * 彙整風險量測結果、產出 PDF 報告 — POST /api/v1/report
- * 無狀態端點：JSON body（不是 multipart），把前面 runRiskKAnonymity／runRiskDp／
- * runRiskCap 回傳的 report 原封帶回來即可，attack_report／cap_report 至少須提供一包。
- * @param payload - { task_id?, attack_report?, cap_report? }，格式參照
- *                  docs/manual_test/report_request.json
- */
-export const runReport = async (
-  payload: ReportRequestPayload,
-  requestOptions?: ApiRequestOptions
-): Promise<ReportResponse> => {
-  try {
-    const response = await axios.post('/api/v1/report', payload, {
-      responseType: 'blob',
-      ...buildAxiosRequestConfig(requestOptions),
-    });
-
-    const disposition =
-      response.headers['content-disposition'] ||
-      response.headers['Content-Disposition'];
-
-    let filename = `risk_report_${payload.task_id ?? 'risk-report'}.pdf`;
-    if (disposition && typeof disposition === 'string' && disposition.includes('filename=')) {
-      filename = parseContentDispositionFilename(disposition) ?? filename;
-    }
-
-    const outputBlob = new Blob([response.data], { type: 'application/pdf' });
-
-    return { success: true, data: outputBlob, filename };
-  } catch (error) {
-    console.error('風險報告 PDF 產出失敗:', error);
-    return { success: false, error };
-  }
-};

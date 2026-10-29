@@ -11,12 +11,11 @@ import { authorizedRequest, publicRequest } from './authApi';
 import type { AuditLogItem } from '../store/useAuditStore';
 import type { AuditVerificationResult } from '../utils/auditIntegrity';
 import type { SystemLogEntry, SystemLogLevel } from '../store/useSystemLogStore';
-import type { AnnouncementItem } from '../store/useAnnouncementStore';
 
 // ── 處理紀錄 ──────────────────────────────────────────────────────────────
 /** GET /history：目前帳號的處理紀錄（新的在前） */
-export const fetchHistory = async (): Promise<AuditLogItem[]> =>
-	(await authorizedRequest<{ records: AuditLogItem[] }>({ method: 'GET', url: '/history' })).records ?? [];
+export const fetchHistory = async (options: { all?: boolean } = {}): Promise<AuditLogItem[]> =>
+	(await authorizedRequest<{ records: AuditLogItem[] }>({ method: 'GET', url: '/history', params: options.all ? { all: 1 } : undefined })).records ?? [];
 
 /** POST /history：新增一筆處理紀錄；操作者由後端以登入帳號為準，並回傳含伺服器簽章（integrity）的紀錄 */
 export const postHistory = (record: AuditLogItem): Promise<AuditLogItem> =>
@@ -60,34 +59,3 @@ export const fetchSystemSettings = (): Promise<SystemSettings> =>
 /** PUT /settings（限 Admin）：只送要改的欄位 */
 export const putSystemSettings = (changes: Partial<SystemSettings>): Promise<SystemSettings> =>
 	authorizedRequest<SystemSettings>({ method: 'PUT', url: '/settings', data: changes });
-
-// ── 系統公告 ──────────────────────────────────────────────────────────────
-export interface AnnouncementsResponse
-{
-	announcements: AnnouncementItem[];
-	read_ids: string[];
-	dismissed_ids: string[];
-}
-
-export type AnnouncementFields = Pick<AnnouncementItem, 'title' | 'content' | 'level' | 'audience' | 'icon' | 'expiresAt'>;
-
-export const fetchAnnouncements = (): Promise<AnnouncementsResponse> =>
-	authorizedRequest<AnnouncementsResponse>({ method: 'GET', url: '/announcements' });
-
-export const postAnnouncement = (fields: AnnouncementFields): Promise<AnnouncementItem> =>
-	authorizedRequest<AnnouncementItem>({ method: 'POST', url: '/announcements', data: fields });
-
-export const patchAnnouncement = (announcementId: string, patch: Partial<AnnouncementFields>, renotify: boolean): Promise<AnnouncementItem> =>
-	authorizedRequest<AnnouncementItem>({ method: 'PATCH', url: `/announcements/${encodeURIComponent(announcementId)}`, data: { ...patch, renotify } });
-
-export const endAnnouncement = (announcementId: string): Promise<AnnouncementItem> =>
-	authorizedRequest<AnnouncementItem>({ method: 'POST', url: `/announcements/${encodeURIComponent(announcementId)}/end` });
-
-export const deleteAnnouncement = (announcementId: string): Promise<unknown> =>
-	authorizedRequest({ method: 'DELETE', url: `/announcements/${encodeURIComponent(announcementId)}` });
-
-export const postAnnouncementsRead = (ids: string[]): Promise<unknown> =>
-	authorizedRequest({ method: 'POST', url: '/announcements/read', data: { ids } });
-
-export const postAnnouncementsDismissed = (ids: string[]): Promise<unknown> =>
-	authorizedRequest({ method: 'POST', url: '/announcements/dismiss', data: { ids } });

@@ -27,6 +27,8 @@ export const BACKEND_ERROR_CODE_CATEGORY_MAP: Record<string, { status: number; c
     ERR_PREPROCESS_PARAM_INVALID: { status: 400, category: '資料前處理參數不合法' },
     ERR_FORBIDDEN: { status: 403, category: '權限不足' },
     ERR_USER_EXISTS: { status: 409, category: '帳號已存在' },
+    ERR_RECORD_EXISTS: { status: 409, category: '處理紀錄已存在' },
+    ERR_RUN_INVALID: { status: 422, category: '處理紀錄找不到對應的處理執行' },
     ERR_ACCOUNT_LOCKED: { status: 423, category: '帳號暫時鎖定' },
     ERR_AUTH_DISABLED: { status: 503, category: '登入功能未啟用' },
     ERR_PREPROCESS_COLUMN_NOT_FOUND: { status: 422, category: '資料前處理指定的欄位不存在' },
@@ -134,6 +136,8 @@ export const BACKEND_ERROR_CODE_USER_FRIENDLY_MAP: Record<string, { headline: st
     ERR_PREPROCESS_TYPE_MISMATCH: { headline: '資料預先處理的步驟不適用於這個欄位', defaultAdvice: '請回到「屬性分類」步驟的「資料預先處理」：上下界截斷、內插法與平均值填補只能用在數值欄位（若內容是數字文字，可先加一個「型態轉換」步驟）；轉成整數時若遇到小數會四捨五入。調整後再試一次；這是設定問題，您可以自行處理。' },
     ERR_FORBIDDEN: { headline: '您的帳號沒有執行此操作的權限', defaultAdvice: '請確認登入的帳號角色，或聯絡系統管理員。' },
     ERR_USER_EXISTS: { headline: '帳號已存在', defaultAdvice: '請改用其他帳號名稱。' },
+    ERR_RECORD_EXISTS: { headline: '這筆處理紀錄已存在', defaultAdvice: '同一筆紀錄不能重複存檔或修改。請重新執行一次處理。' },
+    ERR_RUN_INVALID: { headline: '處理紀錄無法存檔', defaultAdvice: '找不到這筆紀錄對應的處理執行（可能已超過 24 小時或已存過）。請重新執行一次處理。' },
     ERR_ACCOUNT_LOCKED: { headline: '帳號暫時鎖定', defaultAdvice: '登入失敗次數過多，請稍後再試，或請系統管理員重設密碼。' },
     ERR_AUTH_DISABLED: { headline: '登入功能尚未啟用', defaultAdvice: '這是系統環境設定問題，請聯絡系統管理員。' }
 };
@@ -257,7 +261,7 @@ export const DEBUG_PANEL_ERROR_CODE_OPTIONS: { code: string; sampleMessage: stri
     { code: 'ERR_PAYLOAD_TOO_LARGE', sampleMessage: '上傳內容 512.0 MB 超過伺服器允許的上限 200 MB。請改以較小的資料集分批處理，或請部署方調整 OPEN_PETS_MAX_UPLOAD_MB 設定。' },
     { code: 'ERR_UNSUPPORTED_FILE_FORMAT', sampleMessage: '不支援的檔案格式：「.txt」。請使用 CSV、JSON、JSONL 或 Excel（.xlsx）。若檔案沒有副檔名，請改以輸入格式參數明確指定。' },
     { code: 'ERR_UNSUPPORTED_CONFIG_FORMAT', sampleMessage: '不支援的設定檔格式，請使用 .json、.yaml 或 .yml。' },
-    { code: 'ERR_UNAUTHORIZED', sampleMessage: 'Not authenticated' },
+    { code: 'ERR_UNAUTHORIZED', sampleMessage: '請於 Authorization 標頭帶入 Bearer access token。' },
     { code: 'ERR_NOT_FOUND', sampleMessage: 'Not Found' },
     { code: 'ERR_METHOD_NOT_ALLOWED', sampleMessage: 'Method Not Allowed' },
     { code: 'ERR_VALIDATION_FAILED', sampleMessage: '請求欄位不合法。body→file：field required' },

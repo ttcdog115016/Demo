@@ -12,6 +12,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuditStore } from '../../store/useAuditStore';
 import { computeFileFingerprints } from '../../utils/auditIntegrity';
+import { takeLastProcessingRunId } from '../../api/apiErrorInterceptor';
 import { ensureDatasetProfile } from '../../utils/datasetProfile';
 import { RISK_ATTACK_DEFAULT_PARAMS, type HighCardinalitySensitiveInfo } from '../../utils/riskAssessment';
 import { buildComplianceReportSnapshot } from '../../utils/complianceReport';
@@ -693,7 +694,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 // ★ 2026-10-29：計算原始檔／輸出檔 SHA-256 後送後端，由伺服器簽章（見 utils/auditIntegrity.ts）；
                 //   存不進後端時提示使用者（這次的結果仍可下載，但換頁或重新整理後紀錄不會留下）
                 const fileFingerprints = await computeFileFingerprints({ inputFile: safeDataFile, outputFile: finalCsvBlobData });
-                const isAuditLogSaved = await addAuditLogAction({ ...pipelineAuditLogEntry, integrity: fileFingerprints });
+                const lastRunIdValue = takeLastProcessingRunId();
+                const isAuditLogSaved = await addAuditLogAction({ ...pipelineAuditLogEntry, integrity: fileFingerprints, ...(lastRunIdValue ? { runId: lastRunIdValue } : {}) });
                 if (isAuditLogSaved) {
                     appendPipelineLog('處理紀錄已存到伺服器並完成伺服器簽章');
                 } else {

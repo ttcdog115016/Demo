@@ -9,17 +9,14 @@
  */
 
 import { create } from 'zustand';
-import { logSystemEvent } from './useSystemLogStore';
-import { getRoleDisplayName } from '../utils/roleLabel';
-import { memberLogout, restoreMemberSession, setSessionExpiredListener, clearMemberSession } from '../api/authApi';
+import { logSystemEventAndWait } from './useSystemLogStore';
+import { getLoginGeneration, memberLogout, restoreMemberSession, setSessionExpiredListener, clearMemberSession } from '../api/authApi';
 import { useAuditStore } from './useAuditStore';
-import { useAnnouncementStore } from './useAnnouncementStore';
 
-/** ★ 2026-10-29：處理紀錄與系統公告改存後端，登入（或重新整理接續登入）後載入 */
-const loadServerDataForUser = (username: string): void =>
+/** ★ 2026-10-29：處理紀錄存後端，登入（或重新整理接續登入）後載入 */
+const loadServerDataForUser = (): void =>
 {
 	void useAuditStore.getState().loadAuditLogs();
-	void useAnnouncementStore.getState().loadAnnouncements(username);
 };
 
 // 登出原因：manual 使用者自行登出 | idle 閒置逾時 | expired 登入逾期（後端拒絕換發 token、帳號被停用或刪除）
@@ -107,23 +104,25 @@ export const useAuthStore = create<AuthState>(
 			login: (userSessionData) => 
 			{
 				setStoreStateAction({ isAuthenticated: true, user: userSessionData, lastLogoutReason: null });
-				logSystemEvent('INFO', `使用者登入成功（角色：${getRoleDisplayName(userSessionData.role)}）`, userSessionData.name);
-				loadServerDataForUser(userSessionData.email || userSessionData.name);
+				// ★ 2026-10-29：登入成功、登出改由後端記錄（前端回報可被假造），這裡不再寫日誌
+				loadServerDataForUser();
 			},
 			
 			// 實作登出 Action：清空狀態與使用者物件，並於背景通知後端作廢 refresh token
 			logout: (logoutReasonType = 'manual') =>
 			{
 				const loggedOutUserNameString = getStoreStateAction().user?.name ?? 'System';
-				if (logoutReasonType === 'idle') logSystemEvent('WARN', '閒置逾時，系統自動登出', loggedOutUserNameString);
-				else if (logoutReasonType === 'expired') logSystemEvent('WARN', '登入已逾期或帳號已停用，系統自動登出', loggedOutUserNameString);
-				else logSystemEvent('INFO', '使用者登出', loggedOutUserNameString);
-				// 逾期時 token 已被後端拒絕，只需清本機；其餘情況呼叫 POST /auth/logout（失敗也一律清除本機）
+				// 逾期時 token 已被後端拒絕，只需清本機（也送不出日誌）；閒置逾時先等日誌送達（必要時換發 token）
+				//   再呼叫 POST /auth/logout（失敗也一律清除本機；後端記「使用者登出」）
 				if (logoutReasonType === 'expired') clearMemberSession();
+				else if (logoutReasonType === 'idle')
+				{
+					const loginGenerationValue = getLoginGeneration();
+					void logSystemEventAndWait('WARN', '閒置逾時，系統自動登出', loggedOutUserNameString).finally(() => { void memberLogout(loginGenerationValue); });
+				}
 				else void memberLogout();
 				setStoreStateAction({ isAuthenticated: false, user: null, lastLogoutReason: logoutReasonType });
 				useAuditStore.getState().clearAuditLogs();
-				useAnnouncementStore.getState().clearAnnouncements();
 			},
 
 			restoreSession: async () =>
@@ -139,7 +138,7 @@ export const useAuthStore = create<AuthState>(
 							isAuthenticated: true,
 							user: { name: restoredSession.username, email: restoredSession.username, role: restoredSession.role },
 						});
-						loadServerDataForUser(restoredSession.username);
+						loadServerDataForUser();
 					}
 				}
 				finally

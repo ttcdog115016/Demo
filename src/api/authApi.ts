@@ -13,15 +13,14 @@
  *     重新整理頁面可接續登入，關閉分頁即需重新登入。
  *   - 帶 access token 的請求收到 401 時，自動用 refresh token 換發一次並重送；
  *     換發失敗即視為登入逾期，清除 Session 並通知 useAuthStore 登出。
- *   - 使用獨立的 axios 實例，不經過全域錯誤攔截器（apiErrorInterceptor.ts 會把請求內容
- *     寫入診斷紀錄並回報，登入／密碼請求不能被記錄）。
+ *   - 使用獨立的 axios 實例，不經過全域攔截器（apiErrorInterceptor.ts，只處理處理 API）。
  *
  * 角色對照：後端 admin／user ↔ 前端 admin／data_owner（前端內部代碼沿用 data_owner，
  * 畫面顯示名稱改為「User」，見 utils/roleLabel.ts）。
  *
  * ★ 欄位名稱已依最終版後端原始碼核對：登入回應帶 username／role；變更密碼主體為
- *   { current_password, new_password }；GET /users 回 { users: [{ username, role, is_active, created_at }], total }
- *   （無失敗次數、鎖定到期、密碼變更時間等欄位）。
+ *   { current_password, new_password }；GET /users 回 { users: [{ username, role, is_active, created_at,
+ *   failed_login_count, login_locked_until }], total }（★ 2026-10-29 後端補上鎖定欄位；無密碼變更時間）。
  * ============================================================================
  */
 
@@ -85,6 +84,9 @@ export interface MemberSession
 // ============================================================================
 
 let accessTokenInMemory: string | null = null;
+// 每次登入成功加 1（換發 token 不變），供延後執行的登出判斷是否仍是同一次登入
+let loginGeneration = 0;
+export const getLoginGeneration = (): number => loginGeneration;
 let sessionExpiredListener: (() => void) | null = null;
 
 const readSessionStorage = (storageKey: string): string | null =>
@@ -128,6 +130,9 @@ export const hasStoredRefreshToken = (): boolean => !!getRefreshToken();
 
 /** ★ 2026-10-29：目前是否持有 access token（系統維運日誌未登入時不送後端，見 useSystemLogStore） */
 export const hasAccessToken = (): boolean => !!accessTokenInMemory;
+
+/** ★ 2026-10-29：目前的 access token（處理 API 的全域 axios 請求帶上，見 apiErrorInterceptor） */
+export const getAccessToken = (): string | null => accessTokenInMemory;
 
 /** 換發失敗（refresh token 失效）時要執行的動作；接線時由 useAuthStore 註冊（例如呼叫 logout） */
 export const setSessionExpiredListener = (listenerFn: (() => void) | null): void =>
@@ -233,7 +238,8 @@ export const decodeJwtPayload = (jwtToken: string): Record<string, unknown> | nu
 
 let refreshInFlightPromise: Promise<void> | null = null;
 
-const refreshTokensOnce = (): Promise<void> =>
+// ★ 2026-10-29：export 給 apiErrorInterceptor（處理 API 改須登入，全域 axios 也要帶 token、401 時換發）
+export const refreshTokensOnce = (): Promise<void> =>
 {
 	if (!refreshInFlightPromise)
 	{
@@ -341,6 +347,7 @@ export const memberLogin = async (username: string, password: string): Promise<M
 		const responseObj = await memberHttpClient.post('/auth/login', { username, password });
 		const parsedTokens = parseTokenResponse(responseObj.data);
 		const sessionUsername = resolveSessionUsername(parsedTokens.accessToken, parsedTokens.username, username);
+		loginGeneration += 1;
 		storeTokens(parsedTokens.accessToken, parsedTokens.refreshToken, sessionUsername);
 		const sessionRole = await resolveSessionRole(parsedTokens.accessToken, parsedTokens.role);
 		return { username: sessionUsername, role: sessionRole };
@@ -370,8 +377,10 @@ export const restoreMemberSession = async (): Promise<MemberSession | null> =>
 };
 
 /** POST /auth/logout：作廢 refresh token；後端失敗也一律清除本機 Session */
-export const memberLogout = async (): Promise<void> =>
+export const memberLogout = async (expectedLoginGeneration?: number): Promise<void> =>
 {
+	// ★ 2026-10-29：延後登出（例如閒置逾時先等日誌送達）期間若已重新登入，不可登出新的那一次
+	if (expectedLoginGeneration !== undefined && expectedLoginGeneration !== loginGeneration) return;
 	const refreshToken = getRefreshToken();
 	clearMemberSession();
 	if (!refreshToken) return;

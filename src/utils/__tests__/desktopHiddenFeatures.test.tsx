@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * ★ 2026-10-29：單機版（一台電腦一個人用）隱藏系統公告（設定分頁、首頁橫幅、鈴鐺）、系統維運日誌分頁。
+ * ★ 2026-10-29：單機版（一台電腦一個人用）隱藏系統維運日誌分頁；系統公告同日從兩個版本移除。
  *   全站維護模式同日從兩個版本刪除。
  *   這些資料同日改存後端後，線上 Demo 版恢復顯示；系統管理大廳的統計改為全站數字，不再標示「本機統計」。
  */
@@ -10,7 +10,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('../../config/featureFlags', () => ({
-    IS_DESKTOP_BUILD: true, SHOW_DEMO_ACCOUNTS: false, SHOW_ANNOUNCEMENTS: false, SHOW_SYSTEM_LOG_TAB: false,
+    IS_DESKTOP_BUILD: true, SHOW_DEMO_ACCOUNTS: false, SHOW_SYSTEM_LOG_TAB: false,
 }));
 // 部分模組載入時就會呼叫 matchMedia，須在 import 之前設定
 vi.hoisted(() => {
@@ -32,10 +32,8 @@ vi.mock('../../api/authApi', async () => {
 });
 
 import SystemPreferences from '../../features/settings/SystemPreferences';
-import { Dashboard } from '../../features/dashboard/Dashboard';
 import AdminDashboard from '../../features/admin/AdminDashboard';
 import { useAuthStore } from '../../store/useAuthStore';
-import { useAnnouncementStore } from '../../store/useAnnouncementStore';
 
 const renderAt = (element: React.ReactElement, path = '/') => render(<MemoryRouter initialEntries={[path]}>{element}</MemoryRouter>);
 
@@ -60,16 +58,6 @@ describe('單機版隱藏的功能', () => {
         expect(queryByText('系統維護模式')).toBeNull();
     });
 
-    it('首頁不顯示重要公告橫幅', () => {
-        useAuthStore.setState({ user: { name: 'owner@test.com', email: 'owner@test.com', role: 'data_owner' } } as Partial<ReturnType<typeof useAuthStore.getState>>);
-        useAnnouncementStore.setState({
-            announcements: [{ id: 'a1', title: '測試重要公告', content: '內容', level: 'important', audience: 'all', createdAt: Date.now(), createdBy: 'admin' }],
-            dismissedBannerIdsByUser: {},
-        } as Partial<ReturnType<typeof useAnnouncementStore.getState>>);
-        const { queryByText } = renderAt(<Dashboard />);
-        expect(queryByText('測試重要公告')).toBeNull();
-    });
-
     it('系統管理大廳：統計來自後端（不標示本機統計），說明不提維運日誌', async () => {
         const { queryAllByTestId, getByText, queryByText } = renderAt(<AdminDashboard />);
         expect(queryAllByTestId('admin-local-stat-tag')).toHaveLength(0);
@@ -80,9 +68,10 @@ describe('單機版隱藏的功能', () => {
 });
 
 describe('一般 Demo 建置（非單機版）', () => {
-    it('公告、維運日誌分頁照常顯示（資料存後端）', async () => {
+    it('維運日誌分頁照常顯示（資料存後端）；系統公告已移除', async () => {
         const actualFlags = await vi.importActual<typeof import('../../config/featureFlags')>('../../config/featureFlags');
         expect(actualFlags.IS_DESKTOP_BUILD).toBe(false);
-        expect([actualFlags.SHOW_ANNOUNCEMENTS, actualFlags.SHOW_SYSTEM_LOG_TAB]).toEqual([true, true]);
+        expect(actualFlags.SHOW_SYSTEM_LOG_TAB).toBe(true);
+        expect('SHOW_ANNOUNCEMENTS' in actualFlags).toBe(false);
     });
 });

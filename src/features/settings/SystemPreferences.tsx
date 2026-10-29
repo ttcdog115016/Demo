@@ -13,9 +13,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
 	Card, Switch, Select, Segmented, Space, Divider, theme, Typography, Tooltip, Badge,
-	Tabs, Table, Tag, Button, Form, InputNumber, Alert, Modal, Input, App as AntdApp, Dropdown, Checkbox, DatePicker
+	Tabs, Table, Tag, Button, Form, InputNumber, Alert, Modal, Input, App as AntdApp, Dropdown
 } from 'antd';
-import dayjs, { type Dayjs } from 'dayjs';
 import type { MenuProps } from 'antd';
 import {
 	SettingOutlined,
@@ -30,7 +29,6 @@ import {
 	KeyOutlined,
 	EditOutlined,
 	DeleteOutlined,
-	NotificationOutlined,
 	StopOutlined,
 	CheckCircleOutlined,
 	ExclamationCircleFilled,
@@ -43,7 +41,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
-import { SHOW_ANNOUNCEMENTS, SHOW_SYSTEM_LOG_TAB } from '../../config/featureFlags';
+import { SHOW_SYSTEM_LOG_TAB } from '../../config/featureFlags';
 import { saveSystemSettings, loadSystemSettings, DEFAULT_SESSION_TIMEOUT_MINUTES } from '../../utils/systemSettingsSync';
 import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
 import SystemLogCharts, { type SystemLogChartSelection } from './SystemLogCharts';
@@ -53,9 +51,6 @@ import {
 	toMemberApiError, isMemberAccountLocked, LOGIN_MAX_ATTEMPTS, LOGIN_ATTEMPT_WINDOW_SECONDS, LOGIN_LOCKOUT_SECONDS,
 	type MemberAccount, type FrontendRole,
 } from '../../api/authApi';
-import { useAnnouncementStore, isAnnouncementActive, useAnnouncementClock, type AnnouncementItem, type AnnouncementLevel, type AnnouncementAudience } from '../../store/useAnnouncementStore';
-import { formatAnnouncementFullTime } from '../../utils/announcementDisplay';
-import { AnnouncementListItem } from '../../components/AnnouncementListItem';
 import { useUIStore, type FontSizeLevel } from '../../store/useUIStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
@@ -277,6 +272,8 @@ export default function SystemPreferences(): React.ReactElement
 	const pollNewSystemLogsAction = useSystemLogStore((state) => state.pollNewLogs);
 	const recentlyArrivedLogIdsList = useSystemLogStore((state) => state.recentlyArrivedIds);
 	const systemLogsLastSyncedAt = useSystemLogStore((state) => state.lastSyncedAt);
+	// 連續 2 次（約 10 秒）同步失敗即顯示連線中斷
+	const isSystemLogSyncBroken = useSystemLogStore((state) => state.consecutivePollFailures) >= 2;
 	const isSystemLogTabActive = activeTabIdentifier === 'syslogs' && currentUserRoleName === 'admin';
 	const isSystemLogDarkMode = useUIStore((state) => state.isDarkMode);
 
@@ -369,7 +366,9 @@ export default function SystemPreferences(): React.ReactElement
 					{
 						console.warn('[系統設定] 儲存失敗：', saveErrorValue);
 						void loadSystemSettings();
-						messageApi.error(translate('admin.msg_env_save_failed', '儲存失敗，請確認後端連線後再試一次'));
+						messageApi.error(toMemberApiError(saveErrorValue).status === 422
+							? translate('admin.msg_env_save_invalid', '數值不合法：閒置登出時間須為 1～1440 的整數分鐘')
+							: translate('admin.msg_env_save_failed', '儲存失敗，請確認後端連線後再試一次'));
 					});
 			}
 		);
@@ -449,176 +448,6 @@ export default function SystemPreferences(): React.ReactElement
 	const [resetPwdTargetUserObj, setResetPwdTargetUserObj] = useState<UserRecord | null>(null);
 
 	const [resetPwdFormInstance] = Form.useForm();
-
-	// ★ 2026-10-07：系統公告（右上角鈴鐺／Data Owner 首頁重要橫幅的資料來源）
-	const [announcementFormInstance] = Form.useForm<{ title: string; content: string; level: AnnouncementLevel; audience: AnnouncementAudience; expiresAt?: Dayjs | null; shouldRenotify?: boolean }>();
-	const announcementClockNowMs = useAnnouncementClock(); // 顯示期限到了，列表狀態自動變「已結束」
-	const endAnnouncementNowAction = useAnnouncementStore((state) => state.endAnnouncementNow);
-	const [editingAnnouncementItem, setEditingAnnouncementItem] = useState<AnnouncementItem | null>(null); // 非 null 時表單為「修改」模式
-	const updateAnnouncementAction = useAnnouncementStore((state) => state.updateAnnouncement);
-	const announcementFormDefaultValues = { level: 'normal' as AnnouncementLevel, audience: 'all' as AnnouncementAudience, shouldRenotify: true };
-	const announcementsList = useAnnouncementStore((state) => state.announcements);
-	const publishAnnouncementAction = useAnnouncementStore((state) => state.publishAnnouncement);
-	const removeAnnouncementAction = useAnnouncementStore((state) => state.removeAnnouncement);
-
-	const announcementAudienceLabelDict: Record<AnnouncementAudience, string> = {
-		all: translate('admin.announce_audience_all', '所有使用者'),
-		data_owner: 'User',
-		admin: 'Admin',
-	};
-
-	/**
-	 * 函數名稱: handlePublishAnnouncement
-	 * 函數功能: 驗證並發布系統公告，寫入系統維運日誌後清空表單。
-	 */
-	const handlePublishAnnouncement = (): void =>
-	{
-		announcementFormInstance.validateFields().then((formValuesObj) =>
-		{
-			if (editingAnnouncementItem)
-			{
-				updateAnnouncementAction(editingAnnouncementItem.id, {
-					title: formValuesObj.title.trim(),
-					content: (formValuesObj.content || '').trim(),
-					level: formValuesObj.level,
-					audience: formValuesObj.audience,
-					expiresAt: formValuesObj.expiresAt ? formValuesObj.expiresAt.valueOf() : null,
-				}, formValuesObj.shouldRenotify !== false);
-				logSystemEvent('INFO', `修改系統公告：「${formValuesObj.title.trim()}」${formValuesObj.shouldRenotify !== false ? '（重新通知使用者）' : ''}`, operatorNameString);
-				messageApi.success(translate('admin.announce_updated', '公告已更新'));
-				handleCancelEditAnnouncement();
-				return;
-			}
-
-			publishAnnouncementAction({
-				title: formValuesObj.title.trim(),
-				content: (formValuesObj.content || '').trim(),
-				level: formValuesObj.level,
-				audience: formValuesObj.audience,
-				expiresAt: formValuesObj.expiresAt ? formValuesObj.expiresAt.valueOf() : null,
-				createdBy: operatorNameString,
-			});
-			logSystemEvent('INFO', `發布系統公告：「${formValuesObj.title.trim()}」（${formValuesObj.level === 'important' ? '重要' : '一般'}，對象：${announcementAudienceLabelDict[formValuesObj.audience]}，顯示到：${formValuesObj.expiresAt ? formValuesObj.expiresAt.format('YYYY-MM-DD HH:mm') : '不限期'}）`, operatorNameString);
-			messageApi.success(translate('admin.announce_published', '公告已發布'));
-			announcementFormInstance.resetFields();
-		});
-	};
-
-	/**
-	 * 函數名稱: handleStartEditAnnouncement / handleCancelEditAnnouncement
-	 * 函數功能: 將選定公告載入上方表單進入「修改」模式；取消則清空表單回到「發布」模式。
-	 */
-	const handleStartEditAnnouncement = (targetAnnouncementItem: AnnouncementItem): void =>
-	{
-		setEditingAnnouncementItem(targetAnnouncementItem);
-		announcementFormInstance.setFieldsValue({
-			title: targetAnnouncementItem.title,
-			content: targetAnnouncementItem.content,
-			level: targetAnnouncementItem.level,
-			audience: targetAnnouncementItem.audience,
-			// 已結束的公告載入時清空期限，方便直接重新設定；若要維持結束狀態按取消即可
-			expiresAt: targetAnnouncementItem.expiresAt && targetAnnouncementItem.expiresAt > Date.now() ? dayjs(targetAnnouncementItem.expiresAt) : null,
-			shouldRenotify: true,
-		});
-	};
-
-	const handleCancelEditAnnouncement = (): void =>
-	{
-		setEditingAnnouncementItem(null);
-		announcementFormInstance.resetFields();
-	};
-
-	/**
-	 * 函數名稱: showRemoveAnnouncementConfirm
-	 * 函數功能: 二次確認後刪除公告（永久移除，無法復原）。
-	 */
-	const showRemoveAnnouncementConfirm = (targetAnnouncementItem: AnnouncementItem): void =>
-	{
-		modalApi.confirm({
-			title: translate('admin.announce_remove_title', '刪除公告'),
-			icon: <ExclamationCircleFilled />,
-			content: translate('admin.announce_remove_desc', '刪除後無法復原，所有使用者的通知與首頁橫幅都不會再顯示此公告。'),
-			okText: translate('admin.btn_delete', '刪除'),
-			okType: 'danger',
-			cancelText: translate('admin.btn_cancel', '取消'),
-			onOk()
-			{
-				removeAnnouncementAction(targetAnnouncementItem.id);
-				logSystemEvent('INFO', `刪除系統公告：「${targetAnnouncementItem.title}」`, operatorNameString);
-			},
-		});
-	};
-
-	/**
-	 * 函數名稱: showEndAnnouncementConfirm
-	 * 函數功能: 二次確認後立即結束公告顯示（保留在列表，可再修改顯示期限重新開放）。
-	 */
-	const showEndAnnouncementConfirm = (targetAnnouncementItem: AnnouncementItem): void =>
-	{
-		modalApi.confirm({
-			title: translate('admin.announce_end_title', '立即結束顯示'),
-			content: translate('admin.announce_end_desc', '結束後，使用者的鈴鐺通知與首頁橫幅將不再顯示此公告；公告仍保留在此列表，之後可用「修改」重新設定顯示期限。'),
-			okText: translate('admin.announce_end_ok', '結束顯示'),
-			cancelText: translate('admin.btn_cancel', '取消'),
-			onOk()
-			{
-				endAnnouncementNowAction(targetAnnouncementItem.id);
-				logSystemEvent('INFO', `立即結束系統公告顯示：「${targetAnnouncementItem.title}」`, operatorNameString);
-			},
-		});
-	};
-
-	const announcementTableColumnsConfig = [
-		{
-			title: translate('admin.announce_column', '公告'), key: 'announcement',
-			render: (_: unknown, announcementItem: AnnouncementItem) => (
-				<div style={{ opacity: isAnnouncementActive(announcementItem, announcementClockNowMs) ? 1 : 0.55 }}>
-					<AnnouncementListItem item={announcementItem} />
-				</div>
-			)
-		},
-		{
-			title: translate('admin.announce_status', '顯示狀態'), key: 'status', width: '12em',
-			render: (_: unknown, announcementItem: AnnouncementItem) =>
-			{
-				const isActiveStatus = isAnnouncementActive(announcementItem, announcementClockNowMs);
-				return (
-					<div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
-						<Tag color={isActiveStatus ? 'success' : 'default'} style={{ margin: 0 }}>
-							{isActiveStatus ? translate('admin.announce_status_active', '顯示中') : translate('admin.announce_status_ended', '已結束')}
-						</Tag>
-						<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
-							{announcementItem.expiresAt
-								? (isActiveStatus
-									? translate('admin.announce_until', '至 {{time}}', { time: formatAnnouncementFullTime(announcementItem.expiresAt) })
-									: translate('admin.announce_ended_at', '於 {{time}} 結束', { time: formatAnnouncementFullTime(announcementItem.expiresAt) }))
-								: translate('admin.announce_no_expiry', '不限期')}
-						</Text>
-					</div>
-				);
-			}
-		},
-		{
-			title: translate('admin.announce_level', '重要程度'), dataIndex: 'level', key: 'level', width: '6.5em', align: 'center' as const,
-			render: (levelValue: AnnouncementLevel) => levelValue === 'important'
-				? <Tag color="orange" style={{ margin: 0 }}>{translate('admin.announce_level_important', '重要')}</Tag>
-				: <Tag style={{ margin: 0 }}>{translate('admin.announce_level_normal', '一般')}</Tag>
-		},
-		{ title: translate('admin.announce_audience', '對象'), dataIndex: 'audience', key: 'audience', width: '7.5em', render: (audienceValue: AnnouncementAudience) => announcementAudienceLabelDict[audienceValue] },
-		{ title: translate('admin.announce_by', '發布者'), dataIndex: 'createdBy', key: 'createdBy', width: '8em' },
-		{
-			title: translate('admin.col_action', '操作'), key: 'action', width: '9em', align: 'center' as const,
-			render: (_: unknown, announcementItem: AnnouncementItem) => (
-				<Space size={0}>
-					{isAnnouncementActive(announcementItem, announcementClockNowMs) && (
-						<Button type="text" icon={<StopOutlined />} title={translate('admin.announce_end_title', '立即結束顯示')} aria-label={translate('admin.announce_end_title', '立即結束顯示')} onClick={() => showEndAnnouncementConfirm(announcementItem)} />
-					)}
-					<Button type="text" icon={<EditOutlined />} title={translate('admin.announce_edit', '修改公告')} aria-label={translate('admin.announce_edit', '修改公告')} onClick={() => handleStartEditAnnouncement(announcementItem)} />
-					<Button type="text" danger icon={<DeleteOutlined />} title={translate('admin.announce_remove_title', '刪除公告')} aria-label={translate('admin.announce_remove_title', '刪除公告')} onClick={() => showRemoveAnnouncementConfirm(announcementItem)} />
-				</Space>
-			)
-		},
-	];
 
 	/**
 	 * 函數名稱: handleAddUser
@@ -975,6 +804,20 @@ export default function SystemPreferences(): React.ReactElement
 		},
 		{ title: translate('admin.col_event', '系統事件'), dataIndex: 'event', key: 'event' },
 		{ title: translate('admin.col_source', '來源'), dataIndex: 'source', key: 'source', width: '16em', ellipsis: true },
+		// ★ 2026-10-29：哪個帳號寫入的；前端回報的事件標「前端」（後端自行記錄的才計入管理大廳統計）
+		{
+			title: translate('admin.col_log_account', '帳號'), dataIndex: 'username', key: 'username', width: '14em', ellipsis: true,
+			render: (usernameValue: string | null | undefined, logEntryItem: SystemLogEntry) => (
+				<Space size={4}>
+					<span>{usernameValue || '-'}</span>
+					{logEntryItem.origin === 'client' && (
+						<Tooltip title={translate('admin.log_origin_client_tip', '由瀏覽器回報的事件（例如閒置登出、設定變更）；登入與 API 呼叫由後端自行記錄')}>
+							<Tag style={{ margin: 0 }}>{translate('admin.log_origin_client', '前端')}</Tag>
+						</Tooltip>
+					)}
+				</Space>
+			)
+		},
 	];
 
 	const tabListItemsArray = [];
@@ -1018,7 +861,7 @@ export default function SystemPreferences(): React.ReactElement
 					<div>
 						<Alert 
 							message={translate('admin.syslog_title', '系統維運日誌')}
-							description={translate('admin.syslog_desc', '記錄登入／登出、登入失敗與帳號鎖定、閒置逾時、後端 API 呼叫結果、帳號管理、系統公告與安全設定變更等事件。紀錄集中保存在後端，所有電腦的事件都在這裡。各次去識別化的處理紀錄（含伺服器簽章）請至「歷史審計憑證」查看，管理員可協助調閱。')}
+							description={translate('admin.syslog_desc', '記錄登入成功／失敗、帳號鎖定、登出、每次處理 API 呼叫（含帳號與耗時），以及閒置登出、帳號管理與安全設定變更等事件。標「前端」的是由瀏覽器回報的事件；登入與 API 統計只採後端自行記錄的事件。各次處理的設定與結果請至「處理紀錄」查看（管理員可看所有使用者的紀錄）。')}
 							type="info" 
 							showIcon 
 							style={{ marginBottom: '16px' }}
@@ -1048,9 +891,11 @@ export default function SystemPreferences(): React.ReactElement
 									{isSystemLogLiveUpdateOn ? translate('admin.syslog_live_pause', '暫停即時更新') : translate('admin.syslog_live_resume', '開啟即時更新')}
 								</Button>
 								<Text type="secondary" style={{ fontSize: scaleFontSize(12) }} data-testid="syslog-live-status">
-									{isSystemLogLiveUpdateOn
-										? <Badge status="processing" text={translate('admin.syslog_live_on', '即時更新中（每 5 秒）')} />
-										: <Badge status="default" text={translate('admin.syslog_live_off', '已暫停')} />}
+									{isSystemLogSyncBroken
+										? <Badge status="error" text={translate('admin.syslog_live_broken', '連線中斷，無法取得最新紀錄（會自動重試）')} />
+										: isSystemLogLiveUpdateOn
+											? <Badge status="processing" text={translate('admin.syslog_live_on', '即時更新中（每 5 秒）')} />
+											: <Badge status="default" text={translate('admin.syslog_live_off', '已暫停')} />}
 									{systemLogsLastSyncedAt !== null && <span style={{ marginLeft: 8 }}>{translate('admin.syslog_last_synced', '最後更新 {{time}}', { time: formatSystemLogTimestamp(systemLogsLastSyncedAt) })}</span>}
 								</Text>
 							</Space>
@@ -1110,87 +955,11 @@ export default function SystemPreferences(): React.ReactElement
 							size="small"
 							rowClassName={(logEntryItem) => (recentlyArrivedLogIdsSet.has(logEntryItem.id) ? 'syslog-row-arrived' : '')}
 						/>
-						{(systemLogRangeKey === '7d' || systemLogRangeKey === 'all') && systemLogEntriesList.length >= 5000 && (
+						{systemLogEntriesList.length >= 5000 && (
 							<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
 								{translate('admin.syslog_limit_note', '只載入最新 5000 筆；更早的紀錄請縮短期間查看。')}
 							</Text>
 						)}
-					</div>
-				),
-			},
-			{
-				key: 'announcements',
-				label: <span><NotificationOutlined /> {translate('admin.tab_announcements', '系統公告')}</span>,
-				children: (
-					<div>
-						<Alert
-							message={translate('admin.announce_hint_desc', '公告會出現在對象使用者右上角的鈴鐺通知中；標為「重要」的公告，另外以可關閉的橫幅顯示在 Data Owner 首頁（適合維護時段預告、會影響結果判讀的改版說明）。公告保存在後端，所有使用者都看得到。')}
-							type="info"
-							showIcon
-							style={{ marginBottom: '16px' }}
-						/>
-
-						<Card
-							type="inner"
-							style={{ marginBottom: '16px', ...(editingAnnouncementItem ? { borderColor: '#3f51b5' } : {}) }}
-							title={editingAnnouncementItem
-								? <span><EditOutlined /> {translate('admin.announce_editing', '修改公告')}：{editingAnnouncementItem.title}</span>
-								: <span><NotificationOutlined /> {translate('admin.announce_hint_title', '發布系統公告')}</span>}
-						>
-							<Form form={announcementFormInstance} layout="vertical" initialValues={announcementFormDefaultValues}>
-								<Form.Item name="title" label={translate('admin.announce_title', '標題')} rules={[{ required: true, whitespace: true, message: translate('admin.announce_title_required', '請輸入公告標題') }]}>
-									<Input maxLength={60} showCount placeholder={translate('admin.announce_title_placeholder', '例：10/10（五）18:00–20:00 系統維護')} />
-								</Form.Item>
-								<Form.Item name="content" label={translate('admin.announce_content', '內容')}>
-									<Input.TextArea rows={3} maxLength={500} showCount placeholder={translate('admin.announce_content_placeholder', '說明影響範圍、需要使用者配合的事項等')} />
-								</Form.Item>
-								<Space size="large" wrap align="end">
-									<Form.Item name="level" label={translate('admin.announce_level', '重要程度')} style={{ marginBottom: 0 }}>
-										<Segmented options={[
-											{ value: 'normal', label: translate('admin.announce_level_normal', '一般') },
-											{ value: 'important', label: translate('admin.announce_level_important', '重要') },
-										]} />
-									</Form.Item>
-									<Form.Item
-										name="expiresAt"
-										label={translate('admin.announce_expires', '顯示到（選填）')}
-										tooltip={translate('admin.announce_expires_tip', '時間一到，鈴鐺通知與首頁橫幅自動不再顯示；公告仍保留在列表中。不填＝一直顯示到刪除為止。')}
-										style={{ marginBottom: 0 }}
-										rules={[{
-											validator: (_rule, pickedValue?: Dayjs | null) => (!pickedValue || pickedValue.valueOf() > Date.now())
-												? Promise.resolve()
-												: Promise.reject(new Error(translate('admin.announce_expires_past', '顯示期限必須晚於現在'))),
-										}]}
-									>
-										<DatePicker
-											showTime={{ format: 'HH:mm' }}
-											format="YYYY-MM-DD HH:mm"
-											placeholder={translate('admin.announce_expires_placeholder', '不限（直到刪除）')}
-											disabledDate={(candidateDate) => candidateDate.isBefore(dayjs().startOf('day'))}
-											style={{ minWidth: '13em' }}
-										/>
-									</Form.Item>
-									<Form.Item name="audience" label={translate('admin.announce_audience', '對象')} style={{ marginBottom: 0 }}>
-										<Select style={{ minWidth: '10em' }} popupMatchSelectWidth={false} options={(Object.keys(announcementAudienceLabelDict) as AnnouncementAudience[]).map(audienceKey => ({ value: audienceKey, label: announcementAudienceLabelDict[audienceKey] }))} />
-									</Form.Item>
-									{editingAnnouncementItem && (
-										<Form.Item name="shouldRenotify" valuePropName="checked" style={{ marginBottom: 0 }}>
-											<Checkbox>{translate('admin.announce_renotify', '重新通知使用者（改回未讀；首頁橫幅重新顯示）')}</Checkbox>
-										</Form.Item>
-									)}
-									<Space>
-										{editingAnnouncementItem && (
-											<Button onClick={handleCancelEditAnnouncement}>{translate('admin.btn_cancel', '取消')}</Button>
-										)}
-										<Button type="primary" icon={editingAnnouncementItem ? <EditOutlined /> : <NotificationOutlined />} onClick={handlePublishAnnouncement}>
-											{editingAnnouncementItem ? translate('admin.announce_save_edit', '儲存修改') : translate('admin.announce_publish', '發布公告')}
-										</Button>
-									</Space>
-								</Space>
-							</Form>
-						</Card>
-
-						<Table<AnnouncementItem> columns={announcementTableColumnsConfig} dataSource={announcementsList} rowKey="id" pagination={{ pageSize: 5 }} size="small" />
 					</div>
 				),
 			},
@@ -1202,7 +971,7 @@ export default function SystemPreferences(): React.ReactElement
 						<Form form={envSecurityFormInstance} layout="vertical">
 							<Card type="inner" title={translate('admin.conn_security', '連線安全設定')} style={{ marginBottom: '16px' }}>
 								<Form.Item name="sessionTimeout" label={translate('admin.session_timeout', 'Session 閒置強制登出時間 (分鐘)')} extra={translate('admin.session_timeout_desc', '設定使用者在無操作狀態下多久後會被系統自動登出。')}>
-									<InputNumber min={MIN_SESSION_TIMEOUT_MINUTES} max={MAX_SESSION_TIMEOUT_MINUTES} style={{ width: '7em' }} />
+									<InputNumber min={MIN_SESSION_TIMEOUT_MINUTES} max={MAX_SESSION_TIMEOUT_MINUTES} precision={0} style={{ width: '7em' }} />
 								</Form.Item>
 
 								{/* ★ 2026-10-16：登入失敗鎖定改為固定規則（同步後端會員系統），不提供設定 */}
@@ -1226,11 +995,11 @@ export default function SystemPreferences(): React.ReactElement
 		);
 	}
 
-	// ★ 2026-10-29：單機版隱藏「系統維運日誌」「系統公告」分頁（見 config/featureFlags.ts）
+	// ★ 2026-10-29：單機版隱藏「系統維運日誌」分頁（見 config/featureFlags.ts）；系統公告同日移除
 	for (let tabIndex = tabListItemsArray.length - 1; tabIndex >= 0; tabIndex--)
 	{
 		const tabKeyString = tabListItemsArray[tabIndex].key;
-		if ((tabKeyString === 'syslogs' && !SHOW_SYSTEM_LOG_TAB) || (tabKeyString === 'announcements' && !SHOW_ANNOUNCEMENTS)) tabListItemsArray.splice(tabIndex, 1);
+		if (tabKeyString === 'syslogs' && !SHOW_SYSTEM_LOG_TAB) tabListItemsArray.splice(tabIndex, 1);
 	}
 
 	tabListItemsArray.push({

@@ -1,22 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Row, Col, Typography, Button, Table, Tag, Space, Badge, Progress, theme } from 'antd';
+import { Card, Row, Col, Typography, Button, Table, Tag, Space, Badge, Progress } from 'antd';
 import {
     PlusOutlined,
     ArrowRightOutlined,
     CheckCircleOutlined,
     CloseCircleOutlined,
-    ClockCircleOutlined,
-    CloseOutlined
+    ClockCircleOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useAuditStore, selectAuditLogsForUser, type AuditLogItem } from '../../store/useAuditStore';
 import { useAuthStore } from '../../store/useAuthStore';
-import { useAnnouncementStore, isAnnouncementShownToRole, getAnnouncementUserKey, useAnnouncementClock } from '../../store/useAnnouncementStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
-import { AnnouncementListItem } from '../../components/AnnouncementListItem';
-import { SHOW_ANNOUNCEMENTS } from '../../config/featureFlags';
 import { probeBackendHealth, type BackendHealthState } from '../../utils/adminDashboardStats';
 
 import { scaleFontSize } from '../../utils/fontScale';
@@ -27,7 +23,6 @@ const RECENT_LOGS_DISPLAY_LIMIT = 5;
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { token: themeToken } = theme.useToken();
   const { t: translate } = useTranslation();
   // ★ 2026-10-07：改讀登入中的使用者，不再寫死；角色以「Data Owner」顯示而非 DATA_OWNER
   const currentUserSession = useAuthStore((state) => state.user);
@@ -36,8 +31,10 @@ export const Dashboard: React.FC = () => {
   const [backendHealthState, setBackendHealthState] = useState<BackendHealthState>({ status: 'checking' });
   useEffect(() => {
     let isUnmounted = false;
-    void probeBackendHealth().then((healthResult) => { if (!isUnmounted) setBackendHealthState(healthResult); });
-    return () => { isUnmounted = true; };
+    const probeAndStore = (): void => { void probeBackendHealth().then((healthResult) => { if (!isUnmounted) setBackendHealthState(healthResult); }); };
+    probeAndStore();
+    const healthTimerId = window.setInterval(probeAndStore, 60 * 1000); // 與系統管理大廳相同，每 60 秒重查
+    return () => { isUnmounted = true; window.clearInterval(healthTimerId); };
   }, []);
   const backendBadgeProps = backendHealthState.status === 'ok'
     ? { status: 'processing' as const, color: '#52c41a', text: translate('dashboard.system_normal', '系統運作正常') }
@@ -48,20 +45,6 @@ export const Dashboard: React.FC = () => {
   const welcomeNameString = userInfo.name.includes('@') ? userInfo.name.split('@')[0] : userInfo.name;
 
   // ★ 2026-10-07：Admin 發布之「重要」公告，以可關閉橫幅顯示於首頁（一般公告只在右上角鈴鐺）
-  const allAnnouncementsList = useAnnouncementStore((state) => state.announcements);
-  const dismissedBannerIdsByUserDict = useAnnouncementStore((state) => state.dismissedBannerIdsByUser);
-  const dismissBannerAction = useAnnouncementStore((state) => state.dismissBanner);
-  const markAnnouncementsAsReadAction = useAnnouncementStore((state) => state.markAsRead);
-  const announcementClockNowMs = useAnnouncementClock();
-  const announcementUserKeyString = getAnnouncementUserKey(currentUserSession);
-  const dismissedBannerIdsList = dismissedBannerIdsByUserDict[announcementUserKeyString] ?? [];
-  // ★ 2026-10-29：單機版不顯示系統公告（見 config/featureFlags.ts）
-  const importantBannerAnnouncementsList = allAnnouncementsList.filter(announcementItem =>
-    SHOW_ANNOUNCEMENTS
-    && announcementItem.level === 'important'
-    && isAnnouncementShownToRole(announcementItem, currentUserSession?.role ?? 'data_owner', announcementClockNowMs)
-    && !dismissedBannerIdsList.includes(announcementItem.id)
-  );
 
   // 讀取全域歷史審計紀錄 (真實紀錄，非假資料)，最新紀錄已由 addAuditLog 插入於陣列最前端
   // ★ 2026-10-29：紀錄存後端（登入後載入），只統計目前帳號的紀錄
@@ -133,32 +116,6 @@ export const Dashboard: React.FC = () => {
     <div style={{ padding: '24px', maxWidth: '85.5em', margin: '0 auto' }}>
       <Space direction="vertical" size="large" style={{ display: 'flex', width: '100%' }}>
         
-        {/* --- 0. 重要系統公告（可關閉；關閉同時視為已讀） --- */}
-        {importantBannerAnnouncementsList.map((announcementItem) => (
-          <div
-            key={announcementItem.id}
-            style={{ border: `1px solid ${themeToken.colorWarningBorder}`, background: themeToken.colorWarningBg, borderRadius: '12px' }}
-          >
-            <AnnouncementListItem
-              item={announcementItem}
-              isExpanded
-              trailing={
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<CloseOutlined />}
-                  aria-label={translate('dashboard.dismiss_announcement', '關閉公告')}
-                  title={translate('dashboard.dismiss_announcement', '關閉公告')}
-                  onClick={() => {
-                    dismissBannerAction(announcementUserKeyString, announcementItem.id);
-                    markAnnouncementsAsReadAction(announcementUserKeyString, [announcementItem.id]);
-                  }}
-                />
-              }
-            />
-          </div>
-        ))}
-
         {/* --- 1. 歡迎與狀態區塊 --- */}
         <div>
           <Title level={2} style={{ margin: 0 }}>{translate('dashboard.welcome_back', '歡迎回來 {{name}}', { name: welcomeNameString })}</Title>

@@ -30,15 +30,13 @@ import { logSystemEvent } from './store/useSystemLogStore';
 import { useAuthStore } from './store/useAuthStore';
 import { LEGACY_AUDIT_LOG_STORAGE_KEY } from './store/useAuditStore';
 import { LEGACY_SYSTEM_LOG_STORAGE_KEY } from './store/useSystemLogStore';
-import { LEGACY_ANNOUNCEMENT_STORAGE_KEY } from './store/useAnnouncementStore';
 import { LEGACY_SIGNING_KEY_DB_NAME } from './utils/auditIntegrity';
-import { LEGACY_API_ERROR_LOG_STORAGE_KEY } from './utils/apiErrorLogger';
 import { loadSystemSettings } from './utils/systemSettingsSync';
 registerGlobalApiErrorInterceptor();
 
 // ★ 2026-10-27：改由後端會員系統驗證帳號，清除舊版前端 Demo 帳號資料庫留在瀏覽器的資料（含密碼雜湊）
 // ★ 2026-10-29：處理紀錄、維運日誌、系統公告改存後端，舊版留在瀏覽器的資料一併清除（不搬移）
-for (const legacyStorageKey of ['privacy_accounts_v1', LEGACY_AUDIT_LOG_STORAGE_KEY, LEGACY_SYSTEM_LOG_STORAGE_KEY, LEGACY_ANNOUNCEMENT_STORAGE_KEY, LEGACY_API_ERROR_LOG_STORAGE_KEY])
+for (const legacyStorageKey of ['privacy_accounts_v1', LEGACY_AUDIT_LOG_STORAGE_KEY, LEGACY_SYSTEM_LOG_STORAGE_KEY, 'privacy_announcements_v1', 'openpets_api_error_logs_v1'])
 {
 	try { window.localStorage.removeItem(legacyStorageKey); } catch { /* 無法存取 localStorage 時略過 */ }
 }

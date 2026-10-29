@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Row, Col, Card, Button, Tooltip } from 'antd';
+import { Row, Col, Card, Button, Tooltip, Alert } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { 
 	DesktopOutlined, 
@@ -62,6 +62,8 @@ export default function AdminDashboard(): React.ReactElement
 	const loadSystemLogsAction = useSystemLogStore((state) => state.loadLogs);
 	// ★ 2026-10-27：帳號數改讀後端帳號清單（GET /api/v1/users）；讀取失敗時維持空清單，不影響其他卡片
 	const [accountRecordsList, setAccountRecordsList] = useState<MemberAccount[]>([]);
+	// ★ 2026-10-29：帳號清單或日誌讀不到時，卡片的 0 不是事實——顯示提示
+	const [statsLoadFailureNames, setStatsLoadFailureNames] = useState<string[]>([]);
 	const [statsNowMs, setStatsNowMs] = useState<number>(() => Date.now());
 	const [backendHealthState, setBackendHealthState] = useState<BackendHealthState>({ status: 'checking' });
 
@@ -78,10 +80,23 @@ export default function AdminDashboard(): React.ReactElement
 		const probeAndStore = (): void => { void probeBackendHealth().then((healthResult) => { if (!isUnmounted) setBackendHealthState(healthResult); }); };
 		probeAndStore();
 		// ★ 2026-10-29：統計來源（系統維運日誌）存後端，進入時與每次統計更新時重新載入
-		void loadSystemLogsAction(Date.now() - STATS_WINDOW_MS);
-		void listMemberAccounts().then((accountsList) => { if (!isUnmounted) setAccountRecordsList(accountsList); }).catch(() => undefined);
+		const refreshStatsSources = (): void =>
+		{
+			void Promise.all([
+				loadSystemLogsAction(Date.now() - STATS_WINDOW_MS),
+				listMemberAccounts().then((accountsList) => { if (!isUnmounted) setAccountRecordsList(accountsList); return true; }).catch(() => false),
+			]).then(([isLogsLoaded, isAccountsLoaded]) =>
+			{
+				if (isUnmounted) return;
+				setStatsLoadFailureNames([
+					...(isLogsLoaded ? [] : [translate('admin.stats_source_logs', '系統維運日誌')]),
+					...(isAccountsLoaded ? [] : [translate('admin.stats_source_accounts', '帳號清單')]),
+				]);
+			});
+		};
+		refreshStatsSources();
 		const healthTimerId = window.setInterval(probeAndStore, BACKEND_HEALTH_RECHECK_INTERVAL_MS);
-		const statsTimerId = window.setInterval(() => { setStatsNowMs(Date.now()); void loadSystemLogsAction(Date.now() - STATS_WINDOW_MS); }, STATS_REFRESH_INTERVAL_MS);
+		const statsTimerId = window.setInterval(() => { setStatsNowMs(Date.now()); refreshStatsSources(); }, STATS_REFRESH_INTERVAL_MS);
 		return () => { isUnmounted = true; window.clearInterval(healthTimerId); window.clearInterval(statsTimerId); };
 	}, [loadSystemLogsAction]);
 
@@ -241,6 +256,12 @@ export default function AdminDashboard(): React.ReactElement
 				</Col>
 			</Row>
 
+			{statsLoadFailureNames.length > 0 && (
+				<Alert
+					type="warning" showIcon style={{ marginTop: '8px' }} data-testid="admin-stats-load-failed"
+					message={translate('admin.stats_load_failed', '無法取得{{sources}}，上方數字可能不完整；30 秒後會自動重試。', { sources: statsLoadFailureNames.join('、') })}
+				/>
+			)}
 			<div style={{ marginTop: '8px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(12), opacity: 0.8 }}>
 				{/* ★ 2026-10-29：系統維運日誌改存後端，登入與 API 次數為全站統計（不再是本機統計） */}
 				{translate('admin.stats_source_note_server', '※ 帳號數、登入與 API 次數皆來自後端（過去 24 小時，含所有電腦）；後端連線狀態每 60 秒自動檢查一次。')}
@@ -267,7 +288,7 @@ export default function AdminDashboard(): React.ReactElement
 
 						<p style={{ margin: '8px 0 0 0', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
 							{SHOW_SYSTEM_LOG_TAB
-								? translate('admin.console_entry_desc', '集中管理使用者帳號、檢視系統維運日誌、發布系統公告，並設定閒置逾時登出時間。')
+								? translate('admin.console_entry_desc', '集中管理使用者帳號、檢視系統維運日誌，並設定閒置逾時登出時間。')
 								: translate('admin.console_entry_desc_desktop', '集中管理使用者帳號，並設定閒置逾時登出時間。')}
 						</p>
 					</div>

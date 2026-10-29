@@ -3,113 +3,45 @@
  * 檔案名稱 (File): apiErrorInterceptor.ts
  * 模組功能 (Description): 掛在全域 axios 物件上的錯誤攔截器。
  *
- * 目前 apiService.ts 內的每一支 API（K-匿名化、差分隱私、三攻擊風險評估、報告
- * 產出等）都是直接呼叫全域的 axios.post(...)，並非各自的 axios 實例。這裡利用
- * axios.interceptors.response.use() 在全域層級掛一個「回應攔截器」：只要任何一支
- * 呼叫收到非 2xx 回應，就會先經過這裡解析、補齊診斷資訊、寫入 apiErrorLogger，
- * 再將原始錯誤原封不動往下拋，讓既有的 catch 區塊 (apiService.ts、
- * Step4_Result.tsx 內的白話錯誤訊息組裝邏輯) 完全不受影響、行為維持原樣。
- *
- * 只需在應用程式啟動時 (main.tsx) 呼叫一次 registerGlobalApiErrorInterceptor()，
- * 之後任何地方呼叫 axios.get／axios.post 都會自動經過此攔截器，不需要逐一修改
- * 各支 API 函式。
+ * apiService.ts 內的每一支處理 API（前處理、K-匿名化、差分隱私、風險評估）都直接呼叫全域的 axios，
+ * 這裡在全域層級掛請求／回應攔截器（main.tsx 啟動時呼叫一次 registerGlobalApiErrorInterceptor()）：
+ *   - ★ 2026-10-29 處理 API 改須登入：請求自動帶 access token，401 時換發一次後重送。
+ *   - 記住回應標頭 X-Run-Id（存處理紀錄時引用，見 takeLastProcessingRunId）。
+ *   - 呼叫成功／失敗由後端自行寫入系統維運日誌；這裡只回報後端看不到的「無回應／連線中斷」與「使用者取消」。
+ *   - 原始錯誤原封不動往下拋，呼叫端的錯誤處理不受影響。
+ *   （2026-10-29 移除：錯誤診斷紀錄 apiErrorLogger——只存在記憶體、沒有任何畫面讀取。）
  * ============================================================================
  */
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { logSystemEvent } from '../store/useSystemLogStore';
-import { recordApiError } from '../utils/apiErrorLogger';
-import { useWorkspaceStore } from '../store/useWorkspaceStore';
-
-// 後端固定回傳格式 (見 app/api/errors.py)：{ error_code, message, recommendations? }；
-// RequestValidationError (422) 則另外包成 { error_code: 'ERR_VALIDATION_FAILED', message }，
-// 一樣落在這個形狀內，故不需要另外處理 detail 陣列格式。
-interface BackendErrorResponseBody {
-    error_code?: string;
-    message?: string;
-    recommendations?: string[];
-    detail?: unknown;
-}
-
-/**
- * 函數名稱: resolveResponseBodyAsJson
- * 函數功能: K-匿名化／差分隱私／報告產出等呼叫將 axios 的 responseType 設為
- *           'blob' (成功時要接住輸出檔案二進位內容)，這會導致「錯誤回應」的
- *           JSON 內容也被 axios 包成尚未讀取的 Blob，直接讀 error_code／message
- *           會全部讀不到值。這裡與 Step4_Result.tsx 既有的解法一致：先判斷是否
- *           為 Blob，是的話讀成文字後再嘗試 JSON.parse；不是 Blob (例如三攻擊
- *           風險評估等未設定 responseType 的呼叫，axios 已自動解析成物件) 則直接
- *           使用。
- */
-const resolveResponseBodyAsJson = async (responseDataValue: unknown): Promise<BackendErrorResponseBody | undefined> => {
-    if (typeof Blob !== 'undefined' && responseDataValue instanceof Blob) {
-        try {
-            const blobTextContent = await responseDataValue.text();
-            return JSON.parse(blobTextContent) as BackendErrorResponseBody;
-        } catch (blobParseErrorObj) {
-            console.warn('API 錯誤攔截器：解析錯誤回應之 Blob 內容失敗:', blobParseErrorObj);
-            return undefined;
-        }
-    }
-    if (responseDataValue && typeof responseDataValue === 'object') {
-        return responseDataValue as BackendErrorResponseBody;
-    }
-    return undefined;
-};
-
-/**
- * 函數名稱: summarizeRequestPayloadForLogging
- * 函數功能: 將這次請求實際送出的內容整理成適合記錄診斷用的摘要。檔案類欄位
- *           (file／original／processed) 資料量大且可能含個資，僅記錄檔名／大小／
- *           MIME type，不讀取實際內容；但 config 欄位是我們自己組出來的 JSON
- *           設定檔文字，內容對診斷「欄位名稱是否兜得起來」這類問題極有價值，
- *           故額外讀出文字內容一併記錄 (超過長度上限則截斷，避免單筆紀錄過大)。
- */
-const CONFIG_PAYLOAD_PREVIEW_MAX_LENGTH = 8000;
-
-const summarizeRequestPayloadForLogging = async (requestDataValue: unknown): Promise<Record<string, unknown>> => {
-    const payloadSummaryDict: Record<string, unknown> = {};
-
-    if (typeof FormData !== 'undefined' && requestDataValue instanceof FormData) {
-        for (const [fieldKeyName, fieldValue] of requestDataValue.entries()) {
-            const isFileLikeValue = typeof Blob !== 'undefined' && fieldValue instanceof Blob;
-
-            if (isFileLikeValue) {
-                const fileLikeValueObj = fieldValue as File;
-                const fileFieldSummaryDict: Record<string, unknown> = {
-                    __type: 'file',
-                    name: fileLikeValueObj.name ?? '(未命名檔案)',
-                    size: fileLikeValueObj.size,
-                    mimeType: fileLikeValueObj.type,
-                };
-
-                if (fieldKeyName === 'config') {
-                    try {
-                        const configTextContent = await fileLikeValueObj.text();
-                        fileFieldSummaryDict.contentPreview = configTextContent.length > CONFIG_PAYLOAD_PREVIEW_MAX_LENGTH
-                            ? `${configTextContent.slice(0, CONFIG_PAYLOAD_PREVIEW_MAX_LENGTH)}…(內容過長，已截斷)`
-                            : configTextContent;
-                    } catch (configReadErrorObj) {
-                        console.warn('API 錯誤攔截器：讀取 config 欄位文字內容失敗:', configReadErrorObj);
-                    }
-                }
-
-                payloadSummaryDict[fieldKeyName] = fileFieldSummaryDict;
-            } else {
-                payloadSummaryDict[fieldKeyName] = fieldValue;
-            }
-        }
-    } else if (requestDataValue && typeof requestDataValue === 'object') {
-        // 非 multipart 的請求 (如 /api/v1/report 為 JSON body)，直接整包記錄
-        payloadSummaryDict.jsonBody = requestDataValue;
-    }
-
-    return payloadSummaryDict;
-};
+import { getAccessToken, hasStoredRefreshToken, refreshTokensOnce } from './authApi';
 
 let isGlobalApiErrorInterceptorRegistered = false;
 
+/**
+ * ★ 2026-10-29：後端每次成功的處理呼叫會在回應標頭帶 X-Run-Id；存處理紀錄時須引用一筆（證明真的跑過，
+ *   見後端 POST /history）。這裡記住最近一次的，usePipelineRunner 存紀錄時取用（取用後清空，避免重複引用）。
+ */
+let lastProcessingRunId: string | null = null;
+export const takeLastProcessingRunId = (): string | null => {
+    const runIdValue = lastProcessingRunId;
+    lastProcessingRunId = null;
+    return runIdValue;
+};
+
 // ★ 2026-10-07：系統維運日誌——記錄每次後端 API 呼叫的結果與耗時
-type TimedAxiosRequestConfig = InternalAxiosRequestConfig & { systemLogStartedAtMs?: number };
+type TimedAxiosRequestConfig = InternalAxiosRequestConfig & { systemLogStartedAtMs?: number; authRetried?: boolean };
+
+/** ★ 2026-10-29：處理 API 改須登入——全域 axios 打 /api/ 時帶上 access token（沒有 access token 但有 refresh token 時先換發） */
+const attachAccessToken = async (requestConfigObj: TimedAxiosRequestConfig): Promise<TimedAxiosRequestConfig> => {
+    if (!(requestConfigObj.url || '').includes('/api/')) return requestConfigObj;
+    if (!getAccessToken() && hasStoredRefreshToken()) {
+        try { await refreshTokensOnce(); } catch { /* 換發失敗：照常送出，由後端回 401 */ }
+    }
+    const accessToken = getAccessToken();
+    if (accessToken) requestConfigObj.headers.set('Authorization', `Bearer ${accessToken}`);
+    return requestConfigObj;
+};
 
 const describeApiCallForSystemLog = (requestConfigObj: TimedAxiosRequestConfig | undefined): { label: string; elapsedText: string } => {
     const methodNameString = (requestConfigObj?.method || 'GET').toUpperCase();
@@ -132,77 +64,42 @@ export const registerGlobalApiErrorInterceptor = (): void => {
     if (isGlobalApiErrorInterceptorRegistered) return;
     isGlobalApiErrorInterceptorRegistered = true;
 
-    axios.interceptors.request.use((requestConfigObj) => {
+    axios.interceptors.request.use(async (requestConfigObj) => {
         (requestConfigObj as TimedAxiosRequestConfig).systemLogStartedAtMs = Date.now();
-        return requestConfigObj;
+        return attachAccessToken(requestConfigObj as TimedAxiosRequestConfig);
     });
 
+    // ★ 2026-10-29：API 呼叫成功／失敗改由後端自行記錄（含帳號、耗時；見後端 processing_guard），前端不再回報，
+    //   只回報後端看不到的「無回應／連線中斷」與「使用者取消」
     axios.interceptors.response.use(
         (successResponseObj) => {
-            const { label, elapsedText } = describeApiCallForSystemLog(successResponseObj.config as TimedAxiosRequestConfig);
-            logSystemEvent('INFO', `後端 API 呼叫成功（HTTP ${successResponseObj.status}${elapsedText}）`, label);
+            const runIdHeaderValue = successResponseObj.headers?.['x-run-id'];
+            if (typeof runIdHeaderValue === 'string' && runIdHeaderValue) lastProcessingRunId = runIdHeaderValue;
             return successResponseObj;
         },
         async (errorObj: AxiosError) => {
+            // access token 過期：換發一次後重送（規則同 authApi.authorizedRequest）
+            const retryConfigObj = errorObj.config as TimedAxiosRequestConfig | undefined;
+            if (errorObj.response?.status === 401 && retryConfigObj && !retryConfigObj.authRetried && hasStoredRefreshToken()) {
+                retryConfigObj.authRetried = true;
+                try {
+                    await refreshTokensOnce();
+                    const refreshedAccessToken = getAccessToken();
+                    if (refreshedAccessToken) retryConfigObj.headers.set('Authorization', `Bearer ${refreshedAccessToken}`);
+                    return axios.request(retryConfigObj);
+                } catch {
+                    // 換發失敗（refresh token 失效）：authApi 已觸發自動登出，照原錯誤往下拋
+                }
+            }
             // ★ 2026-09-30：使用者按「取消運算」主動中斷的請求不是錯誤，不寫入診斷紀錄、不回報
             if (axios.isCancel(errorObj)) {
                 logSystemEvent('INFO', '使用者取消運算，請求已中斷', describeApiCallForSystemLog(errorObj.config as TimedAxiosRequestConfig | undefined).label);
                 return Promise.reject(errorObj);
             }
-            {
+            if (errorObj.response === undefined) {
                 const { label, elapsedText } = describeApiCallForSystemLog(errorObj.config as TimedAxiosRequestConfig | undefined);
-                const httpStatusValue = errorObj.response?.status;
-                const failureDescriptionString = httpStatusValue
-                    ? `後端 API 呼叫失敗（HTTP ${httpStatusValue}${elapsedText}）`
-                    : `後端 API 無回應或連線中斷（${errorObj.message}${elapsedText}）`;
-                logSystemEvent(httpStatusValue !== undefined && httpStatusValue < 500 ? 'WARN' : 'ERROR', failureDescriptionString, label);
+                logSystemEvent('ERROR', `後端 API 無回應或連線中斷（${errorObj.message}${elapsedText}）`, label);
             }
-            try {
-                const requestConfigObj = errorObj.config;
-                const responseObj = errorObj.response;
-
-                const [parsedResponseBodyObj, requestPayloadSummaryDict] = await Promise.all([
-                    resolveResponseBodyAsJson(responseObj?.data),
-                    summarizeRequestPayloadForLogging(requestConfigObj?.data),
-                ]);
-
-                const recommendationsListArray = Array.isArray(parsedResponseBodyObj?.recommendations)
-                    ? parsedResponseBodyObj!.recommendations!.filter((itemValue): itemValue is string => typeof itemValue === 'string')
-                    : undefined;
-
-                let resolvedBackendMessageString = parsedResponseBodyObj?.message;
-                if (!resolvedBackendMessageString && parsedResponseBodyObj?.detail) {
-                    resolvedBackendMessageString = typeof parsedResponseBodyObj.detail === 'string'
-                        ? parsedResponseBodyObj.detail
-                        : JSON.stringify(parsedResponseBodyObj.detail);
-                }
-
-                // 直接讀取 Zustand store 的當下快照 (非 React 元件內，不能使用 hook)，
-                // 取得發生錯誤當下的資料集／模式／編碼偵測等上下文資訊。
-                const currentWorkspaceStateSnapshot = useWorkspaceStore.getState();
-
-                recordApiError({
-                    method: (requestConfigObj?.method || 'unknown').toUpperCase(),
-                    url: requestConfigObj?.url || '(未知路徑)',
-                    httpStatus: responseObj?.status,
-                    errorCode: parsedResponseBodyObj?.error_code,
-                    message: resolvedBackendMessageString || errorObj.message,
-                    recommendations: recommendationsListArray,
-                    requestPayloadSummary: requestPayloadSummaryDict,
-                    datasetContext: {
-                        fileName: currentWorkspaceStateSnapshot.fileName,
-                        columns: currentWorkspaceStateSnapshot.columns,
-                        detectedEncoding: currentWorkspaceStateSnapshot.lastUploadDiagnostics?.detectedEncoding,
-                        wasReencoded: currentWorkspaceStateSnapshot.lastUploadDiagnostics?.wasReencoded,
-                    },
-                    privacyMode: currentWorkspaceStateSnapshot.privacyMode,
-                    currentStepIndex: currentWorkspaceStateSnapshot.currentStep,
-                });
-            } catch (loggingProcessErrorObj) {
-                // 診斷紀錄本身若發生例外，絕不能影響原本畫面的錯誤處理流程，僅留下主控台警告。
-                console.warn('全域 API 錯誤診斷攔截器執行失敗:', loggingProcessErrorObj);
-            }
-
             // 一律將原始錯誤原封不動往下拋，讓既有的 catch 區塊維持原本行為不受影響——
             // 這個攔截器只負責「側錄」診斷資訊，不介入、不吞噬任何錯誤處理邏輯。
             return Promise.reject(errorObj);
