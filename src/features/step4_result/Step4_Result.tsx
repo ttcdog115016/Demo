@@ -46,7 +46,7 @@ import { BACKEND_ERROR_CODE_CATEGORY_MAP, DEBUG_ERRORS_LOCAL_STORAGE_KEY, buildF
 import { resolveKAnonymityGeneralizationTechKey } from '../../utils/kAnonymityTechLabel';
 
 import { scaleFontSize } from '../../utils/fontScale';
-import { formatFidelityPercent } from '../../utils/kAnonymityFidelity';
+import { formatFidelityPercent, FIDELITY_PASS_THRESHOLD } from '../../utils/kAnonymityFidelity';
 import { createHtml2PdfLoader, startHtml2PdfLoader } from '../../utils/html2pdfLoader';
 const PDF_COMPILATION_DELAY_MS = 400;
 
@@ -538,17 +538,31 @@ export default function Step4_Result(): React.ReactElement
         ? (() => {
             return {
                 question: translate('step4.utility.q_fidelity', '與原始資料的相似度'),
-                // ★ 2026-10-16 使用者要求精簡：只說明實用性參考保真度，不列「變化較大」細項
-                tooltip: translate('step4.utility.q_fidelity_tooltip', '實用性是參照「保真度」來評判：比較處理後的資料和原始資料有多像，數字越高越接近原始資料，達到 75% 就算達標。'),
+                // ★ 2026-10-29：原說明「達到 75% 就算達標」會讓人以為只看綜合分數；改寫清楚三項都要達標
+                tooltip: translate('step4.utility.q_fidelity_tooltip_v2', '實用性是參照「保真度」來評判：比較處理後的資料和原始資料有多像。欄位分布、欄位搭配、兩者平均（上方大字）三項都要達到 75%，任一項不到就是未達標。'),
                 answer: formatFidelityPercent(kAnonymityFidelityData.overall),
-                // ★ 2026-10-15 使用者要求再精簡：細項併成一行，「75% 以上即達標」只放在問號說明
-                detail: (
-                    <>
-                        <div>{kAnonymityFidelityData.columnPairTrends === null
-                            ? translate('step4.utility.fidelity_detail_shapes_only', '欄位分布 {{shapes}}', { shapes: formatFidelityPercent(kAnonymityFidelityData.columnShapes) })
-                            : translate('step4.utility.fidelity_detail', '欄位分布 {{shapes}}・欄位搭配 {{pairs}}', { shapes: formatFidelityPercent(kAnonymityFidelityData.columnShapes), pairs: formatFidelityPercent(kAnonymityFidelityData.columnPairTrends) })}</div>
-                    </>
-                )
+                // ★ 2026-10-29：未達 75% 的項目標紅並註明；未達標時列出分數最低的欄位搭配，讓使用者知道該調哪些欄位
+                detail: (() => {
+                    const renderFidelityItem = (itemLabel: string, itemScore: number): ReactNode => (
+                        itemScore < FIDELITY_PASS_THRESHOLD
+                            ? <span style={{ color: '#dc2626', fontWeight: 600 }} data-testid="fidelity-item-failed">{itemLabel} {formatFidelityPercent(itemScore)}{translate('step4.utility.fidelity_below_mark', '（未達 75%）')}</span>
+                            : <span>{itemLabel} {formatFidelityPercent(itemScore)}</span>
+                    );
+                    const weakestPairItems = kAnonymityFidelityData.belowThresholdItems.filter((fidelityItem) => fidelityItem.label.includes(' × ')).slice(0, 3);
+                    return (
+                        <>
+                            <div>
+                                {renderFidelityItem(translate('step4.utility.fidelity_shapes', '欄位分布'), kAnonymityFidelityData.columnShapes)}
+                                {kAnonymityFidelityData.columnPairTrends !== null && <>・{renderFidelityItem(translate('step4.utility.fidelity_pairs', '欄位搭配'), kAnonymityFidelityData.columnPairTrends)}</>}
+                            </div>
+                            {!kAnonymityFidelityData.isPassed && weakestPairItems.length > 0 && (
+                                <div style={{ marginTop: 2 }} data-testid="fidelity-weakest-pairs">
+                                    {translate('step4.utility.fidelity_weakest_pairs', '變化最大的欄位搭配：{{pairs}}', { pairs: weakestPairItems.map((fidelityItem) => `${fidelityItem.label} ${formatFidelityPercent(fidelityItem.score)}`).join('、') })}
+                                </div>
+                            )}
+                        </>
+                    );
+                })()
             };
         })()
         : currentPrivacyModeTypeStr === 'k-anonymity' && datasetRowStatsData

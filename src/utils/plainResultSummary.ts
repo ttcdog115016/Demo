@@ -7,6 +7,7 @@
  *   可用性門檻為前端草案（無官方標準），調整只改 UTILITY_LEVEL_THRESHOLDS 即可。
  */
 
+import { FIDELITY_PASS_THRESHOLD, formatFidelityPercent } from './kAnonymityFidelity';
 export type UtilityLevelNumber = 1 | 2 | 3;
 
 export interface UtilityLevelInfo {
@@ -72,11 +73,30 @@ export const classifyKAnonymityUtility = (suppressionRatio: number | null | unde
  *   三項皆 ≥ 0.75 為「達標」，否則「未達標」（指引只有 0.75 一條建議值，不再分高／中／低，也不再用 95%／80% 保留筆數門檻）。
  *   沿用 UtilityLevelInfo 結構：達標＝level 1（綠）、未達標＝level 3（紅），頂部建議依此判斷。
  */
-export const classifyKAnonymityFidelity = (fidelity: { isPassed: boolean } | null | undefined): UtilityLevelInfo | null => {
+export const classifyKAnonymityFidelity = (
+    fidelity: { isPassed: boolean; columnShapes?: number; columnPairTrends?: number | null; overall?: number } | null | undefined
+): UtilityLevelInfo | null => {
     if (!fidelity) return null;
-    return fidelity.isPassed
-        ? { level: 1, labelText: '達標', color: '#16a34a', verdictText: '處理後資料的統計特性與原始資料相近，資料效用良好。' }
-        : { level: 3, labelText: '未達標', color: '#dc2626', verdictText: '部分欄位的分布或欄位之間的關聯改變較多，資料效用可能降低。' };
+    if (fidelity.isPassed) return { level: 1, labelText: '達標', color: '#16a34a', verdictText: '處理後資料的統計特性與原始資料相近，資料效用良好。' };
+    // ★ 2026-10-29：三項須各自達 75%，只看綜合分數會誤以為達標（例：綜合 76%、欄位搭配 69%）——寫出是哪一項沒達到
+    const failedItemTexts = [
+        typeof fidelity.columnShapes === 'number' && fidelity.columnShapes < FIDELITY_PASS_THRESHOLD ? `欄位分布 ${formatFidelityPercent(fidelity.columnShapes)}` : null,
+        typeof fidelity.columnPairTrends === 'number' && fidelity.columnPairTrends < FIDELITY_PASS_THRESHOLD ? `欄位搭配 ${formatFidelityPercent(fidelity.columnPairTrends)}` : null,
+        typeof fidelity.overall === 'number' && fidelity.overall < FIDELITY_PASS_THRESHOLD ? `綜合 ${formatFidelityPercent(fidelity.overall)}` : null,
+    ].filter((itemText): itemText is string => itemText !== null);
+    const isShapesFailed = typeof fidelity.columnShapes === 'number' && fidelity.columnShapes < FIDELITY_PASS_THRESHOLD;
+    const isPairsFailed = typeof fidelity.columnPairTrends === 'number' && fidelity.columnPairTrends < FIDELITY_PASS_THRESHOLD;
+    const reasonText = isShapesFailed && isPairsFailed ? '部分欄位的分布與欄位之間的關聯都改變較多'
+        : isPairsFailed ? '部分欄位之間的關聯（一起出現的組合）改變較多'
+        : isShapesFailed ? '部分欄位的值分布改變較多'
+        : '部分欄位的分布或欄位之間的關聯改變較多';
+    const thresholdText = formatFidelityPercent(FIDELITY_PASS_THRESHOLD);
+    return {
+        level: 3, labelText: '未達標', color: '#dc2626',
+        verdictText: failedItemTexts.length > 0
+            ? `${failedItemTexts.join('、')} 低於 ${thresholdText}（三項都須達 ${thresholdText}）：${reasonText}，資料效用可能降低。`
+            : `${reasonText}，資料效用可能降低。`,
+    };
 };
 
 /** 差分隱私：總消耗 ε → 可用性（ε 越大雜訊越少、越好用） */

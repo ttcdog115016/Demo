@@ -38,7 +38,20 @@ interface SystemLogState
 	loadLogs: (sinceMs?: number) => Promise<void>;
 	/** 清除後端與畫面上的日誌（限 Admin） */
 	clearLogs: () => Promise<void>;
+	/**
+	 * ★ 2026-10-29：即時更新（限 Admin）——只抓畫面上最新一筆之後的紀錄，插到最前面。
+	 *   回傳新到的筆數；失敗時回傳 null（畫面保留現有紀錄）。
+	 */
+	pollNewLogs: () => Promise<number | null>;
+	recentlyArrivedIds: string[];   // 最近一次 pollNewLogs 新到的紀錄 id（畫面短暫標色用）
+	lastSyncedAt: number | null;    // 最後一次成功自後端同步的時間（epoch 毫秒）
 }
+
+/** 後端紀錄的 id 是流水號；本機剛寫入、尚未自後端讀回的紀錄 id 不是純數字 */
+const isServerLogId = (logId: string): boolean => /^\d+$/.test(logId);
+
+/** 本機寫入的紀錄送後端時帶同一個時間，讀回後以（時間＋事件＋來源）辨認是同一筆，避免重複顯示 */
+const logIdentityKey = (logEntry: SystemLogEntry): string => `${logEntry.timestamp}|${logEntry.event}|${logEntry.source}`;
 
 export const LEGACY_SYSTEM_LOG_STORAGE_KEY = 'privacy_system_logs_v1';
 const MAX_SYSTEM_LOG_ENTRIES_COUNT = 2000; // 畫面上保留的筆數上限
@@ -61,8 +74,10 @@ const generateSystemLogId = (): string =>
 };
 
 export const useSystemLogStore = create<SystemLogState>()(
-	(setStoreStateAction) => ({
+	(setStoreStateAction, getStoreStateAction) => ({
 		logs: [],
+		recentlyArrivedIds: [],
+		lastSyncedAt: null,
 		addLog: (entry) =>
 		{
 			const newLogEntry: SystemLogEntry = { ...entry, id: generateSystemLogId(), timestamp: Date.now() };
@@ -81,7 +96,7 @@ export const useSystemLogStore = create<SystemLogState>()(
 			try
 			{
 				// 指定時間區間時取到後端上限（5000），避免統計只算到最新 2000 筆
-				setStoreStateAction({ logs: await fetchSystemLogs(sinceMs ? 5000 : MAX_SYSTEM_LOG_ENTRIES_COUNT, sinceMs) });
+				setStoreStateAction({ logs: await fetchSystemLogs(sinceMs ? 5000 : MAX_SYSTEM_LOG_ENTRIES_COUNT, sinceMs), recentlyArrivedIds: [], lastSyncedAt: Date.now() });
 			}
 			catch (loadErrorValue)
 			{
@@ -91,7 +106,35 @@ export const useSystemLogStore = create<SystemLogState>()(
 		clearLogs: async () =>
 		{
 			await deleteSystemLogs();
-			setStoreStateAction({ logs: [] });
+			setStoreStateAction({ logs: [], recentlyArrivedIds: [] });
+		},
+		pollNewLogs: async () =>
+		{
+			const serverLogsList = getStoreStateAction().logs.filter((logEntry) => isServerLogId(logEntry.id));
+			// 後端的 since 含等於：以最新一筆的時間為起點，同一毫秒已有的紀錄再以 id 去重
+			const newestServerTimestamp = serverLogsList.length > 0 ? Math.max(...serverLogsList.map((logEntry) => logEntry.timestamp)) : undefined;
+			try
+			{
+				const fetchedLogsList = await fetchSystemLogs(MAX_SYSTEM_LOG_ENTRIES_COUNT, newestServerTimestamp);
+				const knownIdsSet = new Set(getStoreStateAction().logs.map((logEntry) => logEntry.id));
+				const arrivedLogsList = fetchedLogsList.filter((logEntry) => !knownIdsSet.has(logEntry.id));
+				const arrivedKeysSet = new Set(arrivedLogsList.map(logIdentityKey));
+				setStoreStateAction((currentState) => ({
+					logs: [
+						...arrivedLogsList,
+						// 本機剛寫入的那筆已從後端讀回時，移除本機版本
+						...currentState.logs.filter((logEntry) => isServerLogId(logEntry.id) || !arrivedKeysSet.has(logIdentityKey(logEntry))),
+					].sort((leftEntry, rightEntry) => rightEntry.timestamp - leftEntry.timestamp).slice(0, MAX_SYSTEM_LOG_ENTRIES_COUNT),
+					recentlyArrivedIds: arrivedLogsList.map((logEntry) => logEntry.id),
+					lastSyncedAt: Date.now(),
+				}));
+				return arrivedLogsList.length;
+			}
+			catch (pollErrorValue)
+			{
+				console.warn('[系統維運日誌] 即時更新失敗：', pollErrorValue);
+				return null;
+			}
 		},
 	})
 );

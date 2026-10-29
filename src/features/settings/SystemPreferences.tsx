@@ -12,7 +12,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-	Card, Switch, Select, Segmented, Space, Divider, theme, Typography, Tooltip,
+	Card, Switch, Select, Segmented, Space, Divider, theme, Typography, Tooltip, Badge,
 	Tabs, Table, Tag, Button, Form, InputNumber, Alert, Modal, Input, App as AntdApp, Dropdown, Checkbox, DatePicker
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -34,7 +34,10 @@ import {
 	StopOutlined,
 	CheckCircleOutlined,
 	ExclamationCircleFilled,
-	ReloadOutlined
+	ReloadOutlined,
+	PauseCircleOutlined,
+	PlayCircleOutlined,
+	CloseOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -43,6 +46,8 @@ import { getRoleDisplayName } from '../../utils/roleLabel';
 import { SHOW_ANNOUNCEMENTS, SHOW_SYSTEM_LOG_TAB } from '../../config/featureFlags';
 import { saveSystemSettings, loadSystemSettings, DEFAULT_SESSION_TIMEOUT_MINUTES } from '../../utils/systemSettingsSync';
 import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
+import SystemLogCharts, { type SystemLogChartSelection } from './SystemLogCharts';
+import { filterLogsByRange, resolveRangeStartMs, type SystemLogRangeKey } from '../../utils/systemLogStats';
 import {
 	listMemberAccounts, createMemberAccount, changeMemberRole, resetMemberPassword, setMemberActive, deleteMemberAccount,
 	toMemberApiError, isMemberAccountLocked, LOGIN_MAX_ATTEMPTS, LOGIN_ATTEMPT_WINDOW_SECONDS, LOGIN_LOCKOUT_SECONDS,
@@ -63,6 +68,7 @@ const { Text, Title } = Typography;
  */
 const MIN_SESSION_TIMEOUT_MINUTES = 1;
 const MAX_SESSION_TIMEOUT_MINUTES = 1440; // 與後端 PUT /settings 上限一致（24 小時）
+const SYSTEM_LOG_POLL_INTERVAL_MS = 5 * 1000; // 系統維運日誌即時更新間隔
 
 /**
  * 系統使用者紀錄資料結構
@@ -268,15 +274,56 @@ export default function SystemPreferences(): React.ReactElement
 	const systemLogEntriesList = useSystemLogStore((state) => state.logs);
 	const clearSystemLogsAction = useSystemLogStore((state) => state.clearLogs);
 	const loadSystemLogsAction = useSystemLogStore((state) => state.loadLogs);
-	// ★ 2026-10-29：日誌存後端，開啟日誌分頁時重新載入
+	const pollNewSystemLogsAction = useSystemLogStore((state) => state.pollNewLogs);
+	const recentlyArrivedLogIdsList = useSystemLogStore((state) => state.recentlyArrivedIds);
+	const systemLogsLastSyncedAt = useSystemLogStore((state) => state.lastSyncedAt);
+	const isSystemLogTabActive = activeTabIdentifier === 'syslogs' && currentUserRoleName === 'admin';
+	const isSystemLogDarkMode = useUIStore((state) => state.isDarkMode);
+
+	// ★ 2026-10-29：日誌即時更新與圖表——期間篩選、每 5 秒抓新紀錄（分頁隱藏或暫停時不抓）、關鍵字、點圖篩選
+	const [systemLogRangeKey, setSystemLogRangeKey] = useState<SystemLogRangeKey>('24h');
+	const [isSystemLogLiveUpdateOn, setIsSystemLogLiveUpdateOn] = useState<boolean>(true);
+	const [systemLogKeyword, setSystemLogKeyword] = useState<string>('');
+	const [systemLogChartSelection, setSystemLogChartSelection] = useState<SystemLogChartSelection | null>(null);
+	const [systemLogNowMs, setSystemLogNowMs] = useState<number>(() => Date.now());
+	const [isSystemLogReloading, setIsSystemLogReloading] = useState<boolean>(false);
+
+	const reloadSystemLogs = useCallback(async (): Promise<void> =>
+	{
+		setIsSystemLogReloading(true);
+		await loadSystemLogsAction(resolveRangeStartMs(systemLogRangeKey));
+		setSystemLogNowMs(Date.now());
+		setIsSystemLogReloading(false);
+	}, [loadSystemLogsAction, systemLogRangeKey]);
+
 	useEffect(() =>
 	{
-		if (activeTabIdentifier === 'syslogs' && currentUserRoleName === 'admin') void loadSystemLogsAction();
-	}, [activeTabIdentifier, currentUserRoleName, loadSystemLogsAction]);
+		if (isSystemLogTabActive) void reloadSystemLogs();
+	}, [isSystemLogTabActive, reloadSystemLogs]);
+
+	useEffect(() =>
+	{
+		if (!isSystemLogTabActive || !isSystemLogLiveUpdateOn) return undefined;
+		const pollTimerId = window.setInterval(() =>
+		{
+			if (document.visibilityState !== 'visible') return;
+			void pollNewSystemLogsAction().then(() => setSystemLogNowMs(Date.now()));
+		}, SYSTEM_LOG_POLL_INTERVAL_MS);
+		return () => window.clearInterval(pollTimerId);
+	}, [isSystemLogTabActive, isSystemLogLiveUpdateOn, pollNewSystemLogsAction]);
+
 	const [systemLogLevelFilter, setSystemLogLevelFilter] = useState<'ALL' | SystemLogLevel>('ALL');
-	const filteredSystemLogEntriesList = systemLogLevelFilter === 'ALL'
-		? systemLogEntriesList
-		: systemLogEntriesList.filter(logEntryItem => logEntryItem.level === systemLogLevelFilter);
+	const normalizedSystemLogKeyword = systemLogKeyword.trim().toLowerCase();
+	// 期間＋關鍵字＋點圖選取（不含層級）：層級按鈕上的數字以此計算
+	const rangedSystemLogEntriesList = filterLogsByRange(systemLogEntriesList, systemLogRangeKey, systemLogNowMs).filter((logEntryItem) =>
+		(!normalizedSystemLogKeyword || logEntryItem.event.toLowerCase().includes(normalizedSystemLogKeyword) || logEntryItem.source.toLowerCase().includes(normalizedSystemLogKeyword))
+		&& (!systemLogChartSelection?.timeRange || (logEntryItem.timestamp >= systemLogChartSelection.timeRange.startMs && logEntryItem.timestamp < systemLogChartSelection.timeRange.endMs))
+		&& (!systemLogChartSelection?.source || logEntryItem.source === systemLogChartSelection.source));
+	const effectiveSystemLogLevelFilter = systemLogChartSelection?.level ?? systemLogLevelFilter;
+	const filteredSystemLogEntriesList = effectiveSystemLogLevelFilter === 'ALL'
+		? rangedSystemLogEntriesList
+		: rangedSystemLogEntriesList.filter(logEntryItem => logEntryItem.level === effectiveSystemLogLevelFilter);
+	const recentlyArrivedLogIdsSet = new Set(recentlyArrivedLogIdsList);
 
 	// 閒置登出時間（★ 2026-10-29 存後端，由 utils/systemSettingsSync 寫入 WorkspaceStore）
 	const sessionTimeoutMinutes = useWorkspaceStore((state) => (state as unknown as { sessionTimeout?: number }).sessionTimeout) ?? DEFAULT_SESSION_TIMEOUT_MINUTES;
@@ -977,23 +1024,97 @@ export default function SystemPreferences(): React.ReactElement
 							style={{ marginBottom: '16px' }}
 						/>
 
+						{/* ★ 2026-10-29：新到的紀錄淡黃底 3 秒後淡出 */}
+						<style>{`@keyframes syslog-row-arrived { from { background: rgba(250, 219, 20, 0.35); } to { background: transparent; } } .syslog-row-arrived > td { animation: syslog-row-arrived 3s ease-out; }`}</style>
+
+						{/* 第一列：期間、即時更新、重新整理、清除 */}
 						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-							<Segmented
-								value={systemLogLevelFilter}
-								onChange={(selectedLevelValue) => setSystemLogLevelFilter(selectedLevelValue as 'ALL' | SystemLogLevel)}
-								options={[
-									{ value: 'ALL', label: `${translate('admin.syslog_filter_all', '全部')} (${systemLogEntriesList.length})` },
-									{ value: 'INFO', label: `INFO (${systemLogEntriesList.filter(logEntryItem => logEntryItem.level === 'INFO').length})` },
-									{ value: 'WARN', label: `WARN (${systemLogEntriesList.filter(logEntryItem => logEntryItem.level === 'WARN').length})` },
-									{ value: 'ERROR', label: `ERROR (${systemLogEntriesList.filter(logEntryItem => logEntryItem.level === 'ERROR').length})` },
-								]}
-							/>
-							<Button danger icon={<DeleteOutlined />} onClick={showClearSystemLogsConfirm} disabled={systemLogEntriesList.length === 0}>
-								{translate('admin.syslog_clear', '清除日誌')}
-							</Button>
+							<Space wrap>
+								<Segmented
+									value={systemLogRangeKey}
+									onChange={(selectedRangeValue) => { setSystemLogRangeKey(selectedRangeValue as SystemLogRangeKey); setSystemLogChartSelection(null); }}
+									options={[
+										{ value: '1h', label: translate('admin.syslog_range_1h', '1 小時') },
+										{ value: '24h', label: translate('admin.syslog_range_24h', '24 小時') },
+										{ value: '7d', label: translate('admin.syslog_range_7d', '7 天') },
+										{ value: 'all', label: translate('admin.syslog_range_all', '全部') },
+									]}
+								/>
+								<Button
+									icon={isSystemLogLiveUpdateOn ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+									onClick={() => setIsSystemLogLiveUpdateOn(!isSystemLogLiveUpdateOn)}
+									type={isSystemLogLiveUpdateOn ? 'default' : 'dashed'}
+								>
+									{isSystemLogLiveUpdateOn ? translate('admin.syslog_live_pause', '暫停即時更新') : translate('admin.syslog_live_resume', '開啟即時更新')}
+								</Button>
+								<Text type="secondary" style={{ fontSize: scaleFontSize(12) }} data-testid="syslog-live-status">
+									{isSystemLogLiveUpdateOn
+										? <Badge status="processing" text={translate('admin.syslog_live_on', '即時更新中（每 5 秒）')} />
+										: <Badge status="default" text={translate('admin.syslog_live_off', '已暫停')} />}
+									{systemLogsLastSyncedAt !== null && <span style={{ marginLeft: 8 }}>{translate('admin.syslog_last_synced', '最後更新 {{time}}', { time: formatSystemLogTimestamp(systemLogsLastSyncedAt) })}</span>}
+								</Text>
+							</Space>
+							<Space wrap>
+								<Button icon={<ReloadOutlined />} loading={isSystemLogReloading} onClick={() => void reloadSystemLogs()}>
+									{translate('admin.syslog_reload', '重新整理')}
+								</Button>
+								<Button danger icon={<DeleteOutlined />} onClick={showClearSystemLogsConfirm} disabled={systemLogEntriesList.length === 0}>
+									{translate('admin.syslog_clear', '清除日誌')}
+								</Button>
+							</Space>
 						</div>
 
-						<Table<SystemLogEntry> columns={logTableColumnsConfig} dataSource={filteredSystemLogEntriesList} rowKey="id" pagination={{ pageSize: 10 }} size="small" />
+						<SystemLogCharts
+							logs={systemLogEntriesList}
+							rangeKey={systemLogRangeKey}
+							nowMs={systemLogNowMs}
+							isDarkMode={isSystemLogDarkMode}
+							onSelect={(chartSelection) => setSystemLogChartSelection(chartSelection)}
+						/>
+
+						{/* 第二列：層級、關鍵字、點圖選取 */}
+						<div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+							<Segmented
+								value={effectiveSystemLogLevelFilter}
+								onChange={(selectedLevelValue) => { setSystemLogLevelFilter(selectedLevelValue as 'ALL' | SystemLogLevel); if (systemLogChartSelection?.level) setSystemLogChartSelection({ ...systemLogChartSelection, level: undefined }); }}
+								options={[
+									{ value: 'ALL', label: `${translate('admin.syslog_filter_all', '全部')} (${rangedSystemLogEntriesList.length})` },
+									{ value: 'INFO', label: `INFO (${rangedSystemLogEntriesList.filter(logEntryItem => logEntryItem.level === 'INFO').length})` },
+									{ value: 'WARN', label: `WARN (${rangedSystemLogEntriesList.filter(logEntryItem => logEntryItem.level === 'WARN').length})` },
+									{ value: 'ERROR', label: `ERROR (${rangedSystemLogEntriesList.filter(logEntryItem => logEntryItem.level === 'ERROR').length})` },
+								]}
+							/>
+							<Input.Search
+								allowClear
+								style={{ width: '16em' }}
+								placeholder={translate('admin.syslog_search_placeholder', '搜尋事件或來源')}
+								value={systemLogKeyword}
+								onChange={(inputEvent) => setSystemLogKeyword(inputEvent.target.value)}
+							/>
+							{systemLogChartSelection && (systemLogChartSelection.timeRange || systemLogChartSelection.source || systemLogChartSelection.level) && (
+								<Tag closable closeIcon={<CloseOutlined />} color="blue" onClose={() => setSystemLogChartSelection(null)} style={{ margin: 0 }} data-testid="syslog-chart-selection">
+									{[
+										systemLogChartSelection.timeRange ? translate('admin.syslog_selection_time', '時段 {{label}}', { label: systemLogChartSelection.timeRange.label }) : null,
+										systemLogChartSelection.level ?? null,
+										systemLogChartSelection.source ? translate('admin.syslog_selection_api', 'API：{{source}}', { source: systemLogChartSelection.source.replace(' /api/v1', ' ') }) : null,
+									].filter(Boolean).join('・')}
+								</Tag>
+							)}
+						</div>
+
+						<Table<SystemLogEntry>
+							columns={logTableColumnsConfig}
+							dataSource={filteredSystemLogEntriesList}
+							rowKey="id"
+							pagination={{ pageSize: 10 }}
+							size="small"
+							rowClassName={(logEntryItem) => (recentlyArrivedLogIdsSet.has(logEntryItem.id) ? 'syslog-row-arrived' : '')}
+						/>
+						{(systemLogRangeKey === '7d' || systemLogRangeKey === 'all') && systemLogEntriesList.length >= 5000 && (
+							<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
+								{translate('admin.syslog_limit_note', '只載入最新 5000 筆；更早的紀錄請縮短期間查看。')}
+							</Text>
+						)}
 					</div>
 				),
 			},
