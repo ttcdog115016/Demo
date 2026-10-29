@@ -28,16 +28,25 @@ import AppErrorBoundary from './components/AppErrorBoundary';
 import { registerGlobalApiErrorInterceptor } from './api/apiErrorInterceptor';
 import { logSystemEvent } from './store/useSystemLogStore';
 import { useAuthStore } from './store/useAuthStore';
+import { LEGACY_AUDIT_LOG_STORAGE_KEY } from './store/useAuditStore';
+import { LEGACY_SYSTEM_LOG_STORAGE_KEY } from './store/useSystemLogStore';
+import { LEGACY_ANNOUNCEMENT_STORAGE_KEY } from './store/useAnnouncementStore';
+import { loadSystemSettings } from './utils/systemSettingsSync';
 registerGlobalApiErrorInterceptor();
 
 // ★ 2026-10-27：改由後端會員系統驗證帳號，清除舊版前端 Demo 帳號資料庫留在瀏覽器的資料（含密碼雜湊）
-try { window.localStorage.removeItem('privacy_accounts_v1'); } catch { /* 無法存取 localStorage 時略過 */ }
+// ★ 2026-10-29：處理紀錄、維運日誌、系統公告改存後端，舊版留在瀏覽器的資料一併清除（不搬移）
+for (const legacyStorageKey of ['privacy_accounts_v1', LEGACY_AUDIT_LOG_STORAGE_KEY, LEGACY_SYSTEM_LOG_STORAGE_KEY, LEGACY_ANNOUNCEMENT_STORAGE_KEY])
+{
+	try { window.localStorage.removeItem(legacyStorageKey); } catch { /* 無法存取 localStorage 時略過 */ }
+}
+
+// ★ 2026-10-29：系統設定（閒置自動登出時間、維護模式）改由後端提供
+void loadSystemSettings();
 
 // ★ 2026-10-27：重新整理頁面時以 sessionStorage 的 refresh token 向後端接續登入（期間 RequireAuth 顯示載入中）
-void useAuthStore.getState().restoreSession();
-
-// ★ 2026-10-07：系統維運日誌——記錄前端頁面載入（含重新整理）
-logSystemEvent('INFO', `前端頁面載入（${window.location.host}）`);
+// ★ 2026-10-07：系統維運日誌——記錄前端頁面載入（含重新整理）；2026-10-29 起日誌存後端，接續登入後才記得進去
+void useAuthStore.getState().restoreSession().then(() => logSystemEvent('INFO', `前端頁面載入（${window.location.host}）`));
 
 /**
  * ============================================================================

@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware';
+import { fetchHistory, postHistory } from '../api/systemApi';
 import type { AuditIntegrityRecord } from '../utils/auditIntegrity';
 import type { ComplianceReportSnapshot } from '../utils/complianceReport';
 
@@ -65,6 +65,10 @@ interface AuditState
 	 * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素, c) 確保透過正規 Action 修改全域變數
 	 */
 	addAuditLog: (auditLogEntry: Omit<AuditLogItem, 'id'>) => void;
+	/** ★ 2026-10-29：自後端載入目前帳號的處理紀錄（登入／重新整理接續登入後呼叫） */
+	loadAuditLogs: () => Promise<void>;
+	/** 登出時清空畫面上的紀錄（後端資料不動） */
+	clearAuditLogs: () => void;
 }
 
 /**
@@ -89,45 +93,12 @@ const generateAuditLogId = (): string => {
 };
 
 /**
- * ★ 2026-10-28：歷史檢測紀錄持久化（先前只存在記憶體，重新整理頁面即消失）。
- *   - 存在瀏覽器 localStorage（鍵名 AUDIT_LOG_STORAGE_KEY），只在這台電腦、這個瀏覽器有效；
- *     簽章金鑰原本就存在 IndexedDB（utils/auditIntegrity.ts），重新整理後仍可驗證。
- *   - 最多保留 MAX_AUDIT_LOG_ENTRIES_COUNT 筆（新的在前）；寫入超出瀏覽器容量時自動捨棄最舊的一半再重試，
- *     仍失敗則放棄寫入（不影響畫面與主流程）。
- *   - 同一台瀏覽器可能有多個帳號登入：畫面以 selectAuditLogsForUser 只顯示目前帳號的紀錄。
+ * ★ 2026-10-29：處理紀錄改存後端資料庫（GET／POST /api/v1/history，見 api/systemApi.ts）。
+ *   先前（2026-10-28）存在瀏覽器 localStorage，換電腦或清快取就不見；舊資料直接捨棄（main.tsx 啟動時清除舊鍵）。
+ *   後端每個帳號保留最新 MAX_AUDIT_LOG_ENTRIES_COUNT 筆。
  */
-export const AUDIT_LOG_STORAGE_KEY = 'privacy_audit_logs_v1';
+export const LEGACY_AUDIT_LOG_STORAGE_KEY = 'privacy_audit_logs_v1';
 export const MAX_AUDIT_LOG_ENTRIES_COUNT = 200;
-
-const isQuotaExceededError = (errorValue: unknown): boolean =>
-	errorValue instanceof DOMException && (errorValue.name === 'QuotaExceededError' || errorValue.name === 'NS_ERROR_DOM_QUOTA_REACHED' || errorValue.code === 22);
-
-/** localStorage 包一層：容量不足時捨棄最舊的紀錄後重試 */
-export const quotaSafeAuditLogStorage: StateStorage = {
-	getItem: (storageKey) => {
-		try { return localStorage.getItem(storageKey); } catch { return null; }
-	},
-	setItem: (storageKey, storageValue) => {
-		let valueToWrite = storageValue;
-		for (let attempt = 0; attempt < 8; attempt++) {
-			try { localStorage.setItem(storageKey, valueToWrite); return; }
-			catch (storageError) {
-				if (!isQuotaExceededError(storageError)) { console.warn('[稽核紀錄] 寫入瀏覽器儲存失敗：', storageError); return; }
-				try {
-					const parsedValue = JSON.parse(valueToWrite) as { state?: { auditLogs?: unknown[] } };
-					const currentLogs = parsedValue.state?.auditLogs || [];
-					if (currentLogs.length <= 1) return;
-					parsedValue.state = { ...parsedValue.state, auditLogs: currentLogs.slice(0, Math.ceil(currentLogs.length / 2)) };
-					valueToWrite = JSON.stringify(parsedValue);
-					console.warn(`[稽核紀錄] 瀏覽器儲存空間不足，僅保留最新 ${parsedValue.state.auditLogs?.length} 筆`);
-				} catch { return; }
-			}
-		}
-	},
-	removeItem: (storageKey) => {
-		try { localStorage.removeItem(storageKey); } catch { /* 忽略 */ }
-	},
-};
 
 /** 目前帳號的紀錄（依 operator 比對；未登入時不顯示任何紀錄） */
 export const selectAuditLogsForUser = (auditLogs: AuditLogItem[], operatorName: string | null | undefined): AuditLogItem[] =>
@@ -137,41 +108,42 @@ export const selectAuditLogsForUser = (auditLogs: AuditLogItem[], operatorName: 
  * 全域歷史審計軌跡 Store 實例 (useAuditStore)
  * 規範對照: 符合規範 i) 全域變數/狀態詳細註記
  */
-export const useAuditStore = create<AuditState>()(persist(
-	(setStoreStateAction) => 
+export const useAuditStore = create<AuditState>()(
+	(setStoreStateAction) =>
 	(
 		{
-			// 初始化時，清單預設為空陣列
+			// 初始化時，清單預設為空陣列（登入後由 loadAuditLogs 自後端載入）
 			auditLogs: [],
 
-			// 實作新增審計紀錄之 Action 函式
-			addAuditLog: (auditLogEntryData) => setStoreStateAction(
-				(currentStoreStateData) => 
-				(
-					{
-						// 自動生成 UUID 唯一碼並插入清單最前端 (最新的紀錄顯示在最上面)
-						// 規範對照: 符合規範 g) 確保每次呼叫皆產生合理不衝突之 ID 鍵值
-						auditLogs: [
-							{ ...auditLogEntryData, id: generateAuditLogId() }, 
-							...currentStoreStateData.auditLogs
-						].slice(0, MAX_AUDIT_LOG_ENTRIES_COUNT)
-					}
-				)
-			),
-		}
-	),
-	{
-		name: AUDIT_LOG_STORAGE_KEY,
-		storage: createJSONStorage(() => quotaSafeAuditLogStorage),
-		partialize: (state) => ({ auditLogs: state.auditLogs }),
-	}
-));
+			// 新增審計紀錄：先更新畫面（Step4 立即讀得到），再寫入後端
+			addAuditLog: (auditLogEntryData) =>
+			{
+				// 自動生成 UUID 唯一碼並插入清單最前端 (最新的紀錄顯示在最上面)
+				// 規範對照: 符合規範 g) 確保每次呼叫皆產生合理不衝突之 ID 鍵值
+				const newAuditLogItem: AuditLogItem = { ...auditLogEntryData, id: generateAuditLogId() };
+				setStoreStateAction((currentStoreStateData) => ({
+					auditLogs: [newAuditLogItem, ...currentStoreStateData.auditLogs].slice(0, MAX_AUDIT_LOG_ENTRIES_COUNT),
+				}));
+				postHistory(newAuditLogItem).catch((saveErrorValue) =>
+				{
+					console.warn('[處理紀錄] 寫入後端失敗：', saveErrorValue);
+				});
+			},
 
-// 跨分頁同步：其他分頁寫入紀錄時，本分頁重新讀取
-if (typeof window !== 'undefined')
-{
-	window.addEventListener('storage', (storageEventObj) =>
-	{
-		if (storageEventObj.key === AUDIT_LOG_STORAGE_KEY) void useAuditStore.persist.rehydrate();
-	});
-}
+			loadAuditLogs: async () =>
+			{
+				try
+				{
+					const historyRecordsList = await fetchHistory();
+					setStoreStateAction({ auditLogs: historyRecordsList.slice(0, MAX_AUDIT_LOG_ENTRIES_COUNT) });
+				}
+				catch (loadErrorValue)
+				{
+					console.warn('[處理紀錄] 自後端載入失敗：', loadErrorValue);
+				}
+			},
+
+			clearAuditLogs: () => setStoreStateAction({ auditLogs: [] }),
+		}
+	)
+);

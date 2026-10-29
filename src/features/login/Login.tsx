@@ -18,10 +18,8 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
-import { logSystemEvent } from '../../store/useSystemLogStore';
-import { memberLogin, toMemberApiError, isMemberServiceUnavailable, clearMemberSession } from '../../api/authApi';
-import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-import { SHOW_DEMO_ACCOUNTS, SHOW_MAINTENANCE_MODE } from '../../config/featureFlags';
+import { memberLogin, toMemberApiError, isMemberServiceUnavailable } from '../../api/authApi';
+import { SHOW_DEMO_ACCOUNTS } from '../../config/featureFlags';
 
 import { scaleFontSize } from '../../utils/fontScale';
 /**
@@ -119,15 +117,7 @@ export default function Login(): React.ReactElement
 			//   180 秒內失敗 5 次鎖 15 分鐘（423，帶 Retry-After）；後端未設定 JWT 金鑰回 503。不回退到前端帳號。
 			const memberSession = await memberLogin(usernameInputString, formValuesObj.password || '');
 
-			// 維護模式期間僅允許 Admin 登入（維護模式目前為前端設定）
-			const securitySettingsSnapshot = useWorkspaceStore.getState() as unknown as { isMaintenanceMode?: boolean };
-			if (SHOW_MAINTENANCE_MODE && securitySettingsSnapshot.isMaintenanceMode && memberSession.role !== 'admin')
-			{
-				clearMemberSession();
-				logSystemEvent('WARN', '登入被拒（系統維護模式中，僅允許 Admin）', memberSession.username);
-				messageApi.warning(translate('admin.maintenance_active_desc', '系統已進入維護模式，僅允許管理員存取。'));
-				return;
-			}
+			// ★ 2026-10-29：維護模式期間僅允許 Admin 登入，改由後端判斷（回 503 ERR_MAINTENANCE，見下方 catch）
 
 			executeLoginAction(
 				{ name: memberSession.username, email: memberSession.username, role: memberSession.role }
@@ -145,25 +135,26 @@ export default function Login(): React.ReactElement
 		catch (loginExecutionError) 
 		{
 			const memberErrorObj = toMemberApiError(loginExecutionError);
-			if (memberErrorObj.status === 423)
+			// ★ 2026-10-29：登入失敗、帳號鎖定、維護模式擋下登入改由後端寫入系統維運日誌（未登入時前端無法寫入）
+			if (memberErrorObj.errorCode === 'ERR_MAINTENANCE')
+			{
+				messageApi.warning(translate('admin.maintenance_active_desc', '系統已進入維護模式，僅允許管理員存取。'));
+			}
+			else if (memberErrorObj.status === 423)
 			{
 				const remainingMinutesValue = Math.max(1, Math.ceil((memberErrorObj.retryAfterSeconds ?? 900) / 60));
-				logSystemEvent('WARN', `登入失敗（帳號鎖定中，約 ${remainingMinutesValue} 分鐘後解除）`, usernameInputString);
 				messageApi.error(translate('login.error_locked', '登入失敗次數過多，帳號已鎖定，請於 {{minutes}} 分鐘後再試，或請系統管理員重設密碼。', { minutes: remainingMinutesValue }));
 			}
 			else if (memberErrorObj.status === 503)
 			{
-				logSystemEvent('ERROR', '登入失敗（後端會員系統未啟用）', usernameInputString || '(未填帳號)');
 				messageApi.error(translate('login.error_auth_disabled', '登入功能尚未啟用，請聯繫系統管理員。'));
 			}
 			else if (isMemberServiceUnavailable(memberErrorObj))
 			{
-				logSystemEvent('ERROR', `登入失敗（無法連線至後端：${memberErrorObj.message}）`, usernameInputString || '(未填帳號)');
 				messageApi.error(translate('login.networkError'));
 			}
 			else
 			{
-				logSystemEvent('WARN', '登入失敗（帳號或密碼錯誤）', usernameInputString || '(未填帳號)');
 				messageApi.error(translate('login.error'));
 			}
 		} 

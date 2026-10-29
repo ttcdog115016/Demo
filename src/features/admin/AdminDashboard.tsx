@@ -92,6 +92,7 @@ export default function AdminDashboard(): React.ReactElement
 
 	// ★ 2026-10-08：三張狀態卡片改用真實資料（原本 99.99%／3 次／2 / 12 皆為寫死）
 	const systemLogEntriesList = useSystemLogStore((state) => state.logs);
+	const loadSystemLogsAction = useSystemLogStore((state) => state.loadLogs);
 	// ★ 2026-10-27：帳號數改讀後端帳號清單（GET /api/v1/users）；讀取失敗時維持空清單，不影響其他卡片
 	const [accountRecordsList, setAccountRecordsList] = useState<MemberAccount[]>([]);
 	const [statsNowMs, setStatsNowMs] = useState<number>(() => Date.now());
@@ -109,11 +110,13 @@ export default function AdminDashboard(): React.ReactElement
 		let isUnmounted = false;
 		const probeAndStore = (): void => { void probeBackendHealth().then((healthResult) => { if (!isUnmounted) setBackendHealthState(healthResult); }); };
 		probeAndStore();
+		// ★ 2026-10-29：統計來源（系統維運日誌）存後端，進入時與每次統計更新時重新載入
+		void loadSystemLogsAction();
 		void listMemberAccounts().then((accountsList) => { if (!isUnmounted) setAccountRecordsList(accountsList); }).catch(() => undefined);
 		const healthTimerId = window.setInterval(probeAndStore, BACKEND_HEALTH_RECHECK_INTERVAL_MS);
-		const statsTimerId = window.setInterval(() => setStatsNowMs(Date.now()), STATS_REFRESH_INTERVAL_MS);
+		const statsTimerId = window.setInterval(() => { setStatsNowMs(Date.now()); void loadSystemLogsAction(); }, STATS_REFRESH_INTERVAL_MS);
 		return () => { isUnmounted = true; window.clearInterval(healthTimerId); window.clearInterval(statsTimerId); };
-	}, []);
+	}, [loadSystemLogsAction]);
 
 	const apiCallStats = useMemo(() => computeApiCallStats(systemLogEntriesList, statsNowMs), [systemLogEntriesList, statsNowMs]);
 	const failedLoginStats = useMemo(() => computeFailedLoginStats(systemLogEntriesList, accountRecordsList, statsNowMs), [systemLogEntriesList, accountRecordsList, statsNowMs]);
@@ -302,7 +305,6 @@ export default function AdminDashboard(): React.ReactElement
 							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
 								{translate('admin.failed_logins', '24H 異常登入攔截')}
 								{/* ★ 2026-10-29：登入與 API 統計只計這台電腦的這個瀏覽器，標示「本機統計」 */}
-								<span data-testid="admin-local-stat-tag" style={{ marginLeft: '6px', fontSize: scaleFontSize(12), opacity: 0.75 }}>{translate('admin.local_stat_tag', '（本機統計）')}</span>
 							</div>
 
 							<div style={{ color: failedLoginStats.count > 0 ? '#faad14' : themeColorsConfig.textMain, fontSize: scaleFontSize(24), display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -339,7 +341,6 @@ export default function AdminDashboard(): React.ReactElement
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
 							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
 								{translate('admin.active_users', '24H 登入使用者')}
-								<span data-testid="admin-local-stat-tag" style={{ marginLeft: '6px', fontSize: scaleFontSize(12), opacity: 0.75 }}>{translate('admin.local_stat_tag', '（本機統計）')}</span>
 							</div>
 
 							<div style={{ color: themeColorsConfig.textMain, fontSize: scaleFontSize(24), display: 'flex', alignItems: 'baseline', gap: '8px' }}>
@@ -364,9 +365,8 @@ export default function AdminDashboard(): React.ReactElement
 			</Row>
 
 			<div style={{ marginTop: '8px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(12), opacity: 0.8 }}>
-				{SHOW_SYSTEM_LOG_TAB
-					? translate('admin.stats_source_note_backend_v2', '※ 帳號數來自後端；登入與 API 次數為本機統計（只計這台電腦的這個瀏覽器，來自系統維運日誌），尚未集中於後端；後端連線狀態每 60 秒自動檢查一次。')
-					: translate('admin.stats_source_note_desktop', '※ 帳號數來自後端；登入與 API 次數為本機統計（只計這台電腦的這個瀏覽器）；後端連線狀態每 60 秒自動檢查一次。')}
+				{/* ★ 2026-10-29：系統維運日誌改存後端，登入與 API 次數為全站統計（不再是本機統計） */}
+				{translate('admin.stats_source_note_server', '※ 帳號數、登入與 API 次數皆來自後端（過去 24 小時，含所有電腦）；後端連線狀態每 60 秒自動檢查一次。')}
 			</div>
 
 			{/* 密碼安全政策快速控管區塊（★ 2026-10-27 後端無密碼過期機制，先隱藏） */}

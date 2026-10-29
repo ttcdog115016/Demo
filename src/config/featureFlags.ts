@@ -20,14 +20,11 @@ export const SHOW_DEMO_ACCOUNTS = !IS_DESKTOP_BUILD;
 export const ENABLE_REMOTE_ERROR_REPORT = !IS_DESKTOP_BUILD;
 
 /**
- * ★ 2026-10-29（TTC Wei 決定）：以下功能的資料只存在使用者自己的瀏覽器（localStorage），後端沒有對應 API。
- *   多人共用網址時，管理員發的公告、開的維護模式，別台電腦的人收不到；單機版一台電腦一個人用，也沒有通知對象。
- *   隱藏：系統公告（系統設定分頁、首頁重要公告橫幅、右上角鈴鐺）、維護模式、系統維運日誌分頁。
- *   維運日誌仍在背景記錄（系統管理大廳的登入／API 統計由它計算），只是不顯示分頁。
-  *   閒置逾時登出保留（本機也有意義，不需要後端）。
- *   ★ 2026-10-29（TTC Wei 決定）：線上 Demo 版（npm run build）也一併隱藏，與單機版一致。
- *   後端補上公告／維護模式／維運日誌 API 後再改回顯示。
+ * ★ 2026-10-29（TTC Wei 決定）：系統公告（系統設定分頁、首頁重要公告橫幅、右上角鈴鐺）、維護模式、系統維運日誌分頁。
+ *   這些資料原本只存在使用者自己的瀏覽器，一度在兩個版本都隱藏；同日改存後端資料庫（api/systemApi.ts）後，
+ *   線上版恢復顯示。單機版一台電腦一個人用，沒有通知對象，仍隱藏。
+ *   維運日誌在兩個版本都照常記錄（系統管理大廳的登入／API 統計由它計算）。
  */
-export const SHOW_ANNOUNCEMENTS = false;
-export const SHOW_MAINTENANCE_MODE = false;
-export const SHOW_SYSTEM_LOG_TAB = false;
+export const SHOW_ANNOUNCEMENTS = !IS_DESKTOP_BUILD;
+export const SHOW_MAINTENANCE_MODE = !IS_DESKTOP_BUILD;
+export const SHOW_SYSTEM_LOG_TAB = !IS_DESKTOP_BUILD;

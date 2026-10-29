@@ -41,6 +41,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
 import { SHOW_PASSWORD_EXPIRY_POLICY, SHOW_ANNOUNCEMENTS, SHOW_MAINTENANCE_MODE, SHOW_SYSTEM_LOG_TAB } from '../../config/featureFlags';
+import { saveSystemSettings, loadSystemSettings, DEFAULT_SESSION_TIMEOUT_MINUTES } from '../../utils/systemSettingsSync';
 import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
 import {
 	listMemberAccounts, createMemberAccount, changeMemberRole, resetMemberPassword, setMemberActive, deleteMemberAccount,
@@ -60,7 +61,6 @@ const { Text, Title } = Typography;
  * 預設系統安全常數宣告
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  */
-const DEFAULT_SESSION_TIMEOUT_MINUTES = 15;
 const DEFAULT_MAX_FAILED_LOGINS_LIMIT = 5;
 const DEFAULT_PASSWORD_EXPIRY_DAYS = 90;
 const MIN_SESSION_TIMEOUT_MINUTES = 1;
@@ -294,6 +294,12 @@ export default function SystemPreferences(): React.ReactElement
 	// ★ 2026-10-07：系統維運日誌改為動態資料（見 useSystemLogStore.ts）
 	const systemLogEntriesList = useSystemLogStore((state) => state.logs);
 	const clearSystemLogsAction = useSystemLogStore((state) => state.clearLogs);
+	const loadSystemLogsAction = useSystemLogStore((state) => state.loadLogs);
+	// ★ 2026-10-29：日誌存後端，開啟日誌分頁時重新載入
+	useEffect(() =>
+	{
+		if (activeTabIdentifier === 'syslogs' && currentUserRoleName === 'admin') void loadSystemLogsAction();
+	}, [activeTabIdentifier, currentUserRoleName, loadSystemLogsAction]);
 	const [systemLogLevelFilter, setSystemLogLevelFilter] = useState<'ALL' | SystemLogLevel>('ALL');
 	const filteredSystemLogEntriesList = systemLogLevelFilter === 'ALL'
 		? systemLogEntriesList
@@ -357,25 +363,36 @@ export default function SystemPreferences(): React.ReactElement
 		envSecurityFormInstance.validateFields().then(
 			(formValuesObj: EnvSecurityValues) => 
 			{
-				const nextMaintenanceModeStatus = !!formValuesObj.maintenanceMode;
-				if (nextMaintenanceModeStatus !== isMaintenanceModeActive)
-				{
-					logSystemEvent('WARN', nextMaintenanceModeStatus ? '啟用系統維護模式（User 將無法使用系統）' : '關閉系統維護模式', operatorNameString);
-				}
-				logSystemEvent('INFO', SHOW_PASSWORD_EXPIRY_POLICY ? `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘、密碼過期${formValuesObj.enablePasswordExpiry ? ` ${formValuesObj.passwordExpiryDays} 天` : '停用'}` : `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘`, operatorNameString);
+				const nextMaintenanceModeStatus = SHOW_MAINTENANCE_MODE ? !!formValuesObj.maintenanceMode : isMaintenanceModeActive;
 
 				updateSecuritySettingsAction({
 					sessionTimeout: Number(formValuesObj.sessionTimeout),
 					maxFailedLogins: maxFailedLoginsCount, // ★ 2026-10-16：鎖定規則改為固定值（同步後端），畫面已移除此設定，沿用原值
-					isMaintenanceMode: !!formValuesObj.maintenanceMode,
+					isMaintenanceMode: nextMaintenanceModeStatus,
 					// 密碼過期設定隱藏時欄位不在表單中，沿用原值
 					enablePasswordExpiry: SHOW_PASSWORD_EXPIRY_POLICY ? !!formValuesObj.enablePasswordExpiry : isPasswordExpiryEnabled,
 					passwordExpiryDays: SHOW_PASSWORD_EXPIRY_POLICY ? Number(formValuesObj.passwordExpiryDays) : passwordExpiryDaysCount
 				});
 
-				messageApi.success(
-					translate('admin.msg_env_saved', '環境與安全設定已成功儲存')
-				);
+				// ★ 2026-10-29：閒置登出時間與維護模式存後端（所有人共用、重新整理後仍保留）
+				saveSystemSettings({ sessionTimeoutMinutes: Number(formValuesObj.sessionTimeout), isMaintenanceMode: nextMaintenanceModeStatus })
+					.then(() =>
+					{
+						if (nextMaintenanceModeStatus !== isMaintenanceModeActive)
+						{
+							logSystemEvent('WARN', nextMaintenanceModeStatus ? '啟用系統維護模式（User 將無法使用系統）' : '關閉系統維護模式', operatorNameString);
+						}
+						logSystemEvent('INFO', SHOW_PASSWORD_EXPIRY_POLICY ? `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘、密碼過期${formValuesObj.enablePasswordExpiry ? ` ${formValuesObj.passwordExpiryDays} 天` : '停用'}` : `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘`, operatorNameString);
+						messageApi.success(
+							translate('admin.msg_env_saved', '環境與安全設定已成功儲存')
+						);
+					})
+					.catch((saveErrorValue) =>
+					{
+						console.warn('[系統設定] 儲存失敗：', saveErrorValue);
+						void loadSystemSettings();
+						messageApi.error(translate('admin.msg_env_save_failed', '儲存失敗，請確認後端連線後再試一次'));
+					});
 			}
 		);
 	};
@@ -846,14 +863,22 @@ export default function SystemPreferences(): React.ReactElement
 		modalApi.confirm({
 			title: translate('admin.syslog_clear_title', '清除系統維運日誌'),
 			icon: <ExclamationCircleFilled />,
-			content: translate('admin.syslog_clear_desc', '確定要清除此瀏覽器中的所有系統維運日誌嗎？此操作無法復原。'),
+			content: translate('admin.syslog_clear_desc', '確定要清除所有系統維運日誌嗎？此操作無法復原。'),
 			okText: translate('admin.btn_confirm', '確認'),
 			okType: 'danger',
 			cancelText: translate('admin.btn_cancel', '取消'),
-			onOk()
+			async onOk()
 			{
-				clearSystemLogsAction();
-				logSystemEvent('WARN', '系統維運日誌已被清除', operatorNameString);
+				try
+				{
+					await clearSystemLogsAction();
+					logSystemEvent('WARN', '系統維運日誌已被清除', operatorNameString);
+				}
+				catch (clearErrorValue)
+				{
+					console.warn('[系統維運日誌] 清除失敗：', clearErrorValue);
+					messageApi.error(translate('admin.syslog_clear_failed', '清除失敗，請確認後端連線後再試一次'));
+				}
 			},
 		});
 	};
@@ -1039,7 +1064,7 @@ export default function SystemPreferences(): React.ReactElement
 				children: (
 					<div>
 						<Alert
-							message={translate('admin.announce_hint_desc', '公告會出現在對象使用者右上角的鈴鐺通知中；標為「重要」的公告，另外以可關閉的橫幅顯示在 Data Owner 首頁（適合維護時段預告、會影響結果判讀的改版說明）。目前公告保存在此瀏覽器中（Demo 版）。')}
+							message={translate('admin.announce_hint_desc', '公告會出現在對象使用者右上角的鈴鐺通知中；標為「重要」的公告，另外以可關閉的橫幅顯示在 Data Owner 首頁（適合維護時段預告、會影響結果判讀的改版說明）。公告保存在後端，所有使用者都看得到。')}
 							type="info"
 							showIcon
 							style={{ marginBottom: '16px' }}

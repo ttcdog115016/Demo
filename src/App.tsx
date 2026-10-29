@@ -51,12 +51,14 @@ import { Dashboard } from './features/dashboard/Dashboard';
 import MainLayout from './features/workspace/MainLayout';
 import { validateProgression } from './features/workspace/validateProgression';
 import { useIdleTimeout } from './features/settings/useIdleTimeout';
+import { DEFAULT_SESSION_TIMEOUT_MINUTES, loadSystemSettings } from './utils/systemSettingsSync';
+import { useAnnouncementStore, getAnnouncementUserKey } from './store/useAnnouncementStore';
 
 import { scaleFontSize, FONT_SCALE_BASE_PX } from './utils/fontScale';
 const { Header, Content, Sider } = Layout;
 
-const DEFAULT_SESSION_TIMEOUT_MINUTES = 1800;
 const MIN_STEP_INDEX = 0;
+const SERVER_DATA_REFRESH_INTERVAL_MS = 60 * 1000;
 const MAX_STEP_INDEX = 3;
 
 // 側邊選單展開寬度隨字體大小級距調整之基準像素值，避免大字級時選單文字與圖示重疊或被截斷
@@ -196,6 +198,18 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
     const resetWorkspaceAction = useWorkspaceStore((state) => state.resetWorkspace);
 
     useIdleTimeout(sessionTimeoutMinutesValue);
+
+    // ★ 2026-10-29：系統設定與公告存在後端，登入期間每 60 秒重新讀取一次——
+    //   管理員開啟維護模式後，其他電腦上已登入的使用者會在 1 分鐘內被登出；新公告也會出現在鈴鐺
+    const announcementUserKeyString = currentUserSessionData ? getAnnouncementUserKey(currentUserSessionData) : null;
+    useEffect(() => {
+        if (!announcementUserKeyString) return;
+        const refreshTimerId = window.setInterval(() => {
+            void loadSystemSettings();
+            if (SHOW_ANNOUNCEMENTS) void useAnnouncementStore.getState().loadAnnouncements(announcementUserKeyString);
+        }, SERVER_DATA_REFRESH_INTERVAL_MS);
+        return () => window.clearInterval(refreshTimerId);
+    }, [announcementUserKeyString]);
 
     const [searchParamsObject] = useSearchParams();
     const stepQueryParameterString = searchParamsObject.get('step');

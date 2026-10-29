@@ -3,18 +3,21 @@
  * 檔案名稱 (File): useSystemLogStore.ts
  * 模組功能 (Description): 系統維運日誌 (System Logs) 的全域狀態。
  *
- * 背景：Admin「系統維運日誌」分頁原本是寫死的 4 筆假資料。後端目前沒有提供日誌
- * 查詢 API，因此改由前端在實際發生事件的地方寫入（登入成功／失敗、登出、閒置
- * 逾時、角色切換、後端 API 呼叫成功／失敗、帳號管理與安全設定變更等），並以
- * localStorage 持久化（重新整理不會遺失），同一台電腦開多個分頁時也會即時同步。
+ * 背景：Admin「系統維運日誌」分頁原本是寫死的 4 筆假資料，改由前端在實際發生事件的地方
+ * 寫入（登入成功、登出、閒置逾時、角色切換、後端 API 呼叫成功／失敗、帳號管理與安全設定變更等）。
  *
- * 限制：紀錄只存在「這個瀏覽器」。若要多台電腦共用同一份日誌，需改為由後端提供
- * 寫入／查詢 API，屆時只需替換本檔的儲存層，呼叫端 (logSystemEvent) 不用改。
+ * ★ 2026-10-29：改存後端資料庫（POST／GET／DELETE /api/v1/system-logs，見 api/systemApi.ts），
+ *   管理大廳的統計因此是全站數字，不再只是這個瀏覽器。
+ *   - 寫入：logSystemEvent 先放進畫面，登入中才送後端；未登入時的事件（登入失敗、帳號鎖定、
+ *     維護模式擋下登入）由後端自己記錄，前端不必代寫。
+ *   - 讀取：Admin 開啟日誌分頁或管理大廳時以 loadLogs 自後端載入。
+ *   先前存在 localStorage 的舊日誌直接捨棄（main.tsx 啟動時清除舊鍵）。
  * ============================================================================
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { hasAccessToken } from '../api/authApi';
+import { deleteSystemLogs, fetchSystemLogs, postSystemLogs } from '../api/systemApi';
 
 export type SystemLogLevel = 'INFO' | 'WARN' | 'ERROR'; // 日誌層級
 
@@ -31,11 +34,14 @@ interface SystemLogState
 {
 	logs: SystemLogEntry[];                                       // 由新到舊排序
 	addLog: (entry: Omit<SystemLogEntry, 'id' | 'timestamp'>) => void;
-	clearLogs: () => void;
+	/** 自後端載入（限 Admin）；失敗時保留畫面上現有的紀錄 */
+	loadLogs: () => Promise<void>;
+	/** 清除後端與畫面上的日誌（限 Admin） */
+	clearLogs: () => Promise<void>;
 }
 
-export const SYSTEM_LOG_STORAGE_KEY = 'privacy_system_logs_v1';
-const MAX_SYSTEM_LOG_ENTRIES_COUNT = 300; // 避免 localStorage 無限增長，僅保留最近 N 筆
+export const LEGACY_SYSTEM_LOG_STORAGE_KEY = 'privacy_system_logs_v1';
+const MAX_SYSTEM_LOG_ENTRIES_COUNT = 2000; // 畫面上保留的筆數上限
 
 /**
  * 函數名稱: generateSystemLogId
@@ -55,35 +61,39 @@ const generateSystemLogId = (): string =>
 };
 
 export const useSystemLogStore = create<SystemLogState>()(
-	persist(
-		(setStoreStateAction) => ({
-			logs: [],
-			addLog: (entry) => setStoreStateAction((currentState) => ({
-				logs: [
-					{ ...entry, id: generateSystemLogId(), timestamp: Date.now() },
-					...currentState.logs,
-				].slice(0, MAX_SYSTEM_LOG_ENTRIES_COUNT),
-			})),
-			clearLogs: () => setStoreStateAction({ logs: [] }),
-		}),
+	(setStoreStateAction) => ({
+		logs: [],
+		addLog: (entry) =>
 		{
-			name: SYSTEM_LOG_STORAGE_KEY,
-			storage: createJSONStorage(() => localStorage),
-		}
-	)
+			const newLogEntry: SystemLogEntry = { ...entry, id: generateSystemLogId(), timestamp: Date.now() };
+			setStoreStateAction((currentState) => ({
+				logs: [newLogEntry, ...currentState.logs].slice(0, MAX_SYSTEM_LOG_ENTRIES_COUNT),
+			}));
+			// 必須在呼叫當下就送出：登出時 token 隨後即被清除，延後送會變成未登入而被拒
+			if (hasAccessToken())
+			{
+				postSystemLogs([{ level: newLogEntry.level, event: newLogEntry.event, source: newLogEntry.source, ts: newLogEntry.timestamp }])
+					.catch((saveErrorValue) => console.warn('[系統維運日誌] 寫入後端失敗：', saveErrorValue));
+			}
+		},
+		loadLogs: async () =>
+		{
+			try
+			{
+				setStoreStateAction({ logs: await fetchSystemLogs(MAX_SYSTEM_LOG_ENTRIES_COUNT) });
+			}
+			catch (loadErrorValue)
+			{
+				console.warn('[系統維運日誌] 自後端載入失敗：', loadErrorValue);
+			}
+		},
+		clearLogs: async () =>
+		{
+			await deleteSystemLogs();
+			setStoreStateAction({ logs: [] });
+		},
+	})
 );
-
-// 跨分頁同步：其他分頁寫入日誌時（storage 事件），本分頁重新讀取，畫面即時更新。
-if (typeof window !== 'undefined')
-{
-	window.addEventListener('storage', (storageEventObj) =>
-	{
-		if (storageEventObj.key === SYSTEM_LOG_STORAGE_KEY)
-		{
-			void useSystemLogStore.persist.rehydrate();
-		}
-	});
-}
 
 /**
  * 函數名稱: logSystemEvent

@@ -7,14 +7,18 @@
  * 發布，依對象（全部／Data Owner／Admin）顯示於鈴鐺；「重要」公告另外以可關閉的
  * 橫幅顯示在 Data Owner 首頁。已讀／已關閉狀態依使用者分開記錄。
  *
- * 儲存：localStorage 持久化，同一台電腦多分頁即時同步（storage 事件）。後端目前沒有
- * 公告 API，因此公告只存在「這個瀏覽器」；日後後端開放時只需替換本檔儲存層。
+ * ★ 2026-10-29：改存後端資料庫（/api/v1/announcements，見 api/systemApi.ts），所有人都收得到；
+ * 已讀／已關閉狀態也存後端。登入後與之後每 60 秒以 loadAnnouncements 重新載入（App.tsx）。
+ * 各操作先更新畫面再呼叫後端，完成後重新載入；先前存在 localStorage 的舊公告直接捨棄。
  * ============================================================================
  */
 
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import {
+	fetchAnnouncements, postAnnouncement, patchAnnouncement, endAnnouncement, deleteAnnouncement,
+	postAnnouncementsRead, postAnnouncementsDismissed,
+} from '../api/systemApi';
 
 export type AnnouncementLevel = 'normal' | 'important';           // 一般 | 重要（首頁橫幅）
 export type AnnouncementAudience = 'all' | 'data_owner' | 'admin'; // 顯示對象
@@ -45,9 +49,13 @@ interface AnnouncementState
 	endAnnouncementNow: (announcementId: string) => void;
 	markAsRead: (userKey: string, announcementIds: string[]) => void;
 	dismissBanner: (userKey: string, announcementId: string) => void;
+	/** 自後端載入公告與 userKey 這位使用者的已讀／已關閉狀態 */
+	loadAnnouncements: (userKey: string) => Promise<void>;
+	/** 登出時清空畫面上的公告 */
+	clearAnnouncements: () => void;
 }
 
-export const ANNOUNCEMENT_STORAGE_KEY = 'privacy_announcements_v1';
+export const LEGACY_ANNOUNCEMENT_STORAGE_KEY = 'privacy_announcements_v1';
 const MAX_ANNOUNCEMENT_COUNT = 50;
 
 const generateAnnouncementId = (): string =>
@@ -66,26 +74,50 @@ const generateAnnouncementId = (): string =>
 const appendUniqueIds = (existingIds: string[] | undefined, newIds: string[]): string[] =>
 	Array.from(new Set([...(existingIds ?? []), ...newIds]));
 
+// 目前載入的是哪位使用者的已讀狀態；後端操作完成後以此重新載入
+let loadedUserKey: string | null = null;
+
+const reloadAfter = (requestPromise: Promise<unknown>, actionLabel: string): void =>
+{
+	requestPromise
+		.catch((requestErrorValue) => console.warn(`[系統公告] ${actionLabel}失敗：`, requestErrorValue))
+		.finally(() => { if (loadedUserKey) void useAnnouncementStore.getState().loadAnnouncements(loadedUserKey); });
+};
+
 export const useAnnouncementStore = create<AnnouncementState>()(
-	persist(
-		(setStoreStateAction) => ({
-			announcements: [],
-			readIdsByUser: {},
-			dismissedBannerIdsByUser: {},
-			publishAnnouncement: (item) => setStoreStateAction((currentState) => ({
+	(setStoreStateAction) => ({
+		announcements: [],
+		readIdsByUser: {},
+		dismissedBannerIdsByUser: {},
+		publishAnnouncement: (item) =>
+		{
+			setStoreStateAction((currentState) => ({
 				announcements: [
 					{ ...item, id: generateAnnouncementId(), createdAt: Date.now() },
 					...currentState.announcements,
 				].slice(0, MAX_ANNOUNCEMENT_COUNT),
-			})),
-			removeAnnouncement: (announcementId) => setStoreStateAction((currentState) => ({
+			}));
+			const { title, content, level, audience, icon, expiresAt } = item;
+			reloadAfter(postAnnouncement({ title, content, level, audience, icon, expiresAt }), '發布公告');
+		},
+		removeAnnouncement: (announcementId) =>
+		{
+			setStoreStateAction((currentState) => ({
 				announcements: currentState.announcements.filter(item => item.id !== announcementId),
-			})),
-			endAnnouncementNow: (announcementId) => setStoreStateAction((currentState) => ({
+			}));
+			reloadAfter(deleteAnnouncement(announcementId), '刪除公告');
+		},
+		endAnnouncementNow: (announcementId) =>
+		{
+			setStoreStateAction((currentState) => ({
 				announcements: currentState.announcements.map(item => item.id === announcementId ? { ...item, expiresAt: Date.now() } : item),
-			})),
-			// 修改公告；shouldRenotify=true 時清除所有人的已讀／橫幅已關閉狀態，讓修改後內容重新提醒
-			updateAnnouncement: (announcementId, patch, shouldRenotify) => setStoreStateAction((currentState) =>
+			}));
+			reloadAfter(endAnnouncement(announcementId), '結束公告');
+		},
+		// 修改公告；shouldRenotify=true 時清除所有人的已讀／橫幅已關閉狀態，讓修改後內容重新提醒
+		updateAnnouncement: (announcementId, patch, shouldRenotify) =>
+		{
+			setStoreStateAction((currentState) =>
 			{
 				const removeIdFromEachUser = (idsByUserDict: Record<string, string[]>): Record<string, string[]> =>
 					Object.fromEntries(Object.entries(idsByUserDict).map(([userKey, idsList]) => [userKey, idsList.filter(idValue => idValue !== announcementId)]));
@@ -96,31 +128,47 @@ export const useAnnouncementStore = create<AnnouncementState>()(
 						dismissedBannerIdsByUser: removeIdFromEachUser(currentState.dismissedBannerIdsByUser),
 					} : {}),
 				};
-			}),
-			markAsRead: (userKey, announcementIds) => setStoreStateAction((currentState) => ({
+			});
+			reloadAfter(patchAnnouncement(announcementId, patch, shouldRenotify), '修改公告');
+		},
+		markAsRead: (userKey, announcementIds) =>
+		{
+			setStoreStateAction((currentState) => ({
 				readIdsByUser: { ...currentState.readIdsByUser, [userKey]: appendUniqueIds(currentState.readIdsByUser[userKey], announcementIds) },
-			})),
-			dismissBanner: (userKey, announcementId) => setStoreStateAction((currentState) => ({
+			}));
+			if (announcementIds.length > 0) postAnnouncementsRead(announcementIds).catch((requestErrorValue) => console.warn('[系統公告] 標記已讀失敗：', requestErrorValue));
+		},
+		dismissBanner: (userKey, announcementId) =>
+		{
+			setStoreStateAction((currentState) => ({
 				dismissedBannerIdsByUser: { ...currentState.dismissedBannerIdsByUser, [userKey]: appendUniqueIds(currentState.dismissedBannerIdsByUser[userKey], [announcementId]) },
-			})),
-		}),
+			}));
+			postAnnouncementsDismissed([announcementId]).catch((requestErrorValue) => console.warn('[系統公告] 關閉橫幅失敗：', requestErrorValue));
+		},
+		loadAnnouncements: async (userKey) =>
 		{
-			name: ANNOUNCEMENT_STORAGE_KEY,
-			storage: createJSONStorage(() => localStorage),
-		}
-	)
+			loadedUserKey = userKey;
+			try
+			{
+				const responseObj = await fetchAnnouncements();
+				setStoreStateAction({
+					announcements: responseObj.announcements ?? [],
+					readIdsByUser: { [userKey]: responseObj.read_ids ?? [] },
+					dismissedBannerIdsByUser: { [userKey]: responseObj.dismissed_ids ?? [] },
+				});
+			}
+			catch (loadErrorValue)
+			{
+				console.warn('[系統公告] 自後端載入失敗：', loadErrorValue);
+			}
+		},
+		clearAnnouncements: () =>
+		{
+			loadedUserKey = null;
+			setStoreStateAction({ announcements: [], readIdsByUser: {}, dismissedBannerIdsByUser: {} });
+		},
+	})
 );
-
-if (typeof window !== 'undefined')
-{
-	window.addEventListener('storage', (storageEventObj) =>
-	{
-		if (storageEventObj.key === ANNOUNCEMENT_STORAGE_KEY)
-		{
-			void useAnnouncementStore.persist.rehydrate();
-		}
-	});
-}
 
 /**
  * 函數名稱: isAnnouncementActive

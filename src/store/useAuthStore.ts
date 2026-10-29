@@ -12,6 +12,15 @@ import { create } from 'zustand';
 import { logSystemEvent } from './useSystemLogStore';
 import { getRoleDisplayName } from '../utils/roleLabel';
 import { memberLogout, restoreMemberSession, setSessionExpiredListener, clearMemberSession } from '../api/authApi';
+import { useAuditStore } from './useAuditStore';
+import { useAnnouncementStore } from './useAnnouncementStore';
+
+/** ★ 2026-10-29：處理紀錄與系統公告改存後端，登入（或重新整理接續登入）後載入 */
+const loadServerDataForUser = (username: string): void =>
+{
+	void useAuditStore.getState().loadAuditLogs();
+	void useAnnouncementStore.getState().loadAnnouncements(username);
+};
 
 // 登出原因：manual 使用者自行登出 | idle 閒置逾時 | maintenance 維護模式強制登出 | expired 登入逾期（後端拒絕換發 token、帳號被停用或刪除）
 export type LogoutReason = 'manual' | 'idle' | 'maintenance' | 'expired';
@@ -100,6 +109,7 @@ export const useAuthStore = create<AuthState>(
 			{
 				setStoreStateAction({ isAuthenticated: true, user: userSessionData, lastLogoutReason: null });
 				logSystemEvent('INFO', `使用者登入成功（角色：${getRoleDisplayName(userSessionData.role)}）`, userSessionData.name);
+				loadServerDataForUser(userSessionData.email || userSessionData.name);
 			},
 			
 			// 實作登出 Action：清空狀態與使用者物件，並於背景通知後端作廢 refresh token
@@ -114,6 +124,8 @@ export const useAuthStore = create<AuthState>(
 				if (logoutReasonType === 'expired') clearMemberSession();
 				else void memberLogout();
 				setStoreStateAction({ isAuthenticated: false, user: null, lastLogoutReason: logoutReasonType });
+				useAuditStore.getState().clearAuditLogs();
+				useAnnouncementStore.getState().clearAnnouncements();
 			},
 
 			restoreSession: async () =>
@@ -129,6 +141,7 @@ export const useAuthStore = create<AuthState>(
 							isAuthenticated: true,
 							user: { name: restoredSession.username, email: restoredSession.username, role: restoredSession.role },
 						});
+						loadServerDataForUser(restoredSession.username);
 					}
 				}
 				finally

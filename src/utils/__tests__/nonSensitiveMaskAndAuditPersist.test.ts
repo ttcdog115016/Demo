@@ -3,14 +3,18 @@
  * ★ 2026-10-28：
  *   - 非敏感欄位遮蔽（全遮蔽／部分遮蔽／雜湊／清空）送後端的設定與合規報告標示
  *   - 預設值與後端一致（三攻擊 n_iter 500）
- *   - 歷史檢測紀錄持久化（localStorage）、容量不足時保留最新紀錄、只顯示目前帳號的紀錄
+ *   - 歷史檢測紀錄只顯示目前帳號的紀錄
+ * ★ 2026-10-29：紀錄改存後端（POST／GET /api/v1/history），寫入與載入改測 systemApi 的呼叫
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { buildKAnonymityConfig } from '../pipelineConfig';
 import { resolveColumnTreatment } from '../plainResultSummary';
 import { resolveReportColumnTechText, type ComplianceReportEntry } from '../complianceReport';
 import { RISK_ATTACK_DEFAULT_PARAMS } from '../riskConfigImport';
-import { quotaSafeAuditLogStorage, selectAuditLogsForUser, useAuditStore, AUDIT_LOG_STORAGE_KEY, type AuditLogItem } from '../../store/useAuditStore';
+import { selectAuditLogsForUser, useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
+
+const { postHistoryMock, fetchHistoryMock } = vi.hoisted(() => ({ postHistoryMock: vi.fn(), fetchHistoryMock: vi.fn() }));
+vi.mock('../../api/systemApi', () => ({ postHistory: postHistoryMock, fetchHistory: fetchHistoryMock }));
 
 const baseSettings = { kValue: 5, lValue: 2, tValue: 0.7, enableLDiversity: false, enableTCloseness: false, maxSuppression: 20, suppressionMethod: 'row_suppression', cellFillMethod: 'star' as const, limitExceededAction: 'allow_with_warning' };
 
@@ -65,41 +69,39 @@ describe('預設值與後端一致', () => {
     });
 });
 
-describe('歷史檢測紀錄持久化', () => {
+describe('歷史檢測紀錄（存後端）', () => {
     const makeLog = (operator: string, certificateId: string) => ({ certificateId, operator, fileName: 'a.csv', privacyMode: 'k-anonymity' } as unknown as Omit<AuditLogItem, 'id'>);
-    beforeEach(() => { localStorage.clear(); useAuditStore.setState({ auditLogs: [] }); });
-
-    it('新增紀錄寫入 localStorage，重新讀取後仍在', async () => {
-        useAuditStore.getState().addAuditLog(makeLog('alice', 'PAC-1'));
-        const rawStored = localStorage.getItem(AUDIT_LOG_STORAGE_KEY) || '{}';
-        expect(JSON.parse(rawStored).state.auditLogs[0].certificateId).toBe('PAC-1');
-        // 模擬重新整理：記憶體清空（setState 也會寫回空陣列），再放回重新整理前的瀏覽器資料後讀取
+    beforeEach(() => {
         useAuditStore.setState({ auditLogs: [] });
-        localStorage.setItem(AUDIT_LOG_STORAGE_KEY, rawStored);
-        await useAuditStore.persist.rehydrate();
-        expect(useAuditStore.getState().auditLogs.map((log) => log.certificateId)).toEqual(['PAC-1']);
+        postHistoryMock.mockReset().mockResolvedValue({});
+        fetchHistoryMock.mockReset();
+    });
+
+    it('新增紀錄立即出現在畫面上，並送到後端（帶同一個 id）', () => {
+        useAuditStore.getState().addAuditLog(makeLog('alice', 'PAC-1'));
+        const [storedLog] = useAuditStore.getState().auditLogs;
+        expect(storedLog.certificateId).toBe('PAC-1');
+        expect(postHistoryMock).toHaveBeenCalledWith(storedLog);
+    });
+
+    it('後端寫入失敗不影響畫面上的紀錄', async () => {
+        postHistoryMock.mockRejectedValue(new Error('offline'));
+        useAuditStore.getState().addAuditLog(makeLog('alice', 'PAC-2'));
+        await Promise.resolve();
+        expect(useAuditStore.getState().auditLogs.map((log) => log.certificateId)).toEqual(['PAC-2']);
+    });
+
+    it('登入後自後端載入；登出清空畫面', async () => {
+        fetchHistoryMock.mockResolvedValue([{ ...makeLog('alice', 'S-1'), id: 's1' }]);
+        await useAuditStore.getState().loadAuditLogs();
+        expect(useAuditStore.getState().auditLogs.map((log) => log.certificateId)).toEqual(['S-1']);
+        useAuditStore.getState().clearAuditLogs();
+        expect(useAuditStore.getState().auditLogs).toEqual([]);
     });
 
     it('只顯示目前帳號的紀錄；未登入不顯示', () => {
         const logs = [makeLog('alice', 'A'), makeLog('bob', 'B')].map((log, index) => ({ ...log, id: String(index) })) as AuditLogItem[];
         expect(selectAuditLogsForUser(logs, 'alice').map((log) => log.certificateId)).toEqual(['A']);
         expect(selectAuditLogsForUser(logs, undefined)).toEqual([]);
-    });
-
-    it('瀏覽器容量不足時捨棄最舊的一半再寫入', () => {
-        const originalSetItem = Storage.prototype.setItem;
-        let callCount = 0;
-        Storage.prototype.setItem = function (key: string, value: string) {
-            callCount += 1;
-            if (callCount === 1) throw new DOMException('full', 'QuotaExceededError');
-            return originalSetItem.call(this, key, value);
-        };
-        try {
-            const payload = JSON.stringify({ state: { auditLogs: [{ id: 'new' }, { id: 'mid' }, { id: 'old1' }, { id: 'old2' }] }, version: 0 });
-            quotaSafeAuditLogStorage.setItem(AUDIT_LOG_STORAGE_KEY, payload);
-        } finally {
-            Storage.prototype.setItem = originalSetItem;
-        }
-        expect(JSON.parse(localStorage.getItem(AUDIT_LOG_STORAGE_KEY) || '{}').state.auditLogs.map((log: { id: string }) => log.id)).toEqual(['new', 'mid']);
     });
 });

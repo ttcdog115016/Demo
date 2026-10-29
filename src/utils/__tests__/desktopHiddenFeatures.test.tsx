@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * ★ 2026-10-29：單機版隱藏只存在瀏覽器、沒有後端對應的功能——系統公告（設定分頁、首頁橫幅、鈴鐺）、
- *   維護模式、系統維運日誌分頁；系統管理大廳的登入統計標示「本機統計」。一般 Demo 建置不受影響。
+ * ★ 2026-10-29：單機版（一台電腦一個人用）隱藏系統公告（設定分頁、首頁橫幅、鈴鐺）、維護模式、系統維運日誌分頁。
+ *   這些資料同日改存後端後，線上 Demo 版恢復顯示；系統管理大廳的統計改為全站數字，不再標示「本機統計」。
  */
 import React from 'react';
 import { render, cleanup, waitFor } from '@testing-library/react';
@@ -70,19 +70,19 @@ describe('單機版隱藏的功能', () => {
         expect(queryByText('測試重要公告')).toBeNull();
     });
 
-    it('系統管理大廳：登入統計標示「本機統計」，說明不提維運日誌與維護模式', async () => {
-        const { getAllByTestId, getByText, queryByText } = renderAt(<AdminDashboard />);
-        expect(getAllByTestId('admin-local-stat-tag')).toHaveLength(2);
-        expect(getByText('※ 帳號數來自後端；登入與 API 次數為本機統計（只計這台電腦的這個瀏覽器）；後端連線狀態每 60 秒自動檢查一次。')).toBeTruthy();
+    it('系統管理大廳：統計來自後端（不標示本機統計），說明不提維運日誌與維護模式', async () => {
+        const { queryAllByTestId, getByText, queryByText } = renderAt(<AdminDashboard />);
+        expect(queryAllByTestId('admin-local-stat-tag')).toHaveLength(0);
+        expect(getByText('※ 帳號數、登入與 API 次數皆來自後端（過去 24 小時，含所有電腦）；後端連線狀態每 60 秒自動檢查一次。')).toBeTruthy();
         expect(getByText('集中管理使用者帳號，並設定閒置逾時登出時間。')).toBeTruthy();
         expect(queryByText(/維運日誌/)).toBeNull();
     });
 });
 
 describe('一般 Demo 建置（非單機版）', () => {
-    it('與單機版一樣隱藏公告、維護模式、維運日誌分頁', async () => {
+    it('公告、維護模式、維運日誌分頁照常顯示（資料存後端）', async () => {
         const actualFlags = await vi.importActual<typeof import('../../config/featureFlags')>('../../config/featureFlags');
         expect(actualFlags.IS_DESKTOP_BUILD).toBe(false);
-        expect([actualFlags.SHOW_ANNOUNCEMENTS, actualFlags.SHOW_MAINTENANCE_MODE, actualFlags.SHOW_SYSTEM_LOG_TAB]).toEqual([false, false, false]);
+        expect([actualFlags.SHOW_ANNOUNCEMENTS, actualFlags.SHOW_MAINTENANCE_MODE, actualFlags.SHOW_SYSTEM_LOG_TAB]).toEqual([true, true, true]);
     });
 });

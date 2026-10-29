@@ -126,6 +126,9 @@ export const clearMemberSession = (): void =>
 
 export const hasStoredRefreshToken = (): boolean => !!getRefreshToken();
 
+/** ★ 2026-10-29：目前是否持有 access token（系統維運日誌未登入時不送後端，見 useSystemLogStore） */
+export const hasAccessToken = (): boolean => !!accessTokenInMemory;
+
 /** 換發失敗（refresh token 失效）時要執行的動作；接線時由 useAuthStore 註冊（例如呼叫 logout） */
 export const setSessionExpiredListener = (listenerFn: (() => void) | null): void =>
 {
@@ -260,7 +263,8 @@ const refreshTokensOnce = (): Promise<void> =>
 	return refreshInFlightPromise;
 };
 
-const authorizedRequest = async <ResponseType>(requestConfig: AxiosRequestConfig): Promise<ResponseType> =>
+// ★ 2026-10-29：export 給 systemApi.ts（處理紀錄、維運日誌、系統設定、公告）共用
+export const authorizedRequest = async <ResponseType>(requestConfig: AxiosRequestConfig): Promise<ResponseType> =>
 {
 	const sendWithCurrentToken = () => memberHttpClient.request<ResponseType>({
 		...requestConfig,
@@ -484,4 +488,11 @@ export const __resetMemberApiStateForTest = (): void =>
 };
 
 /** 僅供單元測試：取得 axios 實例以掛 mock adapter */
+/** ★ 2026-10-29：免登入的請求（GET /settings：登入頁要知道是否維護中） */
+export const publicRequest = async <ResponseType>(requestConfig: AxiosRequestConfig): Promise<ResponseType> =>
+{
+	try { return (await memberHttpClient.request<ResponseType>(requestConfig)).data; }
+	catch (requestErrorValue) { throw toMemberApiError(requestErrorValue); }
+};
+
 export const __memberHttpClientForTest = memberHttpClient;
