@@ -106,6 +106,12 @@ interface BasicPreferencesProps
  */
 const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.ReactElement => 
 {
+	// ★ 2026-10-29：偏好存後端；存不進去時提示（畫面已照常切換）
+	const { message: preferenceMessageApi } = AntdApp.useApp();
+	const notifyIfPreferenceNotSaved = (isSaved: boolean): void =>
+	{
+		if (!isSaved) preferenceMessageApi.warning(translate('preferences.save_failed', '偏好未能儲存到伺服器，重新登入後可能會恢復原設定'));
+	};
 	const { token } = theme.useToken();
 
 	const { t: translate } = useTranslation();
@@ -145,6 +151,7 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 						<span style={{ fontSize: scaleFontSize(16), fontWeight: 600 }}>{translate('preferences.title', '介面偏好')}</span>
 					</Space>
 				}
+				extra={<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>{translate('preferences.saved_per_account', '依帳號記住，換電腦登入也一樣')}</Text>}
 				variant="borderless"
 				style={
 					{
@@ -168,7 +175,7 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 						</div>
 					</Space>
 
-					<Switch checked={isDarkModeActive} onChange={(isChecked) => setIsDarkModeAction(isChecked)} checkedChildren={<MoonOutlined />} unCheckedChildren={<SunOutlined />} style={{ minWidth: '4.5em' }} />
+					<Switch checked={isDarkModeActive} onChange={(isChecked) => void setIsDarkModeAction(isChecked).then(notifyIfPreferenceNotSaved)} checkedChildren={<MoonOutlined />} unCheckedChildren={<SunOutlined />} style={{ minWidth: '4.5em' }} />
 				</div>
 
 				<Divider dashed style={{ margin: '16px 0' }} />
@@ -188,7 +195,7 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 
 					<Select
 						value={currentLanguageCode}
-						onChange={(selectedLanguageVal) => setLanguageAction(selectedLanguageVal)}
+						onChange={(selectedLanguageVal) => void setLanguageAction(selectedLanguageVal).then(notifyIfPreferenceNotSaved)}
 						style={{ minWidth: '9em' }}
 						popupMatchSelectWidth={false}
 						options={
@@ -217,7 +224,7 @@ const BasicPreferences = ({ currentUserRole }: BasicPreferencesProps): React.Rea
 
 					<Segmented
 						value={currentFontSizeLevel}
-						onChange={(selectedFontSizeLevelVal) => setFontSizeLevelAction(selectedFontSizeLevelVal as FontSizeLevel)}
+						onChange={(selectedFontSizeLevelVal) => void setFontSizeLevelAction(selectedFontSizeLevelVal as FontSizeLevel).then(notifyIfPreferenceNotSaved)}
 						options={
 							[
 								{ value: 'small', label: translate('preferences.font_size_small', '小') },

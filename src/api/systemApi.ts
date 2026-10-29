@@ -59,3 +59,19 @@ export const fetchSystemSettings = (): Promise<SystemSettings> =>
 /** PUT /settings（限 Admin）：只送要改的欄位 */
 export const putSystemSettings = (changes: Partial<SystemSettings>): Promise<SystemSettings> =>
 	authorizedRequest<SystemSettings>({ method: 'PUT', url: '/settings', data: changes });
+
+// ── 介面偏好（★ 2026-10-29：依帳號記住） ──────────────────────────────────
+export interface UserPreferences
+{
+	theme?: 'light' | 'dark' | null;   // null／未設定＝跟隨作業系統
+	language?: 'zh_TW' | 'en_US';
+	font_size?: 'small' | 'medium' | 'large' | 'extraLarge';
+}
+
+/** GET /preferences：目前帳號的介面偏好；沒存過回 {} */
+export const fetchUserPreferences = (): Promise<UserPreferences> =>
+	authorizedRequest<UserPreferences>({ method: 'GET', url: '/preferences' });
+
+/** PUT /preferences：只送要改的欄位 */
+export const saveUserPreferences = (changes: UserPreferences): Promise<UserPreferences> =>
+	authorizedRequest<UserPreferences>({ method: 'PUT', url: '/preferences', data: changes });

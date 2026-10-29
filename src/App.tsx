@@ -503,7 +503,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
 
 export default function App(): React.ReactElement {
     const isDarkModeActiveStatus = useUIStore((state) => state.isDarkMode);
-    const executeSetIsDarkModeAction = useUIStore((state) => state.setIsDarkMode);
+    const followSystemThemeAction = useUIStore((state) => state.followSystemTheme);
     const currentLanguageCodeString = useUIStore((state) => state.language);
     const currentFontSizeLevelValue = useUIStore((state) => state.fontSizeLevel);
     const { i18n: i18nInstanceObj } = useTranslation();
@@ -514,10 +514,11 @@ export default function App(): React.ReactElement {
 
     useEffect(() => {
         const systemThemeMediaQueryList = window.matchMedia('(prefers-color-scheme: dark)');
-        const handleSystemThemeChangeEvent = (e: MediaQueryListEvent) => executeSetIsDarkModeAction(e.matches);
+        // ★ 2026-10-29：使用者手動選過主題就不跟作業系統變（見 useUIStore.followSystemTheme）
+        const handleSystemThemeChangeEvent = (e: MediaQueryListEvent) => followSystemThemeAction(e.matches);
         systemThemeMediaQueryList.addEventListener('change', handleSystemThemeChangeEvent);
         return () => systemThemeMediaQueryList.removeEventListener('change', handleSystemThemeChangeEvent);
-    }, [executeSetIsDarkModeAction]);
+    }, [followSystemThemeAction]);
 
     useEffect(() => {
         document.documentElement.style.setProperty('--font-size-base', `${FONT_SIZE_LEVEL_PX_MAP[currentFontSizeLevelValue]}px`);

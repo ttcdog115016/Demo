@@ -14,6 +14,8 @@ import { getLoginGeneration, memberLogout, restoreMemberSession, setSessionExpir
 import { useAuditStore } from './useAuditStore';
 import { useSystemLogStore } from './useSystemLogStore';
 import { useWorkspaceStore } from './useWorkspaceStore';
+import { useUIStore } from './useUIStore';
+import { fetchUserPreferences } from '../api/systemApi';
 
 /**
  * ★ 2026-10-29：不論怎麼登出（手動、閒置逾時、登入逾期），都釋放這次登入在瀏覽器裡的資料——
@@ -28,12 +30,17 @@ const releaseSessionData = (): void =>
 	if (sessionTimeoutValue !== undefined) useWorkspaceStore.setState({ sessionTimeout: sessionTimeoutValue } as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
 	useAuditStore.getState().clearAuditLogs();
 	useSystemLogStore.setState({ logs: [], recentlyArrivedIds: [], lastSyncedAt: null, consecutivePollFailures: 0 });
+	useUIStore.getState().resetToDefaults();
 };
 
-/** ★ 2026-10-29：處理紀錄存後端，登入（或重新整理接續登入）後載入 */
+/** ★ 2026-10-29：處理紀錄、介面偏好存後端，登入（或重新整理接續登入）後載入 */
 const loadServerDataForUser = (): void =>
 {
 	void useAuditStore.getState().loadAuditLogs();
+	// ★ 2026-10-29：介面偏好依帳號存後端，登入後套用；讀不到時維持目前畫面
+	void fetchUserPreferences()
+		.then((preferences) => useUIStore.getState().applyUserPreferences(preferences))
+		.catch((loadErrorValue) => console.warn('[介面偏好] 載入失敗：', loadErrorValue));
 };
 
 // 登出原因：manual 使用者自行登出 | idle 閒置逾時 | expired 登入逾期（後端拒絕換發 token、帳號被停用或刪除）

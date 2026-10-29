@@ -922,6 +922,8 @@ const translationResourcesDictionary = {
 			},
 			preferences: {
 				title: "介面偏好",
+				saved_per_account: "依帳號記住，換電腦登入也一樣",
+				save_failed: "偏好未能儲存到伺服器，重新登入後可能會恢復原設定",
 				dark_mode: "外觀主題",
 				dark_mode_desc: "切換系統的深色或淺色視覺體驗",
 				language: "系統語系",
@@ -1957,6 +1959,8 @@ const translationResourcesDictionary = {
 				reset_workspace: "Reset Workspace",
 			},
 			preferences: {
+				saved_per_account: "Saved per account, on any computer",
+				save_failed: "Preference could not be saved to the server; it may revert after you sign in again",
 				title: "Display Preferences",
 				dark_mode: "Appearance (Dark Mode)",
 				dark_mode_desc: "Switch between dark and light visual themes",

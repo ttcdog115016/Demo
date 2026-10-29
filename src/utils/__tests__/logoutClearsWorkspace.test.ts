@@ -1,19 +1,25 @@
+// @vitest-environment jsdom
 /**
  * ★ 2026-10-29：不論怎麼登出（手動、閒置逾時、登入逾期），工作區（含已上傳的檔案）都要釋放。
  *   原本只有手動登出會清，閒置逾時被登出後再登入，Step1 仍看得到先前的檔案。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.hoisted(() => {
+    Object.defineProperty(window, 'matchMedia', { writable: true, value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }) });
+});
+
 vi.mock('../../api/authApi', async () => {
     const actual = await vi.importActual<typeof import('../../api/authApi')>('../../api/authApi');
     return { ...actual, memberLogout: vi.fn().mockResolvedValue(undefined), clearMemberSession: vi.fn() };
 });
-vi.mock('../../api/systemApi', () => ({ postSystemLogs: vi.fn().mockResolvedValue({}), fetchHistory: vi.fn().mockResolvedValue([]) }));
+vi.mock('../../api/systemApi', () => ({ postSystemLogs: vi.fn().mockResolvedValue({}), fetchHistory: vi.fn().mockResolvedValue([]), fetchUserPreferences: vi.fn().mockResolvedValue({}), saveUserPreferences: vi.fn().mockResolvedValue({}) }));
 
 import { useAuthStore, type LogoutReason } from '../../store/useAuthStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuditStore } from '../../store/useAuditStore';
 import { useSystemLogStore } from '../../store/useSystemLogStore';
+import { useUIStore } from '../../store/useUIStore';
 
 const signInWithWork = (): void => {
     useAuthStore.setState({ isAuthenticated: true, user: { name: 'owner@test.com', email: 'owner@test.com', role: 'data_owner' } } as Partial<ReturnType<typeof useAuthStore.getState>>);
@@ -23,6 +29,7 @@ const signInWithWork = (): void => {
     } as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
     useAuditStore.setState({ auditLogs: [{ id: 'x' } as never] });
     useSystemLogStore.setState({ logs: [{ id: '1', timestamp: 1, level: 'INFO', event: 'e', source: 's' }] });
+    useUIStore.setState({ language: 'en_US', fontSizeLevel: 'large' });
 };
 
 describe('登出時釋放工作區', () => {
@@ -43,5 +50,6 @@ describe('登出時釋放工作區', () => {
         expect((workspaceState as unknown as { sessionTimeout?: number }).sessionTimeout).toBe(5);
         expect(useAuditStore.getState().auditLogs).toEqual([]);
         expect(useSystemLogStore.getState().logs).toEqual([]);
+        expect(useUIStore.getState().language).toBe('zh_TW');
     });
 });
