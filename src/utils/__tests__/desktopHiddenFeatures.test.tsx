@@ -80,9 +80,9 @@ describe('單機版隱藏的功能', () => {
 });
 
 describe('一般 Demo 建置（非單機版）', () => {
-    it('功能開關全部開啟', async () => {
+    it('與單機版一樣隱藏公告、維護模式、維運日誌分頁', async () => {
         const actualFlags = await vi.importActual<typeof import('../../config/featureFlags')>('../../config/featureFlags');
         expect(actualFlags.IS_DESKTOP_BUILD).toBe(false);
-        expect([actualFlags.SHOW_ANNOUNCEMENTS, actualFlags.SHOW_MAINTENANCE_MODE, actualFlags.SHOW_SYSTEM_LOG_TAB]).toEqual([true, true, true]);
+        expect([actualFlags.SHOW_ANNOUNCEMENTS, actualFlags.SHOW_MAINTENANCE_MODE, actualFlags.SHOW_SYSTEM_LOG_TAB]).toEqual([false, false, false]);
     });
 });
