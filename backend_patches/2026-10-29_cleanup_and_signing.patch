@@ -1,0 +1,412 @@
+diff --git a/app/api/auth_router.py b/app/api/auth_router.py
+index 3fbf584..ac89d8b 100644
+--- a/app/api/auth_router.py
++++ b/app/api/auth_router.py
+@@ -37,9 +37,6 @@ _bearer = HTTPBearer(
+ # 「這個帳號存不存在」的探測管道，攻擊者不必猜密碼就能先蒐集有效帳號清單。
+ _CREDENTIALS_MESSAGE = "帳號或密碼錯誤。"
+ 
+-_MAINTENANCE_MESSAGE = "系統維護中，目前僅允許管理員登入，請稍後再試。"
+-
+-
+ def _system_log(level: str, event: str, source: str) -> None:
+     """★ TTC 2026-10-29：寫入系統維運日誌（前端在未登入時無法代寫的事件）。寫入失敗不影響登入流程。"""
+     try:
+@@ -48,13 +45,6 @@ def _system_log(level: str, event: str, source: str) -> None:
+         pass
+ 
+ 
+-def _maintenance_blocks(role: str | None) -> bool:
+-    """維護模式中，非 admin 一律不放行。"""
+-    try:
+-        return role != "admin" and get_system_store().is_maintenance_mode()
+-    except Exception:  # noqa: BLE001 — 讀不到設定時不擋登入
+-        return False
+-
+ 
+ class LoginRequest(BaseModel):
+     username: str
+@@ -142,13 +132,6 @@ def login(req: LoginRequest, _: None = Depends(ensure_auth_enabled)):
+         _system_log("WARN", "登入失敗（帳號或密碼錯誤）", req.username)
+         raise PetsError("ERR_UNAUTHORIZED", _CREDENTIALS_MESSAGE)
+ 
+-    if _maintenance_blocks(result.role):
+-        audit.log_operation(
+-            "login", "blocked", {"username": req.username, "reason": "maintenance"}
+-        )
+-        _system_log("WARN", "登入被拒（系統維護模式中，僅允許 Admin）", req.username)
+-        raise PetsError("ERR_MAINTENANCE", _MAINTENANCE_MESSAGE)
+-
+     tokens = get_token_manager()
+     access_token = create_access_token(result.username, result.role)
+     refresh_token = tokens.issue(result.username)
+@@ -177,8 +160,6 @@ def refresh(req: RefreshRequest, _: None = Depends(ensure_auth_enabled)):
+     user = get_auth_manager().get_user(username)
+     if user is None or not user["is_active"]:
+         raise PetsError("ERR_UNAUTHORIZED", "帳號不存在或已停用。")
+-    if _maintenance_blocks(user["role"]):
+-        raise PetsError("ERR_MAINTENANCE", _MAINTENANCE_MESSAGE)
+ 
+     new_refresh = tokens.rotate(req.refresh_token, username)
+     return {
+diff --git a/app/api/system_router.py b/app/api/system_router.py
+index 8bfa2d3..56564b7 100644
+--- a/app/api/system_router.py
++++ b/app/api/system_router.py
+@@ -3,11 +3,13 @@
+ 資料存放見 governance/system_store。權限：
+     處理紀錄  登入者讀寫自己的；admin 可列出所有人的（?all=1）
+     維運日誌  登入者可寫入；讀取與清除限 admin
+-    系統設定  免登入可讀（登入頁要知道是否維護中）；修改限 admin
++    系統設定  免登入可讀（閒置登出時間；前端也用它檢查後端是否連得上）；修改限 admin
+     系統公告  登入者可讀、可標記已讀／關閉橫幅；發布、修改、刪除限 admin
+ 
+ 維運日誌的事件文字由前端產生（設定變更、公告、API 呼叫結果等，前端原本就有這些紀錄點），
+-後端只自行記錄前端無法代寫的事件：登入失敗、帳號鎖定、維護模式擋下登入（見 auth_router）。
++後端只自行記錄前端無法代寫的事件：登入失敗、帳號鎖定（見 auth_router）。
++
++處理紀錄寫入時由伺服器簽章（見 governance/history_signing），GET /history/{id}/verify 重算比對。
+ """
+ 
+ import time
+@@ -19,6 +21,7 @@ from pydantic import BaseModel, Field
+ 
+ from app.api.auth_router import get_current_user, require_role
+ from app.core.errors import PetsError
++from app.governance.history_signing import sign_record, verify_record
+ from app.governance.system_store import get_system_store
+ 
+ router = APIRouter(tags=["系統資料"])
+@@ -40,15 +43,28 @@ def list_history(all: bool = False, user: dict = Depends(get_current_user)):
+ 
+ @router.post("/history", status_code=201)
+ def add_history(record: dict, user: dict = Depends(get_current_user)):
+-    """新增一筆自己的處理紀錄（內容由前端組好，整筆保存）。操作者一律以登入帳號為準。"""
++    """新增一筆自己的處理紀錄（內容由前端組好，整筆保存）。操作者一律以登入帳號為準，並由伺服器簽章。
++
++    前端只需在 integrity 帶 inputFileSha256／outputFileSha256（檔案在瀏覽器端，伺服器不保留）。
++    """
+     record_id = record.get("id")
+     if not isinstance(record_id, str) or not record_id:
+         record_id = str(uuid.uuid4())
+     payload = {**record, "id": record_id, "operator": user["username"]}
++    payload["integrity"] = sign_record(payload)
+     get_system_store().add_history(user["username"], record_id, payload)
+     return payload
+ 
+ 
++@router.get("/history/{record_id}/verify")
++def verify_history(record_id: str, user: dict = Depends(get_current_user)):
++    """重算處理紀錄的指紋與簽章（本人或 admin）。status：valid／tampered／unsigned／unverifiable／missing。"""
++    found = get_system_store().get_history(record_id)
++    if found is None or (found[0] != user["username"] and user["role"] != "admin"):
++        raise PetsError("ERR_NOT_FOUND", "找不到這筆處理紀錄。")
++    return verify_record(found[1])
++
++
+ # ── 系統維運日誌 ────────────────────────────────────────────────────────────
+ class LogEntry(BaseModel):
+     level: Literal["INFO", "WARN", "ERROR"]
+@@ -88,12 +104,11 @@ def clear_system_logs(_: dict = Depends(require_role("admin"))):
+ # ── 系統設定 ────────────────────────────────────────────────────────────────
+ class SettingsUpdate(BaseModel):
+     session_timeout_minutes: int | None = Field(None, ge=1, le=1440)
+-    maintenance_mode: bool | None = None
+ 
+ 
+ @router.get("/settings")
+ def get_settings():
+-    """系統設定（免登入：登入頁需要知道是否維護中）。"""
++    """系統設定（免登入：登入前就要知道閒置登出時間，也作為前端的後端連線檢查）。"""
+     return get_system_store().get_settings()
+ 
+ 
+diff --git a/app/core/errors.py b/app/core/errors.py
+index ae26a15..5f9d9bb 100644
+--- a/app/core/errors.py
++++ b/app/core/errors.py
+@@ -48,8 +48,6 @@ ERROR_HTTP_STATUS: dict[str, int] = {
+     "ERR_ACCOUNT_LOCKED": 423,
+     # 503：會員端點所需的部署設定未備妥（未設簽章金鑰），三大功能不受影響
+     "ERR_AUTH_DISABLED": 503,
+-    # ★ TTC 2026-10-29：全站維護模式中，非 admin 不得登入或換發 token（見 system_router）
+-    "ERR_MAINTENANCE": 503,
+     # 422：讀得懂但講不通
+     "ERR_VALIDATION_FAILED": 422,
+     "ERR_CONFIG_INVALID": 422,
+diff --git a/app/governance/auth.py b/app/governance/auth.py
+index 0cb1982..53c6b2f 100644
+--- a/app/governance/auth.py
++++ b/app/governance/auth.py
+@@ -266,12 +266,26 @@ class AuthManager:
+         return self._as_public(row) if row else None
+ 
+     def list_users(self) -> list[dict]:
+-        """回傳所有帳號的公開欄位，依帳號排序。密碼雜湊一律不出現在回傳值裡。"""
++        """回傳所有帳號的公開欄位，依帳號排序。密碼雜湊一律不出現在回傳值裡。
++
++        ★ TTC 2026-10-29：另附登入失敗次數與鎖定到期時間（管理員才看得到此清單），
++        讓帳號管理畫面知道誰被鎖、可用「重設密碼」解除；鎖定已過期者回 None。
++        """
++        now = _now()
+         with sqlite3.connect(self.db_path) as conn:
+             rows = conn.execute(
+-                "SELECT username, role, is_active, created_at FROM users ORDER BY username"
++                "SELECT username, role, is_active, created_at, failed_login_count, login_locked_until "
++                "FROM users ORDER BY username"
+             ).fetchall()
+-        return [self._as_public(row) for row in rows]
++        users = []
++        for row in rows:
++            locked_until = _from_text(row[5])
++            users.append({
++                **self._as_public(row[:4]),
++                "failed_login_count": int(row[4] or 0),
++                "login_locked_until": _to_text(locked_until) if locked_until and locked_until > now else None,
++            })
++        return users
+ 
+     @staticmethod
+     def _as_public(row: tuple) -> dict:
+diff --git a/app/governance/history_signing.py b/app/governance/history_signing.py
+new file mode 100644
+index 0000000..84c08bc
+--- /dev/null
++++ b/app/governance/history_signing.py
+@@ -0,0 +1,100 @@
++"""處理紀錄的伺服器簽章（★ TTC 2026-10-29）。
++
++前端原本以各自瀏覽器產生的金鑰簽章，公鑰隨紀錄保存——改得到資料庫的人可以連內容帶公鑰一起換掉，
++簽章驗得過卻證明不了什麼。改為伺服器簽：金鑰只存在伺服器，紀錄一經改動（含操作者、結果數字）即驗不過。
++
++演算法 HMAC-SHA256；金鑰由 .env 既有的 OPEN_PETS_SYSTEM_MASTER_KEY 衍生（與審計日誌同一把主金鑰，
++以固定標籤衍生出用途專屬的子金鑰，兩邊的簽章不會互通）。未設定主金鑰時照常保存紀錄，但不簽章並註明原因。
++
++簽署文件＝紀錄內容（去掉 integrity）＋輸入檔／輸出檔 SHA-256（由前端計算，伺服器不保留檔案）＋簽署時間＋金鑰 ID，
++以鍵值排序的 JSON 序列化，同一份內容永遠得到同一串文字。
++"""
++
++import hashlib
++import hmac
++import json
++from datetime import UTC, datetime
++from typing import Any
++
++from app.core.settings import get_system_master_key
++
++ALGORITHM = "HMAC-SHA256"
++INTEGRITY_VERSION = 2
++_KEY_LABEL = b"open-pets/history-signing/v1"
++
++
++def _signing_key() -> bytes | None:
++    master = get_system_master_key()
++    if not master:
++        return None
++    return hmac.new(master.encode("utf-8"), _KEY_LABEL, hashlib.sha256).digest()
++
++
++def _key_id(key: bytes) -> str:
++    return hashlib.sha256(key).hexdigest()[:16]
++
++
++def _canonical(obj: Any) -> bytes:
++    return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
++
++
++def _document(record: dict, integrity: dict) -> bytes:
++    body = {key: value for key, value in record.items() if key != "integrity"}
++    return _canonical({
++        "record": body,
++        "inputFileSha256": integrity.get("inputFileSha256"),
++        "outputFileSha256": integrity.get("outputFileSha256"),
++        "signedAt": integrity.get("signedAt"),
++        "keyId": integrity.get("keyId"),
++    })
++
++
++def sign_record(record: dict) -> dict:
++    """回傳 record 的 integrity 欄位內容；檔案指紋沿用前端送來的值。"""
++    client_integrity = record.get("integrity") if isinstance(record.get("integrity"), dict) else {}
++    key = _signing_key()
++    integrity: dict[str, Any] = {
++        "version": INTEGRITY_VERSION,
++        "algorithm": ALGORITHM,
++        "signedAt": datetime.now(UTC).isoformat(),
++        "inputFileSha256": client_integrity.get("inputFileSha256"),
++        "outputFileSha256": client_integrity.get("outputFileSha256"),
++        "keyId": _key_id(key) if key else None,
++    }
++    document = _document(record, integrity)
++    integrity["documentSha256"] = hashlib.sha256(document).hexdigest()
++    if key:
++        integrity["signature"] = hmac.new(key, document, hashlib.sha256).hexdigest()
++    else:
++        integrity["signature"] = None
++        integrity["unsignedReason"] = "server_key_missing"
++    return integrity
++
++
++def verify_record(record: dict) -> dict:
++    """重算比對。status：valid／tampered／unsigned／missing。"""
++    integrity = record.get("integrity")
++    if not isinstance(integrity, dict) or integrity.get("version") != INTEGRITY_VERSION:
++        return {"status": "missing", "fingerprintMatches": None, "signatureValid": None}
++
++    document = _document(record, integrity)
++    fingerprint_matches = hashlib.sha256(document).hexdigest() == integrity.get("documentSha256")
++    signature = integrity.get("signature")
++    if not signature:
++        return {
++            "status": "unsigned" if fingerprint_matches else "tampered",
++            "fingerprintMatches": fingerprint_matches,
++            "signatureValid": None,
++        }
++
++    key = _signing_key()
++    if key is None or _key_id(key) != integrity.get("keyId"):
++        # 伺服器金鑰已更換或未設定：無法驗證簽章，只能回報指紋
++        return {"status": "unverifiable", "fingerprintMatches": fingerprint_matches, "signatureValid": None}
++
++    signature_valid = hmac.compare_digest(hmac.new(key, document, hashlib.sha256).hexdigest(), str(signature))
++    return {
++        "status": "valid" if fingerprint_matches and signature_valid else "tampered",
++        "fingerprintMatches": fingerprint_matches,
++        "signatureValid": signature_valid,
++    }
+diff --git a/app/governance/system_store.py b/app/governance/system_store.py
+index cc27aef..612ffd4 100644
+--- a/app/governance/system_store.py
++++ b/app/governance/system_store.py
+@@ -27,7 +27,6 @@ MAX_ANNOUNCEMENTS = 50
+ # 系統設定的預設值；只接受這裡列出的鍵
+ DEFAULT_SETTINGS: dict[str, Any] = {
+     "session_timeout_minutes": 15,
+-    "maintenance_mode": False,
+ }
+ 
+ 
+@@ -110,6 +109,14 @@ class SystemStore:
+                 (username, username, MAX_HISTORY_PER_USER),
+             )
+ 
++    def get_history(self, record_id: str) -> tuple[str, dict] | None:
++        """（擁有者帳號, 紀錄內容）；不存在時回 None。"""
++        with self._connect() as conn:
++            row = conn.execute(
++                "SELECT username, payload_json FROM history WHERE id = ?", (record_id,)
++            ).fetchone()
++        return (row["username"], json.loads(row["payload_json"])) if row else None
++
+     def list_history(self, username: str | None = None) -> list[dict]:
+         """處理紀錄（新的在前）；username 為 None 時列出所有人的。"""
+         with self._connect() as conn:
+@@ -178,9 +185,6 @@ class SystemStore:
+                 )
+         return self.get_settings()
+ 
+-    def is_maintenance_mode(self) -> bool:
+-        return bool(self.get_settings().get("maintenance_mode"))
+-
+     # ── 系統公告 ──────────────────────────────────────────────────────────
+     def list_announcements(self) -> list[dict]:
+         with self._connect() as conn:
+diff --git a/tests/api/test_api_system.py b/tests/api/test_api_system.py
+index 5e88af6..83c34b5 100644
+--- a/tests/api/test_api_system.py
++++ b/tests/api/test_api_system.py
+@@ -1,6 +1,6 @@
+ """
+ API - 系統資料端點（★ TTC 2026-10-29）整合測試
+-涵蓋：處理紀錄、系統維運日誌、系統設定與維護模式、系統公告。
++涵蓋：處理紀錄（含伺服器簽章）、系統維運日誌、系統設定、系統公告、帳號清單的鎖定欄位。
+ """
+ import pytest
+ 
+@@ -47,6 +47,46 @@ def test_history_all_is_admin_only(client, api_auth, login):
+     assert [r["id"] for r in records] == ["r2", "r1"]
+ 
+ 
++def test_history_is_signed_and_verifiable(client, api_auth, login, system_store, monkeypatch):
++    monkeypatch.setenv("OPEN_PETS_SYSTEM_MASTER_KEY", "unit-test-master-key")
++    headers = login("user", "user123")
++    saved = client.post(
++        f"{BASE}/history",
++        json={"id": "r1", "kAnonymity": 5, "integrity": {"inputFileSha256": "aa", "outputFileSha256": "bb"}},
++        headers=headers,
++    ).json()
++    assert saved["integrity"]["algorithm"] == "HMAC-SHA256"
++    assert saved["integrity"]["signature"]
++    assert saved["integrity"]["inputFileSha256"] == "aa"
++    assert client.get(f"{BASE}/history/r1/verify", headers=headers).json()["status"] == "valid"
++    # admin 可驗別人的紀錄；其他一般使用者看不到
++    assert client.get(f"{BASE}/history/r1/verify", headers=login()).json()["status"] == "valid"
++
++    # 直接改資料庫裡的內容 → 驗不過
++    tampered = {**saved, "kAnonymity": 50}
++    system_store.add_history("user", "r1", tampered)
++    assert client.get(f"{BASE}/history/r1/verify", headers=headers).json()["status"] == "tampered"
++    assert client.get(f"{BASE}/history/nope/verify", headers=headers).status_code == 404
++
++
++def test_history_without_master_key_is_unsigned(client, api_auth, login, monkeypatch):
++    monkeypatch.delenv("OPEN_PETS_SYSTEM_MASTER_KEY", raising=False)
++    headers = login("user", "user123")
++    saved = client.post(f"{BASE}/history", json={"id": "r9"}, headers=headers).json()
++    assert saved["integrity"]["signature"] is None
++    assert saved["integrity"]["unsignedReason"] == "server_key_missing"
++    assert client.get(f"{BASE}/history/r9/verify", headers=headers).json()["status"] == "unsigned"
++
++
++def test_user_list_includes_lock_state(client, api_auth, login):
++    for _ in range(5):
++        client.post(f"{BASE}/auth/login", json={"username": "user", "password": "wrong"})
++    users = {u["username"]: u for u in client.get(f"{BASE}/users", headers=login()).json()["users"]}
++    assert users["user"]["login_locked_until"] is not None
++    assert users["admin"]["login_locked_until"] is None
++    assert users["admin"]["failed_login_count"] == 0
++
++
+ def test_history_requires_login(client, api_auth):
+     assert client.get(f"{BASE}/history").status_code == 401
+ 
+@@ -77,11 +117,11 @@ def test_login_failure_is_logged_by_backend(client, api_auth, system_store):
+ 
+ 
+ # ──────────────────────────────────────────────────────────────
+-# 系統設定與維護模式
++# 系統設定
+ # ──────────────────────────────────────────────────────────────
+ def test_settings_readable_without_login(client, api_auth):
+     body = client.get(f"{BASE}/settings").json()
+-    assert body == {"session_timeout_minutes": 15, "maintenance_mode": False}
++    assert body == {"session_timeout_minutes": 15}
+ 
+ 
+ def test_settings_update_admin_only(client, api_auth, login):
+@@ -98,25 +138,6 @@ def test_settings_update_admin_only(client, api_auth, login):
+     ).status_code == 422
+ 
+ 
+-def test_maintenance_blocks_user_login_and_refresh(client, api_auth, login):
+-    user_tokens = client.post(
+-        f"{BASE}/auth/login", json={"username": "user", "password": "user123"}
+-    ).json()
+-    client.put(f"{BASE}/settings", json={"maintenance_mode": True}, headers=login())
+-
+-    resp = client.post(f"{BASE}/auth/login", json={"username": "user", "password": "user123"})
+-    assert resp.status_code == 503
+-    assert resp.json()["error_code"] == "ERR_MAINTENANCE"
+-
+-    resp = client.post(f"{BASE}/auth/refresh", json={"refresh_token": user_tokens["refresh_token"]})
+-    assert resp.status_code == 503
+-
+-    # admin 仍可登入
+-    assert client.post(
+-        f"{BASE}/auth/login", json={"username": "admin", "password": "admin123"}
+-    ).status_code == 200
+-
+-
+ # ──────────────────────────────────────────────────────────────
+ # 系統公告
+ # ──────────────────────────────────────────────────────────────
