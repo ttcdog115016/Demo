@@ -16,6 +16,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useAnnouncementStore, isAnnouncementShownToRole, getAnnouncementUserKey, useAnnouncementClock } from '../../store/useAnnouncementStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
 import { AnnouncementListItem } from '../../components/AnnouncementListItem';
+import { SHOW_ANNOUNCEMENTS } from '../../config/featureFlags';
 
 import { scaleFontSize } from '../../utils/fontScale';
 const { Title, Text, Paragraph } = Typography;
@@ -39,8 +40,10 @@ export const Dashboard: React.FC = () => {
   const announcementClockNowMs = useAnnouncementClock();
   const announcementUserKeyString = getAnnouncementUserKey(currentUserSession);
   const dismissedBannerIdsList = dismissedBannerIdsByUserDict[announcementUserKeyString] ?? [];
+  // ★ 2026-10-29：單機版不顯示系統公告（見 config/featureFlags.ts）
   const importantBannerAnnouncementsList = allAnnouncementsList.filter(announcementItem =>
-    announcementItem.level === 'important'
+    SHOW_ANNOUNCEMENTS
+    && announcementItem.level === 'important'
     && isAnnouncementShownToRole(announcementItem, currentUserSession?.role ?? 'data_owner', announcementClockNowMs)
     && !dismissedBannerIdsList.includes(announcementItem.id)
   );

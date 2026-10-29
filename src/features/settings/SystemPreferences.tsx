@@ -40,7 +40,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
-import { SHOW_PASSWORD_EXPIRY_POLICY } from '../../config/featureFlags';
+import { SHOW_PASSWORD_EXPIRY_POLICY, SHOW_ANNOUNCEMENTS, SHOW_MAINTENANCE_MODE, SHOW_SYSTEM_LOG_TAB } from '../../config/featureFlags';
 import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
 import {
 	listMemberAccounts, createMemberAccount, changeMemberRole, resetMemberPassword, setMemberActive, deleteMemberAccount,
@@ -1166,6 +1166,8 @@ export default function SystemPreferences(): React.ReactElement
 							</Card>
 							)}
 							
+							{/* ★ 2026-10-29：單機版不提供維護模式（見 config/featureFlags.ts） */}
+							{SHOW_MAINTENANCE_MODE && (
 							<Card type="inner" title={translate('admin.maintenance_mode', '系統維護模式')}>
 								<div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
 									<Form.Item name="maintenanceMode" valuePropName="checked" style={{ marginBottom: 0 }}>
@@ -1183,6 +1185,7 @@ export default function SystemPreferences(): React.ReactElement
 									</div>
 								</div>
 							</Card>
+							)}
 							
 							<div style={{ marginTop: '24px', textAlign: 'center' }}>
 								<Button type="primary" size="large" onClick={handleSaveEnvSettings} icon={<SettingOutlined />}>
@@ -1194,6 +1197,13 @@ export default function SystemPreferences(): React.ReactElement
 				),
 			}
 		);
+	}
+
+	// ★ 2026-10-29：單機版隱藏「系統維運日誌」「系統公告」分頁（見 config/featureFlags.ts）
+	for (let tabIndex = tabListItemsArray.length - 1; tabIndex >= 0; tabIndex--)
+	{
+		const tabKeyString = tabListItemsArray[tabIndex].key;
+		if ((tabKeyString === 'syslogs' && !SHOW_SYSTEM_LOG_TAB) || (tabKeyString === 'announcements' && !SHOW_ANNOUNCEMENTS)) tabListItemsArray.splice(tabIndex, 1);
 	}
 
 	tabListItemsArray.push({
@@ -1217,7 +1227,7 @@ export default function SystemPreferences(): React.ReactElement
 					style={{ minHeight: '600px', borderRadius: '12px', marginTop: '24px' }}
 				>
 					{/* 分頁標籤放不下時自動換行（不收進「…」選單），字體調大時才不會被截斷 */}
-					<Tabs className="wrap-tabs" activeKey={activeTabIdentifier} onChange={handleTabChange} items={tabListItemsArray} size="large" />
+					<Tabs className="wrap-tabs" activeKey={tabListItemsArray.some((tabItem) => tabItem.key === activeTabIdentifier) ? activeTabIdentifier : tabListItemsArray[0]?.key} onChange={handleTabChange} items={tabListItemsArray} size="large" />
 				</Card>
 
 				<Modal

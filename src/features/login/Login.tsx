@@ -21,7 +21,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { logSystemEvent } from '../../store/useSystemLogStore';
 import { memberLogin, toMemberApiError, isMemberServiceUnavailable, clearMemberSession } from '../../api/authApi';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-import { SHOW_DEMO_ACCOUNTS } from '../../config/featureFlags';
+import { SHOW_DEMO_ACCOUNTS, SHOW_MAINTENANCE_MODE } from '../../config/featureFlags';
 
 import { scaleFontSize } from '../../utils/fontScale';
 /**
@@ -121,7 +121,7 @@ export default function Login(): React.ReactElement
 
 			// 維護模式期間僅允許 Admin 登入（維護模式目前為前端設定）
 			const securitySettingsSnapshot = useWorkspaceStore.getState() as unknown as { isMaintenanceMode?: boolean };
-			if (securitySettingsSnapshot.isMaintenanceMode && memberSession.role !== 'admin')
+			if (SHOW_MAINTENANCE_MODE && securitySettingsSnapshot.isMaintenanceMode && memberSession.role !== 'admin')
 			{
 				clearMemberSession();
 				logSystemEvent('WARN', '登入被拒（系統維護模式中，僅允許 Admin）', memberSession.username);

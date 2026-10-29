@@ -27,7 +27,7 @@ import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { logSystemEvent, useSystemLogStore } from '../../store/useSystemLogStore';
 import { listMemberAccounts, type MemberAccount } from '../../api/authApi';
-import { SHOW_PASSWORD_EXPIRY_POLICY } from '../../config/featureFlags';
+import { SHOW_PASSWORD_EXPIRY_POLICY, SHOW_MAINTENANCE_MODE, SHOW_SYSTEM_LOG_TAB } from '../../config/featureFlags';
 import {
 	computeApiCallStats, computeFailedLoginStats, computeActiveUserStats, probeBackendHealth, type BackendHealthState,
 } from '../../utils/adminDashboardStats';
@@ -301,6 +301,8 @@ export default function AdminDashboard(): React.ReactElement
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
 							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
 								{translate('admin.failed_logins', '24H 異常登入攔截')}
+								{/* ★ 2026-10-29：登入與 API 統計只計這台電腦的這個瀏覽器，標示「本機統計」 */}
+								<span data-testid="admin-local-stat-tag" style={{ marginLeft: '6px', fontSize: scaleFontSize(12), opacity: 0.75 }}>{translate('admin.local_stat_tag', '（本機統計）')}</span>
 							</div>
 
 							<div style={{ color: failedLoginStats.count > 0 ? '#faad14' : themeColorsConfig.textMain, fontSize: scaleFontSize(24), display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -337,6 +339,7 @@ export default function AdminDashboard(): React.ReactElement
 						<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
 							<div style={{ color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
 								{translate('admin.active_users', '24H 登入使用者')}
+								<span data-testid="admin-local-stat-tag" style={{ marginLeft: '6px', fontSize: scaleFontSize(12), opacity: 0.75 }}>{translate('admin.local_stat_tag', '（本機統計）')}</span>
 							</div>
 
 							<div style={{ color: themeColorsConfig.textMain, fontSize: scaleFontSize(24), display: 'flex', alignItems: 'baseline', gap: '8px' }}>
@@ -361,7 +364,9 @@ export default function AdminDashboard(): React.ReactElement
 			</Row>
 
 			<div style={{ marginTop: '8px', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(12), opacity: 0.8 }}>
-				{translate('admin.stats_source_note_backend', '※ 帳號數來自後端；登入與 API 統計來自此瀏覽器的系統維運日誌，尚未集中於後端；後端連線狀態每 60 秒自動檢查一次。')}
+				{SHOW_SYSTEM_LOG_TAB
+					? translate('admin.stats_source_note_backend_v2', '※ 帳號數來自後端；登入與 API 次數為本機統計（只計這台電腦的這個瀏覽器，來自系統維運日誌），尚未集中於後端；後端連線狀態每 60 秒自動檢查一次。')
+					: translate('admin.stats_source_note_desktop', '※ 帳號數來自後端；登入與 API 次數為本機統計（只計這台電腦的這個瀏覽器）；後端連線狀態每 60 秒自動檢查一次。')}
 			</div>
 
 			{/* 密碼安全政策快速控管區塊（★ 2026-10-27 後端無密碼過期機制，先隱藏） */}
@@ -468,7 +473,9 @@ export default function AdminDashboard(): React.ReactElement
 						</h3>
 
 						<p style={{ margin: '8px 0 0 0', color: themeColorsConfig.textMuted, fontSize: scaleFontSize(14) }}>
-							{translate('admin.console_entry_desc', '集中管理使用者帳號、檢視系統維運日誌，並設定連線逾時與維護模式等全域安全參數。')}
+							{SHOW_SYSTEM_LOG_TAB && SHOW_MAINTENANCE_MODE
+								? translate('admin.console_entry_desc', '集中管理使用者帳號、檢視系統維運日誌，並設定連線逾時與維護模式等全域安全參數。')
+								: translate('admin.console_entry_desc_desktop', '集中管理使用者帳號，並設定閒置逾時登出時間。')}
 						</p>
 					</div>
 

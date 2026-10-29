@@ -34,6 +34,7 @@ import { useAuthStore, type UserRole } from './store/useAuthStore';
 import { useUIStore, type FontSizeLevel } from './store/useUIStore';
 import { useWorkspaceStore } from './store/useWorkspaceStore';
 import NotificationBell from './components/NotificationBell';
+import { SHOW_ANNOUNCEMENTS, SHOW_MAINTENANCE_MODE } from './config/featureFlags';
 import { getRoleDisplayName } from './utils/roleLabel';
 
 // ★ 修正：使用者反映不希望外部測試人員在畫面上看到任何 API 錯誤提示或匯出按鈕。原本
@@ -220,7 +221,8 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
     }, [isPasswordExpiredActiveStatus, currentLocationData.pathname, executeNavigationAction, globalModalApi, translate]);
 
     useEffect(() => {
-        if (isMaintenanceModeActiveStatus && currentUserRoleNameString === 'data_owner') {
+        // ★ 2026-10-29：單機版不提供維護模式（見 config/featureFlags.ts），即使瀏覽器留有舊設定也不生效
+        if (SHOW_MAINTENANCE_MODE && isMaintenanceModeActiveStatus && currentUserRoleNameString === 'data_owner') {
             globalModalApi.warning({
                 title: translate('admin.maintenance_active_title', '系統維護中'),
                 content: translate('admin.maintenance_active_desc', '系統已進入維護模式，僅允許管理員存取。您即將被強制登出。'),
@@ -514,7 +516,8 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                         
                         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                             {/* ★ 2026-10-07：鈴鐺改為動態公告面板（左圖示｜中訊息｜右時間），見 components/NotificationBell.tsx */}
-                            <NotificationBell iconColor={themeDynamicColorsConfiguration.textMuted} />
+                            {/* ★ 2026-10-29：單機版不顯示公告鈴鐺（見 config/featureFlags.ts） */}
+                            {SHOW_ANNOUNCEMENTS && <NotificationBell iconColor={themeDynamicColorsConfiguration.textMuted} />}
 
                             <Dropdown menu={userDropdownMenuConfiguration} placement="bottomRight" trigger={['click']}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '4px 8px', borderRadius: '8px' }} className="user-profile-hover">
