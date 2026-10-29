@@ -20,6 +20,7 @@ import { getRoleDisplayName } from '../../utils/roleLabel';
 import { useUIStore } from '../../store/useUIStore';
 
 import { scaleFontSize } from '../../utils/fontScale';
+import { calculatePasswordStrength, toStrengthBarPercent, PASSWORD_STRENGTH_WEAK_MAX, PASSWORD_STRENGTH_MEDIUM_MAX } from '../../utils/passwordStrength';
 const { Title, Text } = Typography;
 
 /**
@@ -27,10 +28,6 @@ const { Title, Text } = Typography;
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  */
 const MIN_PASSWORD_LENGTH_LIMIT = 12;
-const BASE_PASSWORD_LENGTH_THRESHOLD = 8;
-const HIGH_MEMORABILITY_LENGTH_THRESHOLD = 16;
-const WEAK_STRENGTH_SCORE_THRESHOLD = 40;
-const MEDIUM_STRENGTH_SCORE_THRESHOLD = 80;
 
 /**
  * 函數名稱: ProfileSettings
@@ -97,88 +94,10 @@ export default function ProfileSettings(): React.ReactElement
 	// 即時監聽新密碼輸入框數值變化 (符合規範 g)
 	const newPasswordInputValueString = Form.useWatch('newPassword', passwordFormInstance);
 
-	/**
-	 * 函數名稱: calculateStrength
-	 * 函數功能: 依據密碼長度、字元複雜度 (大小寫/數字/符號)、記憶性及扣分懲罰規則，計算即時密碼強度分數。
-	 * 
-	 * 輸入參數 (Input):
-	 *   - passwordString (string | undefined): 當前新密碼輸入框之字串數值
-	 * 輸出參數 (Output): 無
-	 * 返回值 (Return): 
-	 *   - calculatedScore (number): 0 ~ 100 之密碼強度分數
-	 */
-	const calculateStrength = (passwordString?: string): number => 
-	{
-		if (!passwordString) 
-		{
-			return 0;
-		}
-
-		let calculatedScore = 0;
-
-		// 1. 長度計分 (Length Score)
-		if (passwordString.length >= BASE_PASSWORD_LENGTH_THRESHOLD) 
-		{
-			calculatedScore += 20 + Math.min(40, (passwordString.length - BASE_PASSWORD_LENGTH_THRESHOLD) * 5); 
-		}
-
-		// 2. 複雜度計分 (Complexity Score)
-		let characterComplexityCount = 0; // 字元種類計數 (小寫/大寫/數字/符號)
-
-		if (/[a-z]/.test(passwordString)) 
-		{
-			characterComplexityCount++;
-		}
-
-		if (/[A-Z]/.test(passwordString)) 
-		{
-			characterComplexityCount++;
-		}
-
-		if (/\d/.test(passwordString)) 
-		{
-			characterComplexityCount++;
-		}
-
-		if (/[@$!%*?&#\-_+=]/.test(passwordString)) 
-		{
-			characterComplexityCount++;
-		}
-		
-		calculatedScore += characterComplexityCount * 10; 
-
-		// 3. 易記性獎勵 (Memorability Bonus)
-		if (passwordString.length >= HIGH_MEMORABILITY_LENGTH_THRESHOLD) 
-		{
-			calculatedScore += 15;
-		}
-
-		// 4. 常見弱密碼與連續字元扣分防護 (Penalty)
-		if (/(p[a@4][s$5]{2}w[o0]rd|admin|qwerty|12345)/i.test(passwordString)) 
-		{
-			calculatedScore -= 50; 
-		}
-
-		if (/(0123|1234|2345|3456|4567|5678|6789|9876|8765|7654|6543|5432|4321|3210)/.test(passwordString)) 
-		{
-			calculatedScore -= 30;
-		}
-
-		if (/(qwer|asdf|zxcv|1q2w|qaz)/i.test(passwordString)) 
-		{
-			calculatedScore -= 30;
-		}
-
-		if (/(.)\1{2,}/.test(passwordString)) 
-		{
-			calculatedScore -= 20;
-		}
-
-		return Math.max(0, Math.min(100, calculatedScore));
-	};
-
 	// 即時計算當前密碼強度得分 (符合規範 g)
-	const currentPasswordStrengthScore = calculateStrength(newPasswordInputValueString);
+	// ★ 2026-10-29：評分移至 utils/passwordStrength.ts（修正連續數字重複扣分到 0 分、強度條整條空白）
+	const currentPasswordStrengthResult = calculatePasswordStrength(newPasswordInputValueString);
+	const currentPasswordStrengthScore = currentPasswordStrengthResult.score;
 
 	/**
 	 * 函數名稱: getStrengthColor
@@ -192,12 +111,12 @@ export default function ProfileSettings(): React.ReactElement
 	 */
 	const getStrengthColor = (scoreValue: number): string => 
 	{
-		if (scoreValue <= WEAK_STRENGTH_SCORE_THRESHOLD) 
+		if (scoreValue <= PASSWORD_STRENGTH_WEAK_MAX) 
 		{
 			return '#ff4d4f'; // 紅色 (弱)
 		}
 
-		if (scoreValue <= MEDIUM_STRENGTH_SCORE_THRESHOLD) 
+		if (scoreValue <= PASSWORD_STRENGTH_MEDIUM_MAX) 
 		{
 			return '#faad14'; // 橘色 (中)
 		}
@@ -222,12 +141,12 @@ export default function ProfileSettings(): React.ReactElement
 			return '';
 		}
 
-		if (scoreValue <= WEAK_STRENGTH_SCORE_THRESHOLD) 
+		if (scoreValue <= PASSWORD_STRENGTH_WEAK_MAX) 
 		{
 			return translate('profile.strength_weak', '弱 (Weak)');
 		}
 
-		if (scoreValue <= MEDIUM_STRENGTH_SCORE_THRESHOLD) 
+		if (scoreValue <= PASSWORD_STRENGTH_MEDIUM_MAX) 
 		{
 			return translate('profile.strength_medium', '中 (Medium)');
 		}
@@ -383,7 +302,7 @@ export default function ProfileSettings(): React.ReactElement
 									{newPasswordInputValueString && (
 										<div style={{ marginBottom: 8 }}>
 											<Progress 
-												percent={currentPasswordStrengthScore} 
+												percent={toStrengthBarPercent(currentPasswordStrengthResult)} 
 												showInfo={false} 
 												strokeColor={getStrengthColor(currentPasswordStrengthScore)} 
 												size="small" 
@@ -396,6 +315,24 @@ export default function ProfileSettings(): React.ReactElement
 													{getStrengthLabel(currentPasswordStrengthScore)}
 												</Text>
 											</div>
+
+											{/* ★ 2026-10-29：未達「強」時列出原因，讓使用者知道怎麼改 */}
+											{currentPasswordStrengthResult.level !== 'strong' && currentPasswordStrengthResult.issues.length > 0 && (
+												<div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+													{currentPasswordStrengthResult.issues.map((issueCode) => (
+														<Text key={issueCode} style={{ fontSize: scaleFontSize(12), color: getStrengthColor(currentPasswordStrengthScore) }}>
+															{'• ' + translate(`profile.strength_issue_${issueCode}`, {
+																too_short: '長度未達 12 個字元',
+																missing_types: '未同時包含大寫、小寫、數字與符號',
+																common_word: '含常見弱密碼字詞（如 password、admin、qwerty）',
+																sequential_digits: '含連續數字（如 1234、9876）',
+																keyboard_sequence: '含鍵盤連續按鍵（如 qwer、asdf）',
+																repeated_chars: '含連續 3 個以上相同字元（如 aaa、111）',
+															}[issueCode])}
+														</Text>
+													))}
+												</div>
+											)}
 										</div>
 									)}
 
