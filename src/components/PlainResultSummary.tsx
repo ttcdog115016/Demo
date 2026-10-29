@@ -201,7 +201,7 @@ export function UtilitySummaryCard({ info, levelTooltip, recordRow, extraRow, co
                                 style={{
                                     marginTop: 6,
                                     display: 'grid',
-                                    gridTemplateColumns: hasExampleColumn ? 'minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1.6fr) minmax(0, 1fr)',
+                                    gridTemplateColumns: hasExampleColumn ? 'minmax(0, 1.4fr) minmax(0, 1.3fr) minmax(0, 1fr)' : 'minmax(0, 1.4fr) minmax(0, 1.3fr)',
                                     columnGap: 16,
                                     fontSize: scaleFontSize(13)
                                 }}
@@ -213,13 +213,13 @@ export function UtilitySummaryCard({ info, levelTooltip, recordRow, extraRow, co
                                     const cellStyle: CSSProperties = {
                                         padding: '5px 0',
                                         borderBottom: rowIndex === columnItems.length - 1 ? 'none' : `1px dashed ${colors.border}`,
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap'
+                                        overflowWrap: 'anywhere'
                                     };
+                                    // 2026-10-19：處理方式與範例可換行完整顯示；只有欄位名稱過長才截斷（滑鼠移上去看全名）
+                                    const truncateStyle: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflowWrap: 'normal' };
                                     return (
                                         <Fragment key={item.columnName}>
-                                            <div style={{ ...cellStyle, color: colors.text, fontWeight: 600 }} title={item.columnName}>{item.columnName}</div>
+                                            <div style={{ ...cellStyle, ...truncateStyle, color: colors.text, fontWeight: 600 }} title={item.columnName}>{item.columnName}</div>
                                             <div style={{ ...cellStyle, color: colors.muted }}>{item.plainText}</div>
                                             {hasExampleColumn && (
                                                 <div style={{ ...cellStyle, color: colors.text, fontVariantNumeric: 'tabular-nums' }}>{item.exampleText || '—'}</div>

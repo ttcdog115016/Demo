@@ -124,10 +124,10 @@ export const COLUMN_TREATMENT_BUCKET_LABEL: Record<ColumnTreatmentBucket, string
 /** K-匿名泛化技術代碼 → 白話（對應 utils/kAnonymityTechLabel.ts 的代碼） */
 const GENERALIZATION_PLAIN_TEXT_MAP: Record<string, string> = {
     custom_bins: '改成數值區間',
-    rounding: '數值改成較粗的單位',
-    time_rounding: '日期改成較粗的單位（如只留年或月）',
+    rounding: '數值改成較廣泛的單位',
+    time_rounding: '日期改成較廣泛的時間單位（如只留年或月）',
     time_range: '日期改成區間',
-    tree: '改成較大的分類',
+    tree: '改成較廣泛的分類',
     keep_prefix: '只保留開頭幾個字',
     keep_suffix: '只保留結尾幾個字',
     length: '只保留字數',

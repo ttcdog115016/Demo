@@ -318,29 +318,38 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                 </div>
 
                 <h4 className="pdf-page-break" style={{ ...sectionHeadingStyle, pageBreakInside: 'avoid' }}>五、 {translate('step4.report.table_title', '欄位處置與技術對照表')}</h4>
-                <div style={{ maxHeight: isExportingPdf ? 'none' : '240px', overflowY: isExportingPdf ? 'visible' : 'auto', border: '1px solid #d9d9d9', borderRadius: '4px', marginBottom: '20px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', color: '#000000', backgroundColor: '#ffffff', tableLayout: 'fixed' }}>
-                        <thead>
-                            <tr style={{ backgroundColor: '#f1f5f9', position: isExportingPdf ? 'static' : 'sticky', top: 0, zIndex: 1, pageBreakInside: 'avoid' }}>
-                                <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '40%' }}>{translate('step4.report.col_name', '欄位名稱')}</th>
-                                <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{translate('step4.report.col_role', '隱私角色')}</th>
-                                <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{translate('step4.report.col_tech', '套用去識別化技術')}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {(entry.columnsSnapshot || []).map((columnNameString) => {
-                                const { role, techText } = resolveReportColumnTechText(entry, columnNameString, translateText);
-                                const roleI18nKeyString = `step4.role.${role.toLowerCase().replace(/ /g, '_').replace(/-/g, '_')}`;
-                                return (
-                                    <tr key={columnNameString} style={{ backgroundColor: '#ffffff', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
-                                        <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#000000', wordBreak: 'break-word' }}><b>{columnNameString}</b></td>
-                                        <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{translate(roleI18nKeyString, role)}</td>
-                                        <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{techText}</td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                {/* ★ 2026-10-19 使用者反映：捲軸從表頭開始，應只對齊內容。改為表頭與內容分成兩個表格，
+                    只有內容區可捲動；兩邊都保留捲軸寬度（scrollbarGutter: stable），欄寬才會上下對齊。PDF 輸出時不捲動。 */}
+                <div style={{ border: '1px solid #d9d9d9', borderRadius: '4px', marginBottom: '20px', overflow: 'hidden' }}>
+                    <div style={{ backgroundColor: '#f1f5f9', overflowY: 'hidden', scrollbarGutter: isExportingPdf ? 'auto' : 'stable' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', color: '#000000', backgroundColor: '#f1f5f9', tableLayout: 'fixed' }}>
+                            <thead>
+                                <tr style={{ backgroundColor: '#f1f5f9', pageBreakInside: 'avoid' }}>
+                                    <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '40%' }}>{translate('step4.report.col_name', '欄位名稱')}</th>
+                                    <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{translate('step4.report.col_role', '隱私角色')}</th>
+                                    <th style={{ borderBottom: '2px solid #d9d9d9', padding: '8px 10px', color: '#000000', textAlign: 'left', background: '#f1f5f9', width: '30%' }}>{translate('step4.report.col_tech', '套用去識別化技術')}</th>
+                                </tr>
+                            </thead>
+                        </table>
+                    </div>
+                    <div data-testid="report-column-table-body" style={{ maxHeight: isExportingPdf ? 'none' : '240px', overflowY: isExportingPdf ? 'visible' : 'auto', scrollbarGutter: isExportingPdf ? 'auto' : 'stable' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', color: '#000000', backgroundColor: '#ffffff', tableLayout: 'fixed' }}>
+                            <colgroup><col style={{ width: '40%' }} /><col style={{ width: '30%' }} /><col style={{ width: '30%' }} /></colgroup>
+                            <tbody>
+                                {(entry.columnsSnapshot || []).map((columnNameString) => {
+                                    const { role, techText } = resolveReportColumnTechText(entry, columnNameString, translateText);
+                                    const roleI18nKeyString = `step4.role.${role.toLowerCase().replace(/ /g, '_').replace(/-/g, '_')}`;
+                                    return (
+                                        <tr key={columnNameString} style={{ backgroundColor: '#ffffff', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                                            <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#000000', wordBreak: 'break-word' }}><b>{columnNameString}</b></td>
+                                            <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{translate(roleI18nKeyString, role)}</td>
+                                            <td style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 10px', color: '#555555', wordBreak: 'break-word' }}>{techText}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <h4 className="pdf-page-break" style={{ ...sectionHeadingStyle, pageBreakInside: 'avoid' }}>六、 {translate('step4.report.measurement_note_title', '量測說明')}</h4>
