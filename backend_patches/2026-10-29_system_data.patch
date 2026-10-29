@@ -1,0 +1,736 @@
+diff --git a/app/api/auth_router.py b/app/api/auth_router.py
+index 6e4ebe8..3fbf584 100644
+--- a/app/api/auth_router.py
++++ b/app/api/auth_router.py
+@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
+ from app.core.errors import PetsError
+ from app.governance.audit import get_audit_logger
+ from app.governance.auth import get_auth_manager
++from app.governance.system_store import get_system_store
+ from app.governance.token import (
+     ACCESS_TOKEN_TTL_MINUTES,
+     create_access_token,
+@@ -36,6 +37,24 @@ _bearer = HTTPBearer(
+ # 「這個帳號存不存在」的探測管道，攻擊者不必猜密碼就能先蒐集有效帳號清單。
+ _CREDENTIALS_MESSAGE = "帳號或密碼錯誤。"
+ 
++_MAINTENANCE_MESSAGE = "系統維護中，目前僅允許管理員登入，請稍後再試。"
++
++
++def _system_log(level: str, event: str, source: str) -> None:
++    """★ TTC 2026-10-29：寫入系統維運日誌（前端在未登入時無法代寫的事件）。寫入失敗不影響登入流程。"""
++    try:
++        get_system_store().add_log(level, event, source or "(未填帳號)")
++    except Exception:  # noqa: BLE001
++        pass
++
++
++def _maintenance_blocks(role: str | None) -> bool:
++    """維護模式中，非 admin 一律不放行。"""
++    try:
++        return role != "admin" and get_system_store().is_maintenance_mode()
++    except Exception:  # noqa: BLE001 — 讀不到設定時不擋登入
++        return False
++
+ 
+ class LoginRequest(BaseModel):
+     username: str
+@@ -97,6 +116,11 @@ def login(req: LoginRequest, _: None = Depends(ensure_auth_enabled)):
+         audit.log_operation(
+             "login", "blocked", {"username": req.username, "reason": "account_locked"}
+         )
++        _system_log(
++            "WARN",
++            f"登入失敗（帳號鎖定中，約 {max(1, -(-int(result.retry_after or 0) // 60))} 分鐘後解除）",
++            req.username,
++        )
+         # 直接組回應而非拋例外：423 必須帶 Retry-After 標頭告知還要等多久，
+         # 統一的例外處理器只負責主體，帶不了標頭。
+         return JSONResponse(
+@@ -115,8 +139,16 @@ def login(req: LoginRequest, _: None = Depends(ensure_auth_enabled)):
+         # 失敗也要留痕：只記成功的話，日誌上看得到誰進得來，卻看不到有人正在反覆嘗試。
+         # 連續登入失敗是最典型的資安事件，稽核時需要的正是這一段。密碼不入紀錄。
+         audit.log_operation("login", "failed", {"username": req.username})
++        _system_log("WARN", "登入失敗（帳號或密碼錯誤）", req.username)
+         raise PetsError("ERR_UNAUTHORIZED", _CREDENTIALS_MESSAGE)
+ 
++    if _maintenance_blocks(result.role):
++        audit.log_operation(
++            "login", "blocked", {"username": req.username, "reason": "maintenance"}
++        )
++        _system_log("WARN", "登入被拒（系統維護模式中，僅允許 Admin）", req.username)
++        raise PetsError("ERR_MAINTENANCE", _MAINTENANCE_MESSAGE)
++
+     tokens = get_token_manager()
+     access_token = create_access_token(result.username, result.role)
+     refresh_token = tokens.issue(result.username)
+@@ -145,6 +177,8 @@ def refresh(req: RefreshRequest, _: None = Depends(ensure_auth_enabled)):
+     user = get_auth_manager().get_user(username)
+     if user is None or not user["is_active"]:
+         raise PetsError("ERR_UNAUTHORIZED", "帳號不存在或已停用。")
++    if _maintenance_blocks(user["role"]):
++        raise PetsError("ERR_MAINTENANCE", _MAINTENANCE_MESSAGE)
+ 
+     new_refresh = tokens.rotate(req.refresh_token, username)
+     return {
+diff --git a/app/api/server.py b/app/api/server.py
+index 4866c7d..0ffb8da 100644
+--- a/app/api/server.py
++++ b/app/api/server.py
+@@ -9,6 +9,7 @@ from app.api.deid_router import router as deid_router
+ from app.api.errors import register_error_handlers, register_upload_limit
+ from app.api.preprocess_router import router as preprocess_router
+ from app.api.risk_router import router as risk_router
++from app.api.system_router import router as system_router
+ from app.api.users_router import router as users_router
+ from app.core.logging_setup import configure_logging
+ from app.core.settings import DEFAULT_SALT_ENV, get_default_salt
+@@ -64,6 +65,8 @@ app.include_router(deid_router, prefix="/api/v1")
+ app.include_router(risk_router, prefix="/api/v1")
+ app.include_router(auth_router, prefix="/api/v1")
+ app.include_router(users_router, prefix="/api/v1")
++# ★ TTC 2026-10-29：處理紀錄、系統維運日誌、系統設定、系統公告
++app.include_router(system_router, prefix="/api/v1")
+ 
+ 
+ @app.get("/")
+diff --git a/app/core/errors.py b/app/core/errors.py
+index 5f9d9bb..ae26a15 100644
+--- a/app/core/errors.py
++++ b/app/core/errors.py
+@@ -48,6 +48,8 @@ ERROR_HTTP_STATUS: dict[str, int] = {
+     "ERR_ACCOUNT_LOCKED": 423,
+     # 503：會員端點所需的部署設定未備妥（未設簽章金鑰），三大功能不受影響
+     "ERR_AUTH_DISABLED": 503,
++    # ★ TTC 2026-10-29：全站維護模式中，非 admin 不得登入或換發 token（見 system_router）
++    "ERR_MAINTENANCE": 503,
+     # 422：讀得懂但講不通
+     "ERR_VALIDATION_FAILED": 422,
+     "ERR_CONFIG_INVALID": 422,
+diff --git a/app/governance/system_store.py b/app/governance/system_store.py
+new file mode 100644
+index 0000000..cc27aef
+--- /dev/null
++++ b/app/governance/system_store.py
+@@ -0,0 +1,256 @@
++"""系統資料（SQLite）：處理紀錄、系統維運日誌、系統設定、系統公告。
++
++★ TTC 2026-10-29：前端原本把這些資料存在使用者自己的瀏覽器（localStorage），
++換電腦或清快取就不見，管理員也看不到別人的紀錄；改為集中存在後端。
++
++與帳號資料庫（users.db）分開成 system.db：帳號與 token 必須在同一個交易內同生同滅，
++這裡的資料與帳號沒有那種綁定——刪帳號時處理紀錄仍保留，作為事後查核的依據。
++
++處理紀錄與公告的內容由前端組好（欄位很多且隨畫面演進），後端整筆以 JSON 存放，
++只把查詢會用到的欄位（帳號、時間）另外拉成欄位。
++"""
++
++import json
++import os
++import sqlite3
++import time
++from typing import Any
++
++from app.core.settings import get_data_dir
++
++# 每位使用者保留的處理紀錄筆數上限（新的在前），與前端原本的上限一致
++MAX_HISTORY_PER_USER = 200
++# 維運日誌保留筆數上限；超過時刪掉最舊的
++MAX_SYSTEM_LOGS = 5000
++MAX_ANNOUNCEMENTS = 50
++
++# 系統設定的預設值；只接受這裡列出的鍵
++DEFAULT_SETTINGS: dict[str, Any] = {
++    "session_timeout_minutes": 15,
++    "maintenance_mode": False,
++}
++
++
++def _now_ms() -> int:
++    return int(time.time() * 1000)
++
++
++class SystemStore:
++    """系統資料存取（SQLite）。"""
++
++    def __init__(self, db_path: str | None = None):
++        if db_path is None:
++            self.db_path = os.path.join(get_data_dir(), "system.db")
++        else:
++            self.db_path = db_path
++        os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
++        self._init_db()
++
++    def _connect(self) -> sqlite3.Connection:
++        conn = sqlite3.connect(self.db_path)
++        conn.row_factory = sqlite3.Row
++        return conn
++
++    def _init_db(self) -> None:
++        with self._connect() as conn:
++            conn.execute("PRAGMA journal_mode=WAL")
++            conn.executescript(
++                """
++                CREATE TABLE IF NOT EXISTS history (
++                    id TEXT PRIMARY KEY,
++                    username TEXT NOT NULL,
++                    created_at INTEGER NOT NULL,
++                    payload_json TEXT NOT NULL
++                );
++                CREATE INDEX IF NOT EXISTS idx_history_user ON history (username, created_at);
++                CREATE TABLE IF NOT EXISTS system_logs (
++                    id INTEGER PRIMARY KEY AUTOINCREMENT,
++                    ts INTEGER NOT NULL,
++                    level TEXT NOT NULL,
++                    event TEXT NOT NULL,
++                    source TEXT NOT NULL,
++                    username TEXT
++                );
++                CREATE INDEX IF NOT EXISTS idx_system_logs_ts ON system_logs (ts);
++                CREATE TABLE IF NOT EXISTS settings (
++                    key TEXT PRIMARY KEY,
++                    value_json TEXT NOT NULL,
++                    updated_at INTEGER NOT NULL,
++                    updated_by TEXT
++                );
++                CREATE TABLE IF NOT EXISTS announcements (
++                    id TEXT PRIMARY KEY,
++                    created_at INTEGER NOT NULL,
++                    payload_json TEXT NOT NULL
++                );
++                CREATE TABLE IF NOT EXISTS announcement_states (
++                    username TEXT NOT NULL,
++                    announcement_id TEXT NOT NULL,
++                    is_read INTEGER NOT NULL DEFAULT 0,
++                    dismissed INTEGER NOT NULL DEFAULT 0,
++                    PRIMARY KEY (username, announcement_id)
++                );
++                """
++            )
++
++    # ── 處理紀錄 ──────────────────────────────────────────────────────────
++    def add_history(self, username: str, record_id: str, payload: dict) -> None:
++        """新增（或以同一 id 覆寫）一筆處理紀錄；超過上限時刪掉該使用者最舊的。"""
++        created_at = payload.get("auditTimestamp")
++        if not isinstance(created_at, (int, float)):
++            created_at = _now_ms()
++        with self._connect() as conn:
++            conn.execute(
++                "INSERT OR REPLACE INTO history (id, username, created_at, payload_json) VALUES (?, ?, ?, ?)",
++                (record_id, username, int(created_at), json.dumps(payload, ensure_ascii=False)),
++            )
++            conn.execute(
++                """DELETE FROM history WHERE username = ? AND id NOT IN (
++                       SELECT id FROM history WHERE username = ? ORDER BY created_at DESC LIMIT ?)""",
++                (username, username, MAX_HISTORY_PER_USER),
++            )
++
++    def list_history(self, username: str | None = None) -> list[dict]:
++        """處理紀錄（新的在前）；username 為 None 時列出所有人的。"""
++        with self._connect() as conn:
++            if username is None:
++                rows = conn.execute("SELECT payload_json FROM history ORDER BY created_at DESC").fetchall()
++            else:
++                rows = conn.execute(
++                    "SELECT payload_json FROM history WHERE username = ? ORDER BY created_at DESC",
++                    (username,),
++                ).fetchall()
++        return [json.loads(row["payload_json"]) for row in rows]
++
++    # ── 系統維運日誌 ──────────────────────────────────────────────────────
++    def add_logs(self, entries: list[dict], username: str | None) -> int:
++        """批次寫入日誌；entries 每筆需有 level／event／source，ts 未給時用伺服器時間。"""
++        if not entries:
++            return 0
++        with self._connect() as conn:
++            conn.executemany(
++                "INSERT INTO system_logs (ts, level, event, source, username) VALUES (?, ?, ?, ?, ?)",
++                [
++                    (int(e.get("ts") or _now_ms()), e["level"], e["event"], e["source"], username)
++                    for e in entries
++                ],
++            )
++            conn.execute(
++                "DELETE FROM system_logs WHERE id NOT IN (SELECT id FROM system_logs ORDER BY id DESC LIMIT ?)",
++                (MAX_SYSTEM_LOGS,),
++            )
++        return len(entries)
++
++    def add_log(self, level: str, event: str, source: str, username: str | None = None) -> None:
++        self.add_logs([{"level": level, "event": event, "source": source}], username)
++
++    def list_logs(self, since_ms: int | None = None, limit: int = 1000) -> list[dict]:
++        """日誌（新的在前）。"""
++        with self._connect() as conn:
++            rows = conn.execute(
++                "SELECT id, ts, level, event, source FROM system_logs WHERE ts >= ? ORDER BY ts DESC, id DESC LIMIT ?",
++                (since_ms or 0, limit),
++            ).fetchall()
++        return [
++            {"id": str(r["id"]), "timestamp": r["ts"], "level": r["level"], "event": r["event"], "source": r["source"]}
++            for r in rows
++        ]
++
++    def clear_logs(self) -> None:
++        with self._connect() as conn:
++            conn.execute("DELETE FROM system_logs")
++
++    # ── 系統設定 ──────────────────────────────────────────────────────────
++    def get_settings(self) -> dict[str, Any]:
++        result = dict(DEFAULT_SETTINGS)
++        with self._connect() as conn:
++            for row in conn.execute("SELECT key, value_json FROM settings").fetchall():
++                if row["key"] in DEFAULT_SETTINGS:
++                    result[row["key"]] = json.loads(row["value_json"])
++        return result
++
++    def update_settings(self, changes: dict[str, Any], updated_by: str) -> dict[str, Any]:
++        with self._connect() as conn:
++            for key, value in changes.items():
++                conn.execute(
++                    "INSERT OR REPLACE INTO settings (key, value_json, updated_at, updated_by) VALUES (?, ?, ?, ?)",
++                    (key, json.dumps(value), _now_ms(), updated_by),
++                )
++        return self.get_settings()
++
++    def is_maintenance_mode(self) -> bool:
++        return bool(self.get_settings().get("maintenance_mode"))
++
++    # ── 系統公告 ──────────────────────────────────────────────────────────
++    def list_announcements(self) -> list[dict]:
++        with self._connect() as conn:
++            rows = conn.execute("SELECT payload_json FROM announcements ORDER BY created_at DESC").fetchall()
++        return [json.loads(r["payload_json"]) for r in rows]
++
++    def get_announcement(self, announcement_id: str) -> dict | None:
++        with self._connect() as conn:
++            row = conn.execute(
++                "SELECT payload_json FROM announcements WHERE id = ?", (announcement_id,)
++            ).fetchone()
++        return json.loads(row["payload_json"]) if row else None
++
++    def save_announcement(self, payload: dict) -> dict:
++        """新增或覆寫一則公告（payload 需含 id、createdAt）；超過上限時刪掉最舊的。"""
++        with self._connect() as conn:
++            conn.execute(
++                "INSERT OR REPLACE INTO announcements (id, created_at, payload_json) VALUES (?, ?, ?)",
++                (payload["id"], int(payload["createdAt"]), json.dumps(payload, ensure_ascii=False)),
++            )
++            conn.execute(
++                "DELETE FROM announcements WHERE id NOT IN (SELECT id FROM announcements ORDER BY created_at DESC LIMIT ?)",
++                (MAX_ANNOUNCEMENTS,),
++            )
++            conn.execute(
++                "DELETE FROM announcement_states WHERE announcement_id NOT IN (SELECT id FROM announcements)"
++            )
++        return payload
++
++    def delete_announcement(self, announcement_id: str) -> bool:
++        with self._connect() as conn:
++            deleted = conn.execute("DELETE FROM announcements WHERE id = ?", (announcement_id,)).rowcount
++            conn.execute("DELETE FROM announcement_states WHERE announcement_id = ?", (announcement_id,))
++        return deleted > 0
++
++    def reset_announcement_states(self, announcement_id: str) -> None:
++        """清除所有人對這則公告的已讀／已關閉狀態（修改後重新提醒）。"""
++        with self._connect() as conn:
++            conn.execute("DELETE FROM announcement_states WHERE announcement_id = ?", (announcement_id,))
++
++    def mark_announcements(self, username: str, announcement_ids: list[str], field: str) -> None:
++        """把公告標成已讀（field='is_read'）或已關閉橫幅（field='dismissed'）。"""
++        if field not in ("is_read", "dismissed"):
++            raise ValueError(field)
++        with self._connect() as conn:
++            for announcement_id in announcement_ids:
++                conn.execute(
++                    f"""INSERT INTO announcement_states (username, announcement_id, {field}) VALUES (?, ?, 1)
++                        ON CONFLICT (username, announcement_id) DO UPDATE SET {field} = 1""",
++                    (username, announcement_id),
++                )
++
++    def get_announcement_states(self, username: str) -> dict[str, list[str]]:
++        with self._connect() as conn:
++            rows = conn.execute(
++                "SELECT announcement_id, is_read, dismissed FROM announcement_states WHERE username = ?",
++                (username,),
++            ).fetchall()
++        return {
++            "read_ids": [r["announcement_id"] for r in rows if r["is_read"]],
++            "dismissed_ids": [r["announcement_id"] for r in rows if r["dismissed"]],
++        }
++
++
++_system_store: SystemStore | None = None
++
++
++def get_system_store() -> SystemStore:
++    """全專案共用的系統資料存取；延後建立，理由同 auth.get_auth_manager()。"""
++    global _system_store
++    if _system_store is None:
++        _system_store = SystemStore()
++    return _system_store
+diff --git a/app/api/system_router.py b/app/api/system_router.py
+new file mode 100644
+index 0000000..8bfa2d3
+--- /dev/null
++++ b/app/api/system_router.py
+@@ -0,0 +1,190 @@
++"""系統資料端點（★ TTC 2026-10-29）：處理紀錄、系統維運日誌、系統設定、系統公告。
++
++資料存放見 governance/system_store。權限：
++    處理紀錄  登入者讀寫自己的；admin 可列出所有人的（?all=1）
++    維運日誌  登入者可寫入；讀取與清除限 admin
++    系統設定  免登入可讀（登入頁要知道是否維護中）；修改限 admin
++    系統公告  登入者可讀、可標記已讀／關閉橫幅；發布、修改、刪除限 admin
++
++維運日誌的事件文字由前端產生（設定變更、公告、API 呼叫結果等，前端原本就有這些紀錄點），
++後端只自行記錄前端無法代寫的事件：登入失敗、帳號鎖定、維護模式擋下登入（見 auth_router）。
++"""
++
++import time
++import uuid
++from typing import Literal
++
++from fastapi import APIRouter, Depends
++from pydantic import BaseModel, Field
++
++from app.api.auth_router import get_current_user, require_role
++from app.core.errors import PetsError
++from app.governance.system_store import get_system_store
++
++router = APIRouter(tags=["系統資料"])
++
++
++def _now_ms() -> int:
++    return int(time.time() * 1000)
++
++
++# ── 處理紀錄 ────────────────────────────────────────────────────────────────
++@router.get("/history")
++def list_history(all: bool = False, user: dict = Depends(get_current_user)):
++    """處理紀錄（新的在前）。一般使用者只看得到自己的；admin 帶 all=1 列出所有人的。"""
++    if all and user["role"] != "admin":
++        raise PetsError("ERR_FORBIDDEN", "權限不足，列出所有人的紀錄僅限 admin。")
++    records = get_system_store().list_history(None if all else user["username"])
++    return {"records": records, "total": len(records)}
++
++
++@router.post("/history", status_code=201)
++def add_history(record: dict, user: dict = Depends(get_current_user)):
++    """新增一筆自己的處理紀錄（內容由前端組好，整筆保存）。操作者一律以登入帳號為準。"""
++    record_id = record.get("id")
++    if not isinstance(record_id, str) or not record_id:
++        record_id = str(uuid.uuid4())
++    payload = {**record, "id": record_id, "operator": user["username"]}
++    get_system_store().add_history(user["username"], record_id, payload)
++    return payload
++
++
++# ── 系統維運日誌 ────────────────────────────────────────────────────────────
++class LogEntry(BaseModel):
++    level: Literal["INFO", "WARN", "ERROR"]
++    event: str = Field(..., min_length=1, max_length=500)
++    source: str = Field("System", max_length=200)
++    ts: int | None = None
++
++
++class LogBatch(BaseModel):
++    entries: list[LogEntry] = Field(..., max_length=200)
++
++
++@router.post("/system-logs", status_code=201)
++def add_system_logs(batch: LogBatch, user: dict = Depends(get_current_user)):
++    """批次寫入前端發生的事件（API 呼叫結果、設定變更等）。"""
++    count = get_system_store().add_logs([e.model_dump() for e in batch.entries], user["username"])
++    return {"saved": count}
++
++
++@router.get("/system-logs")
++def list_system_logs(
++    since: int | None = None,
++    limit: int = 1000,
++    _: dict = Depends(require_role("admin")),
++):
++    """日誌（新的在前）；since 為 epoch 毫秒。"""
++    logs = get_system_store().list_logs(since, max(1, min(limit, 5000)))
++    return {"logs": logs, "total": len(logs)}
++
++
++@router.delete("/system-logs")
++def clear_system_logs(_: dict = Depends(require_role("admin"))):
++    get_system_store().clear_logs()
++    return {"message": "日誌已清除。"}
++
++
++# ── 系統設定 ────────────────────────────────────────────────────────────────
++class SettingsUpdate(BaseModel):
++    session_timeout_minutes: int | None = Field(None, ge=1, le=1440)
++    maintenance_mode: bool | None = None
++
++
++@router.get("/settings")
++def get_settings():
++    """系統設定（免登入：登入頁需要知道是否維護中）。"""
++    return get_system_store().get_settings()
++
++
++@router.put("/settings")
++def update_settings(req: SettingsUpdate, user: dict = Depends(require_role("admin"))):
++    return get_system_store().update_settings(req.model_dump(exclude_none=True), user["username"])
++
++
++# ── 系統公告 ────────────────────────────────────────────────────────────────
++class AnnouncementBody(BaseModel):
++    title: str = Field(..., min_length=1, max_length=200)
++    content: str = Field(..., max_length=5000)
++    level: Literal["normal", "important"] = "normal"
++    audience: Literal["all", "data_owner", "admin"] = "all"
++    icon: str | None = Field(None, max_length=16)
++    expiresAt: int | None = None
++
++
++class AnnouncementPatch(BaseModel):
++    title: str | None = Field(None, min_length=1, max_length=200)
++    content: str | None = Field(None, max_length=5000)
++    level: Literal["normal", "important"] | None = None
++    audience: Literal["all", "data_owner", "admin"] | None = None
++    icon: str | None = Field(None, max_length=16)
++    expiresAt: int | None = None
++    renotify: bool = False
++
++
++class AnnouncementIds(BaseModel):
++    ids: list[str] = Field(..., max_length=200)
++
++
++def _require_announcement(announcement_id: str) -> dict:
++    item = get_system_store().get_announcement(announcement_id)
++    if item is None:
++        raise PetsError("ERR_NOT_FOUND", "找不到這則公告。")
++    return item
++
++
++@router.get("/announcements")
++def list_announcements(user: dict = Depends(get_current_user)):
++    """全部公告（新的在前）與目前帳號的已讀／已關閉橫幅狀態；依對象與期限的篩選由前端做。"""
++    store = get_system_store()
++    return {"announcements": store.list_announcements(), **store.get_announcement_states(user["username"])}
++
++
++@router.post("/announcements", status_code=201)
++def publish_announcement(req: AnnouncementBody, user: dict = Depends(require_role("admin"))):
++    payload = {**req.model_dump(), "id": str(uuid.uuid4()), "createdAt": _now_ms(), "createdBy": user["username"]}
++    get_system_store().save_announcement(payload)
++    return payload
++
++
++@router.patch("/announcements/{announcement_id}")
++def update_announcement(announcement_id: str, req: AnnouncementPatch, user: dict = Depends(require_role("admin"))):
++    """修改公告；renotify=true 時清除所有人的已讀／已關閉狀態，讓修改後內容重新提醒。"""
++    item = _require_announcement(announcement_id)
++    # expiresAt 可明確設為 null（改為不限期），故以「有沒有送這個欄位」判斷
++    changes = req.model_dump(exclude_unset=True)
++    renotify = changes.pop("renotify", False)
++    payload = {**item, **changes, "updatedAt": _now_ms()}
++    store = get_system_store()
++    store.save_announcement(payload)
++    if renotify:
++        store.reset_announcement_states(announcement_id)
++    return payload
++
++
++@router.post("/announcements/{announcement_id}/end")
++def end_announcement(announcement_id: str, _: dict = Depends(require_role("admin"))):
++    """立即結束顯示：把顯示期限設為現在，列表保留並標示已過期。"""
++    item = _require_announcement(announcement_id)
++    payload = {**item, "expiresAt": _now_ms()}
++    get_system_store().save_announcement(payload)
++    return payload
++
++
++@router.delete("/announcements/{announcement_id}")
++def delete_announcement(announcement_id: str, _: dict = Depends(require_role("admin"))):
++    _require_announcement(announcement_id)
++    get_system_store().delete_announcement(announcement_id)
++    return {"message": "公告已刪除。"}
++
++
++@router.post("/announcements/read")
++def mark_announcements_read(req: AnnouncementIds, user: dict = Depends(get_current_user)):
++    get_system_store().mark_announcements(user["username"], req.ids, "is_read")
++    return {"message": "ok"}
++
++
++@router.post("/announcements/dismiss")
++def dismiss_announcement_banners(req: AnnouncementIds, user: dict = Depends(get_current_user)):
++    get_system_store().mark_announcements(user["username"], req.ids, "dismissed")
++    return {"message": "ok"}
+diff --git a/tests/api/test_api_system.py b/tests/api/test_api_system.py
+new file mode 100644
+index 0000000..5e88af6
+--- /dev/null
++++ b/tests/api/test_api_system.py
+@@ -0,0 +1,163 @@
++"""
++API - 系統資料端點（★ TTC 2026-10-29）整合測試
++涵蓋：處理紀錄、系統維運日誌、系統設定與維護模式、系統公告。
++"""
++import pytest
++
++from app.governance.system_store import SystemStore
++
++BASE = "/api/v1"
++
++
++@pytest.fixture(autouse=True)
++def system_store(monkeypatch, tmp_path):
++    """系統資料庫落在測試專屬暫存目錄，不動到部署環境的 system.db"""
++    store = SystemStore(db_path=str(tmp_path / "system.db"))
++    monkeypatch.setattr("app.governance.system_store._system_store", store)
++    return store
++
++
++# ──────────────────────────────────────────────────────────────
++# 處理紀錄
++# ──────────────────────────────────────────────────────────────
++def test_history_is_per_user(client, api_auth, login):
++    user_headers = login("user", "user123")
++    resp = client.post(
++        f"{BASE}/history",
++        json={"id": "r1", "fileName": "a.csv", "auditTimestamp": 1000, "operator": "someone-else"},
++        headers=user_headers,
++    )
++    assert resp.status_code == 201
++    # 操作者一律以登入帳號為準，不採信前端送來的值
++    assert resp.json()["operator"] == "user"
++
++    client.post(f"{BASE}/history", json={"id": "r2", "auditTimestamp": 2000}, headers=login())
++
++    records = client.get(f"{BASE}/history", headers=user_headers).json()["records"]
++    assert [r["id"] for r in records] == ["r1"]
++    assert records[0]["fileName"] == "a.csv"
++
++
++def test_history_all_is_admin_only(client, api_auth, login):
++    client.post(f"{BASE}/history", json={"id": "r1", "auditTimestamp": 1000}, headers=login("user", "user123"))
++    client.post(f"{BASE}/history", json={"id": "r2", "auditTimestamp": 2000}, headers=login())
++
++    assert client.get(f"{BASE}/history?all=1", headers=login("user", "user123")).status_code == 403
++    records = client.get(f"{BASE}/history?all=1", headers=login()).json()["records"]
++    assert [r["id"] for r in records] == ["r2", "r1"]
++
++
++def test_history_requires_login(client, api_auth):
++    assert client.get(f"{BASE}/history").status_code == 401
++
++
++# ──────────────────────────────────────────────────────────────
++# 系統維運日誌
++# ──────────────────────────────────────────────────────────────
++def test_logs_write_by_user_read_by_admin(client, api_auth, login):
++    resp = client.post(
++        f"{BASE}/system-logs",
++        json={"entries": [{"level": "INFO", "event": "後端 API 呼叫成功", "source": "POST /api/v1/dp"}]},
++        headers=login("user", "user123"),
++    )
++    assert resp.status_code == 201
++
++    assert client.get(f"{BASE}/system-logs", headers=login("user", "user123")).status_code == 403
++    logs = client.get(f"{BASE}/system-logs", headers=login()).json()["logs"]
++    assert any(log["event"] == "後端 API 呼叫成功" for log in logs)
++
++    assert client.delete(f"{BASE}/system-logs", headers=login()).status_code == 200
++    assert client.get(f"{BASE}/system-logs", headers=login()).json()["logs"] == []
++
++
++def test_login_failure_is_logged_by_backend(client, api_auth, system_store):
++    client.post(f"{BASE}/auth/login", json={"username": "user", "password": "wrong"})
++    events = [log["event"] for log in system_store.list_logs()]
++    assert "登入失敗（帳號或密碼錯誤）" in events
++
++
++# ──────────────────────────────────────────────────────────────
++# 系統設定與維護模式
++# ──────────────────────────────────────────────────────────────
++def test_settings_readable_without_login(client, api_auth):
++    body = client.get(f"{BASE}/settings").json()
++    assert body == {"session_timeout_minutes": 15, "maintenance_mode": False}
++
++
++def test_settings_update_admin_only(client, api_auth, login):
++    assert client.put(
++        f"{BASE}/settings", json={"session_timeout_minutes": 30}, headers=login("user", "user123")
++    ).status_code == 403
++
++    body = client.put(f"{BASE}/settings", json={"session_timeout_minutes": 30}, headers=login()).json()
++    assert body["session_timeout_minutes"] == 30
++    assert client.get(f"{BASE}/settings").json()["session_timeout_minutes"] == 30
++
++    assert client.put(
++        f"{BASE}/settings", json={"session_timeout_minutes": 0}, headers=login()
++    ).status_code == 422
++
++
++def test_maintenance_blocks_user_login_and_refresh(client, api_auth, login):
++    user_tokens = client.post(
++        f"{BASE}/auth/login", json={"username": "user", "password": "user123"}
++    ).json()
++    client.put(f"{BASE}/settings", json={"maintenance_mode": True}, headers=login())
++
++    resp = client.post(f"{BASE}/auth/login", json={"username": "user", "password": "user123"})
++    assert resp.status_code == 503
++    assert resp.json()["error_code"] == "ERR_MAINTENANCE"
++
++    resp = client.post(f"{BASE}/auth/refresh", json={"refresh_token": user_tokens["refresh_token"]})
++    assert resp.status_code == 503
++
++    # admin 仍可登入
++    assert client.post(
++        f"{BASE}/auth/login", json={"username": "admin", "password": "admin123"}
++    ).status_code == 200
++
++
++# ──────────────────────────────────────────────────────────────
++# 系統公告
++# ──────────────────────────────────────────────────────────────
++def test_announcement_lifecycle(client, api_auth, login):
++    admin_headers = login()
++    user_headers = login("user", "user123")
++
++    assert client.post(
++        f"{BASE}/announcements", json={"title": "t", "content": "c"}, headers=user_headers
++    ).status_code == 403
++
++    created = client.post(
++        f"{BASE}/announcements",
++        json={"title": "停機通知", "content": "今晚維護", "level": "important"},
++        headers=admin_headers,
++    ).json()
++    announcement_id = created["id"]
++    assert created["createdBy"] == "admin"
++
++    body = client.get(f"{BASE}/announcements", headers=user_headers).json()
++    assert [a["id"] for a in body["announcements"]] == [announcement_id]
++    assert body["read_ids"] == [] and body["dismissed_ids"] == []
++
++    client.post(f"{BASE}/announcements/read", json={"ids": [announcement_id]}, headers=user_headers)
++    client.post(f"{BASE}/announcements/dismiss", json={"ids": [announcement_id]}, headers=user_headers)
++    body = client.get(f"{BASE}/announcements", headers=user_headers).json()
++    assert body["read_ids"] == [announcement_id] and body["dismissed_ids"] == [announcement_id]
++
++    # 修改並重新提醒：已讀狀態清除
++    updated = client.patch(
++        f"{BASE}/announcements/{announcement_id}",
++        json={"content": "改為明晚", "renotify": True},
++        headers=admin_headers,
++    ).json()
++    assert updated["content"] == "改為明晚" and updated["title"] == "停機通知"
++    body = client.get(f"{BASE}/announcements", headers=user_headers).json()
++    assert body["read_ids"] == []
++
++    ended = client.post(f"{BASE}/announcements/{announcement_id}/end", headers=admin_headers).json()
++    assert ended["expiresAt"] is not None
++
++    assert client.delete(f"{BASE}/announcements/{announcement_id}", headers=admin_headers).status_code == 200
++    assert client.get(f"{BASE}/announcements", headers=user_headers).json()["announcements"] == []
++    assert client.delete(f"{BASE}/announcements/{announcement_id}", headers=admin_headers).status_code == 404
