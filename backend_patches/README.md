@@ -10,5 +10,6 @@
 | 2026-10-29 | `2026-10-29_cleanup_and_signing.patch`（需先套用上一個） | 刪除全站維護模式（`ERR_MAINTENANCE`、`maintenance_mode` 設定）；處理紀錄改由伺服器簽章（新增 `app/governance/history_signing.py`，HMAC-SHA256，金鑰由 `OPEN_PETS_SYSTEM_MASTER_KEY` 衍生）與 `GET /history/{id}/verify`；`GET /users` 附 `failed_login_count`、`login_locked_until`。後端全套 712 項測試通過 |
 | 2026-10-29 | `2026-10-29_subgroup_date_range.patch` | 風險評估子群體篩選支援日期區間：`app/engines/risk/subset.py` 區間 `min`／`max` 可為日期字串（`YYYY-MM-DD`，分隔可為 `-`／`/`／`.`，可帶時間），欄位以 `pd.to_datetime(errors="coerce")` 轉日期，轉不動者落選並備註；邊界只給日期時以「日」比較（`max` 當天任何時刻皆含）。數值邊界行為不變；其他字串、數值與日期混用仍回 `ERR_SUBSET_COND_MALFORMED`。`tests/unit/test_risk_subset.py` 新增 4 項，後端全套 716 項測試通過 |
 | 2026-10-29 | `2026-10-29_auth_processing_and_cleanup.patch`（需先套用前面幾個） | 處理端點（前處理、K-匿名、DP、風險評估、報告）改須登入（`app/api/processing_guard.py`），每次呼叫由後端寫維運日誌並回 `X-Run-Id`（`runs` 表）；登入成功／登出改由後端記錄；日誌加 `origin`、`username`，時間一律用伺服器時間，前端不得回報後端事件、每批 ≤ 50；`POST /history` 須引用同帳號未用過的 runId、同 id 不可覆寫（`ERR_RUN_INVALID`、`ERR_RECORD_EXISTS`）；verify 找不到回 missing；移除系統公告端點；CORS `expose_headers`。後端全套 721 項測試通過 |
+| 2026-10-29 | `2026-10-29_user_preferences.patch`（需先套用前面幾個） | 介面偏好依帳號存後端：`user_preferences` 表、`GET／PUT /preferences`（外觀主題、語系、字體大小；只更新有送的欄位）。後端全套 722 項測試通過 |
 
 重新套用（於 `01_程式原始碼` 目錄）：`git apply --ignore-whitespace <patch>`（交付包為 CRLF 換行，必要時先轉換）。
