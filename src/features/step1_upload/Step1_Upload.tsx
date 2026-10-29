@@ -7,7 +7,7 @@
  * ============================================================================
  */
 
-import { useState, type ReactNode } from 'react';
+import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { Card, Upload, Table, Alert, Button, Space, Typography, Popconfirm, theme, App as AntdApp, Radio, Row, Col, Spin, Tooltip, Modal } from 'antd';
 import { InboxOutlined, FileExcelOutlined, DeleteOutlined, CheckCircleFilled, SafetyCertificateOutlined, CodeSandboxOutlined, QuestionCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import Papa from 'papaparse';
@@ -214,6 +214,28 @@ export default function Step1_Upload(): React.ReactElement
     
     // 元件區域狀態宣告 (符合規範 g)
     const [isFileUploading, setIsFileUploading] = useState<boolean>(false); // 上傳/解析中之載入狀態開關
+
+    // ★ 2026-10-21 使用者回報：點上傳區開出「開啟檔案」視窗後，改從另一個檔案總管視窗拖曳檔案進來，
+    //   檔案會被讀取並進入預覽，但「開啟檔案」視窗仍停在畫面上。這個視窗是瀏覽器／作業系統的原生對話框，
+    //   網頁程式無法把它關掉（瀏覽器沒有提供這個 API）。改為：視窗開著的時候不接受拖曳，提示先關閉視窗，
+    //   避免出現「已讀到檔案、選檔視窗卻還開著」的狀態。
+    //   判斷方式：點上傳區時記下「選檔視窗已開啟」；視窗關閉時頁面會重新取得焦點（window focus）即清除。
+    //   拖曳放下時若標記仍在且頁面沒有焦點（document.hasFocus() 為 false，代表原生視窗還開著）才擋下；
+    //   標記殘留但頁面已有焦點時視為視窗已關，照常接受，避免標記卡住後永遠無法拖曳。
+    const isNativeFilePickerOpenRef = useRef<boolean>(false);
+    useEffect(() => {
+        const clearFilePickerOpenFlag = (): void => { isNativeFilePickerOpenRef.current = false; };
+        window.addEventListener('focus', clearFilePickerOpenFlag);
+        return () => window.removeEventListener('focus', clearFilePickerOpenFlag);
+    }, []);
+    const isDropBlockedByOpenFilePicker = (): boolean => {
+        if (!isNativeFilePickerOpenRef.current) return false;
+        if (typeof document !== 'undefined' && document.hasFocus()) {
+            isNativeFilePickerOpenRef.current = false;
+            return false;
+        }
+        return true;
+    };
     // ★ 2026-10-05：第 3 級（特殊字元）與上傳時推斷之第 2 級（數值／日期欄位異常值）待使用者確認的上傳
     const [pendingContentReview, setPendingContentReview] = useState<{ params: FinalizeUploadParams; specialChars: SpecialCharacterScanResult | null; outliers: TypedColumnOutlier[] } | null>(null);
 
@@ -683,6 +705,20 @@ export default function Step1_Upload(): React.ReactElement
                         />
 
                         <Spin spinning={isFileUploading} description="解析檔案中...">
+                            {/* ★ 2026-10-21：選檔視窗開著時不接受拖曳（說明見 isNativeFilePickerOpenRef） */}
+                            <div
+                                data-testid="step1-upload-drop-guard"
+                                onClickCapture={() => { if (!isFileUploading) isNativeFilePickerOpenRef.current = true; }}
+                                onDragOverCapture={(dragEvent) => {
+                                    if (isDropBlockedByOpenFilePicker()) { dragEvent.preventDefault(); dragEvent.stopPropagation(); dragEvent.dataTransfer.dropEffect = 'none'; }
+                                }}
+                                onDropCapture={(dropEvent) => {
+                                    if (!isDropBlockedByOpenFilePicker()) return;
+                                    dropEvent.preventDefault();
+                                    dropEvent.stopPropagation();
+                                    messageApi.warning(translate('step1.drop_blocked_picker_open', '「開啟檔案」視窗還開著，請先在該視窗選擇檔案或按「取消」關閉後，再拖曳上傳。'));
+                                }}
+                            >
                             {/* Ant Design Dragger 拖曳上傳區塊 */}
                             <Dragger 
                                 name="file" 
@@ -709,6 +745,7 @@ export default function Step1_Upload(): React.ReactElement
                                     {translate('step1.upload_limit_hint')}
                                 </Text>
                             </Dragger>
+                            </div>
                         </Spin>
                     </Card>
                 </>
