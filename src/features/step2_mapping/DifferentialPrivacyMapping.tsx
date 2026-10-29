@@ -19,6 +19,7 @@ import dayjs from 'dayjs';
 
 import { useWorkspaceStore, type DPField, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import ConfigFileButtons from './ConfigFileButtons';
+import { parseConfigFileText, ConfigFileParseError } from '../../utils/configFileParse';
 import { DP_COLUMN_BUDGETS_REFERENCE } from '../../config/recommendationReferenceConfig';
 import {
 	resolveIsDateTimeDpField, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals,
@@ -300,8 +301,8 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			try 
 			{
 				const rawJsonString = (fileReaderEventObj.target?.result as string) || '';
-				const cleanedJsonString = rawJsonString.replace(/^[\uFEFF\u200B]+/, '').trim();
-				const parsedJsonContentData = JSON.parse(cleanedJsonString);
+				// ★ 2026-10-29：.yaml／.yml 以 YAML 解析（後端統合版 YAML 設定檔），其餘維持 JSON（見 utils/configFileParse.ts）
+				const parsedJsonContentData = parseConfigFileText(rawJsonString, targetUploadedFile.name);
 
 				// ★ 2026-10-02：K-匿名設定檔不可匯入差分隱私頁面（舊版 K-匿名匯出檔含 field_attributes，先前會被當成主 JSON 匯入）
 				if (detectConfigPrivacyMode(parsedJsonContentData) === 'k-anonymity')
@@ -550,7 +551,8 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 			catch (jsonParsingErrorExecution) 
 			{
 				console.error("JSON Import Error:", jsonParsingErrorExecution);
-				messageApi.error(translate('message.import_json_error', '解析 JSON 檔案失敗！'));
+				if (jsonParsingErrorExecution instanceof ConfigFileParseError) messageApi.error(jsonParsingErrorExecution.message, 8);
+				else messageApi.error(translate('message.import_json_error', '解析 JSON 檔案失敗！'));
 			} 
 			finally 
 			{

@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, DEFAULT_KANON_RULE_PARAMS, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import ConfigFileButtons from './ConfigFileButtons';
+import { parseConfigFileText, ConfigFileParseError } from '../../utils/configFileParse';
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { findHierarchyTableProblems, describeHierarchyRowProblem } from '../../utils/hierarchyTableValidation';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
@@ -954,8 +955,8 @@ export default function KAnonymityMapping(): React.ReactElement
         jsonFileReaderInstance.onload = (fileReaderEventObj) => {
             try {
                 const rawJsonString = (fileReaderEventObj.target?.result as string) || '';
-                const cleanedJsonString = rawJsonString.replace(/^\uFEFF/, '').trim();
-                const parsedJsonContentData = JSON.parse(cleanedJsonString);
+                // ★ 2026-10-29：.yaml／.yml 以 YAML 解析（後端統合版 YAML 設定檔），其餘維持 JSON（見 utils/configFileParse.ts）
+                const parsedJsonContentData = parseConfigFileText(rawJsonString, targetUploadedFileObj.name);
 
                 // ★ 2026-10-02：差分隱私設定檔不可匯入 K-匿名頁面（先前會退回讀取 field_attributes 而「成功匯入」）
                 if (detectConfigPrivacyMode(parsedJsonContentData) === 'differential-privacy') {
@@ -1333,7 +1334,8 @@ export default function KAnonymityMapping(): React.ReactElement
                 }
             } catch (jsonParseExecutionError) { 
                 console.error("JSON 解析失敗:", jsonParseExecutionError);
-                messageApi.error(translate('message.import_json_error', '匯入 JSON 格式錯誤，請檢查檔案內容')); 
+                if (jsonParseExecutionError instanceof ConfigFileParseError) messageApi.error(jsonParseExecutionError.message, 8);
+                else messageApi.error(translate('message.import_json_error', '匯入 JSON 格式錯誤，請檢查檔案內容')); 
             } finally {
                 if (fileInputRef.current) fileInputRef.current.value = ''; 
             }

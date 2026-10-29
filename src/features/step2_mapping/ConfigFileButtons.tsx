@@ -5,6 +5,7 @@
  * ============================================================================
  * ★ 2026-10-07 QA 回饋：只有「匯入配置」一顆按鈕，設定完成後找不到匯出。改為兩顆按鈕並排（Space.Compact），
  *   匯出與 Step3「下載設定檔」相同內容（utils/configExport.ts）。匯入仍由各頁自己的 handleImportJSON 處理。
+ * ★ 2026-10-29：匯入可選 .json／.yaml／.yml（YAML 解析見 utils/configFileParse.ts）；匯出維持 JSON。
  */
 import React, { useRef } from 'react';
 import { Button, Space, Tooltip, App as AntdApp } from 'antd';
@@ -13,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { downloadWorkspaceConfigJson } from '../../utils/configExport';
+import { CONFIG_FILE_ACCEPT } from '../../utils/configFileParse';
 
 interface ConfigFileButtonsProps
 {
@@ -37,8 +39,8 @@ export default function ConfigFileButtons({ onImportFileChange, fileInputRef }: 
 
     return (
         <Space.Compact data-testid="step2-config-file-buttons">
-            <input type="file" accept=".json" ref={effectiveFileInputRef} onChange={onImportFileChange} onClick={(clickEvent) => { (clickEvent.target as HTMLInputElement).value = ''; }} style={{ display: 'none' }} />
-            <Tooltip title={translate('step2.btn_import_tip', '讀入先前下載的設定檔，套用到目前欄位')}>
+            <input type="file" accept={CONFIG_FILE_ACCEPT} data-testid="step2-import-config-input" ref={effectiveFileInputRef} onChange={onImportFileChange} onClick={(clickEvent) => { (clickEvent.target as HTMLInputElement).value = ''; }} style={{ display: 'none' }} />
+            <Tooltip title={translate('step2.btn_import_tip_v2', '讀入先前下載的設定檔，套用到目前欄位（支援 JSON 與 YAML 統合版設定檔）')}>
                 <Button icon={<UploadOutlined />} onClick={() => effectiveFileInputRef.current?.click()}>{translate('step2.btn_import_v2', '匯入設定檔')}</Button>
             </Tooltip>
             <Tooltip title={translate('step2.btn_export_tip', '下載目前的設定，下次可直接匯入')}>
