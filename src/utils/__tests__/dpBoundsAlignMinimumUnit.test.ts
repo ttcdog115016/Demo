@@ -25,7 +25,7 @@ describe('alignDpBoundsToMinimumUnit', () => {
         const unit = 20;
         const { lower, upper } = alignDpBoundsToMinimumUnit(15, 58, unit)!;
         const reflect = (v: number) => (v < lower ? 2 * lower - v : v > upper ? 2 * upper - v : v);
-        for (let k = -5; k <= 8; k++) expect(reflect(k * unit) % unit).toBe(0);
+        for (let k = -5; k <= 8; k++) expect(Math.abs(reflect(k * unit) % unit)).toBe(0); // 負數取餘得 -0
         // 未對齊（下限 15）時會得到 30、50
         const reflectRaw = (v: number) => (v < 15 ? 30 - v : v);
         expect([reflectRaw(0), reflectRaw(-20)]).toEqual([30, 50]);

@@ -46,8 +46,11 @@ const baseWorkspace: WorkspaceConfigSource = {
 };
 
 describe('與後端 config_dp.json 範例對齊', () => {
-    it('匯入範例後組出的設定檔與範例逐字一致（就醫次數沿用全域 δ、不送 delta_budget）', () => {
-        expect(buildBackendConfigDocumentFromWorkspace(baseWorkspace)).toEqual(BACKEND_SAMPLE_CONFIG_DP);
+    it('匯入範例後組出的設定檔與範例逐字一致（就醫次數沿用全域 δ、不送 delta_budget；生日邊界對齊格點）', () => {
+        // 唯一差異：生日下限向外對齊 7 天格點（1930-01-01 → 1929-12-26，見 alignDpDateTimeBoundsToNoiseGrid）
+        const expectedExport = structuredClone(BACKEND_SAMPLE_CONFIG_DP);
+        expectedExport.differential_privacy.column_budgets.生日.time_clipping_bounds = ['1929-12-26', '2026-12-31'];
+        expect(buildBackendConfigDocumentFromWorkspace(baseWorkspace)).toEqual(expectedExport);
     });
 
     it('δ 模式：純 ε 送 0、(ε,δ) 送該欄 δ、沿用全域 δ 不送；類別型一律不送', () => {

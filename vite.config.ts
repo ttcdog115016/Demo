@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { configDefaults } from 'vitest/config';
 
 // ★ 2026-10-07：把建置時間寫進程式，登入頁底部會顯示，方便確認瀏覽器載入的是不是最新版
 const BUILD_TIME_LABEL = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
@@ -12,6 +13,10 @@ export default defineConfig({
   plugins: [
     react(),
   ],
+  test: {
+    // e2e/ 是 Playwright 測試（npm run test:e2e），不由 vitest 執行
+    exclude: [...configDefaults.exclude, 'e2e/**'],
+  },
   server: {
     host: '0.0.0.0',     // 新增：允許伺服器監聽所有網卡的 IP，讓外部網路可以連入
     allowedHosts: true, // 新增：解除 Vite 對外部網域名稱的阻擋

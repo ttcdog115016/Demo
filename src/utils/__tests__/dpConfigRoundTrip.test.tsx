@@ -60,8 +60,10 @@ describe('差分隱私設定檔：讀取與匯出的邊界溢出策略', () => {
 
         // 就醫次數沒有 delta_budget → 沿用全域 δ（不送 delta_budget，由 default_delta 補足）
         expect(importedFields.find((field) => field.fieldName === '就醫次數')).toMatchObject({ mode: 'default-delta' });
-        // 與後端範例逐字一致
-        expect(buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState())).toEqual(backendSample);
+        // 與後端範例逐字一致；唯一差異：生日下限向外對齊 7 天格點（1930-01-01 → 1929-12-26，見 alignDpDateTimeBoundsToNoiseGrid）
+        const expectedExport = structuredClone(backendSample);
+        expectedExport.differential_privacy.column_budgets.生日.time_clipping_bounds = ['1929-12-26', '2026-12-31'];
+        expect(buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState())).toEqual(expectedExport);
     });
 
     it('匯出的檔案再匯入後再匯出，內容完全相同', async () => {

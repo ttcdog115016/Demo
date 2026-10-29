@@ -137,7 +137,7 @@ describe('DP 日期欄位的雜訊單位（noise_unit：day／hour／minute／se
         fireEvent.click(getByText('改為「秒」'));
         await waitFor(() => expect(queryByTestId('dp-noise-unit-coarser-warning')).toBeNull());
         expect(birthdayField().noiseUnit).toBe('second');
-        expect(exportedBudgets().生日).toMatchObject({ noise_unit: 'second', time_clipping_bounds: ['1930-01-01', '2026-12-31 23:59:59'] });
+        expect(exportedBudgets().生日).toMatchObject({ noise_unit: 'second', time_clipping_bounds: ['1929-12-31 23:59:59', '2027-01-01 00:00:01'] }); // 步階 7 秒，邊界向外對齊格點
     });
 
     it('Step3 畫面：邊界只有日期（後端範例）時不顯示提醒', () => {

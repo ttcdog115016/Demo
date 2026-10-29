@@ -164,13 +164,14 @@ describe('差分隱私 config.json 組裝', () => {
             clipping_bounds: [20000, 200000], minimum_unit: 1, out_of_bounds_strategy: 'clamp'
         });
         expect(config.column_budgets.生日).toMatchObject({
+            // 敏感度依原始邊界；邊界向外對齊 2 天格點（自 1970-01-01 起算，見 alignDpDateTimeBoundsToNoiseGrid）
             type: 'datetime', epsilon_budget: 1, delta_budget: 1e-5, sensitivity: 30,
-            time_clipping_bounds: ['1950-01-01', '1950-01-31'], noise_unit: 'day', noise_step: 2, time_out_of_bounds_strategy: 'wrap'
+            time_clipping_bounds: ['1949-12-31', '1950-02-01'], noise_unit: 'day', noise_step: 2, time_out_of_bounds_strategy: 'wrap'
         });
         expect(config.column_budgets.地區).toEqual({ type: 'categorical', epsilon_budget: 2 });
         expect(config.column_budgets.備註).toEqual({ type: 'text', epsilon_budget: 1 });
         expect(config.column_budgets).not.toHaveProperty('年齡');
-        expect(config).toMatchObject({ enabled: true, accumulated_epsilon: 1.5, accumulated_delta: 0, default_delta: 0.0001 });
+        expect(config).toMatchObject({ enabled: true, accumulated_epsilon: 1.5, accumulated_delta: 0, default_delta: 1e-5 }); // targetDelta 未設定時用預設 1e-5（2026-10-28 與後端預設一致）
     });
 
     it('預算總和', () => {
