@@ -30,7 +30,7 @@ const MIN_PASSWORD_LENGTH_LIMIT = 12;
 
 /**
  * 函數名稱: ProfileSettings
- * 函數功能: 渲染個人資料與安全設定視圖，包含帳號資訊卡片、密碼過期警告 Banner、動態密碼強度計算器與密碼變更表單。
+ * 函數功能: 渲染個人資料與安全設定視圖，包含帳號資訊卡片、動態密碼強度計算器與密碼變更表單。
  * 
  * 輸入參數 (Input): 無 (React 無參數 Functional Component)
  * 輸出參數 (Output): 無
@@ -130,7 +130,7 @@ export default function ProfileSettings(): React.ReactElement
 
 	/**
 	 * 函數名稱: handleUpdatePassword
-	 * 函數功能: 處理變更密碼表單提交，呼叫後端變更密碼，成功後重置表單並於密碼過期狀態下引導回首頁。
+	 * 函數功能: 處理變更密碼表單提交，呼叫後端變更密碼，成功後重置表單。
 	 * 
 	 * 輸入參數 (Input): 無
 	 * 輸出參數 (Output): 無

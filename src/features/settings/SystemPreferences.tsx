@@ -3,7 +3,7 @@
  * 檔案名稱 (File): SystemPreferences.tsx
  * 模組功能 (Description): 系統偏好與後台管理控制台組件 (提供深色模式/語系設定、帳號與權限管理、維運日誌檢視與連線安全參數配置)
  * ★ 2026-10-27：帳號與權限管理改接後端會員系統（GET/POST /users、PATCH /users/{帳號}/role、/active、
- *   POST /users/{帳號}/reset-password、DELETE /users/{帳號}），帳號即 Email；密碼過期輪替暫時隱藏（後端無此機制）。
+ *   POST /users/{帳號}/reset-password、DELETE /users/{帳號}），帳號即 Email；密碼過期輪替已移除（後端無密碼變更時間）。
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之識別字)
  * ============================================================================
