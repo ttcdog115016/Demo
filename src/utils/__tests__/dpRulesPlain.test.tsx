@@ -57,6 +57,18 @@ describe('Step3 差分隱私精簡白話版（2026-10-07）', () => {
         expect(screen.getByTestId('dp-plain-sum-budget').textContent).toContain('5 / 5');
     });
 
+    it('2026-10-22：總預算上限可輸入小數，箭頭一格 0.1（0.1 → 0.2）', () => {
+        setupFields();
+        useWorkspaceStore.setState({ budgetLimitEpsilon: 0.1 } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+        render(<DifferentialPrivacyRules />);
+        const budgetInput = screen.getByLabelText('budget-limit-epsilon');
+        fireEvent.keyDown(budgetInput, { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 });
+        expect(useWorkspaceStore.getState().budgetLimitEpsilon).toBeCloseTo(0.2, 10);
+        fireEvent.change(budgetInput, { target: { value: '0.25' } });
+        fireEvent.blur(budgetInput);
+        expect(useWorkspaceStore.getState().budgetLimitEpsilon).toBeCloseTo(0.25, 10);
+    });
+
     it('每列預設只顯示 ε；按「詳細」才出現模式等設定；全域 δ 收在進階', () => {
         setupFields();
         render(<DifferentialPrivacyRules />);
@@ -66,5 +78,21 @@ describe('Step3 差分隱私精簡白話版（2026-10-07）', () => {
         expect(screen.queryByLabelText('global-target-delta')).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: /進階/ }));
         expect(screen.getByLabelText('global-target-delta')).toBeTruthy();
+    });
+});
+
+describe('DP Step3 參考來源（2026-10-22，NIST SP 800-226 圖 2）', () => {
+    afterEach(() => cleanup());
+
+    it('保護強度、右側摘要、δ 的問號為簡短說明並註明參考來源（2026-10-27 精簡）', async () => {
+        setupFields();
+        useWorkspaceStore.setState({ datasetProfile: { rowCount: 1000 } } as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+        render(<DifferentialPrivacyRules />);
+        const source = await import('../../features/step3_rules/DifferentialPrivacyRules?raw');
+        const text = (source as unknown as { default: string }).default;
+        expect(text).toContain('NIST SP 800-226');
+        expect(text).toContain('決定要加多少雜訊：雜訊越多越安全，但數字越不準。');
+        expect(text).toContain('保護「萬一失效」的機率上限，越小越安全。一般不用調整。');
+        expect(screen.getByTestId('dp-plain-sum-level')).toBeTruthy();
     });
 });

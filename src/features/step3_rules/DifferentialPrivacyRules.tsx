@@ -43,6 +43,10 @@ const DANGER_BUDGET_USAGE_PERCENT_THRESHOLD = 90;
 const WARNING_BUDGET_USAGE_PERCENT_THRESHOLD = 75;
 // ★ 修正: 使用者更正風險等級分級門檻，高強度收斂為 ε ≤ 1（原 2）、
 //   中強度收斂為 1 < ε ≤ 10（原 2 < ε ≤ 8），低強度隨之改為 ε > 10（原 > 8）。
+// ★ 2026-10-22 參考來源：NIST SP 800-226《Guidelines for Evaluating Differential Privacy Guarantees》Fig. 2
+//   ε ≤ 1 多數情境低風險；1 < ε ≤ 10 風險高度依情境；ε > 10 許多情境高風險；δ ≤ 1/n² 多數情境低風險（n＝資料筆數）。
+//   預設卡 1／5／15 分別落在三個區間。
+const DP_REFERENCE_SOURCE_TEXT = 'NIST SP 800-226'; // ★ 2026-10-27 使用者要求：說明精簡，只寫出處名稱
 const HIGH_SECURITY_EPSILON_THRESHOLD = 1.0;
 const MEDIUM_SECURITY_EPSILON_THRESHOLD = 10.0;
 
@@ -106,6 +110,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 	const globalTargetDeltaValue = useWorkspaceStore((state) => state.targetDelta);
 	const globalBudgetLimitEpsilonValue = useWorkspaceStore((state) => state.budgetLimitEpsilon);
 	const setStepValidationAction = useWorkspaceStore((state) => state.setStepValidation);
+
 
 	const translateNoiseUnit = (noiseUnitValue: DpDatetimeNoiseUnit): string => translate(`step3_dp.noise_unit_${noiseUnitValue}`, { day: '天', hour: '時', minute: '分', second: '秒' }[noiseUnitValue]);
 
@@ -605,6 +610,8 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 			<Alert type="info" showIcon style={{ textAlign: 'left' }} title={translate('step3_dp.plain_intro_short', '選一個保護強度即可進入下一步，其餘已帶入建議值。')} />
+			{/* ★ 2026-10-21 使用者要求：Step3 加但書（參數只是建議值） */}
+			<Alert type="warning" showIcon data-testid="dp-step3-disclaimer" style={{ textAlign: 'left' }} title={translate('step3_dp.disclaimer_dp', '保護強度與隱私預算 ε 為系統建議值，僅供參考。是否足夠，請依資料用途、提供對象及相關法規（如個人資料保護法）自行判斷；本工具無法保證處理後的資料完全無法被識別。')} />
 
 			<Row gutter={[20, 16]} align="stretch">
 				{/* 左側：設定 */}
@@ -613,7 +620,12 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 
 						{/* ① 保護強度 */}
 						<div style={sectionCardStyle} data-testid="dp-plain-protection">
-							{renderSectionHeader('1', translate('step3_dp.plain_sec1_title', '保護強度'), translate('step3_dp.plain_sec1_tip', '選定後，總預算 ε 會平均分給每個欄位。ε 越小，加入的雜訊越多、越安全，但資料越不精確。'))}
+							{renderSectionHeader('1', translate('step3_dp.plain_sec1_title', '保護強度'), (
+								<div style={{ lineHeight: 1.7 }}>
+									<div>{translate('step3_dp.plain_sec1_tip_v2', '決定要加多少雜訊：雜訊越多越安全，但數字越不準。')}</div>
+									<div style={{ marginTop: 4, opacity: 0.75 }}>{translate('step3_dp.reference_source', '參考：{{source}}', { source: DP_REFERENCE_SOURCE_TEXT })}</div>
+								</div>
+							))}
 							<div role="radiogroup" aria-label={translate('step3_dp.plain_sec1_title', '保護強度')} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
 								{PRIVACY_LEVEL_PRESET_LIST.map((presetItemRecord) => renderChoiceCard(
 									presetItemRecord.key,
@@ -644,7 +656,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 									<Col flex="none">
 										<InputNumber
 											aria-label="budget-limit-epsilon"
-											step={0.5}
+											step={0.1} // ★ 2026-10-22 使用者要求：0.5 → 0.1，箭頭可點到 0.2 等小數
 											value={globalBudgetLimitEpsilonValue}
 											onChange={(inputBudgetLimitNumberValue) => useWorkspaceStore.setState({ budgetLimitEpsilon: inputBudgetLimitNumberValue === null ? undefined : inputBudgetLimitNumberValue })}
 											onBlur={(inputBlurEventObj) => {
@@ -737,7 +749,10 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 								<span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: '50%', background: token.colorFillSecondary, color: token.colorText, fontSize: scaleFontSize(13), flexShrink: 0 }}>3</span>
 								<span style={{ flex: 1, fontSize: scaleFontSize(16), fontWeight: 700, color: token.colorText }}>
 									{translate('step3_dp.plain_sec3_title', '進階：失效容忍度 δ')}
-									{helpIcon(translate('step3_dp.global_delta_desc', '這是一個很小的數字，代表隱私保護「萬一失效」的最大可接受機率。只有欄位選擇 (ε, δ)-DP 模式時才會用到此設定，一般維持預設值即可。'))}
+									{helpIcon(<div style={{ lineHeight: 1.7 }}>
+										<div>{translate('step3_dp.global_delta_desc_v2', '保護「萬一失效」的機率上限，越小越安全。一般不用調整。')}</div>
+										<div style={{ marginTop: 4, opacity: 0.75 }}>{translate('step3_dp.reference_source', '參考：{{source}}', { source: DP_REFERENCE_SOURCE_TEXT })}</div>
+									</div>)}
 								</span>
 								<span style={{ color: token.colorTextSecondary }}>{isGlobalAdvancedOpenStatus ? <UpOutlined /> : <DownOutlined />}</span>
 							</div>
@@ -776,10 +791,11 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 								<div style={summaryTileLabelStyle}>
 									{translate('step3_dp.plain_sum_level', '保護強度')}
 									{helpIcon(<div style={{ lineHeight: 1.8 }}>
-										<div>{translate('step3_dp.protection_level_tooltip_desc', '依據本次總消耗隱私預算 (ε) 換算之風險等級：')}</div>
-										<div>{translate('step3_dp.protection_level_tooltip_high', ' 高強度：ε ≤ {{threshold}}，低風險', { threshold: HIGH_SECURITY_EPSILON_THRESHOLD })}</div>
-										<div>{translate('step3_dp.protection_level_tooltip_medium', ' 中強度：{{low}} < ε ≤ {{high}}，風險視應用情境而定 (平衡)', { low: HIGH_SECURITY_EPSILON_THRESHOLD, high: MEDIUM_SECURITY_EPSILON_THRESHOLD })}</div>
-										<div>{translate('step3_dp.protection_level_tooltip_low', ' 低強度：ε > {{threshold}}，多數情境下屬高風險', { threshold: MEDIUM_SECURITY_EPSILON_THRESHOLD })}</div>
+										<div>{translate('step3_dp.protection_level_tooltip_desc_v2', '依 ε 合計判斷：')}</div>
+										<div>{translate('step3_dp.protection_level_tooltip_high_v3', '高：ε ≤ {{threshold}}', { threshold: HIGH_SECURITY_EPSILON_THRESHOLD })}</div>
+										<div>{translate('step3_dp.protection_level_tooltip_medium_v3', '中：{{low}} < ε ≤ {{high}}', { low: HIGH_SECURITY_EPSILON_THRESHOLD, high: MEDIUM_SECURITY_EPSILON_THRESHOLD })}</div>
+										<div>{translate('step3_dp.protection_level_tooltip_low_v3', '低：ε > {{threshold}}', { threshold: MEDIUM_SECURITY_EPSILON_THRESHOLD })}</div>
+										<div style={{ marginTop: 4, opacity: 0.75 }}>{translate('step3_dp.reference_source', '參考：{{source}}', { source: DP_REFERENCE_SOURCE_TEXT })}</div>
 									</div>)}
 								</div>
 								<div style={{ ...summaryTileValueStyle, color: protectionLevelColorMap[protectionLevelKey] }}>{protectionLevelLabelMap[protectionLevelKey]}</div>
