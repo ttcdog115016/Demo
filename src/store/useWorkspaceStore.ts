@@ -23,7 +23,6 @@ const DEFAULT_EPSILON_BUDGET = 1.0;
 const DEFAULT_DELTA_BUDGET = 1e-5;
 const DEFAULT_SIMULATE_QUERY_COUNT = 1;
 const DEFAULT_BUDGET_LIMIT_EPSILON = 20;
-const DEFAULT_TARGET_DELTA = 1e-5; // ★ 2026-10-28 與後端預設一致（後端範例 default_delta 皆為 1e-5），原為 0.0001
 
 /**
  * ★ 2026-10-08：K-匿名 Step3 參數（保護強度、l／t、資料抑制）的系統預設值，集中一處。
@@ -251,7 +250,7 @@ interface WorkspaceState
 
     // Differential Privacy 進階參數 (符合規範 g)
     queryCount: number;                                                      // 模擬連續發布/查詢次數 M
-    targetDelta: number;                                                     // 全域目標 Baseline δ (對應 config_dp.json 之 default_delta)
+    targetDelta: number | undefined;                                         // 全域目標 Baseline δ (對應 config_dp.json 之 default_delta)；★ 2026-10-29 預設不設定＝不送 default_delta，與後端預設 δ=0（純 ε）一致
     budgetLimitEpsilon: number;                                              // 累積隱私預算門檻上限
     outOfBoundsStrategy: string;                                             // 數值邊界溢出處置策略
     // ★ 使用者反映：後端 config_dp.json 之 accumulated_epsilon／accumulated_delta 為「跨批次累計」
@@ -342,7 +341,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
             numericBins: {},
             temporalHierarchies: {},
             queryCount: DEFAULT_SIMULATE_QUERY_COUNT,
-            targetDelta: DEFAULT_TARGET_DELTA,
+            targetDelta: undefined,
             budgetLimitEpsilon: DEFAULT_BUDGET_LIMIT_EPSILON,
             outOfBoundsStrategy: 'clip',
             dpAccumulatedEpsilon: 0,

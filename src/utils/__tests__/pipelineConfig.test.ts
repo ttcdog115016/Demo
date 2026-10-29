@@ -171,7 +171,8 @@ describe('差分隱私 config.json 組裝', () => {
         expect(config.column_budgets.地區).toEqual({ type: 'categorical', epsilon_budget: 2 });
         expect(config.column_budgets.備註).toEqual({ type: 'text', epsilon_budget: 1 });
         expect(config.column_budgets).not.toHaveProperty('年齡');
-        expect(config).toMatchObject({ enabled: true, accumulated_epsilon: 1.5, accumulated_delta: 0, default_delta: 1e-5 }); // targetDelta 未設定時用預設 1e-5（2026-10-28 與後端預設一致）
+        expect(config).toMatchObject({ enabled: true, accumulated_epsilon: 1.5, accumulated_delta: 0 });
+        expect(config).not.toHaveProperty('default_delta'); // ★ 2026-10-29：targetDelta 未設定時不送，後端預設 δ=0（純 ε）
     });
 
     it('預算總和', () => {

@@ -170,7 +170,7 @@ export default function RiskAssessmentSettingsPanel(): React.ReactElement {
                                         size="small"
                                         data-testid={`risk-param-${paramKey}`}
                                         value={effectiveParams[paramKey]}
-                                        min={rule.min}
+                                        min={rule.minExclusive ? rule.min + 0.01 : rule.min}
                                         max={rule.max !== undefined ? (rule.maxExclusive ? rule.max - 0.01 : rule.max) : undefined}
                                         step={labelInfo.step}
                                         precision={rule.integer ? 0 : 2}

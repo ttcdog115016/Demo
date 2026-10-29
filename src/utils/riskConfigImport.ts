@@ -27,14 +27,17 @@ export const RISK_ATTACK_DEFAULT_PARAMS: RiskAttackParams = {
 
 export const RISK_ATTACK_PARAM_KEYS = ['n_iter', 'ctrl_ratio', 'seed', 'n_subset', 'n_repeats', 'overlap_ratio'] as const;
 
-/** 各參數的合法範圍（後端 2.0.0 設定檔說明第六節）：整數參數取整，比例參數 0～1 */
-export const RISK_ATTACK_PARAM_RULES: Record<keyof RiskAttackParams, { min: number; max?: number; integer: boolean; maxExclusive?: boolean }> = {
+/**
+ * 各參數的合法範圍（後端 2.0.0 設定檔說明第六節）：整數參數取整，比例參數 0～1。
+ * ★ 2026-10-29 與後端 engines/risk/splitter.py 一致：ctrl_ratio 須大於 0 且小於 1；overlap_ratio 可為 0～1（含 1）。
+ */
+export const RISK_ATTACK_PARAM_RULES: Record<keyof RiskAttackParams, { min: number; max?: number; integer: boolean; maxExclusive?: boolean; minExclusive?: boolean }> = {
     n_iter: { min: 1, integer: true },
-    ctrl_ratio: { min: 0, max: 1, integer: false, maxExclusive: true },
+    ctrl_ratio: { min: 0, max: 1, integer: false, minExclusive: true, maxExclusive: true },
     seed: { min: 0, integer: true },
     n_subset: { min: 1, integer: true },
     n_repeats: { min: 1, integer: true },
-    overlap_ratio: { min: 0, max: 1, integer: false, maxExclusive: true },
+    overlap_ratio: { min: 0, max: 1, integer: false },
 };
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -45,7 +48,7 @@ export const isValidRiskAttackParamValue = (paramKey: keyof RiskAttackParams, ra
     if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) return false;
     const rule = RISK_ATTACK_PARAM_RULES[paramKey];
     if (rule.integer && !Number.isInteger(rawValue)) return false;
-    if (rawValue < rule.min) return false;
+    if (rule.minExclusive ? rawValue <= rule.min : rawValue < rule.min) return false;
     if (rule.max !== undefined && (rule.maxExclusive ? rawValue >= rule.max : rawValue > rule.max)) return false;
     return true;
 };

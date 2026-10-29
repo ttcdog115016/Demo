@@ -2,8 +2,9 @@
  * ============================================================================
  * 檔案名稱 (File): Login.tsx
  * 模組功能 (Description): 使用者登入驗證頁面組件 (帳密登入，經後端會員系統 POST /api/v1/auth/login 驗證)
- * ★ 2026-10-27：串接後端會員系統；移除 Demo 帳號提示、一鍵快速登入與「記住我」（refresh token 存於 sessionStorage，關閉分頁即需重新登入）。
- * ★ 2026-10-28：依 TTC Wei 指示，登入頁畫面改回原樣（Demo 測試帳號提示、保持登入狀態；一鍵快速登入已移除），
+ * ★ 2026-10-27：串接後端會員系統（refresh token 存於 sessionStorage，關閉分頁即需重新登入）。
+ * ★ 2026-10-29：移除沒有作用的「保持登入狀態」勾選框。
+ * ★ 2026-10-28：依 TTC Wei 指示，登入頁畫面改回原樣（Demo 測試帳號提示；一鍵快速登入已移除），
  *   但帳密驗證仍經後端 POST /api/v1/auth/login——Demo 帳號須先在後端建立（見下方 DEMO_ACCOUNTS 註解）。
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之識別字)
@@ -12,7 +13,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Form, Input, Button, Checkbox, ConfigProvider, theme, App as AntdApp, Alert } from 'antd';
+import { Card, Form, Input, Button, ConfigProvider, theme, App as AntdApp, Alert } from 'antd';
 import { Mail, Lock, LogIn } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -50,7 +51,6 @@ interface LoginFormValues
 {
 	email?: string;    // 登入帳號（帳號即 Email）
 	password?: string; // 使用者密碼
-	remember?: boolean;// 保持登入狀態（畫面保留；登入狀態仍依後端 token 規則，關閉分頁需重新登入）
 }
 
 /**
@@ -103,7 +103,7 @@ export default function Login(): React.ReactElement
 	 * 函數功能: 處理標準登入表單送出事件，模擬網路延遲、比對 Demo 帳戶庫並寫入 AuthStore。
 	 * 
 	 * 輸入參數 (Input):
-	 *   - formValuesObj (LoginFormValues): 包含 email, password, remember 之表單數值物件
+	 *   - formValuesObj (LoginFormValues): 包含 email, password 之表單數值物件
 	 * 返回值 (Return): Promise<void>
 	 */
 	const handleLogin = async (formValuesObj: LoginFormValues): Promise<void> => 
@@ -116,8 +116,6 @@ export default function Login(): React.ReactElement
 			// ★ 2026-10-27：改由後端驗證帳密。帳號不存在／密碼錯誤／帳號停用，後端一律回 401 同一句話（避免探測帳號）；
 			//   180 秒內失敗 5 次鎖 15 分鐘（423，帶 Retry-After）；後端未設定 JWT 金鑰回 503。不回退到前端帳號。
 			const memberSession = await memberLogin(usernameInputString, formValuesObj.password || '');
-
-			// ★ 2026-10-29：維護模式期間僅允許 Admin 登入，改由後端判斷（回 503 ERR_MAINTENANCE，見下方 catch）
 
 			executeLoginAction(
 				{ name: memberSession.username, email: memberSession.username, role: memberSession.role }
@@ -135,12 +133,8 @@ export default function Login(): React.ReactElement
 		catch (loginExecutionError) 
 		{
 			const memberErrorObj = toMemberApiError(loginExecutionError);
-			// ★ 2026-10-29：登入失敗、帳號鎖定、維護模式擋下登入改由後端寫入系統維運日誌（未登入時前端無法寫入）
-			if (memberErrorObj.errorCode === 'ERR_MAINTENANCE')
-			{
-				messageApi.warning(translate('admin.maintenance_active_desc', '系統已進入維護模式，僅允許管理員存取。'));
-			}
-			else if (memberErrorObj.status === 423)
+			// ★ 2026-10-29：登入失敗、帳號鎖定改由後端寫入系統維運日誌（未登入時前端無法寫入）
+			if (memberErrorObj.status === 423)
 			{
 				const remainingMinutesValue = Math.max(1, Math.ceil((memberErrorObj.retryAfterSeconds ?? 900) / 60));
 				messageApi.error(translate('login.error_locked', '登入失敗次數過多，帳號已鎖定，請於 {{minutes}} 分鐘後再試，或請系統管理員重設密碼。', { minutes: remainingMinutesValue }));
@@ -260,7 +254,6 @@ export default function Login(): React.ReactElement
 						form={loginFormInstance}
 						layout="vertical"
 						onFinish={handleLogin}
-						initialValues={{ remember: true }}
 						size="large"
 					>
 						<Form.Item
@@ -300,14 +293,9 @@ export default function Login(): React.ReactElement
 							/>
 						</Form.Item>
 
-						{/* ★ 2026-10-16：移除「忘記密碼」（同步後端：密碼由管理員重設） */}
-						<div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
-							<Form.Item name="remember" valuePropName="checked" noStyle>
-								<Checkbox style={{ color: isDarkModeActive ? '#94a3b8' : '#64748b' }}>
-									{translate('login.rememberMe')}
-								</Checkbox>
-							</Form.Item>
-						</div>
+						{/* ★ 2026-10-16：移除「忘記密碼」（同步後端：密碼由管理員重設）
+						    ★ 2026-10-29：移除「保持登入狀態」——沒有作用（登入憑證存在分頁的 sessionStorage，關閉分頁即需重新登入） */}
+						<div style={{ marginBottom: 24 }} />
 
 						{/* 標準登入按鈕 */}
 						<Form.Item style={{ marginBottom: 0 }}>

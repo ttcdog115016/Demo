@@ -77,17 +77,21 @@ describe('歷史檢測紀錄（存後端）', () => {
         fetchHistoryMock.mockReset();
     });
 
-    it('新增紀錄立即出現在畫面上，並送到後端（帶同一個 id）', () => {
-        useAuditStore.getState().addAuditLog(makeLog('alice', 'PAC-1'));
-        const [storedLog] = useAuditStore.getState().auditLogs;
-        expect(storedLog.certificateId).toBe('PAC-1');
-        expect(postHistoryMock).toHaveBeenCalledWith(storedLog);
+    it('新增紀錄立即出現在畫面上，送到後端後以伺服器簽章的版本取代', async () => {
+        postHistoryMock.mockImplementation(async (record: AuditLogItem) => ({ ...record, integrity: { signature: 'server-sig', inputFileSha256: null, outputFileSha256: null } }));
+        const savePromise = useAuditStore.getState().addAuditLog(makeLog('alice', 'PAC-1'));
+        const [optimisticLog] = useAuditStore.getState().auditLogs;
+        expect(optimisticLog.certificateId).toBe('PAC-1');
+        expect(postHistoryMock).toHaveBeenCalledWith(optimisticLog);
+        expect(await savePromise).toBe(true);
+        const [savedLog] = useAuditStore.getState().auditLogs;
+        expect(savedLog.id).toBe(optimisticLog.id);
+        expect(savedLog.integrity?.signature).toBe('server-sig');
     });
 
-    it('後端寫入失敗不影響畫面上的紀錄', async () => {
+    it('後端寫入失敗：回傳 false 讓畫面提示，紀錄仍留在畫面上', async () => {
         postHistoryMock.mockRejectedValue(new Error('offline'));
-        useAuditStore.getState().addAuditLog(makeLog('alice', 'PAC-2'));
-        await Promise.resolve();
+        expect(await useAuditStore.getState().addAuditLog(makeLog('alice', 'PAC-2'))).toBe(false);
         expect(useAuditStore.getState().auditLogs.map((log) => log.certificateId)).toEqual(['PAC-2']);
     });
 

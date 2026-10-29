@@ -143,7 +143,7 @@ export const buildPipelineAuditLogEntry = (input: {
         certificateId: input.certificateId,
         fileName: input.fileName || 'dataset.csv',
         privacyMode: input.privacyMode || 'k-anonymity',
-        operator: input.operatorName || 'Admin.Test',
+        operator: input.operatorName || '', // ★ 2026-10-29：不再填假名稱；存後端時由後端以登入帳號覆寫
         operatorRole: input.operatorRole || 'admin',
         auditTime: input.auditTime,
         auditTimestamp: input.auditTimestamp,

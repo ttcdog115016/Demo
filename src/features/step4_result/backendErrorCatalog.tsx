@@ -20,7 +20,6 @@ export const BACKEND_ERROR_CODE_CATEGORY_MAP: Record<string, { status: number; c
     ERR_INVALID_PARAM: { status: 400, category: '參數不合法' },
     ERR_CONFIG_MALFORMED: { status: 400, category: '設定檔語法錯誤，無法解析' },
     ERR_SUBSET_COND_MALFORMED: { status: 400, category: '對象族群限定條件格式錯誤' },
-    ERR_SALT_NOT_CONFIGURED: { status: 400, category: '假名化鹽值未設定' },
     ERR_DEID_METHOD_UNKNOWN: { status: 400, category: '去識別化方法不明' },
     // ★ 2026-10-27：最終版後端（v2.0.0）新增的錯誤碼
     ERR_DATASET_UNREADABLE: { status: 400, category: '資料集無法讀取' },
@@ -46,7 +45,6 @@ export const BACKEND_ERROR_CODE_CATEGORY_MAP: Record<string, { status: number; c
     ERR_VALIDATION_FAILED: { status: 422, category: '請求欄位驗證失敗' },
     ERR_CONFIG_INVALID: { status: 422, category: '設定檔內容不合法' },
     ERR_CONFIG_BLOCK_REQUIRED: { status: 422, category: '本次呼叫所需之設定區塊未開啟' },
-    ERR_CONFIG_BLOCK_NOT_ALLOWED: { status: 422, category: '開啟了本次呼叫用不到之設定區塊' },
     ERR_CONFIG_DATA_MISMATCH: { status: 422, category: '設定檔與實際資料不相符' },
     ERR_DP_INVALID_BUDGET: { status: 422, category: '差分隱私預算設定不合法' },
     ERR_RISK_ROLE_OVERLAP: { status: 422, category: '風險量測欄位角色重疊' },
@@ -101,13 +99,12 @@ export const BACKEND_ERROR_CODE_USER_FRIENDLY_MAP: Record<string, { headline: st
     // 本身有更嚴重的問題（例如檔案已損毀、並非正常的資料檔案），讓使用者自行確認檔案基本上
     // 沒有壞掉即可，其餘交給系統管理員排查。
     ERR_BAD_REQUEST: { headline: '讀取上傳的資料檔案時發生問題', defaultAdvice: '系統已會自動偵測並轉換檔案編碼，正常情況不會出現此訊息；請先確認該檔案能用 Excel 或文字編輯器正常開啟（無損毀、非空白檔案），若檔案本身沒有問題，請聯絡系統管理員協助排查。' },
-    ERR_INVALID_PARAM: { headline: '隱私設定的數值參數超出允許範圍', defaultAdvice: '請回到「隱私設定」步驟，檢查您輸入的數值（如允許的最大抑制／遮蔽比例）是否在合理範圍內後再試一次。' },
+    ERR_INVALID_PARAM: { headline: '隱私設定的數值參數超出允許範圍', defaultAdvice: '請回到「隱私設定」步驟，檢查您輸入的數值（如允許的最大抑制／遮蔽比例、風險評估的對照組比例、亂數種子、重複次數）是否在合理範圍內後再試一次。' },
     ERR_CONFIG_MALFORMED: { headline: '系統產生的設定內容格式錯誤', defaultAdvice: '這是系統本身的問題，不是您操作有誤，請聯絡系統管理員協助處理。' },
     // ★ 修正：「對象族群限定條件 (subgroup)」原本前端完全沒有串接，故先前寫「系統本身的問題」；
     // 現已於「隱私設定」步驟新增 RiskSubgroupFilterPanel.tsx 供使用者自行設定，此錯誤碼變成
     // 使用者可自行處理的欄位設定問題，改為指引使用者回去檢查該面板的設定內容。
     ERR_SUBSET_COND_MALFORMED: { headline: '「限定特定族群評估風險」設定格式不正確', defaultAdvice: '請回到「隱私設定」步驟的「限定特定族群評估風險」區塊，確認欄位條件的格式：數值／日期型欄位填寫上限與下限，類別／文字型欄位填寫允許值清單，兩者不可混用；這是設定問題，您可以自行處理。' },
-    ERR_SALT_NOT_CONFIGURED: { headline: '系統尚未完成必要的安全設定', defaultAdvice: '這是系統環境設定問題，不是您操作有誤，請聯絡系統管理員完成設定後再試一次。' },
     ERR_DEID_METHOD_UNKNOWN: { headline: '系統無法辨識所選擇的處理方式', defaultAdvice: '這是系統本身的問題，不是您操作有誤，請聯絡系統管理員協助處理。' },
     ERR_PAYLOAD_TOO_LARGE: { headline: '上傳的資料檔案超過大小上限', defaultAdvice: '請回到「資料匯入」步驟，將檔案內容縮小或分批後再重新上傳；這是檔案本身的問題，您可以自行處理。' },
     ERR_UNSUPPORTED_FILE_FORMAT: { headline: '資料檔案格式不支援', defaultAdvice: '請回到「資料匯入」步驟，改用 CSV、JSON、JSONL 或 Excel（.xlsx）格式後再重新上傳；這是檔案本身的問題，您可以自行處理。' },
@@ -118,17 +115,16 @@ export const BACKEND_ERROR_CODE_USER_FRIENDLY_MAP: Record<string, { headline: st
     ERR_VALIDATION_FAILED: { headline: '系統送出的請求缺少必要內容', defaultAdvice: '這是系統本身的問題，不是您操作有誤，請重新整理頁面後再試一次；若持續發生，請聯絡系統管理員。' },
     ERR_CONFIG_INVALID: { headline: '欄位設定內容不符合系統規則', defaultAdvice: '請回到「屬性分類」或「隱私設定」步驟，檢查欄位角色、型態與生成策略是否設定正確後再試一次；若確認無誤仍持續發生，請聯絡系統管理員。' },
     ERR_CONFIG_BLOCK_REQUIRED: { headline: '系統未正確開啟本次所需的設定項目', defaultAdvice: '這是系統本身的問題，不是您操作有誤，請聯絡系統管理員協助處理。' },
-    ERR_CONFIG_BLOCK_NOT_ALLOWED: { headline: '系統開啟了本次用不到的設定項目', defaultAdvice: '這是系統本身的問題，不是您操作有誤，請聯絡系統管理員協助處理。' },
     ERR_CONFIG_DATA_MISMATCH: { headline: '欄位設定與您上傳的資料對不起來', defaultAdvice: '請回到「屬性分類」步驟，確認欄位名稱與型態是否與您上傳的資料檔案一致（例如指定為數值或時間型態的欄位，內容是否真的能轉換成該型態）後再試一次；這是設定與資料不一致的問題，您可以自行處理。' },
     ERR_DP_INVALID_BUDGET: { headline: '差分隱私的參數設定不合理', defaultAdvice: '請回到「隱私設定」步驟，檢查各欄位的隱私預算（epsilon）、delta 值或數值上下限是否設定正確後再試一次；這是參數設定問題，您可以自行處理。' },
     ERR_RISK_ROLE_OVERLAP: { headline: '欄位角色重複設定', defaultAdvice: '請回到「屬性分類」步驟，確認每個欄位的角色設定沒有重複後再試一次；這是欄位設定問題，您可以自行處理。' },
     ERR_RISK_CONFIG_NO_SENSITIVE: { headline: '尚未指定要保護的敏感欄位', defaultAdvice: '請回到「屬性分類」步驟，指定一個敏感欄位（Sensitive）後再試一次；這是欄位設定問題，您可以自行處理。' },
     ERR_RISK_CONFIG_MULTI_SENSITIVE: { headline: '敏感欄位設定超過一個', defaultAdvice: '請回到「屬性分類」步驟，確認只有一個欄位被設為敏感欄位（Sensitive）後再試一次；這是欄位設定問題，您可以自行處理。' },
-    ERR_LINK_AB_INCOMPLETE: { headline: '連結性比對欄位設定不完整', defaultAdvice: '這是系統本身的問題，不是您操作有誤（目前畫面尚未開放自訂此項目），請聯絡系統管理員協助處理。' },
-    ERR_LINK_AB_OVERLAP: { headline: '連結性比對欄位重複設定', defaultAdvice: '這是系統本身的問題，不是您操作有誤（目前畫面尚未開放自訂此項目），請聯絡系統管理員協助處理。' },
+    ERR_LINK_AB_INCOMPLETE: { headline: '連結性比對欄位設定不完整', defaultAdvice: '匯入的風險評估設定中，連結性 A／B 欄位須成對提供、各至少一欄。請修正設定檔後重新匯入，或在「隱私設定」步驟還原風險評估預設值。' },
+    ERR_LINK_AB_OVERLAP: { headline: '連結性比對欄位重複設定', defaultAdvice: '匯入的風險評估設定中，同一欄不可同時出現在連結性 A、B 兩邊。請修正設定檔後重新匯入，或在「隱私設定」步驟還原風險評估預設值。' },
     ERR_SPLIT_INFEASIBLE: { headline: '資料筆數不足以進行本次分析', defaultAdvice: '請回到「資料匯入」步驟確認資料筆數是否足夠，或調整相關參數後再試一次；這是資料量的問題，您可以自行處理。' },
     ERR_DEID_CONFIG_MISMATCH: { headline: '去識別化設定與資料不符', defaultAdvice: '請回到「屬性分類」步驟，確認欄位設定與上傳的資料是否一致後再試一次；這是設定與資料不一致的問題，您可以自行處理。' },
-    ERR_ANONYMIZATION_SUPPRESSION_EXCEEDED: { headline: '資料遮蔽比例過高，未達到可用標準', defaultAdvice: '請回到「屬性分類」或「隱私設定」步驟，調高相關欄位的泛化層級（Level）後再試一次；這是參數設定問題，您可以自行處理。' },
+    ERR_ANONYMIZATION_SUPPRESSION_EXCEEDED: { headline: '資料遮蔽比例過高，未達到可用標準', defaultAdvice: '請回到「屬性分類」或「隱私設定」步驟，調高類別／日期欄位的泛化層級、放寬數值欄位的區間，或降低 K 值後再試一次；這是參數設定問題，您可以自行處理。' },
     ERR_INTERNAL: { headline: '系統發生非預期的錯誤', defaultAdvice: '請稍後再試一次；若持續發生，請聯絡系統管理員。' },
     // ★ 2026-10-27：最終版後端新增（資料前處理 /api/v1/preprocess、會員系統）
     ERR_DATASET_UNREADABLE: { headline: '讀取上傳的資料檔案時發生問題', defaultAdvice: '請先確認該檔案能用 Excel 或文字編輯器正常開啟（無損毀、非空白檔案），若檔案本身沒有問題，請聯絡系統管理員協助排查。' },
@@ -250,18 +246,14 @@ export const buildFriendlyErrorDisplayNode = (
 // 測試面板下拉選單用：每個錯誤碼配一句「模擬後端可能回傳的原始訊息」，盡量取自後端
 // 原始碼實際的訊息樣板 (見 app/core/errors.py 各拋出點整理)，讓測試時看到的畫面貼近
 // 真實情境。
-// ★ 修正：原本這裡列出後端 errors.py 註冊的全部 26 個錯誤碼，其中 4 個
-// （ERR_DEID_METHOD_UNKNOWN、ERR_RISK_ROLE_OVERLAP、ERR_SPLIT_INFEASIBLE、
-// ERR_DEID_CONFIG_MISMATCH）經過對照後端全部原始碼確認，目前完全沒有任何地方會
-// 實際拋出，純粹是登記保留給未來功能用的錯誤碼——放在「測試面板」裡讓人誤以為這是
-// 現在就會發生的情境，容易造成混淆。移除這 4 個，只保留後端目前實際會拋出的 22 個，
-// 依照現有後端提供的錯誤碼為準；未來後端真的接上這些預留錯誤碼時，再回頭補上即可。
+// ★ 2026-10-29 對照後端 2.0.0：移除後端已不存在的 ERR_SALT_NOT_CONFIGURED、ERR_CONFIG_BLOCK_NOT_ALLOWED；
+//   ERR_DEID_METHOD_UNKNOWN、ERR_RISK_ROLE_OVERLAP、ERR_SPLIT_INFEASIBLE、ERR_DEID_CONFIG_MISMATCH 在後端風險評估
+//   流程確實會拋出（risk/deid_bridge.py、risk/validation.py、risk/splitter.py），補回測試面板。
 export const DEBUG_PANEL_ERROR_CODE_OPTIONS: { code: string; sampleMessage: string; sampleRecommendations?: string[] }[] = [
     { code: 'ERR_BAD_REQUEST', sampleMessage: '資料集讀取失敗：不支援的編碼格式。' },
     { code: 'ERR_INVALID_PARAM', sampleMessage: "不合法的 limit_exceeded_action: 'relax_k'。必須是 ['stop_and_error', 'allow_with_warning'] 之一。" },
     { code: 'ERR_CONFIG_MALFORMED', sampleMessage: '設定檔 YAML 語法錯誤，無法解析：mapping values are not allowed here' },
     { code: 'ERR_SUBSET_COND_MALFORMED', sampleMessage: 'subgroup 必須是「欄位: 條件」的物件（如 {"年齡": {"min": 30, "max": 40}}），收到：[]' },
-    { code: 'ERR_SALT_NOT_CONFIGURED', sampleMessage: "欄位 ['身分證號'] 需以 HMAC 假名化，請提供 salt_key（自行指定或由部署方於 .env 設定後由呼叫端傳入）。" },
     { code: 'ERR_PAYLOAD_TOO_LARGE', sampleMessage: '上傳內容 512.0 MB 超過伺服器允許的上限 200 MB。請改以較小的資料集分批處理，或請部署方調整 OPEN_PETS_MAX_UPLOAD_MB 設定。' },
     { code: 'ERR_UNSUPPORTED_FILE_FORMAT', sampleMessage: '不支援的檔案格式：「.txt」。請使用 CSV、JSON、JSONL 或 Excel（.xlsx）。若檔案沒有副檔名，請改以輸入格式參數明確指定。' },
     { code: 'ERR_UNSUPPORTED_CONFIG_FORMAT', sampleMessage: '不支援的設定檔格式，請使用 .json、.yaml 或 .yml。' },
@@ -271,18 +263,21 @@ export const DEBUG_PANEL_ERROR_CODE_OPTIONS: { code: string; sampleMessage: stri
     { code: 'ERR_VALIDATION_FAILED', sampleMessage: '請求欄位不合法。body→file：field required' },
     { code: 'ERR_CONFIG_INVALID', sampleMessage: '設定檔內容不合法。columns→年齡→generalization_level：Input should be a valid integer' },
     { code: 'ERR_CONFIG_BLOCK_REQUIRED', sampleMessage: 'K-匿名化需要 k_anonymity 區塊，但設定檔沒有這個區塊。請補上區塊內容並把 enabled 設為 true。' },
-    { code: 'ERR_CONFIG_BLOCK_NOT_ALLOWED', sampleMessage: 'K-匿名化不會用到 differential_privacy 區塊，請把它的 enabled 設為 false 或整塊移除：一份設定檔只描述一次處理。' },
     { code: 'ERR_CONFIG_DATA_MISMATCH', sampleMessage: "設定檔宣告的欄位 '地區' 不存在於提供的資料中，請檢查欄位名稱。" },
     { code: 'ERR_DP_INVALID_BUDGET', sampleMessage: "欄位 '年齡' 的 epsilon_budget 必須 > 0（收到 0）。" },
     { code: 'ERR_RISK_CONFIG_NO_SENSITIVE', sampleMessage: '風險評估需要恰好一個 sensitive 欄位作為推斷性／CAP 的目標，但設定檔未宣告任何 sensitive。請指派一個 sensitive 欄位。' },
     { code: 'ERR_RISK_CONFIG_MULTI_SENSITIVE', sampleMessage: "風險評估一次只評估一個 sensitive 欄位，但收到 2 個（['疾病', '薪資']）。請分批，每次只保留一個 sensitive。" },
+    { code: 'ERR_DEID_METHOD_UNKNOWN', sampleMessage: "不支援的去識別化方法：'scramble'。" },
+    { code: 'ERR_RISK_ROLE_OVERLAP', sampleMessage: "欄位 '年齡' 不可同時是 quasi_identifier 與 sensitive。" },
+    { code: 'ERR_SPLIT_INFEASIBLE', sampleMessage: '資料筆數不足，無法依 ctrl_ratio 切出攻擊組與對照組。' },
+    { code: 'ERR_DEID_CONFIG_MISMATCH', sampleMessage: '處理後資料的欄位與去識別化設定不一致。' },
     { code: 'ERR_LINK_AB_INCOMPLETE', sampleMessage: '自訂連結性 A／B 欄位須成對提供，且各至少一欄。' },
     { code: 'ERR_LINK_AB_OVERLAP', sampleMessage: "連結性 A、B 欄位不可重疊（['地區']）；垂直切割要求一欄只能在一邊。" },
     {
         code: 'ERR_ANONYMIZATION_SUPPRESSION_EXCEEDED',
         sampleMessage: '去識別化失敗：計算之總列抑制率 62.35% 已超過設定的最高上限 50.00%。',
         sampleRecommendations: [
-            '建議提高間接識別碼欄位的泛化層級 (Level)。例如將缺失或為 0 的『數值型』欄位層級提高至 1，以啟用前置區間化 (Binning) 聚合，這預期能將抑制比例大幅降低至安全上限內。'
+            '建議提高間接識別碼欄位的泛化程度（類別／日期欄位調高層級、數值欄位放寬區間），預期能將抑制比例降低至安全上限內。'
         ]
     },
     { code: 'ERR_INTERNAL', sampleMessage: 'Internal Server Error' }

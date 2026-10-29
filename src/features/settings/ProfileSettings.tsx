@@ -8,8 +8,7 @@
  */
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, Form, Input, Button, Typography, Space, Divider, Tag, theme, App as AntdApp, Progress, Alert } from 'antd';
+import { Card, Form, Input, Button, Typography, Space, Divider, Tag, theme, App as AntdApp, Progress } from 'antd';
 import { UserOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -51,36 +50,11 @@ export default function ProfileSettings(): React.ReactElement
 
 	const { message: messageApi } = AntdApp.useApp();
 
-	const navigate = useNavigate();
-	
-	// 從 AuthStore 取得使用者資訊與密碼過期控制 (符合規範 g, i)
+	// 從 AuthStore 取得使用者資訊 (符合規範 g, i)
 	const currentUserSession = useAuthStore(
 		(state) => state.user
 	);
 	
-	// 擴充型別讀取與切換密碼過期狀態之輔助 Action (符合規範 g)
-	const isPasswordExpiredStatus = currentUserSession?.mustChangePassword || false; // ★ 2026-10-16：僅密碼過期輪替到期時須先變更密碼（已移除首次登入強制變更）
-
-	/**
-	 * 函數名稱: setPasswordExpired
-	 * 函數功能: 更新 AuthStore 中使用者密碼過期之狀態標記。
-	 * 
-	 * 輸入參數 (Input):
-	 *   - isExpired (boolean): 是否設定為過期 (true/false)
-	 * 返回值 (Return): void
-	 */
-	const setPasswordExpired = (isExpired: boolean): void => 
-	{
-		useAuthStore.setState(
-			(currentStoreState) => 
-			(
-				{
-					user: currentStoreState.user ? { ...currentStoreState.user, mustChangePassword: isExpired } : null
-				}
-			)
-		);
-	};
-
 	// 從 UIStore 讀取全域主題狀態 (符合規範 g, i)
 	const isDarkModeActive = useUIStore(
 		(state) => state.isDarkMode
@@ -204,13 +178,6 @@ export default function ProfileSettings(): React.ReactElement
 		);
 
 		passwordFormInstance.resetFields();
-
-		if (isPasswordExpiredStatus) 
-		{
-			setPasswordExpired(false);
-
-			navigate('/', { replace: true });
-		}
 	};
 
 	return (
@@ -234,17 +201,6 @@ export default function ProfileSettings(): React.ReactElement
 					}
 				}
 			>
-				{/* 密碼過期強制提示 Banner */}
-				{isPasswordExpiredStatus && (
-					<Alert
-						type="error"
-						showIcon
-						message={translate('profile.password_expired_title', '密碼已過期')}
-						description={translate('profile.password_expired_banner', '您必須設定一組符合安全規範的新密碼，才能繼續使用 Privacy Toolkit 專案空間。')}
-						style={{ marginBottom: '24px', border: '1px solid #ffa39e' }}
-					/>
-				)}
-
 				{/* 基本資料區塊 */}
 				<div style={{ marginBottom: '24px' }}>
 					<Title level={5} style={{ marginBottom: '16px', color: token.colorText }}>
@@ -356,7 +312,7 @@ export default function ProfileSettings(): React.ReactElement
 									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
 									{ min: MIN_PASSWORD_LENGTH_LIMIT, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') }, 
 									{
-										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#\-_+=])[A-Za-z\d@$!%*?&#\-_+=]+$/, 
+										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, // ★ 2026-10-29：不再限定可用字元（空白、句點等也可當特殊符號），後端只檢查長度 ≥ 12
 										message: translate('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
 									},
 									({ getFieldValue }) => (

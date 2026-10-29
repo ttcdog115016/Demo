@@ -27,6 +27,7 @@ import RiskLevelBadge from '../../components/RiskLevelBadge';
 import { computeReportOverallRisk } from '../../utils/complianceReport';
 
 import { scaleFontSize } from '../../utils/fontScale';
+import { createHtml2PdfLoader, startHtml2PdfLoader } from '../../utils/html2pdfLoader';
 /**
  * 預設常數宣告
  * 規範對照: 符合規範 e) 避免魔術數字 (Magic Number)
@@ -78,7 +79,7 @@ export default function AuditLogHub(): React.ReactElement
 
 	const { t: translate } = useTranslation();
 
-	// ★ 2026-10-28：紀錄改存瀏覽器（重新整理不消失）；同一台瀏覽器可能有多個帳號，只顯示目前帳號的紀錄
+	// ★ 2026-10-29：紀錄存後端（登入後自 GET /api/v1/history 載入）；只顯示目前帳號的紀錄
 	const allAuditLogsList = useAuditStore(
 		(state) => state.auditLogs
 	);
@@ -183,11 +184,10 @@ export default function AuditLogHub(): React.ReactElement
 			(resolveDelay) => setTimeout(resolveDelay, PDF_COMPILATION_DELAY_MS)
 		);
 
-		const html2pdfScriptElement = document.createElement('script');
-
-		html2pdfScriptElement.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+		// ★ 2026-10-29：改用打包進前端的 html2pdf（離線也能匯出），見 utils/html2pdfLoader.ts
+		const html2pdfLoader = createHtml2PdfLoader();
 		
-		html2pdfScriptElement.onload = () => 
+		html2pdfLoader.onload = () => 
 		{
 			const pdfCompilationOptions = {
 				margin:      [10, 10, 10, 10], 
@@ -232,18 +232,18 @@ export default function AuditLogHub(): React.ReactElement
 			);
 		};
 		
-		html2pdfScriptElement.onerror = () => 
+		html2pdfLoader.onerror = () => 
 		{
 			hideLoadingMessageFunction();
 
 			messageApi.error(
-				translate('audit.msg_pdf_no_lib', '無法載入 PDF 轉檔套件，請檢查網路連線。')
+				translate('audit.msg_pdf_no_lib', '無法載入 PDF 轉檔套件，請重新整理頁面後再試一次。')
 			);
 
 			setIsPdfExporting(false);
 		};
 		
-		document.body.appendChild(html2pdfScriptElement);
+		startHtml2PdfLoader(html2pdfLoader);
 	};
 
 	/**

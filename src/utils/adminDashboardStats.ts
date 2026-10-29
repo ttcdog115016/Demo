@@ -1,7 +1,7 @@
 /**
  * 檔案名稱 (File): adminDashboardStats.ts
  * 模組功能 (Description): Admin「系統管理大廳」三張狀態卡片的統計計算（純函式，方便測試）。
- * 資料來源：系統維運日誌 (useSystemLogStore，存在瀏覽器 localStorage，代表「這個瀏覽器」上的紀錄)
+ * 資料來源：系統維運日誌 (useSystemLogStore；★ 2026-10-29 改存後端，為全站紀錄)
  * 與後端帳號清單 (★ 2026-10-27 改為 GET /api/v1/users)。
  */
 import type { SystemLogEntry } from '../store/useSystemLogStore';
@@ -25,7 +25,7 @@ export interface FailedLoginStats
 {
 	count: number;              // 過去 24 小時登入失敗次數（含鎖定、停用、帳號不存在）
 	distinctSources: string[];  // 涉及的帳號（登入時輸入的帳號），依最近發生排序
-	lockedAccountCount: number; // 目前仍在鎖定中的帳號數（★ 2026-10-27 後端帳號清單不含鎖定資訊，目前恆為 0）
+	lockedAccountCount: number; // 目前仍在鎖定中的帳號數（★ 2026-10-29 後端 GET /users 回傳 login_locked_until）
 }
 
 /** 登入使用者統計 */
@@ -62,7 +62,7 @@ export const computeFailedLoginStats = (logs: SystemLogEntry[], accounts: Accoun
 	};
 };
 
-// ★ 2026-10-16：移除帳號「最後登入時間」（同步後端，後端無此欄位）→ 最近登入改由本瀏覽器維運日誌的「使用者登入成功」紀錄統計
+// ★ 2026-10-16：移除帳號「最後登入時間」（同步後端，後端無此欄位）→ 最近登入改由維運日誌（2026-10-29 起存後端）的「使用者登入成功」紀錄統計
 export const computeActiveUserStats = (logs: SystemLogEntry[], accounts: AccountForStats[], nowMs: number = Date.now()): ActiveUserStats =>
 {
 	const recentLoginNames = Array.from(new Set(logs
@@ -83,15 +83,15 @@ export type BackendHealthState =
 	| { status: 'ok'; responseMs: number; checkedAt: number }
 	| { status: 'down'; reason: string; checkedAt: number };
 
-export const BACKEND_HEALTH_PROBE_URL = '/api/v1/health';
+// ★ 2026-10-29：原本打不存在的 /api/v1/health（404 也當正常、還在後端留下 404 紀錄）；改打免登入的 GET /settings
+export const BACKEND_HEALTH_PROBE_URL = '/api/v1/settings';
 const BACKEND_HEALTH_TIMEOUT_MS = 5000;
 
 /**
  * 函數名稱: probeBackendHealth
  * 函數功能: 以 fetch（不經 axios，避免寫入 API 錯誤診斷紀錄）向後端發一個輕量請求。
- *           後端目前沒有健康檢查 API，所以只要後端（FastAPI）「有回應」就視為連線正常——
- *           即使是 404，FastAPI 也會回 JSON。代理（Vite／nginx）找不到後端時回的是非 JSON 的
- *           500／502／503／504，連同逾時、網路錯誤都視為無法連線。
+ *           GET /settings 回 200 且為 JSON 才算連線正常；代理（Vite／nginx）找不到後端時回的是
+ *           非 JSON 的 500／502／503／504，連同逾時、網路錯誤都視為無法連線。
  */
 export const probeBackendHealth = async (): Promise<BackendHealthState> =>
 {
@@ -103,7 +103,7 @@ export const probeBackendHealth = async (): Promise<BackendHealthState> =>
 		const response = await fetch(BACKEND_HEALTH_PROBE_URL, { method: 'GET', cache: 'no-store', signal: abortController.signal });
 		const responseMs = Math.round(performance.now() - startedAtMs);
 		const isBackendJsonResponse = (response.headers.get('content-type') || '').includes('application/json');
-		if (!isBackendJsonResponse || [502, 503, 504].includes(response.status))
+		if (!isBackendJsonResponse || !response.ok)
 		{
 			return { status: 'down', reason: `HTTP ${response.status}`, checkedAt: Date.now() };
 		}

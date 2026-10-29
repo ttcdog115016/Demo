@@ -238,7 +238,8 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 	useEffect(
 		() => 
 		{
-			if (globalTargetDeltaValue === undefined || globalTargetDeltaValue === null || globalTargetDeltaValue <= 0 || globalTargetDeltaValue >= 1) 
+			// ★ 2026-10-29：全域 δ 可不設定（不送 default_delta，後端以 δ=0 純 ε 處理）；有填才檢查範圍
+			if (globalTargetDeltaValue !== undefined && globalTargetDeltaValue !== null && (globalTargetDeltaValue <= 0 || globalTargetDeltaValue >= 1)) 
 			{
 				setStepValidationAction(false, translate('step3_dp.error_delta_invalid', '目標 Delta (δ) 必須介於 0 與 1 之間。'));
 				return;
@@ -430,7 +431,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 		return (
 			<div data-testid="dp-field-advanced" style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, background: token.colorFillQuaternary, display: 'flex', flexWrap: 'wrap', gap: '12px 20px' }}>
 				<div>
-					<span style={labelStyle}>{translate('step3_dp.plain_mode_label', '模式')}{helpIcon(translate('step3_dp.plain_mode_tip', 'ε-DP：只用 ε。(ε, δ)-DP：另外容許極小的失效機率 δ，雜訊可較少。沿用全域 δ：δ 使用下方「進階」的設定。'))}</span>
+					<span style={labelStyle}>{translate('step3_dp.plain_mode_label', '模式')}{helpIcon(translate('step3_dp.plain_mode_tip', 'ε-DP：只用 ε。(ε, δ)-DP：另外容許極小的失效機率 δ，雜訊可較少。沿用全域 δ：δ 使用下方「進階」的設定；全域 δ 未設定時等同 ε-DP。'))}</span>
 					<Select
 						size="small"
 						value={activeFieldItemRecord.mode || 'epsilon'}
@@ -750,7 +751,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 								<span style={{ flex: 1, fontSize: scaleFontSize(16), fontWeight: 700, color: token.colorText }}>
 									{translate('step3_dp.plain_sec3_title', '進階：失效容忍度 δ')}
 									{helpIcon(<div style={{ lineHeight: 1.7 }}>
-										<div>{translate('step3_dp.global_delta_desc_v2', '保護「萬一失效」的機率上限，越小越安全。一般不用調整。')}</div>
+										<div>{translate('step3_dp.global_delta_desc_v2', '保護「萬一失效」的機率上限，越小越安全。預設不設定：選「沿用全域 δ」的欄位只用 ε（與後端預設一致）。')}</div>
 										<div style={{ marginTop: 4, opacity: 0.75 }}>{translate('step3_dp.reference_source', '參考：{{source}}', { source: DP_REFERENCE_SOURCE_TEXT })}</div>
 									</div>)}
 								</span>
@@ -764,6 +765,7 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 											aria-label="global-target-delta"
 											min={GLOBAL_TARGET_DELTA_MIN_BOUND} max={GLOBAL_TARGET_DELTA_MAX_BOUND} step={0.0001}
 											value={globalTargetDeltaValue}
+											placeholder={translate('step3_dp.global_delta_unset', '不設定（純 ε）')}
 											onChange={(inputTargetDeltaNumberValue) => useWorkspaceStore.setState({ targetDelta: inputTargetDeltaNumberValue === null ? undefined : inputTargetDeltaNumberValue })}
 											formatter={(formatterInputValue, formatterInfoObj) => {
 												if (formatterInfoObj?.userTyping || formatterInputValue === undefined || formatterInputValue === null) return String(formatterInputValue ?? '');

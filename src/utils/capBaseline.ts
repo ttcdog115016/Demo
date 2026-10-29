@@ -29,7 +29,8 @@ const PANDAS_DEFAULT_NA_VALUE_SET = new Set([
 export const CAP_SHUFFLE_REPEAT_COUNT = 3;
 const CAP_SHUFFLE_SEED = 20261006;
 
-export type CapSubgroupPayload = Record<string, { min?: number | string; max?: number | string } | string[]> | undefined;
+// ★ 2026-10-29：類別值清單可同時含字串與數值版本（見 riskSubgroupHelpers）；畫面端以字串比對即可
+export type CapSubgroupPayload = Record<string, { min?: number; max?: number } | (string | number)[]> | undefined;
 
 const isPandasMissingCell = (cellText: string | undefined): boolean =>
     cellText === undefined || PANDAS_DEFAULT_NA_VALUE_SET.has(cellText);

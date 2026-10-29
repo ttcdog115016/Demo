@@ -8,8 +8,8 @@
  *
  * ★ 2026-10-29：改存後端資料庫（POST／GET／DELETE /api/v1/system-logs，見 api/systemApi.ts），
  *   管理大廳的統計因此是全站數字，不再只是這個瀏覽器。
- *   - 寫入：logSystemEvent 先放進畫面，登入中才送後端；未登入時的事件（登入失敗、帳號鎖定、
- *     維護模式擋下登入）由後端自己記錄，前端不必代寫。
+ *   - 寫入：logSystemEvent 先放進畫面，登入中才送後端；未登入時的事件（登入失敗、帳號鎖定）
+ *     由後端自己記錄，前端不必代寫。
  *   - 讀取：Admin 開啟日誌分頁或管理大廳時以 loadLogs 自後端載入。
  *   先前存在 localStorage 的舊日誌直接捨棄（main.tsx 啟動時清除舊鍵）。
  * ============================================================================
@@ -34,8 +34,8 @@ interface SystemLogState
 {
 	logs: SystemLogEntry[];                                       // 由新到舊排序
 	addLog: (entry: Omit<SystemLogEntry, 'id' | 'timestamp'>) => void;
-	/** 自後端載入（限 Admin）；失敗時保留畫面上現有的紀錄 */
-	loadLogs: () => Promise<void>;
+	/** 自後端載入（限 Admin）；sinceMs 只載入該時間之後的紀錄（管理大廳 24 小時統計用）；失敗時保留畫面上現有的紀錄 */
+	loadLogs: (sinceMs?: number) => Promise<void>;
 	/** 清除後端與畫面上的日誌（限 Admin） */
 	clearLogs: () => Promise<void>;
 }
@@ -76,11 +76,12 @@ export const useSystemLogStore = create<SystemLogState>()(
 					.catch((saveErrorValue) => console.warn('[系統維運日誌] 寫入後端失敗：', saveErrorValue));
 			}
 		},
-		loadLogs: async () =>
+		loadLogs: async (sinceMs) =>
 		{
 			try
 			{
-				setStoreStateAction({ logs: await fetchSystemLogs(MAX_SYSTEM_LOG_ENTRIES_COUNT) });
+				// 指定時間區間時取到後端上限（5000），避免統計只算到最新 2000 筆
+				setStoreStateAction({ logs: await fetchSystemLogs(sinceMs ? 5000 : MAX_SYSTEM_LOG_ENTRIES_COUNT, sinceMs) });
 			}
 			catch (loadErrorValue)
 			{

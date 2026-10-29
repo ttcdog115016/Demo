@@ -92,7 +92,7 @@ describe('DP Step3 參考來源（2026-10-22，NIST SP 800-226 圖 2）', () => 
         const text = (source as unknown as { default: string }).default;
         expect(text).toContain('NIST SP 800-226');
         expect(text).toContain('決定要加多少雜訊：雜訊越多越安全，但數字越不準。');
-        expect(text).toContain('保護「萬一失效」的機率上限，越小越安全。一般不用調整。');
+        expect(text).toContain('保護「萬一失效」的機率上限，越小越安全。預設不設定：選「沿用全域 δ」的欄位只用 ε（與後端預設一致）。');
         expect(screen.getByTestId('dp-plain-sum-level')).toBeTruthy();
     });
 });

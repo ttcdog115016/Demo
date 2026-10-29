@@ -20,6 +20,7 @@
     "crypto-js": "^4.2.0",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
+    "html2pdf.js": "0.10.1",
     "i18next": "^26.3.6",
     "lucide-react": "^1.25.0",
     "papaparse": "^5.5.4",

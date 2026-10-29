@@ -488,7 +488,7 @@ export const __resetMemberApiStateForTest = (): void =>
 };
 
 /** 僅供單元測試：取得 axios 實例以掛 mock adapter */
-/** ★ 2026-10-29：免登入的請求（GET /settings：登入頁要知道是否維護中） */
+/** ★ 2026-10-29：免登入的請求（GET /settings：登入前讀閒置登出時間、檢查後端是否連得上） */
 export const publicRequest = async <ResponseType>(requestConfig: AxiosRequestConfig): Promise<ResponseType> =>
 {
 	try { return (await memberHttpClient.request<ResponseType>(requestConfig)).data; }

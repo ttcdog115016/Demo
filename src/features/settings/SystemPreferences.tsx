@@ -12,7 +12,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-	Card, Switch, Select, Segmented, Space, Divider, theme, Typography,
+	Card, Switch, Select, Segmented, Space, Divider, theme, Typography, Tooltip,
 	Tabs, Table, Tag, Button, Form, InputNumber, Alert, Modal, Input, App as AntdApp, Dropdown, Checkbox, DatePicker
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -40,12 +40,12 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
-import { SHOW_PASSWORD_EXPIRY_POLICY, SHOW_ANNOUNCEMENTS, SHOW_MAINTENANCE_MODE, SHOW_SYSTEM_LOG_TAB } from '../../config/featureFlags';
+import { SHOW_ANNOUNCEMENTS, SHOW_SYSTEM_LOG_TAB } from '../../config/featureFlags';
 import { saveSystemSettings, loadSystemSettings, DEFAULT_SESSION_TIMEOUT_MINUTES } from '../../utils/systemSettingsSync';
 import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
 import {
 	listMemberAccounts, createMemberAccount, changeMemberRole, resetMemberPassword, setMemberActive, deleteMemberAccount,
-	toMemberApiError, LOGIN_MAX_ATTEMPTS, LOGIN_ATTEMPT_WINDOW_SECONDS, LOGIN_LOCKOUT_SECONDS,
+	toMemberApiError, isMemberAccountLocked, LOGIN_MAX_ATTEMPTS, LOGIN_ATTEMPT_WINDOW_SECONDS, LOGIN_LOCKOUT_SECONDS,
 	type MemberAccount, type FrontendRole,
 } from '../../api/authApi';
 import { useAnnouncementStore, isAnnouncementActive, useAnnouncementClock, type AnnouncementItem, type AnnouncementLevel, type AnnouncementAudience } from '../../store/useAnnouncementStore';
@@ -61,12 +61,8 @@ const { Text, Title } = Typography;
  * 預設系統安全常數宣告
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  */
-const DEFAULT_MAX_FAILED_LOGINS_LIMIT = 5;
-const DEFAULT_PASSWORD_EXPIRY_DAYS = 90;
 const MIN_SESSION_TIMEOUT_MINUTES = 1;
-const MAX_SESSION_TIMEOUT_MINUTES = 120;
-const MIN_PASSWORD_EXPIRY_DAYS = 1;
-const MAX_PASSWORD_EXPIRY_DAYS = 365;
+const MAX_SESSION_TIMEOUT_MINUTES = 1440; // 與後端 PUT /settings 上限一致（24 小時）
 
 /**
  * 系統使用者紀錄資料結構
@@ -83,30 +79,6 @@ type AccountRole = FrontendRole;
 interface EnvSecurityValues 
 {
 	sessionTimeout: number;        // Session 閒置強制登出時間 (分鐘)
-	maxFailedLogins: number;       // 密碼錯誤鎖定次數
-	maintenanceMode: boolean;      // 系統維護模式啟用開關
-	enablePasswordExpiry: boolean; // 強制密碼過期輪替開關
-	passwordExpiryDays: number;    // 密碼有效天數
-}
-
-/**
- * 擴充 Workspace Store 中的安全設定介面
- * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
- */
-interface ExtendedWorkspaceSecurity 
-{
-	sessionTimeout?: number;         // 連線閒置逾時分鐘數
-	maxFailedLogins?: number;        // 最大失敗登入次數
-	isMaintenanceMode?: boolean;     // 維護模式開關
-	enablePasswordExpiry?: boolean;  // 密碼輪替開關
-	passwordExpiryDays?: number;     // 密碼有效天數
-	updateSecuritySettings?: (settingsObj: {
-		sessionTimeout: number;
-		maxFailedLogins: number;
-		isMaintenanceMode: boolean;
-		enablePasswordExpiry: boolean;
-		passwordExpiryDays: number;
-	}) => void;
 }
 
 /**
@@ -288,8 +260,9 @@ export default function SystemPreferences(): React.ReactElement
 		(state) => state.user
 	);
 
-	const currentUserRoleName = currentUserSession?.role || 'admin';
-	const operatorNameString = currentUserSession?.name || 'Admin';
+	// ★ 2026-10-29：未登入時不再預設為 admin（本頁由路由守門，正常情況必有登入者）
+	const currentUserRoleName = currentUserSession?.role ?? 'data_owner';
+	const operatorNameString = currentUserSession?.name ?? '';
 
 	// ★ 2026-10-07：系統維運日誌改為動態資料（見 useSystemLogStore.ts）
 	const systemLogEntriesList = useSystemLogStore((state) => state.logs);
@@ -305,29 +278,8 @@ export default function SystemPreferences(): React.ReactElement
 		? systemLogEntriesList
 		: systemLogEntriesList.filter(logEntryItem => logEntryItem.level === systemLogLevelFilter);
 
-	// 安全參數狀態與 Action 讀取 (符合規範 g, i)
-	const workspaceStoreState = useWorkspaceStore(
-		(state) => state as unknown as ExtendedWorkspaceSecurity
-	);
-
-	const sessionTimeoutMinutes = workspaceStoreState.sessionTimeout ?? DEFAULT_SESSION_TIMEOUT_MINUTES;
-
-	const maxFailedLoginsCount = workspaceStoreState.maxFailedLogins ?? DEFAULT_MAX_FAILED_LOGINS_LIMIT;
-
-	const isMaintenanceModeActive = workspaceStoreState.isMaintenanceMode ?? false;
-
-	const isPasswordExpiryEnabled = workspaceStoreState.enablePasswordExpiry !== false; 
-
-	const passwordExpiryDaysCount = workspaceStoreState.passwordExpiryDays ?? DEFAULT_PASSWORD_EXPIRY_DAYS;
-	
-	const updateSecuritySettingsAction = workspaceStoreState.updateSecuritySettings || (
-		(updatedSettingsObj) => 
-		{
-			useWorkspaceStore.setState(
-				updatedSettingsObj as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>
-			);
-		}
-	);
+	// 閒置登出時間（★ 2026-10-29 存後端，由 utils/systemSettingsSync 寫入 WorkspaceStore）
+	const sessionTimeoutMinutes = useWorkspaceStore((state) => (state as unknown as { sessionTimeout?: number }).sessionTimeout) ?? DEFAULT_SESSION_TIMEOUT_MINUTES;
 
 	// 表單實例宣告 (符合規範 g)
 	const [envSecurityFormInstance] = Form.useForm<EnvSecurityValues>();
@@ -336,15 +288,9 @@ export default function SystemPreferences(): React.ReactElement
 	useEffect(
 		() => 
 		{
-			envSecurityFormInstance.setFieldsValue({
-				sessionTimeout: sessionTimeoutMinutes,
-				maxFailedLogins: maxFailedLoginsCount,
-				maintenanceMode: isMaintenanceModeActive === true,
-				enablePasswordExpiry: isPasswordExpiryEnabled,
-				passwordExpiryDays: passwordExpiryDaysCount
-			});
+			envSecurityFormInstance.setFieldsValue({ sessionTimeout: sessionTimeoutMinutes });
 		}, 
-		[sessionTimeoutMinutes, maxFailedLoginsCount, isMaintenanceModeActive, isPasswordExpiryEnabled, passwordExpiryDaysCount, envSecurityFormInstance]
+		[sessionTimeoutMinutes, envSecurityFormInstance]
 	);
 
 	/**
@@ -363,26 +309,11 @@ export default function SystemPreferences(): React.ReactElement
 		envSecurityFormInstance.validateFields().then(
 			(formValuesObj: EnvSecurityValues) => 
 			{
-				const nextMaintenanceModeStatus = SHOW_MAINTENANCE_MODE ? !!formValuesObj.maintenanceMode : isMaintenanceModeActive;
-
-				updateSecuritySettingsAction({
-					sessionTimeout: Number(formValuesObj.sessionTimeout),
-					maxFailedLogins: maxFailedLoginsCount, // ★ 2026-10-16：鎖定規則改為固定值（同步後端），畫面已移除此設定，沿用原值
-					isMaintenanceMode: nextMaintenanceModeStatus,
-					// 密碼過期設定隱藏時欄位不在表單中，沿用原值
-					enablePasswordExpiry: SHOW_PASSWORD_EXPIRY_POLICY ? !!formValuesObj.enablePasswordExpiry : isPasswordExpiryEnabled,
-					passwordExpiryDays: SHOW_PASSWORD_EXPIRY_POLICY ? Number(formValuesObj.passwordExpiryDays) : passwordExpiryDaysCount
-				});
-
-				// ★ 2026-10-29：閒置登出時間與維護模式存後端（所有人共用、重新整理後仍保留）
-				saveSystemSettings({ sessionTimeoutMinutes: Number(formValuesObj.sessionTimeout), isMaintenanceMode: nextMaintenanceModeStatus })
+				// ★ 2026-10-29：閒置登出時間存後端（所有人共用、重新整理後仍保留）
+				saveSystemSettings({ sessionTimeoutMinutes: Number(formValuesObj.sessionTimeout) })
 					.then(() =>
 					{
-						if (nextMaintenanceModeStatus !== isMaintenanceModeActive)
-						{
-							logSystemEvent('WARN', nextMaintenanceModeStatus ? '啟用系統維護模式（User 將無法使用系統）' : '關閉系統維護模式', operatorNameString);
-						}
-						logSystemEvent('INFO', SHOW_PASSWORD_EXPIRY_POLICY ? `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘、密碼過期${formValuesObj.enablePasswordExpiry ? ` ${formValuesObj.passwordExpiryDays} 天` : '停用'}` : `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘`, operatorNameString);
+						logSystemEvent('INFO', `更新安全與環境參數：閒置登出 ${formValuesObj.sessionTimeout} 分鐘`, operatorNameString);
 						messageApi.success(
 							translate('admin.msg_env_saved', '環境與安全設定已成功儲存')
 						);
@@ -905,13 +836,21 @@ export default function SystemPreferences(): React.ReactElement
 			title: translate('admin.col_status', '帳號狀態'), 
 			dataIndex: 'isActive', 
 			key: 'isActive',
-			render: (isActiveStatus: boolean) => (
-				<Tag color={isActiveStatus ? 'success' : 'error'} style={{ margin: 0 }}>
-					{isActiveStatus ? translate('admin.status_active', '啟用') : translate('admin.status_disabled', '停用')}
-				</Tag>
+			render: (isActiveStatus: boolean, userRecordItem: UserRecord) => (
+				<Space size={4} wrap>
+					<Tag color={isActiveStatus ? 'success' : 'error'} style={{ margin: 0 }}>
+						{isActiveStatus ? translate('admin.status_active', '啟用') : translate('admin.status_disabled', '停用')}
+					</Tag>
+					{/* ★ 2026-10-29：後端 GET /users 回傳鎖定到期時間；鎖定中可用「重設密碼」提前解除 */}
+					{isMemberAccountLocked(userRecordItem) && (
+						<Tooltip title={translate('admin.locked_until_tip', '連續登入失敗被鎖定，{{time}} 解除；重設密碼可提前解除', { time: formatSystemLogTimestamp(userRecordItem.lockedUntil ?? 0) })}>
+							<Tag color="warning" style={{ margin: 0 }}>{translate('admin.status_locked', '鎖定中')}</Tag>
+						</Tooltip>
+					)}
+				</Space>
 			)
 		},
-		// ★ 2026-10-27：後端帳號清單只有建立時間（無最後登入、密碼變更時間、鎖定狀態）
+		// ★ 2026-10-27：後端帳號清單只有建立時間（無最後登入、密碼變更時間）
 		{
 			title: translate('admin.col_created_at', '建立時間'), dataIndex: 'createdAt', key: 'createdAt',
 			render: (createdAtMsValue: number | null) => createdAtMsValue ? formatSystemLogTimestamp(createdAtMsValue) : '-'
@@ -1032,7 +971,7 @@ export default function SystemPreferences(): React.ReactElement
 					<div>
 						<Alert 
 							message={translate('admin.syslog_title', '系統維運日誌')}
-							description={translate('admin.syslog_desc', '此處僅記錄伺服器連線、登入失敗、系統錯誤等基礎設施事件。若需調閱資料去識別化的合規操作紀錄，請聯絡 Data Owner 於前台匯出 Audit Log。')}
+							description={translate('admin.syslog_desc', '記錄登入／登出、登入失敗與帳號鎖定、閒置逾時、後端 API 呼叫結果、帳號管理、系統公告與安全設定變更等事件。紀錄集中保存在後端，所有電腦的事件都在這裡。各次去識別化的處理紀錄（含伺服器簽章）請至「歷史審計憑證」查看，管理員可協助調閱。')}
 							type="info" 
 							showIcon 
 							style={{ marginBottom: '16px' }}
@@ -1154,64 +1093,6 @@ export default function SystemPreferences(): React.ReactElement
 								/>
 							</Card>
 
-							{SHOW_PASSWORD_EXPIRY_POLICY && (
-							<Card type="inner" title={translate('admin.password_policy_title', '密碼安全政策快速控管')} style={{ marginBottom: '16px' }}>
-								<div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
-									<Form.Item name="enablePasswordExpiry" valuePropName="checked" style={{ marginBottom: 0 }}>
-										<Switch style={{ marginTop: '2px' }} />
-									</Form.Item>
-
-									<div>
-										<Text strong style={{ display: 'block', marginBottom: '4px' }}>
-											{translate('admin.enable_expiry', '強制密碼過期輪替')}
-										</Text>
-
-										<Text type="secondary" style={{ fontSize: scaleFontSize(13) }}>
-											{translate('admin.enable_expiry_desc', '開啟後，所有帳號必須在設定的週期內變更密碼。')}
-										</Text>
-									</div>
-								</div>
-								
-								<Form.Item noStyle shouldUpdate={(previousFormValuesObj: EnvSecurityValues, currentFormValuesObj: EnvSecurityValues) => previousFormValuesObj.enablePasswordExpiry !== currentFormValuesObj.enablePasswordExpiry}>
-									{
-										({ getFieldValue }) => 
-										{
-											const isPasswordExpiryEnabledStatus = getFieldValue('enablePasswordExpiry');
-
-											return (
-												<div style={{ opacity: isPasswordExpiryEnabledStatus ? 1 : 0.4, pointerEvents: isPasswordExpiryEnabledStatus ? 'auto' : 'none', transition: 'all 0.3s' }}>
-													<Form.Item name="passwordExpiryDays" label={translate('admin.expiry_days', '密碼有效天數')} extra={translate('admin.expiry_days_desc', '建議企業內部安全規範設定為 90 天。')}>
-														<InputNumber min={MIN_PASSWORD_EXPIRY_DAYS} max={MAX_PASSWORD_EXPIRY_DAYS} style={{ width: '9em' }} addonAfter={translate('admin.days', '天')} />
-													</Form.Item>
-												</div>
-											);
-										}
-									}
-								</Form.Item>
-							</Card>
-							)}
-							
-							{/* ★ 2026-10-29：單機版不提供維護模式（見 config/featureFlags.ts） */}
-							{SHOW_MAINTENANCE_MODE && (
-							<Card type="inner" title={translate('admin.maintenance_mode', '系統維護模式')}>
-								<div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-									<Form.Item name="maintenanceMode" valuePropName="checked" style={{ marginBottom: 0 }}>
-										<Switch style={{ marginTop: '2px' }} />
-									</Form.Item>
-
-									<div>
-										<Text strong style={{ display: 'block', marginBottom: '4px' }}>
-											{translate('admin.enable_maintenance', '啟用系統維護模式 (Maintenance Mode)')}
-										</Text>
-
-										<Text type="secondary" style={{ fontSize: scaleFontSize(13) }}>
-											{translate('admin.maintenance_desc', '開啟後，所有 Data Owner 將無法登入系統，僅允許 Admin 進行伺服器維護。')}
-										</Text>
-									</div>
-								</div>
-							</Card>
-							)}
-							
 							<div style={{ marginTop: '24px', textAlign: 'center' }}>
 								<Button type="primary" size="large" onClick={handleSaveEnvSettings} icon={<SettingOutlined />}>
 									{translate('admin.save_env_settings', '儲存環境設定')}
@@ -1289,7 +1170,7 @@ export default function SystemPreferences(): React.ReactElement
 									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
 									{ min: 12, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') },
 									{
-										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#\-_+=])[A-Za-z\d@$!%*?&#\-_+=]+$/,
+										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, // ★ 2026-10-29：不再限定可用字元（空白、句點等也可當特殊符號），後端只檢查長度 ≥ 12
 										message: translate('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
 									}
 								]}
@@ -1346,7 +1227,7 @@ export default function SystemPreferences(): React.ReactElement
 									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
 									{ min: 12, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') },
 									{
-										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#\-_+=])[A-Za-z\d@$!%*?&#\-_+=]+$/,
+										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, // ★ 2026-10-29：不再限定可用字元（空白、句點等也可當特殊符號），後端只檢查長度 ≥ 12
 										message: translate('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
 									}
 								]

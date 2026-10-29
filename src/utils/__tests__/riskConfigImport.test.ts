@@ -124,7 +124,8 @@ describe('Step4 使用匯入的風險評估設定', () => {
     it('參數合法範圍', () => {
         expect(isValidRiskAttackParamValue('n_iter', 1.5)).toBe(false);
         expect(isValidRiskAttackParamValue('ctrl_ratio', 0.99)).toBe(true);
-        expect(isValidRiskAttackParamValue('overlap_ratio', 1)).toBe(false);
+        expect(isValidRiskAttackParamValue('ctrl_ratio', 0)).toBe(false); // ★ 2026-10-29 後端要求 0 < ctrl_ratio < 1
+        expect(isValidRiskAttackParamValue('overlap_ratio', 1)).toBe(true); // ★ 2026-10-29 後端允許 overlap_ratio = 1
         expect(isValidRiskAttackParamValue('seed', 0)).toBe(true);
         expect(isDefaultRiskAttackParams(null)).toBe(true);
     });

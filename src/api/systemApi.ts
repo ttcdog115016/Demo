@@ -9,6 +9,7 @@
 
 import { authorizedRequest, publicRequest } from './authApi';
 import type { AuditLogItem } from '../store/useAuditStore';
+import type { AuditVerificationResult } from '../utils/auditIntegrity';
 import type { SystemLogEntry, SystemLogLevel } from '../store/useSystemLogStore';
 import type { AnnouncementItem } from '../store/useAnnouncementStore';
 
@@ -17,9 +18,13 @@ import type { AnnouncementItem } from '../store/useAnnouncementStore';
 export const fetchHistory = async (): Promise<AuditLogItem[]> =>
 	(await authorizedRequest<{ records: AuditLogItem[] }>({ method: 'GET', url: '/history' })).records ?? [];
 
-/** POST /history：新增一筆處理紀錄（操作者由後端以登入帳號為準） */
+/** POST /history：新增一筆處理紀錄；操作者由後端以登入帳號為準，並回傳含伺服器簽章（integrity）的紀錄 */
 export const postHistory = (record: AuditLogItem): Promise<AuditLogItem> =>
 	authorizedRequest<AuditLogItem>({ method: 'POST', url: '/history', data: record });
+
+/** GET /history/{id}/verify：後端重算指紋與簽章 */
+export const verifyHistoryRecord = (recordId: string): Promise<AuditVerificationResult> =>
+	authorizedRequest<AuditVerificationResult>({ method: 'GET', url: `/history/${encodeURIComponent(recordId)}/verify` });
 
 // ── 系統維運日誌 ──────────────────────────────────────────────────────────
 export interface SystemLogEntryToSend
@@ -34,9 +39,9 @@ export interface SystemLogEntryToSend
 export const postSystemLogs = (entries: SystemLogEntryToSend[]): Promise<unknown> =>
 	authorizedRequest({ method: 'POST', url: '/system-logs', data: { entries } });
 
-/** GET /system-logs（限 Admin）：新的在前 */
-export const fetchSystemLogs = async (limit: number = 2000): Promise<SystemLogEntry[]> =>
-	(await authorizedRequest<{ logs: SystemLogEntry[] }>({ method: 'GET', url: '/system-logs', params: { limit } })).logs ?? [];
+/** GET /system-logs（限 Admin）：新的在前；sinceMs 只取該時間（epoch 毫秒）之後的紀錄 */
+export const fetchSystemLogs = async (limit: number = 2000, sinceMs?: number): Promise<SystemLogEntry[]> =>
+	(await authorizedRequest<{ logs: SystemLogEntry[] }>({ method: 'GET', url: '/system-logs', params: { limit, ...(sinceMs ? { since: sinceMs } : {}) } })).logs ?? [];
 
 /** DELETE /system-logs（限 Admin） */
 export const deleteSystemLogs = (): Promise<unknown> =>
@@ -46,7 +51,6 @@ export const deleteSystemLogs = (): Promise<unknown> =>
 export interface SystemSettings
 {
 	session_timeout_minutes: number;
-	maintenance_mode: boolean;
 }
 
 /** GET /settings（免登入） */

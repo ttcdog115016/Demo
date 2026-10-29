@@ -22,8 +22,8 @@ const loadServerDataForUser = (username: string): void =>
 	void useAnnouncementStore.getState().loadAnnouncements(username);
 };
 
-// 登出原因：manual 使用者自行登出 | idle 閒置逾時 | maintenance 維護模式強制登出 | expired 登入逾期（後端拒絕換發 token、帳號被停用或刪除）
-export type LogoutReason = 'manual' | 'idle' | 'maintenance' | 'expired';
+// 登出原因：manual 使用者自行登出 | idle 閒置逾時 | expired 登入逾期（後端拒絕換發 token、帳號被停用或刪除）
+export type LogoutReason = 'manual' | 'idle' | 'expired';
 /**
  * 使用者系統角色型別定義
  * 規範對照: 符合規範 h) 資料結構宣告註記
@@ -39,7 +39,6 @@ interface User
 	name: string;   // 使用者顯示名稱（★ 2026-10-27 串接後端：後端只有帳號，顯示名稱＝帳號）
 	email: string;  // 登入帳號（帳號即 Email，10/16 決議）
 	role: UserRole; // 使用者系統角色（後端 admin／user ↔ 前端 admin／data_owner）
-	mustChangePassword?: boolean; // 須先變更密碼才能使用系統（密碼過期輪替；★ 2026-10-27 後端無此機制，目前不會被設為 true）
 }
 
 /**
@@ -117,7 +116,6 @@ export const useAuthStore = create<AuthState>(
 			{
 				const loggedOutUserNameString = getStoreStateAction().user?.name ?? 'System';
 				if (logoutReasonType === 'idle') logSystemEvent('WARN', '閒置逾時，系統自動登出', loggedOutUserNameString);
-				else if (logoutReasonType === 'maintenance') logSystemEvent('WARN', '系統維護模式啟用中，強制登出', loggedOutUserNameString);
 				else if (logoutReasonType === 'expired') logSystemEvent('WARN', '登入已逾期或帳號已停用，系統自動登出', loggedOutUserNameString);
 				else logSystemEvent('INFO', '使用者登出', loggedOutUserNameString);
 				// 逾期時 token 已被後端拒絕，只需清本機；其餘情況呼叫 POST /auth/logout（失敗也一律清除本機）

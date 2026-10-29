@@ -106,7 +106,7 @@ describe('結果計算', () => {
         };
         const withoutAttack = buildPipelineAuditLogEntry({ ...baseInput, hasAttackReport: false });
         expect(withoutAttack).toMatchObject({
-            fileName: 'dataset.csv', operator: 'Admin.Test', operatorRole: 'admin', parameters: 'K = 5', status: 'failed',
+            fileName: 'dataset.csv', operator: '', operatorRole: 'admin', parameters: 'K = 5', status: 'failed',
             singlingRisk: '未評估', overallRisk: '未評估', deletedRowCount: 2,
             columnRoleSnapshot: { 姓名: 'Identifier', 年齡: 'Quasi-identifier' }, identifierMaskStrategySnapshot: { 姓名: 'hash' }
         });

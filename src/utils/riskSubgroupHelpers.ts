@@ -42,16 +42,18 @@ export const resolveColumnKindForSubgroup = (
     columnTypesMapDict: Record<string, string>,
     dpFieldsListArray: DPField[]
 ): 'range' | 'categorical' => {
+    // ★ 2026-10-29：日期欄位不提供區間——後端區間的 min／max 只收數值，日期字串一律回 ERR_SUBSET_COND_MALFORMED，
+    //   改以「允許值清單」挑選日期值
     if (privacyModeTypeStr === 'differential-privacy') {
         const matchedDpFieldRecord = dpFieldsListArray.find((dpFieldItem) => dpFieldItem.fieldName === columnNameString);
-        if (matchedDpFieldRecord?.fieldType === 'Numeric') return 'range';
+        if (matchedDpFieldRecord?.fieldType === 'Numeric' && !resolveIsDateTimeDpField(matchedDpFieldRecord)) return 'range';
         // Categorical／Text／Unknown 一律以「允許值清單」介面呈現：交付文件僅明確示範類別型
         // 用陣列列舉，文字型／未知型無範例，保守起見比照類別型處理，讓使用者至少能用。
         return 'categorical';
     }
 
     const rawColumnTypeStr = (columnTypesMapDict[columnNameString] || '').toLowerCase();
-    if (rawColumnTypeStr === 'numeric' || rawColumnTypeStr === 'temporal') return 'range';
+    if (rawColumnTypeStr === 'numeric') return 'range';
     return 'categorical';
 };
 
@@ -85,15 +87,15 @@ export const isColumnTemporalForSubgroup = (
  * 輸入參數 (Input):
  *   - riskSubgroupFiltersMapDict (Record<string, RiskSubgroupCondition>): Store 內部條件表
  * 輸出參數 (Output): 無
- * 返回值 (Return): Record<string, { min?: number | string; max?: number | string } | string[]> | undefined
+ * 返回值 (Return): Record<string, { min?: number; max?: number } | (string | number)[]> | undefined
  * 呼叫關係 (Call Relations): 被 Step4_Result.tsx 組三個風險評估設定檔時呼叫
  *
  * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素
  */
 export const buildBackendSubgroupPayload = (
     riskSubgroupFiltersMapDict: Record<string, RiskSubgroupCondition>
-): Record<string, { min?: number | string; max?: number | string } | string[]> | undefined => {
-    const resultPayloadDict: Record<string, { min?: number | string; max?: number | string } | string[]> = {};
+): Record<string, { min?: number; max?: number } | (string | number)[]> | undefined => {
+    const resultPayloadDict: Record<string, { min?: number; max?: number } | (string | number)[]> = {};
 
     Object.entries(riskSubgroupFiltersMapDict).forEach(([columnNameString, conditionRecord]) => {
         if (conditionRecord.kind === 'range') {
@@ -101,19 +103,31 @@ export const buildBackendSubgroupPayload = (
             const trimmedMaxStr = (conditionRecord.max ?? '').trim();
             if (!trimmedMinStr && !trimmedMaxStr) return; // 兩側皆空，等同沒設定，略過
 
-            const parseNumberOrRawString = (rawValueStr: string): number | string => {
+            // ★ 2026-10-29：後端區間邊界只收數值（字串一律 400），填的不是數字就不送該側
+            const parseNumberOrUndefined = (rawValueStr: string): number | undefined => {
                 const parsedNumberValue = Number(rawValueStr);
-                return (rawValueStr !== '' && !Number.isNaN(parsedNumberValue)) ? parsedNumberValue : rawValueStr;
+                return (rawValueStr !== '' && Number.isFinite(parsedNumberValue)) ? parsedNumberValue : undefined;
             };
 
-            const rangeConditionObj: { min?: number | string; max?: number | string } = {};
-            if (trimmedMinStr) rangeConditionObj.min = parseNumberOrRawString(trimmedMinStr);
-            if (trimmedMaxStr) rangeConditionObj.max = parseNumberOrRawString(trimmedMaxStr);
+            const rangeConditionObj: { min?: number; max?: number } = {};
+            const parsedMinValue = parseNumberOrUndefined(trimmedMinStr);
+            const parsedMaxValue = parseNumberOrUndefined(trimmedMaxStr);
+            if (parsedMinValue !== undefined) rangeConditionObj.min = parsedMinValue;
+            if (parsedMaxValue !== undefined) rangeConditionObj.max = parsedMaxValue;
+            if (parsedMinValue === undefined && parsedMaxValue === undefined) return;
             resultPayloadDict[columnNameString] = rangeConditionObj;
         } else {
             const nonEmptyValuesListArray = (conditionRecord.values || []).map((v) => v.trim()).filter((v) => v.length > 0);
             if (nonEmptyValuesListArray.length === 0) return; // 空清單，等同沒設定，略過
-            resultPayloadDict[columnNameString] = nonEmptyValuesListArray;
+            // ★ 2026-10-29：後端讀 CSV 時純數字欄（如代碼 1、2、3）會轉成數值，用字串比對不到；
+            //   像數字的值（不含 0 開頭，後端會保留 0 開頭的代碼為文字）同時送數值版本，兩種欄位型態都比對得到
+            const valuesWithNumericTwinsList: (string | number)[] = [];
+            nonEmptyValuesListArray.forEach((valueStr) => {
+                valuesWithNumericTwinsList.push(valueStr);
+                const numericTwinValue = Number(valueStr);
+                if (Number.isFinite(numericTwinValue) && String(numericTwinValue) === valueStr) valuesWithNumericTwinsList.push(numericTwinValue);
+            });
+            resultPayloadDict[columnNameString] = valuesWithNumericTwinsList;
         }
     });
 

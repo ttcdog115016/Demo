@@ -47,6 +47,7 @@ import { resolveKAnonymityGeneralizationTechKey } from '../../utils/kAnonymityTe
 
 import { scaleFontSize } from '../../utils/fontScale';
 import { formatFidelityPercent } from '../../utils/kAnonymityFidelity';
+import { createHtml2PdfLoader, startHtml2PdfLoader } from '../../utils/html2pdfLoader';
 const PDF_COMPILATION_DELAY_MS = 400;
 
 
@@ -687,9 +688,9 @@ export default function Step4_Result(): React.ReactElement
         setIsExportingPdfStatus(true);
         await new Promise((resolveDelayPromise) => setTimeout(resolveDelayPromise, PDF_COMPILATION_DELAY_MS));
 
-        const html2pdfScriptElement = document.createElement('script');
-        html2pdfScriptElement.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-        html2pdfScriptElement.onload = () => 
+        // ★ 2026-10-29：改用打包進前端的 html2pdf（離線也能匯出），見 utils/html2pdfLoader.ts
+        const html2pdfLoader = createHtml2PdfLoader();
+        html2pdfLoader.onload = () => 
         {
             const pdfGenerationConfigurationOptions = {
                 margin:       [10, 10, 10, 10],
@@ -705,8 +706,8 @@ export default function Step4_Result(): React.ReactElement
                 (pdfExecutionErrorPayload: unknown) => { hideGlobalLoadingMessageFunction(); messageApi.error(translate('step4.msg.pdf_failed', 'PDF 下載失敗')); console.error(pdfExecutionErrorPayload); }
             ).finally(() => setIsExportingPdfStatus(false));
         };
-        html2pdfScriptElement.onerror = () => { hideGlobalLoadingMessageFunction(); messageApi.error(translate('step4.msg.pdf_no_lib', '無法載入 PDF 轉檔套件，請檢查網路連線。')); setIsExportingPdfStatus(false); };
-        document.body.appendChild(html2pdfScriptElement);
+        html2pdfLoader.onerror = () => { hideGlobalLoadingMessageFunction(); messageApi.error(translate('step4.msg.pdf_no_lib', '無法載入 PDF 轉檔套件，請重新整理頁面後再試一次。')); setIsExportingPdfStatus(false); };
+        startHtml2PdfLoader(html2pdfLoader);
     };
 
     // ★ 新增：錯誤卡片測試面板只在網址加上 ?debugErrors=1 (重新整理過一次) 時才會出現，
@@ -1051,7 +1052,7 @@ export default function Step4_Result(): React.ReactElement
                                 <Steps
                                     current={currentPipelinePhaseType === 'uploading' ? 0 : currentPipelinePhaseType === 'processing' ? 1 : currentPipelinePhaseType === 'auditing' ? 2 : 3}
                                     items={[
-                                        { title: translate('step4.steps.upload.title', '切片上傳'), content: 'Chunk Upload', icon: <CloudUploadOutlined /> },
+                                        { title: translate('step4.steps.upload.title', '上傳資料'), content: 'Upload', icon: <CloudUploadOutlined /> },
                                         { title: translate('step4.steps.process.title', '後端脫敏'), content: 'Data Processing', icon: <LoadingOutlined /> },
                                         { title: translate('step4.steps.audit.title', '風險審計'), content: 'Risk Auditing', icon: <SafetyCertificateOutlined /> },
                                         { title: translate('step4.steps.complete.title', '完成簽發'), content: 'Completed', icon: <CheckCircleOutlined /> },
@@ -1063,7 +1064,7 @@ export default function Step4_Result(): React.ReactElement
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <Spin indicator={<LoadingOutlined style={{ fontSize: scaleFontSize(48), color: token.colorPrimary }} spin />} />
                             <h3 style={{ marginTop: '16px', color: token.colorText }}>
-                                {currentPipelinePhaseType === 'uploading' && translate('step4.loading.uploading', '正在將大數據切片 (Chunk) 傳輸至後端伺服器...')}
+                                {currentPipelinePhaseType === 'uploading' && translate('step4.loading.uploading', '正在將資料上傳至後端伺服器...')}
                                 {currentPipelinePhaseType === 'processing' && translate('step4.loading.processing', '後端正在執行去識別化矩陣與加噪演算...')}
                                 {currentPipelinePhaseType === 'auditing' && translate('step4.loading.auditing', '正在執行蒙地卡羅攻擊模擬與實用性評估...')}
                                 {currentPipelinePhaseType === 'completed' && translate('step4.loading.completed', '後端演算完畢，正在生成最終合規報告...')}

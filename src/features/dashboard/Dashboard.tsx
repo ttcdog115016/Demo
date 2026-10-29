@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Row, Col, Typography, Button, Table, Tag, Space, Badge, Progress, theme } from 'antd';
 import {
@@ -17,6 +17,7 @@ import { useAnnouncementStore, isAnnouncementShownToRole, getAnnouncementUserKey
 import { getRoleDisplayName } from '../../utils/roleLabel';
 import { AnnouncementListItem } from '../../components/AnnouncementListItem';
 import { SHOW_ANNOUNCEMENTS } from '../../config/featureFlags';
+import { probeBackendHealth, type BackendHealthState } from '../../utils/adminDashboardStats';
 
 import { scaleFontSize } from '../../utils/fontScale';
 const { Title, Text, Paragraph } = Typography;
@@ -30,7 +31,19 @@ export const Dashboard: React.FC = () => {
   const { t: translate } = useTranslation();
   // ★ 2026-10-07：改讀登入中的使用者，不再寫死；角色以「Data Owner」顯示而非 DATA_OWNER
   const currentUserSession = useAuthStore((state) => state.user);
-  const userInfo = { name: currentUserSession?.name ?? 'Data.Owner.A', role: getRoleDisplayName(currentUserSession?.role ?? 'data_owner') };
+  const userInfo = { name: currentUserSession?.name ?? '', role: getRoleDisplayName(currentUserSession?.role ?? 'data_owner') };
+  // ★ 2026-10-29：「系統運作正常」原本寫死綠燈，改依後端連線檢查（同系統管理大廳，GET /api/v1/settings）
+  const [backendHealthState, setBackendHealthState] = useState<BackendHealthState>({ status: 'checking' });
+  useEffect(() => {
+    let isUnmounted = false;
+    void probeBackendHealth().then((healthResult) => { if (!isUnmounted) setBackendHealthState(healthResult); });
+    return () => { isUnmounted = true; };
+  }, []);
+  const backendBadgeProps = backendHealthState.status === 'ok'
+    ? { status: 'processing' as const, color: '#52c41a', text: translate('dashboard.system_normal', '系統運作正常') }
+    : backendHealthState.status === 'down'
+      ? { status: 'error' as const, color: '#ff4d4f', text: translate('dashboard.system_down', '無法連線至後端，請稍後再試或聯絡管理員') }
+      : { status: 'default' as const, color: undefined, text: translate('dashboard.system_checking', '檢查後端連線中…') };
   // ★ 2026-10-29：歡迎詞只顯示使用者名稱（帳號為 Email 時取 @ 前面那段，例如 owner@test.com → owner）
   const welcomeNameString = userInfo.name.includes('@') ? userInfo.name.split('@')[0] : userInfo.name;
 
@@ -51,7 +64,7 @@ export const Dashboard: React.FC = () => {
   );
 
   // 讀取全域歷史審計紀錄 (真實紀錄，非假資料)，最新紀錄已由 addAuditLog 插入於陣列最前端
-  // ★ 2026-10-28：紀錄改存瀏覽器，只統計目前帳號的紀錄
+  // ★ 2026-10-29：紀錄存後端（登入後載入），只統計目前帳號的紀錄
   const allAuditLogsList = useAuditStore((state) => state.auditLogs);
   const auditLogsList = useMemo(() => selectAuditLogsForUser(allAuditLogsList, currentUserSession?.name), [allAuditLogsList, currentUserSession?.name]);
 
@@ -150,7 +163,7 @@ export const Dashboard: React.FC = () => {
         <div>
           <Title level={2} style={{ margin: 0 }}>{translate('dashboard.welcome_back', '歡迎回來 {{name}}', { name: welcomeNameString })}</Title>
           <Space size="middle" style={{ marginTop: '12px' }}>
-            <Badge status="processing" color="#52c41a" text={<Text type="secondary">{translate('dashboard.system_normal', '系統運作正常')}</Text>} />
+            <Badge status={backendBadgeProps.status} color={backendBadgeProps.color} text={<Text type="secondary">{backendBadgeProps.text}</Text>} />
             <Text type="secondary" style={{ opacity: 0.5 }}>|</Text>
             <Text type="secondary">
                 {translate('dashboard.role_label', '權限身份：')}<Text strong style={{ color: '#1677ff' }}>{userInfo.role}</Text>
@@ -168,7 +181,7 @@ export const Dashboard: React.FC = () => {
             >
               <Title level={3} style={{ marginTop: 0 }}>{translate('dashboard.new_task_title', '建立新的去識別化任務')}</Title>
               <Paragraph type="secondary" style={{ fontSize: scaleFontSize(16), marginBottom: '24px', lineHeight: '1.8' }}>
-                {translate('dashboard.new_task_desc', '支援 CSV, Excel 格式。系統將引導您進行屬性分類與隱私設定，並在本地端安全處理您的資料，確保原始機敏資料絕不外流。')}
+                {translate('dashboard.new_task_desc', '系統將引導您進行屬性分類與隱私設定。資料只會上傳到本系統的後端處理，不會傳送給任何第三方。')}
               </Paragraph>
               <div>
                   <Button

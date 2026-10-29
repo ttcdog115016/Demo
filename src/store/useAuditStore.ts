@@ -59,12 +59,12 @@ interface AuditState
 	 * 輸入參數 (Input):
 	 *   - auditLogEntry (Omit<AuditLogItem, 'id'>): 包含簽發憑證編號、風險量測結果等不含 id 之憑證物件
 	 * 輸出參數 (Output): 無
-	 * 返回值 (Return): void
-	 * 呼叫關係 (Call Relations): 被 Step4_Result 組件於簽發憑證並完成驗證時調用
+	 * 返回值 (Return): Promise<boolean>——★ 2026-10-29 是否已存到後端（後端回傳含伺服器簽章的紀錄，取代畫面上那筆）
+	 * 呼叫關係 (Call Relations): 被 usePipelineRunner 於處理完成時調用
 	 * 
 	 * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素, c) 確保透過正規 Action 修改全域變數
 	 */
-	addAuditLog: (auditLogEntry: Omit<AuditLogItem, 'id'>) => void;
+	addAuditLog: (auditLogEntry: Omit<AuditLogItem, 'id'>) => Promise<boolean>;
 	/** ★ 2026-10-29：自後端載入目前帳號的處理紀錄（登入／重新整理接續登入後呼叫） */
 	loadAuditLogs: () => Promise<void>;
 	/** 登出時清空畫面上的紀錄（後端資料不動） */
@@ -115,8 +115,8 @@ export const useAuditStore = create<AuditState>()(
 			// 初始化時，清單預設為空陣列（登入後由 loadAuditLogs 自後端載入）
 			auditLogs: [],
 
-			// 新增審計紀錄：先更新畫面（Step4 立即讀得到），再寫入後端
-			addAuditLog: (auditLogEntryData) =>
+			// 新增審計紀錄：先更新畫面（Step4 立即讀得到），再寫入後端；後端簽章後以回傳的紀錄取代
+			addAuditLog: async (auditLogEntryData) =>
 			{
 				// 自動生成 UUID 唯一碼並插入清單最前端 (最新的紀錄顯示在最上面)
 				// 規範對照: 符合規範 g) 確保每次呼叫皆產生合理不衝突之 ID 鍵值
@@ -124,10 +124,19 @@ export const useAuditStore = create<AuditState>()(
 				setStoreStateAction((currentStoreStateData) => ({
 					auditLogs: [newAuditLogItem, ...currentStoreStateData.auditLogs].slice(0, MAX_AUDIT_LOG_ENTRIES_COUNT),
 				}));
-				postHistory(newAuditLogItem).catch((saveErrorValue) =>
+				try
+				{
+					const savedAuditLogItem = await postHistory(newAuditLogItem);
+					setStoreStateAction((currentStoreStateData) => ({
+						auditLogs: currentStoreStateData.auditLogs.map((logItem) => logItem.id === newAuditLogItem.id ? savedAuditLogItem : logItem),
+					}));
+					return true;
+				}
+				catch (saveErrorValue)
 				{
 					console.warn('[處理紀錄] 寫入後端失敗：', saveErrorValue);
-				});
+					return false;
+				}
 			},
 
 			loadAuditLogs: async () =>

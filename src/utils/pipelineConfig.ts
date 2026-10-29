@@ -482,7 +482,8 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
             column_budgets: columnBudgetsMap,
             accumulated_epsilon: dpAccumulatedEpsilonValue ?? 0,
             accumulated_delta: dpAccumulatedDeltaValue ?? 0,
-            default_delta: globalTargetDeltaValue ?? 1e-5 // ★ 2026-10-28 與後端預設一致
+            // ★ 2026-10-29：只在使用者有填全域 δ 時送出；不送時後端預設 δ=0（純 ε），「沿用全域 δ」的欄位即為純 ε
+            ...(globalTargetDeltaValue ? { default_delta: globalTargetDeltaValue } : {})
         }
     };
 };
@@ -496,14 +497,14 @@ export const computeDpConsumedBudgetsByField = (
 ): Record<string, { epsilon: number; delta: number }> => {
     const differentialPrivacyBlock = buildDifferentialPrivacyConfig({
         dpFields, columnTypes: {}, accumulatedEpsilon: 0, accumulatedDelta: 0, targetDelta
-    }).differential_privacy as { default_delta: number; column_budgets: Record<string, { type?: string; epsilon_budget?: number; delta_budget?: number }> };
+    }).differential_privacy as { default_delta?: number; column_budgets: Record<string, { type?: string; epsilon_budget?: number; delta_budget?: number }> };
     const consumedBudgetsByField: Record<string, { epsilon: number; delta: number }> = {};
     Object.entries(differentialPrivacyBlock.column_budgets).forEach(([fieldName, budgetItem]) => {
         // 連續數值／日期欄位沒有 delta_budget 時由 default_delta 補足（後端 4-2 節）；類別型不使用 δ
         const isDefaultDeltaFilledStatus = budgetItem.delta_budget === undefined && (budgetItem.type === 'continuous' || budgetItem.type === 'datetime');
         consumedBudgetsByField[fieldName] = {
             epsilon: Number(budgetItem.epsilon_budget ?? 0),
-            delta: isDefaultDeltaFilledStatus ? Number(differentialPrivacyBlock.default_delta) : Number(budgetItem.delta_budget ?? 0)
+            delta: isDefaultDeltaFilledStatus ? Number(differentialPrivacyBlock.default_delta ?? 0) : Number(budgetItem.delta_budget ?? 0)
         };
     });
     return consumedBudgetsByField;

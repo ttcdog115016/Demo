@@ -10,18 +10,15 @@
  *
  * 這個模組提供一個與畫面無關的純資料層：只要呼叫 recordApiError()，就會把這次
  * API 失敗的完整診斷資訊（狀態碼、後端錯誤代碼與訊息、送出的設定內容摘要、
- * 當下資料集欄位與編碼偵測結果等）加入記憶體陣列並持久化到 localStorage，同時
- * 通知所有訂閱者（例如彈出提示視窗的 UI 元件）。實際攔截 API 呼叫的邏輯在
+ * 當下資料集欄位與編碼偵測結果等）加入記憶體陣列，同時通知所有訂閱者。實際攔截 API 呼叫的邏輯在
  * apiErrorInterceptor.ts，兩者分開讓儲存/匯出邏輯可以被獨立測試、也方便未來
  * 若要換成送到後端集中收集時，只需更換這一個模組。
  * ============================================================================
  */
 
-// ★ 修正：使用者反映不希望外部測試人員在畫面上看到任何錯誤提示或匯出按鈕，只需要問題
-//   發生時能自動、靜默地回傳給內部開發團隊。原本掛在此處的 UI 訂閱者 (彈出提示視窗) 已
-//   移除，改為在每筆紀錄寫入時，直接背景呼叫 googleFormReporter 送到 Google 表單，
-//   表單擁有者開啟「取得新回覆的電子郵件通知」即可直接收到信，全程不影響畫面。
-import { reportApiErrorToGoogleForm } from './googleFormReporter';
+// ★ 2026-10-29：移除背景送 Google 表單（會把檔名、欄位名稱、設定內容送到第三方）與 localStorage 保存。
+//   API 失敗本來就由 apiErrorInterceptor 寫入後端系統維運日誌，管理員在「系統維運日誌」分頁查看；
+//   此處只留本次頁面的記憶體紀錄，供 Step4 除錯面板（?debugErrors=1）使用。
 
 // 診斷紀錄單筆項目介面
 export interface ApiErrorLogEntry {
@@ -48,43 +45,13 @@ export interface ApiErrorLogEntry {
 
 type ApiErrorLogSubscriberFn = (newEntry: ApiErrorLogEntry, allEntriesList: ApiErrorLogEntry[]) => void;
 
-const LOCAL_STORAGE_KEY_STRING = 'openpets_api_error_logs_v1';
-const MAX_STORED_LOG_ENTRIES_COUNT = 50; // 避免 localStorage 無限增長，僅保留最近 N 筆
+/** 舊版存在 localStorage 的鍵名；main.tsx 啟動時清除 */
+export const LEGACY_API_ERROR_LOG_STORAGE_KEY = 'openpets_api_error_logs_v1';
+const MAX_STORED_LOG_ENTRIES_COUNT = 50; // 僅保留最近 N 筆
 
 let inMemoryApiErrorLogsList: ApiErrorLogEntry[] = [];
 const apiErrorLogSubscribersList: ApiErrorLogSubscriberFn[] = [];
 
-/**
- * 函數名稱: loadPersistedLogsFromLocalStorage
- * 函數功能: 應用程式啟動時，從 localStorage 還原先前 session 累積的診斷紀錄；
- *           讀取失敗 (格式毀損／被封鎖) 時安全地退回空陣列，不影響主流程。
- */
-const loadPersistedLogsFromLocalStorage = (): ApiErrorLogEntry[] => {
-    try {
-        const rawStoredJsonText = window.localStorage.getItem(LOCAL_STORAGE_KEY_STRING);
-        if (!rawStoredJsonText) return [];
-        const parsedValue = JSON.parse(rawStoredJsonText);
-        return Array.isArray(parsedValue) ? (parsedValue as ApiErrorLogEntry[]) : [];
-    } catch (storageReadErrorObj) {
-        console.warn('讀取 localStorage 中既有的 API 錯誤診斷紀錄失敗:', storageReadErrorObj);
-        return [];
-    }
-};
-
-/**
- * 函數名稱: persistLogsToLocalStorage
- * 函數功能: 將目前記憶體中的診斷紀錄陣列寫回 localStorage；寫入失敗 (容量不足／
- *           被封鎖) 時僅記錄警告，不中斷任何 API 呼叫或錯誤處理流程。
- */
-const persistLogsToLocalStorage = (logsToPersistList: ApiErrorLogEntry[]): void => {
-    try {
-        window.localStorage.setItem(LOCAL_STORAGE_KEY_STRING, JSON.stringify(logsToPersistList));
-    } catch (storageWriteErrorObj) {
-        console.warn('寫入 API 錯誤診斷紀錄至 localStorage 失敗 (可能容量已滿):', storageWriteErrorObj);
-    }
-};
-
-inMemoryApiErrorLogsList = loadPersistedLogsFromLocalStorage();
 
 const generateUniqueLogEntryId = (): string =>
     `err_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -92,7 +59,7 @@ const generateUniqueLogEntryId = (): string =>
 /**
  * 函數名稱: recordApiError
  * 函數功能: 記錄一筆 API 錯誤診斷紀錄的主要進入點；補上時間戳記／識別碼／瀏覽器
- *           環境資訊後寫入記憶體與 localStorage，並通知所有訂閱者 (供 UI 彈出提示)。
+ *           環境資訊後寫入記憶體，並通知所有訂閱者。
  */
 export const recordApiError = (
     entryDraftObj: Omit<ApiErrorLogEntry, 'id' | 'timestamp' | 'userAgent' | 'pageUrl'>
@@ -106,11 +73,6 @@ export const recordApiError = (
     };
 
     inMemoryApiErrorLogsList = [...inMemoryApiErrorLogsList, fullLogEntryObj].slice(-MAX_STORED_LOG_ENTRIES_COUNT);
-    persistLogsToLocalStorage(inMemoryApiErrorLogsList);
-
-    // ★ 新增：背景靜默回報至 Google 表單 (見 googleFormReporter.ts)，讓開發團隊自動收到
-    //   通知信，不需要任何畫面提示，外部測試人員完全無感知。
-    reportApiErrorToGoogleForm(fullLogEntryObj);
 
     apiErrorLogSubscribersList.forEach((subscriberFn) => {
         try {
@@ -141,10 +103,9 @@ export const subscribeToApiErrorLogs = (subscriberFn: ApiErrorLogSubscriberFn): 
 /** 取得目前累積的所有診斷紀錄 (複本，避免呼叫方直接修改內部陣列)。 */
 export const getAllApiErrorLogs = (): ApiErrorLogEntry[] => [...inMemoryApiErrorLogsList];
 
-/** 清除所有已累積的診斷紀錄 (記憶體與 localStorage 皆清空)。 */
+/** 清除所有已累積的診斷紀錄。 */
 export const clearAllApiErrorLogs = (): void => {
     inMemoryApiErrorLogsList = [];
-    persistLogsToLocalStorage(inMemoryApiErrorLogsList);
 };
 
 /**

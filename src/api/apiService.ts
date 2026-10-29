@@ -1,5 +1,18 @@
 import axios, { type AxiosProgressEvent } from 'axios';
 
+/**
+ * ★ 2026-10-29：後端回 `attachment; filename="x.csv"; filename*=UTF-8''x.csv`（core/dataset_io.py），
+ *   原本以 split('filename=') 取值會連後面的 filename* 一起吃進來；改為優先取 filename*（可含中文），其次 filename。
+ */
+export const parseContentDispositionFilename = (dispositionText: string): string | null => {
+  const encodedMatch = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(dispositionText);
+  if (encodedMatch) {
+    try { return decodeURIComponent(encodedMatch[1].trim().replace(/^"|"$/g, '')); } catch { /* 解碼失敗改用 filename */ }
+  }
+  const plainMatch = /filename\s*=\s*("([^"]*)"|[^;]+)/i.exec(dispositionText);
+  return plainMatch ? (plainMatch[2] ?? plainMatch[1]).trim() : null;
+};
+
 // ============================================================================
 // 共用請求選項：逾時、取消、上傳進度
 // ============================================================================
@@ -79,7 +92,7 @@ export interface DpPerColumnBudgetReport {
   delta?: number;                     // 該欄實際採用的 δ（未指定時取自 default_delta）
   // 換算為整數個刻度後的敏感度，非設定檔原始申報值（例如薪資申報 125000、刻度 1000 → 125）
   sensitivity: number | null;
-  sensitivity_source: 'user' | null;
+  sensitivity_source: 'user' | 'system' | null; // ★ 2026-10-29 後端亦可能回 'system'（dp/types.py）
   minimum_unit?: number;              // 連續值欄位的刻度
   noise_unit?: string;                // 日期欄位的雜訊單位
   noise_step?: number;                // 日期欄位幾個 noise_unit 算一格
@@ -154,7 +167,7 @@ export const runKAnonymity = async (
       
     let filename = 'anonymized_output.csv';
     if (disposition && typeof disposition === 'string' && disposition.includes('filename=')) {
-      filename = disposition.split('filename=')[1].replace(/"/g, '').trim();
+      filename = parseContentDispositionFilename(disposition) ?? filename;
     }
 
     // 建立 Blob 物件但不自動觸發 DOM 下載行為
@@ -219,7 +232,7 @@ export const runDifferentialPrivacy = async (
       
     let filename = 'dp_output.csv';
     if (disposition && typeof disposition === 'string' && disposition.includes('filename=')) {
-      filename = disposition.split('filename=')[1].replace(/"/g, '').trim();
+      filename = parseContentDispositionFilename(disposition) ?? filename;
     }
 
     // 建立 Blob 物件但不自動觸發 DOM 下載行為
@@ -274,7 +287,7 @@ export const runPreprocess = async (
     const disposition = response.headers['content-disposition'] || response.headers['Content-Disposition'];
     let filename = 'preprocessed_output.csv';
     if (disposition && typeof disposition === 'string' && disposition.includes('filename=')) {
-      filename = disposition.split('filename=')[1].replace(/"/g, '').trim();
+      filename = parseContentDispositionFilename(disposition) ?? filename;
     }
 
     return { success: true, data: new Blob([response.data], { type: 'text/csv;charset=utf-8;' }), filename };
@@ -317,6 +330,7 @@ export interface AttackReport {
   overlap_ratio: number;
   processing_config: ProcessingConfig | null;
   message: string;
+  elapsed_seconds?: number;           // ★ 2026-10-29 後端回傳的運算秒數
 }
 
 // 對應後端 CapReport（CAP 前後對比，/risk/cap 專用）
@@ -326,6 +340,7 @@ export interface CapReport {
   n_original: number;
   n_processed: number;
   message: string;
+  elapsed_seconds?: number;           // ★ 2026-10-29 後端回傳的運算秒數
   // ★ 2026-10-06 以下為前端自行計算、後端不會回傳（見 utils/capBaseline.ts）：
   /** 亂猜基線：處理後資料中最常見敏感值的佔比（CAP 的下限） */
   cap_baseline_after?: number | null;
@@ -481,7 +496,7 @@ export const runReport = async (
 
     let filename = `risk_report_${payload.task_id ?? 'risk-report'}.pdf`;
     if (disposition && typeof disposition === 'string' && disposition.includes('filename=')) {
-      filename = disposition.split('filename=')[1].replace(/"/g, '').trim();
+      filename = parseContentDispositionFilename(disposition) ?? filename;
     }
 
     const outputBlob = new Blob([response.data], { type: 'application/pdf' });

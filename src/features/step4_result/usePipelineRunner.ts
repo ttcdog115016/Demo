@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useAuditStore } from '../../store/useAuditStore';
-import { createAuditIntegrity } from '../../utils/auditIntegrity';
+import { computeFileFingerprints } from '../../utils/auditIntegrity';
 import { ensureDatasetProfile } from '../../utils/datasetProfile';
 import { RISK_ATTACK_DEFAULT_PARAMS, type HighCardinalitySensitiveInfo } from '../../utils/riskAssessment';
 import { buildComplianceReportSnapshot } from '../../utils/complianceReport';
@@ -690,17 +690,15 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                         ...buildReportSupplements()
                     })
                 });
-                // ★ 2026-10-02：簽發前計算防篡改指紋（憑證內容＋原始檔／輸出檔 SHA-256）並以 ECDSA 簽章（見 utils/auditIntegrity.ts）；
-                //   簽章失敗不影響稽核紀錄寫入，只是該筆紀錄沒有簽章
-                try {
-                    const auditIntegrityRecord = await createAuditIntegrity(pipelineAuditLogEntry, { inputFile: safeDataFile, outputFile: finalCsvBlobData });
-                    addAuditLogAction({ ...pipelineAuditLogEntry, integrity: auditIntegrityRecord });
-                    appendPipelineLog(auditIntegrityRecord.signature
-                        ? `已產生防篡改指紋並完成數位簽章（金鑰 ID ${auditIntegrityRecord.keyId}）`
-                        : '已產生防篡改指紋，但目前環境無法數位簽章（需以 HTTPS 或 localhost 開啟）');
-                } catch (integrityErrorPayload) {
-                    console.error('產生稽核憑證防篡改資料失敗:', integrityErrorPayload);
-                    addAuditLogAction(pipelineAuditLogEntry);
+                // ★ 2026-10-29：計算原始檔／輸出檔 SHA-256 後送後端，由伺服器簽章（見 utils/auditIntegrity.ts）；
+                //   存不進後端時提示使用者（這次的結果仍可下載，但換頁或重新整理後紀錄不會留下）
+                const fileFingerprints = await computeFileFingerprints({ inputFile: safeDataFile, outputFile: finalCsvBlobData });
+                const isAuditLogSaved = await addAuditLogAction({ ...pipelineAuditLogEntry, integrity: fileFingerprints });
+                if (isAuditLogSaved) {
+                    appendPipelineLog('處理紀錄已存到伺服器並完成伺服器簽章');
+                } else {
+                    appendPipelineLog('處理紀錄未能存到伺服器');
+                    messageApi.warning(translate('step4.msg.audit_save_failed', '處理紀錄未能存到伺服器：本次結果仍可下載，但重新整理或換頁後這筆紀錄不會保留。請確認後端連線後再執行一次。'), 8);
                 }
 
                 appendStepLog(translate('step4.log.step_finished', '處理完成，已產生合規報告'));

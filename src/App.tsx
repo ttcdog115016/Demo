@@ -7,7 +7,7 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
 import { 
     ConfigProvider, theme, Layout, Menu, Avatar, 
@@ -34,13 +34,12 @@ import { useAuthStore, type UserRole } from './store/useAuthStore';
 import { useUIStore, type FontSizeLevel } from './store/useUIStore';
 import { useWorkspaceStore } from './store/useWorkspaceStore';
 import NotificationBell from './components/NotificationBell';
-import { SHOW_ANNOUNCEMENTS, SHOW_MAINTENANCE_MODE } from './config/featureFlags';
+import { SHOW_ANNOUNCEMENTS } from './config/featureFlags';
 import { getRoleDisplayName } from './utils/roleLabel';
 
 // ★ 修正：使用者反映不希望外部測試人員在畫面上看到任何 API 錯誤提示或匯出按鈕。原本
-// 這裡掛載的 <ApiErrorWatcher /> 彈出提示元件與 Header 上的匯出按鈕已移除；診斷紀錄
-// 現在改為在 apiErrorLogger.ts 寫入當下，直接背景靜默送到 Google 表單通知開發團隊
-// (見 utils/googleFormReporter.ts)，全程不影響畫面。
+// 這裡掛載的 <ApiErrorWatcher /> 彈出提示元件與 Header 上的匯出按鈕已移除。
+// ★ 2026-10-29：API 失敗改寫入後端系統維運日誌（見 apiErrorInterceptor.ts），不再送 Google 表單。
 
 import Login from './features/login/Login';
 import ProfileSettings from './features/settings/ProfileSettings';
@@ -188,9 +187,6 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
     const siderExpandedWidthValue = SIDER_WIDTH_LEVEL_PX_MAP[currentFontSizeLevelValue];
 
     const sessionTimeoutMinutesValue = useWorkspaceStore((state) => (state as unknown as Record<string, unknown>).sessionTimeout as number) || DEFAULT_SESSION_TIMEOUT_MINUTES;
-    const isMaintenanceModeActiveStatus = useWorkspaceStore((state) => (state as unknown as Record<string, unknown>).isMaintenanceMode as boolean) || false;
-    // ★ 2026-10-16：mustChangePassword 只在「密碼過期輪替」到期時為 true（已移除首次登入須變更密碼）
-    const isPasswordExpiredActiveStatus = useAuthStore((state) => state.user?.mustChangePassword) || false;
     const currentWorkspaceStepIndexValue = useWorkspaceStore((state) => state.currentStep);
     const currentPrivacyModeTypeStr = useWorkspaceStore((state) => state.privacyMode);
     
@@ -200,7 +196,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
     useIdleTimeout(sessionTimeoutMinutesValue);
 
     // ★ 2026-10-29：系統設定與公告存在後端，登入期間每 60 秒重新讀取一次——
-    //   管理員開啟維護模式後，其他電腦上已登入的使用者會在 1 分鐘內被登出；新公告也會出現在鈴鐺
+    //   管理員修改閒置登出時間、發布新公告，其他電腦上已登入的使用者 1 分鐘內就會套用／看到
     const announcementUserKeyString = currentUserSessionData ? getAnnouncementUserKey(currentUserSessionData) : null;
     useEffect(() => {
         if (!announcementUserKeyString) return;
@@ -213,41 +209,9 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
 
     const [searchParamsObject] = useSearchParams();
     const stepQueryParameterString = searchParamsObject.get('step');
-    const hasShownPasswordExpireModalRef = useRef<boolean>(false);
     const currentUserRoleNameString = currentUserSessionData?.role || 'data_owner';
 
-    useEffect(() => {
-        if (isPasswordExpiredActiveStatus && currentLocationData.pathname !== '/settings/profile') {
-            if (!hasShownPasswordExpireModalRef.current) {
-                hasShownPasswordExpireModalRef.current = true;
-                globalModalApi.warning({
-                    title: translate('profile.password_expired_modal_title', '密碼已過期，請先變更'),
-                    content: translate('profile.password_expired_desc_rotation', '依系統密碼過期輪替政策，您的密碼已超過有效天數。在變更密碼前，您無法進行其他操作。'),
-                    okText: translate('modal.confirm', '立即變更'),
-                    keyboard: false,
-                    onOk: () => {
-                        executeNavigationAction('/settings/profile', { replace: true });
-                        hasShownPasswordExpireModalRef.current = false;
-                    }
-                });
-            }
-        }
-    }, [isPasswordExpiredActiveStatus, currentLocationData.pathname, executeNavigationAction, globalModalApi, translate]);
 
-    useEffect(() => {
-        // ★ 2026-10-29：單機版不提供維護模式（見 config/featureFlags.ts），即使瀏覽器留有舊設定也不生效
-        if (SHOW_MAINTENANCE_MODE && isMaintenanceModeActiveStatus && currentUserRoleNameString === 'data_owner') {
-            globalModalApi.warning({
-                title: translate('admin.maintenance_active_title', '系統維護中'),
-                content: translate('admin.maintenance_active_desc', '系統已進入維護模式，僅允許管理員存取。您即將被強制登出。'),
-                okText: translate('modal.confirm', '確認'),
-                onOk: () => {
-                    executeLogoutAction('maintenance');
-                    executeNavigationAction('/login');
-                }
-            });
-        }
-    }, [isMaintenanceModeActiveStatus, currentUserRoleNameString, executeLogoutAction, globalModalApi, executeNavigationAction, translate]);
 
     useEffect(() => {
         if (currentLocationData.pathname === '/workspace') {
@@ -299,10 +263,6 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
 
     // ★ 關鍵：點擊 Logo 的真正還原邏輯
     const handleLogoClick = (): void => {
-        if (isPasswordExpiredActiveStatus) {
-            globalMessageApi.warning(translate('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
-            return;
-        }
 
         if (currentUserRoleNameString === 'admin') {
             if (currentLocationData.pathname !== '/admin') {
@@ -344,10 +304,6 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
             { key: 'preferences', label: translate('menu.system_preferences', '系統設定'), icon: <SettingOutlined /> },
         ],
         onClick: (menuClickEventObj) => {
-            if (isPasswordExpiredActiveStatus && menuClickEventObj.key !== 'profile') {
-                globalMessageApi.warning(translate('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
-                return;
-            }
 
             if (menuClickEventObj.key === 'profile') {
                 executeNavigationAction('/settings/profile');
@@ -358,10 +314,6 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
     };
 
     const handleSidebarStepChange = (targetSidebarStepIndexValue: number): void => {
-        if (isPasswordExpiredActiveStatus) {
-            globalMessageApi.warning(translate('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
-            return;
-        }
 
         if (currentLocationData.pathname === '/workspace' && targetSidebarStepIndexValue === currentWorkspaceStepIndexValue) {
             return;
@@ -405,19 +357,11 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
             { key: '3', icon: <DownloadOutlined />, label: translate('menu.preview_export', '預覽匯出'), onClick: () => handleSidebarStepChange(3) },
             { type: 'divider' },
             { key: 'audit', icon: <AuditOutlined />, label: translate('menu.audit_log', '歷史審計憑證 (Audit Log)'), onClick: () => {
-                if (isPasswordExpiredActiveStatus) {
-                    globalMessageApi.warning(translate('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
-                    return;
-                }
                 executeNavigationAction('/audit');
             }}
         ]
         : [
             { key: 'admin_dashboard', icon: <DashboardOutlined />, label: translate('menu.admin_dashboard', '系統管理大廳'), onClick: () => {
-                if (isPasswordExpiredActiveStatus) {
-                    globalMessageApi.warning(translate('profile.must_change_password', '請先完成密碼變更，才能使用系統功能！'));
-                    return;
-                }
                 executeNavigationAction('/admin');
             }}
         ];
@@ -536,7 +480,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
                             <Dropdown menu={userDropdownMenuConfiguration} placement="bottomRight" trigger={['click']}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '4px 8px', borderRadius: '8px' }} className="user-profile-hover">
                                     <Avatar size="small" icon={<UserOutlined />} style={{ backgroundColor: '#3f51b5' }} />
-                                    <span style={{ color: themeDynamicColorsConfiguration.textMain, fontSize: scaleFontSize(14), fontWeight: 500 }}>{currentUserSessionData?.name || 'Admin.Test'}</span>
+                                    <span style={{ color: themeDynamicColorsConfiguration.textMain, fontSize: scaleFontSize(14), fontWeight: 500 }}>{currentUserSessionData?.name ?? ''}</span>
                                     <Tag color="purple" style={{ margin: 0, borderRadius: '10px', fontSize: scaleFontSize(11) }}>
                                         {getRoleDisplayName(currentUserRoleNameString)}
                                     </Tag>
