@@ -35,13 +35,14 @@
  */
 
 import React from 'react';
-import { Card, Select, Button, Space, Input, Tooltip, Empty, Typography, Spin } from 'antd';
+import { Card, Select, Button, Space, Input, Tooltip, Empty, Typography, Spin, DatePicker } from 'antd';
+import dayjs, { type Dayjs } from 'dayjs';
 import { PlusOutlined, DeleteOutlined, QuestionCircleOutlined, FilterOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type RiskSubgroupCondition } from '../../store/useWorkspaceStore';
 import { useEnsureDatasetProfile, MAX_TOP_VALUES_PER_COLUMN } from '../../utils/datasetProfile';
-import { resolveColumnKindForSubgroup, isColumnTemporalForSubgroup } from '../../utils/riskSubgroupHelpers';
+import { resolveColumnKindForSubgroup, isColumnTemporalForSubgroup, SUBGROUP_DATE_BOUND_PATTERN } from '../../utils/riskSubgroupHelpers';
 
 import { scaleFontSize } from '../../utils/fontScale';
 const { Text } = Typography;
@@ -49,6 +50,15 @@ const { Text } = Typography;
 // 完整掃描資料集時，單一欄位最多快取幾個相異值 (依出現次數由高到低排序後截斷)，避免誤把
 // 高基數欄位 (如流水號、自由文字) 當類別型欄位時，掃描結果佔用過多記憶體或選單過長。
 const MAX_CACHED_UNIQUE_VALUES_PER_COLUMN = MAX_TOP_VALUES_PER_COLUMN;
+
+const SUBGROUP_DATE_BOUND_FORMAT = 'YYYY-MM-DD';
+
+/** Store 內的日期邊界字串 → RangePicker 值；空白或非 YYYY-MM-DD（如切換前填的數字）視為未填 */
+const parseDateBoundOrNull = (boundValueStr: string | undefined): Dayjs | null => {
+    if (!boundValueStr || !SUBGROUP_DATE_BOUND_PATTERN.test(boundValueStr)) return null;
+    const parsedDate = dayjs(boundValueStr, SUBGROUP_DATE_BOUND_FORMAT);
+    return parsedDate.isValid() ? parsedDate : null;
+};
 
 /**
  * 函數名稱: RiskSubgroupFilterPanel
@@ -119,7 +129,21 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
         });
     };
 
-    const handleCategoricalValuesChange = (columnNameString: string, newValuesListArray: string[]): void => {
+    const handleDateRangeChange = (columnNameString: string, pickedDatesTuple: [Dayjs | null, Dayjs | null] | null): void => {
+        const existingConditionRecord = riskSubgroupFiltersMapDict[columnNameString];
+        if (!existingConditionRecord || existingConditionRecord.kind !== 'range') return;
+        const [pickedMinDate, pickedMaxDate] = pickedDatesTuple ?? [null, null];
+        executeSetRiskSubgroupFiltersAction({
+            ...riskSubgroupFiltersMapDict,
+            [columnNameString]: {
+                kind: 'range',
+                min: pickedMinDate ? pickedMinDate.format(SUBGROUP_DATE_BOUND_FORMAT) : '',
+                max: pickedMaxDate ? pickedMaxDate.format(SUBGROUP_DATE_BOUND_FORMAT) : ''
+            }
+        });
+    };
+
+    const handleCategoricalValuesChange =(columnNameString: string, newValuesListArray: string[]): void => {
         executeSetRiskSubgroupFiltersAction({
             ...riskSubgroupFiltersMapDict,
             [columnNameString]: { kind: 'categorical', values: newValuesListArray }
@@ -200,12 +224,25 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
                                     options={columnSelectOptionsListArray}
                                     onChange={(newColumnNameString) => handleColumnChangeForCondition(columnNameString, newColumnNameString)}
                                 />
-                                {conditionRecord.kind === 'range' ? (
+                                {conditionRecord.kind === 'range' && isTemporalColumnStatus ? (
+                                    // ★ 2026-10-29：日期欄位改用日期區間選擇器（allowEmpty 讓任一側可留空），
+                                    //   Store 存 YYYY-MM-DD 字串，送後端時原樣作為日期區間邊界
+                                    <DatePicker.RangePicker
+                                        size="small"
+                                        allowEmpty={[true, true]}
+                                        placeholder={[
+                                            translate('step3_subgroup.range_min_date_placeholder', '下限日期（可留空）'),
+                                            translate('step3_subgroup.range_max_date_placeholder', '上限日期（可留空）')
+                                        ]}
+                                        value={[parseDateBoundOrNull(conditionRecord.min), parseDateBoundOrNull(conditionRecord.max)]}
+                                        onChange={(pickedDatesTuple) => handleDateRangeChange(columnNameString, pickedDatesTuple)}
+                                    />
+                                ) : conditionRecord.kind === 'range' ? (
                                     <Space size={4}>
                                         <Input
                                             size="small"
                                             style={{ width: '10em' }}
-                                            placeholder={isTemporalColumnStatus ? translate('step3_subgroup.range_min_date_placeholder', '下限日期（可留空）') : translate('step3_subgroup.range_min_placeholder', '下限（可留空）')}
+                                            placeholder={translate('step3_subgroup.range_min_placeholder', '下限（可留空）')}
                                             value={conditionRecord.min ?? ''}
                                             onChange={(e) => handleRangeBoundChange(columnNameString, 'min', e.target.value)}
                                         />
@@ -213,7 +250,7 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
                                         <Input
                                             size="small"
                                             style={{ width: '10em' }}
-                                            placeholder={isTemporalColumnStatus ? translate('step3_subgroup.range_max_date_placeholder', '上限日期（可留空）') : translate('step3_subgroup.range_max_placeholder', '上限（可留空）')}
+                                            placeholder={translate('step3_subgroup.range_max_placeholder', '上限（可留空）')}
                                             value={conditionRecord.max ?? ''}
                                             onChange={(e) => handleRangeBoundChange(columnNameString, 'max', e.target.value)}
                                         />

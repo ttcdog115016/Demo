@@ -17,6 +17,9 @@ import type { DPField } from '../store/useWorkspaceStore';
 import type { RiskSubgroupCondition } from '../store/useWorkspaceStore';
 import { resolveIsDateTimeDpField } from './dpFieldHelpers';
 
+/** 日期區間邊界格式（RangePicker 寫入 Store 的值；後端 subset.py 以日比較、首尾皆含） */
+export const SUBGROUP_DATE_BOUND_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * 函數名稱: resolveColumnKindForSubgroup
  * 函數功能: 判斷欄位在「對象族群限定條件」中應顯示哪一種輸入介面——數值／日期型顯示
@@ -42,24 +45,23 @@ export const resolveColumnKindForSubgroup = (
     columnTypesMapDict: Record<string, string>,
     dpFieldsListArray: DPField[]
 ): 'range' | 'categorical' => {
-    // ★ 2026-10-29：日期欄位不提供區間——後端區間的 min／max 只收數值，日期字串一律回 ERR_SUBSET_COND_MALFORMED，
-    //   改以「允許值清單」挑選日期值
+    // ★ 2026-10-29：後端 subset.py 已補上日期區間（min／max 為 YYYY-MM-DD 字串），日期欄位恢復以區間呈現
     if (privacyModeTypeStr === 'differential-privacy') {
         const matchedDpFieldRecord = dpFieldsListArray.find((dpFieldItem) => dpFieldItem.fieldName === columnNameString);
-        if (matchedDpFieldRecord?.fieldType === 'Numeric' && !resolveIsDateTimeDpField(matchedDpFieldRecord)) return 'range';
+        if (matchedDpFieldRecord?.fieldType === 'Numeric') return 'range';
         // Categorical／Text／Unknown 一律以「允許值清單」介面呈現：交付文件僅明確示範類別型
         // 用陣列列舉，文字型／未知型無範例，保守起見比照類別型處理，讓使用者至少能用。
         return 'categorical';
     }
 
     const rawColumnTypeStr = (columnTypesMapDict[columnNameString] || '').toLowerCase();
-    if (rawColumnTypeStr === 'numeric') return 'range';
+    if (rawColumnTypeStr === 'numeric' || rawColumnTypeStr === 'temporal') return 'range';
     return 'categorical';
 };
 
 /**
  * 函數名稱: isColumnTemporalForSubgroup
- * 函數功能: 判斷欄位是否為日期時間型 (用於決定 range 輸入框的 placeholder 提示文字)。
+ * 函數功能: 判斷欄位是否為日期時間型 (用於決定 range 條件改用日期區間選擇器)。
  */
 export const isColumnTemporalForSubgroup = (
     columnNameString: string,
@@ -87,15 +89,15 @@ export const isColumnTemporalForSubgroup = (
  * 輸入參數 (Input):
  *   - riskSubgroupFiltersMapDict (Record<string, RiskSubgroupCondition>): Store 內部條件表
  * 輸出參數 (Output): 無
- * 返回值 (Return): Record<string, { min?: number; max?: number } | (string | number)[]> | undefined
+ * 返回值 (Return): Record<string, { min?: number | string; max?: number | string } | (string | number)[]> | undefined
  * 呼叫關係 (Call Relations): 被 Step4_Result.tsx 組三個風險評估設定檔時呼叫
  *
  * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素
  */
 export const buildBackendSubgroupPayload = (
     riskSubgroupFiltersMapDict: Record<string, RiskSubgroupCondition>
-): Record<string, { min?: number; max?: number } | (string | number)[]> | undefined => {
-    const resultPayloadDict: Record<string, { min?: number; max?: number } | (string | number)[]> = {};
+): Record<string, { min?: number | string; max?: number | string } | (string | number)[]> | undefined => {
+    const resultPayloadDict: Record<string, { min?: number | string; max?: number | string } | (string | number)[]> = {};
 
     Object.entries(riskSubgroupFiltersMapDict).forEach(([columnNameString, conditionRecord]) => {
         if (conditionRecord.kind === 'range') {
@@ -103,15 +105,18 @@ export const buildBackendSubgroupPayload = (
             const trimmedMaxStr = (conditionRecord.max ?? '').trim();
             if (!trimmedMinStr && !trimmedMaxStr) return; // 兩側皆空，等同沒設定，略過
 
-            // ★ 2026-10-29：後端區間邊界只收數值（字串一律 400），填的不是數字就不送該側
-            const parseNumberOrUndefined = (rawValueStr: string): number | undefined => {
+            // ★ 2026-10-29：後端區間邊界須同為數值或同為日期字串（YYYY-MM-DD），混用或其他字串一律 400。
+            //   任一側是日期即視為日期區間，只送日期那幾側；否則只送數值那幾側，填的不是數字就不送該側
+            const isDateRangeStatus = SUBGROUP_DATE_BOUND_PATTERN.test(trimmedMinStr) || SUBGROUP_DATE_BOUND_PATTERN.test(trimmedMaxStr);
+            const parseBoundOrUndefined = (rawValueStr: string): number | string | undefined => {
+                if (isDateRangeStatus) return SUBGROUP_DATE_BOUND_PATTERN.test(rawValueStr) ? rawValueStr : undefined;
                 const parsedNumberValue = Number(rawValueStr);
                 return (rawValueStr !== '' && Number.isFinite(parsedNumberValue)) ? parsedNumberValue : undefined;
             };
 
-            const rangeConditionObj: { min?: number; max?: number } = {};
-            const parsedMinValue = parseNumberOrUndefined(trimmedMinStr);
-            const parsedMaxValue = parseNumberOrUndefined(trimmedMaxStr);
+            const rangeConditionObj: { min?: number | string; max?: number | string } = {};
+            const parsedMinValue = parseBoundOrUndefined(trimmedMinStr);
+            const parsedMaxValue = parseBoundOrUndefined(trimmedMaxStr);
             if (parsedMinValue !== undefined) rangeConditionObj.min = parsedMinValue;
             if (parsedMaxValue !== undefined) rangeConditionObj.max = parsedMaxValue;
             if (parsedMinValue === undefined && parsedMaxValue === undefined) return;

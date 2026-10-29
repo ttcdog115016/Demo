@@ -29,8 +29,9 @@ const PANDAS_DEFAULT_NA_VALUE_SET = new Set([
 export const CAP_SHUFFLE_REPEAT_COUNT = 3;
 const CAP_SHUFFLE_SEED = 20261006;
 
-// ★ 2026-10-29：類別值清單可同時含字串與數值版本（見 riskSubgroupHelpers）；畫面端以字串比對即可
-export type CapSubgroupPayload = Record<string, { min?: number; max?: number } | (string | number)[]> | undefined;
+// ★ 2026-10-29：類別值清單可同時含字串與數值版本（見 riskSubgroupHelpers）；畫面端以字串比對即可。
+//   區間邊界為數值，或日期字串 YYYY-MM-DD（後端 subset.py 日期區間）
+export type CapSubgroupPayload = Record<string, { min?: number | string; max?: number | string } | (string | number)[]> | undefined;
 
 const isPandasMissingCell = (cellText: string | undefined): boolean =>
     cellText === undefined || PANDAS_DEFAULT_NA_VALUE_SET.has(cellText);
@@ -43,7 +44,20 @@ const toValueKey = (cellText: string | undefined): string => {
     return Number.isFinite(numberValue) ? `n:${numberValue}` : `s:${cellText}`;
 };
 
-/** 子群體條件（比照後端 subset.py：類別＝isin 字串比對；區間＝轉數值後閉區間，轉不動者落選） */
+/** 日期字串（YYYY-MM-DD 或 YYYY/MM/DD，可帶 HH:mm[:ss]）→ { 當天 UTC 毫秒, 含時間之 UTC 毫秒 }；轉不動或日期不存在回 null */
+const parseDateCellOrNull = (cellText: string): { dayMs: number; fullMs: number } | null => {
+    const matched = /^\s*(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(cellText);
+    if (!matched) return null;
+    const [yearValue, monthValue, dayValue] = [Number(matched[1]), Number(matched[2]), Number(matched[3])];
+    const dayMs = Date.UTC(yearValue, monthValue - 1, dayValue);
+    const checkDate = new Date(dayMs);
+    if (checkDate.getUTCFullYear() !== yearValue || checkDate.getUTCMonth() !== monthValue - 1 || checkDate.getUTCDate() !== dayValue) return null;
+    const timeMs = ((Number(matched[4] ?? 0) * 60 + Number(matched[5] ?? 0)) * 60 + Number(matched[6] ?? 0)) * 1000;
+    return { dayMs, fullMs: dayMs + timeMs };
+};
+
+/** 子群體條件（比照後端 subset.py：類別＝isin 字串比對；區間＝轉數值後閉區間，轉不動者落選；
+ *  邊界為日期字串時＝轉日期後以「日」比較之閉區間，轉不動者落選） */
 const doesRowPassSubgroup = (rowCells: string[], conditionList: { columnIndex: number; condition: NonNullable<CapSubgroupPayload>[string] }[]): boolean => {
     for (const { columnIndex, condition } of conditionList) {
         const cellText = rowCells[columnIndex];
@@ -52,6 +66,15 @@ const doesRowPassSubgroup = (rowCells: string[], conditionList: { columnIndex: n
             continue;
         }
         if (isPandasMissingCell(cellText)) return false;
+        if (typeof condition.min === 'string' || typeof condition.max === 'string') {
+            const cellDate = parseDateCellOrNull(String(cellText));
+            if (!cellDate) return false;
+            const minDate = typeof condition.min === 'string' ? parseDateCellOrNull(condition.min) : null;
+            const maxDate = typeof condition.max === 'string' ? parseDateCellOrNull(condition.max) : null;
+            if (minDate && cellDate.dayMs < minDate.dayMs) return false;
+            if (maxDate && cellDate.dayMs > maxDate.dayMs) return false;
+            continue;
+        }
         const numberValue = Number(String(cellText).trim());
         if (!Number.isFinite(numberValue)) return false;
         if (typeof condition.min === 'number' && numberValue < condition.min) return false;

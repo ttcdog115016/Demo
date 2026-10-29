@@ -24,6 +24,14 @@ describe('computeCapShuffleBaselineFromCsvText', () => {
         const result = computeCapShuffleBaselineFromCsvText({ csvText, quasiIdentifierColumnNames: ['地區'], sensitiveColumnName: '疾病', subgroupPayload: { 年齡: { min: 40, max: 50 } } })!;
         expect(result.rowCount).toBe(4);
     });
+    it('日期區間條件與後端一致：以日比較、首尾皆含，可只給一側，轉不成日期者落選', () => {
+        const dateCsv = '地區,就診日,疾病\nA,2024-01-01,否\nA,2024/03/15,是\nB,2024-06-30 23:59,否\nB,2024-07-01,是\nC,不詳,否\nC,2023-12-31,是\n';
+        const runWith = (range: { min?: string; max?: string }) =>
+            computeCapShuffleBaselineFromCsvText({ csvText: dateCsv, quasiIdentifierColumnNames: ['地區'], sensitiveColumnName: '疾病', subgroupPayload: { 就診日: range } })?.rowCount;
+        expect(runWith({ min: '2024-01-01', max: '2024-06-30' })).toBe(3);
+        expect(runWith({ min: '2024-06-30' })).toBe(2);
+        expect(runWith({ max: '2023-12-31' })).toBe(1);
+    });
     it('欄位不存在或篩選後無資料回傳 null', () => {
         expect(computeCapShuffleBaselineFromCsvText({ csvText, quasiIdentifierColumnNames: ['不存在'], sensitiveColumnName: '疾病' })).toBeNull();
         expect(computeCapShuffleBaselineFromCsvText({ csvText, quasiIdentifierColumnNames: ['地區'], sensitiveColumnName: '疾病', subgroupPayload: { 年齡: { min: 99 } } })).toBeNull();
