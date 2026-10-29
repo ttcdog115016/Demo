@@ -1,22 +1,23 @@
-"""Open-PETs 單機版啟動器（打包成 OpenPETs.exe 的進入點）。
+"""Open-PETs 單機版啟動器（打包成 OpenPETs.exe／OpenPETs-cli.exe 的進入點）。
 
-雙擊執行：
-  1. 第一次執行時在 exe 旁建立 .env（隨機產生鹽值、稽核簽章金鑰、登入 token 金鑰）與 data/ 資料夾。
-  2. 帳號資料庫沒有任何帳號時，在此視窗建立第一個管理員。
-  3. 啟動後端（只聽本機 127.0.0.1），同一個埠同時提供前端網頁，並自動開啟瀏覽器。
-  關閉此視窗（或按 Ctrl+C）即停止服務。
+OpenPETs.exe（視窗版，安裝程式建立的捷徑指向這個）：
+  1. 第一次執行時在 %LOCALAPPDATA%\\OpenPETs 建立 .env（隨機產生鹽值、稽核簽章金鑰、登入 token 金鑰）與 data/ 資料夾。
+  2. 在背景啟動後端（只聽本機 127.0.0.1），同一個埠同時提供前端網頁。
+  3. 開啟 App 視窗（WebView2，沒有網址列）；帳號資料庫沒有任何帳號時先顯示「建立系統管理員」畫面。
+  關閉 App 視窗即停止服務。不會出現黑色主控台視窗；錯誤以對話框顯示，記錄在 data/logs/launcher.log。
 
-指令列（在 exe 所在資料夾開命令提示字元）：
-  OpenPETs.exe                      啟動服務並開瀏覽器
-  OpenPETs.exe --no-browser         啟動服務，不開瀏覽器
-  OpenPETs.exe reset-password       重設某個帳號的密碼（忘記管理員密碼時用）
-  OpenPETs.exe create-user ...      以下皆轉給後端 CLI（create-user、verify-log、k-anonymity…）
-  OpenPETs.exe --help-cli           顯示後端 CLI 說明
+OpenPETs-cli.exe（主控台版，給管理員維護用）：
+  OpenPETs-cli.exe                  啟動服務並開瀏覽器（舊版行為；第一次在主控台建立管理員）
+  OpenPETs-cli.exe --no-browser     啟動服務，不開瀏覽器
+  OpenPETs-cli.exe reset-password   重設某個帳號的密碼（忘記管理員密碼時用）
+  OpenPETs-cli.exe create-user ...  以下皆轉給後端 CLI（create-user、verify-log、k-anonymity…）
+  OpenPETs-cli.exe --help-cli       顯示後端 CLI 說明
 
-不改動後端原始碼：前端靜態檔與 SPA 路由在此檔掛到後端的 FastAPI app 上。
+資料位置：環境變數 OPEN_PETS_HOME 優先；exe 旁已有 .env（舊版資料夾版）則沿用 exe 資料夾；否則 %LOCALAPPDATA%\\OpenPETs。
+兩個 exe 讀同一份資料，帳號、鹽值、稽核紀錄共用。
+
+不改動後端原始碼：前端靜態檔、SPA 路由與初次設定畫面在此檔掛到後端的 FastAPI app 上。
 """
-from __future__ import annotations
-
 import getpass
 import json
 import multiprocessing
@@ -30,6 +31,8 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
+from fastapi import Request
+
 APP_TITLE = "Open-PETs 資料隱私保護工具"
 DEFAULT_PORT = 8765
 HOST = "127.0.0.1"  # 只聽本機：單機版不對外開放，資料不離開這台電腦
@@ -37,6 +40,8 @@ BACKEND_CLI_COMMANDS = {
     "create-user", "preprocess", "k-anonymity", "dp", "risk-k-anonymity",
     "risk-dp", "risk-cap", "verify-log", "report",
 }
+SETUP_PAGE_PATH = "/setup"
+SETUP_API_PATH = "/api/v1/desktop/setup"
 
 
 # ---------------------------------------------------------------- 路徑
@@ -45,10 +50,26 @@ def is_frozen() -> bool:
 
 
 def install_dir() -> Path:
-    """使用者看得到、可寫入的資料夾（exe 所在處）。.env 與 data/ 放這裡。"""
+    """exe 所在資料夾（程式本體）。"""
     if is_frozen():
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
+
+
+def is_cli_exe() -> bool:
+    return is_frozen() and Path(sys.executable).stem.lower().endswith("-cli")
+
+
+def home_dir() -> Path:
+    """.env 與 data/ 所在處。安裝版的程式資料夾解除安裝時會刪除，資料另外放，才不會連帶刪掉帳號與鹽值。"""
+    override = os.getenv("OPEN_PETS_HOME")
+    if override:
+        return Path(override)
+    exe_dir = install_dir()
+    if (exe_dir / ".env").exists() or not is_frozen():
+        return exe_dir  # 舊版資料夾版（.env 在 exe 旁）沿用；開發時用 packaging/
+    local_app_data = os.getenv("LOCALAPPDATA")
+    return (Path(local_app_data) if local_app_data else Path.home()) / "OpenPETs"
 
 
 def resource_dir() -> Path:
@@ -63,7 +84,7 @@ def frontend_dir() -> Path:
     return Path(override) if override else resource_dir() / "frontend"
 
 
-# ---------------------------------------------------------------- 主控台
+# ---------------------------------------------------------------- 主控台／對話框
 def setup_console() -> None:
     # Windows 主控台預設 cp950，遇到無法編碼的字元會讓整個程式中止；改為替換字元。
     for stream in (sys.stdout, sys.stderr):
@@ -79,9 +100,31 @@ def setup_console() -> None:
             pass
 
 
+def redirect_output_to_log(base: Path) -> Path:
+    """視窗版沒有主控台（sys.stdout 為 None，uvicorn 寫日誌會出錯）；輸出一律寫到檔案。"""
+    log_path = base / "data" / "logs" / "launcher.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_file = open(log_path, "a", encoding="utf-8", errors="replace", buffering=1)
+    sys.stdout = log_file
+    sys.stderr = log_file
+    print(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} 啟動 {APP_TITLE}")
+    return log_path
+
+
+def message_box(text: str, is_error: bool = False) -> None:
+    if os.name != "nt":
+        print(text)
+        return
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, APP_TITLE, 0x10 if is_error else 0x40)
+    except Exception:
+        print(text)
+
+
 def pause_before_exit() -> None:
-    """雙擊開啟的視窗出錯時會瞬間關閉，看不到訊息；先停住。"""
-    if os.name == "nt" and is_frozen():
+    """雙擊開啟的主控台出錯時會瞬間關閉，看不到訊息；先停住。"""
+    if os.name == "nt" and is_frozen() and sys.stdin is not None:
         try:
             input("\n按 Enter 關閉視窗…")
         except Exception:
@@ -90,6 +133,7 @@ def pause_before_exit() -> None:
 
 # ---------------------------------------------------------------- .env
 def ensure_env_file(base: Path) -> Path:
+    base.mkdir(parents=True, exist_ok=True)
     env_path = base / ".env"
     if env_path.exists():
         return env_path
@@ -122,7 +166,7 @@ def load_env(env_path: Path, base: Path) -> None:
 
     # 作業系統環境變數優先（override=False），與後端 settings.py 一致
     load_dotenv(env_path, encoding="utf-8-sig", override=False)
-    # 相對路徑一律以 exe 資料夾為準，不受「從哪裡啟動」影響
+    # 相對路徑一律以資料資料夾為準，不受「從哪裡啟動」影響
     for key in ("OPEN_PETS_DATA_DIR", "OPEN_PETS_LOG_FILE"):
         value = os.getenv(key)
         if value and not os.path.isabs(value):
@@ -141,6 +185,12 @@ def get_port() -> int:
 
 
 # ---------------------------------------------------------------- 帳號
+def needs_first_admin() -> bool:
+    from app.governance.auth import get_auth_manager
+
+    return not get_auth_manager().list_users()
+
+
 def prompt_new_password(min_length: int) -> str:
     while True:
         pw1 = getpass.getpass(f"  密碼（至少 {min_length} 個字元，輸入時不會顯示）：")
@@ -155,12 +205,13 @@ def prompt_new_password(min_length: int) -> str:
 
 
 def ensure_first_admin() -> None:
+    """主控台版：在主控台建立第一個管理員。"""
     from app.core.errors import PetsError
     from app.governance.auth import get_auth_manager, get_password_min_length
 
-    manager = get_auth_manager()
-    if manager.list_users():
+    if not needs_first_admin():
         return
+    manager = get_auth_manager()
     print()
     print("=" * 60)
     print(" 第一次使用：請建立系統管理員帳號")
@@ -189,7 +240,7 @@ def reset_password_interactive() -> int:
     manager = get_auth_manager()
     users = manager.list_users()
     if not users:
-        print("目前沒有任何帳號；直接執行 OpenPETs.exe 會引導建立管理員。")
+        print("目前沒有任何帳號；開啟 Open-PETs 會引導建立管理員。")
         return 1
     print("目前帳號：")
     for user in users:
@@ -204,6 +255,112 @@ def reset_password_interactive() -> int:
         return 1
     print(f"已重設 [{username}] 的密碼（同時解除登入鎖定）。")
     return 0
+
+
+# ---------------------------------------------------------------- 初次設定畫面（視窗版）
+SETUP_PAGE_HTML = """<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>初次設定 - Open-PETs</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #f1f5f9; font-family: "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif; color: #0f172a; }
+  .card { background: #fff; width: 420px; max-width: calc(100% - 32px); padding: 32px; border-radius: 12px;
+          box-shadow: 0 10px 30px rgba(15, 23, 42, .12); box-sizing: border-box; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p.lead { margin: 0 0 24px; color: #475569; line-height: 1.6; font-size: 14px; }
+  label { display: block; font-size: 14px; font-weight: 600; margin: 16px 0 6px; }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 8px; }
+  input:focus { outline: 2px solid #10b981; border-color: #10b981; }
+  .hint { font-size: 12px; color: #64748b; margin-top: 4px; }
+  button { width: 100%; margin-top: 24px; padding: 12px; font-size: 16px; font-weight: 600; color: #fff;
+           background: #10b981; border: 0; border-radius: 8px; cursor: pointer; }
+  button:disabled { background: #94a3b8; cursor: default; }
+  .msg { margin-top: 16px; font-size: 14px; line-height: 1.6; min-height: 1.6em; }
+  .msg.error { color: #dc2626; } .msg.ok { color: #059669; }
+</style></head>
+<body><form class="card" id="f" autocomplete="off">
+  <h1>第一次使用：建立系統管理員</h1>
+  <p class="lead">管理員可登入後在「系統設定 → 帳號管理」新增其他使用者。帳號與資料只存在這台電腦。</p>
+  <label for="u">管理員帳號（建議用 Email）</label>
+  <input id="u" required autofocus>
+  <label for="p1">密碼</label>
+  <input id="p1" type="password" required>
+  <div class="hint" id="pwHint"></div>
+  <label for="p2">再輸入一次密碼</label>
+  <input id="p2" type="password" required>
+  <button id="b" type="submit">建立管理員</button>
+  <div class="msg" id="m" role="alert"></div>
+</form>
+<script>
+(async () => {
+  const api = "__SETUP_API__";
+  const $ = (id) => document.getElementById(id);
+  let minLength = 12;
+  try {
+    const s = await (await fetch(api)).json();
+    if (!s.needs_setup) { location.replace("/"); return; }
+    minLength = s.password_min_length || minLength;
+  } catch (e) {}
+  $("pwHint").textContent = "至少 " + minLength + " 個字元";
+  const show = (text, cls) => { $("m").textContent = text; $("m").className = "msg " + cls; };
+  $("f").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const username = $("u").value.trim(), password = $("p1").value;
+    if (!username) return show("帳號不可空白。", "error");
+    if (password.length < minLength) return show("密碼太短，至少需要 " + minLength + " 個字元。", "error");
+    if (password !== $("p2").value) return show("兩次輸入的密碼不一致。", "error");
+    $("b").disabled = true;
+    try {
+      const r = await fetch(api, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) { $("b").disabled = false; return show(body.message || "建立失敗，請再試一次。", "error"); }
+      show("已建立管理員 [" + username + "]，即將前往登入頁…", "ok");
+      setTimeout(() => location.replace("/"), 1200);
+    } catch (e) { $("b").disabled = false; show("無法連線到服務，請關閉後重新開啟 Open-PETs。", "error"); }
+  });
+})();
+</script></body></html>
+""".replace("__SETUP_API__", SETUP_API_PATH)
+
+
+def attach_first_run_setup(app) -> None:
+    """沒有任何帳號時提供「建立系統管理員」畫面與 API；建立第一個帳號後兩者皆失效（只接受本機連線）。"""
+    from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+
+    from app.core.errors import PetsError
+    from app.governance.auth import get_auth_manager, get_password_min_length
+
+    create_lock = threading.Lock()
+
+    @app.get(SETUP_API_PATH, include_in_schema=False)
+    def setup_status():
+        return {"needs_setup": needs_first_admin(), "password_min_length": get_password_min_length()}
+
+    @app.post(SETUP_API_PATH, include_in_schema=False)
+    async def setup_create_admin(request: Request):
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        username = str(payload.get("username", "")).strip() if isinstance(payload, dict) else ""
+        password = str(payload.get("password", "")) if isinstance(payload, dict) else ""
+        if not username or not password:
+            return JSONResponse({"message": "帳號與密碼不可空白。"}, status_code=400)
+        with create_lock:  # 同時送出兩次時只有第一個成立
+            if not needs_first_admin():
+                return JSONResponse({"message": "已經有帳號了，請直接登入。"}, status_code=409)
+            try:
+                get_auth_manager().create_user(username, password, "admin")
+            except PetsError as exc:
+                return JSONResponse({"message": f"建立失敗：{exc}"}, status_code=400)
+        print(f"[初次設定] 已建立管理員 [{username}]")
+        return {"ok": True}
+
+    @app.get(SETUP_PAGE_PATH, include_in_schema=False)
+    def setup_page():
+        if not needs_first_admin():
+            return RedirectResponse("/")
+        return HTMLResponse(SETUP_PAGE_HTML, headers={"Cache-Control": "no-cache"})
 
 
 # ---------------------------------------------------------------- 網頁
@@ -244,6 +401,14 @@ def attach_frontend(app, dist: Path) -> None:
         return FileResponse(index_file, headers=no_cache)
 
 
+def build_app():
+    from app.api.server import app
+
+    attach_first_run_setup(app)  # 須在前端 catch-all 路由之前註冊
+    attach_frontend(app, frontend_dir())
+    return app
+
+
 def port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.5)
@@ -270,6 +435,7 @@ def open_browser_when_ready(url: str, port: int) -> None:
 
 
 def run_server(open_browser: bool) -> int:
+    """主控台版：前景執行服務，可選擇開瀏覽器。"""
     import uvicorn
 
     port = get_port()
@@ -284,10 +450,7 @@ def run_server(open_browser: bool) -> int:
         return 1
 
     ensure_first_admin()
-
-    from app.api.server import app
-
-    attach_frontend(app, frontend_dir())
+    app = build_app()
 
     print("=" * 60)
     print(f" {APP_TITLE}")
@@ -308,20 +471,80 @@ def run_server(open_browser: bool) -> int:
     return 0
 
 
+def run_app_window(base: Path) -> int:
+    """視窗版：背景執行服務，開 WebView2 App 視窗；關閉視窗即停止服務。"""
+    import uvicorn
+
+    port = get_port()
+    url = f"http://{HOST}:{port}/"
+    if port_in_use(port):
+        if is_our_service(port):
+            message_box("Open-PETs 已經在執行中，請切換到已開啟的視窗。")
+            return 0
+        message_box(f"埠號 {port} 已被其他程式使用。\n\n請用記事本開啟\n{base / '.env'}\n把 OPEN_PETS_PORT 改成其他數字（例如 {port + 1}）後再開啟 Open-PETs。", is_error=True)
+        return 1
+
+    app = build_app()
+    server = uvicorn.Server(uvicorn.Config(
+        app, host=HOST, port=port, server_header=False, log_level="warning", timeout_keep_alive=30,
+    ))
+    server_thread = threading.Thread(target=server.run, name="open-pets-server", daemon=True)
+    server_thread.start()
+    for _ in range(240):  # 最多等 60 秒
+        if server.started or not server_thread.is_alive():
+            break
+        time.sleep(0.25)
+    if not server.started:
+        message_box(f"服務啟動失敗，詳見 {base / 'data' / 'logs' / 'launcher.log'}", is_error=True)
+        return 1
+    print(f"服務已啟動：{url}（資料夾 {os.environ['OPEN_PETS_DATA_DIR']}）")
+
+    import webview
+
+    webview.settings["ALLOW_DOWNLOADS"] = True  # 去識別化結果、設定檔、合規報告以下載方式存檔（存到「下載」資料夾）
+    webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
+    start_url = url.rstrip("/") + SETUP_PAGE_PATH if needs_first_admin() else url
+    webview.create_window(
+        APP_TITLE, start_url, width=1440, height=900, min_size=(1024, 680), maximized=True,
+        text_select=True, zoomable=True,
+    )
+    try:
+        # private_mode=False＋storage_path：瀏覽器端儲存（工作區、介面設定）在重開後保留
+        webview.start(gui="edgechromium", private_mode=False, storage_path=str(base / "webview"))
+    except Exception as exc:
+        print(f"[錯誤] 無法開啟 App 視窗：{exc!r}")
+        message_box(
+            "無法開啟 Open-PETs 視窗：這台電腦可能沒有安裝 Microsoft Edge WebView2 Runtime。\n\n"
+            "請至 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下載安裝後再開啟。",
+            is_error=True,
+        )
+        return 1
+    finally:
+        server.should_exit = True
+        server_thread.join(timeout=10)
+        print("視窗已關閉，服務停止。")
+    return 0
+
+
 # ---------------------------------------------------------------- 進入點
-def main(argv: list[str]) -> int:
-    setup_console()
-    base = install_dir()
-    os.chdir(base)
+def main(argv: list[str], app_mode: bool) -> int:
+    base = home_dir()
+    if app_mode:
+        redirect_output_to_log(base)
+    else:
+        setup_console()
     env_path = ensure_env_file(base)
     load_env(env_path, base)
+    os.chdir(base)
 
+    if app_mode:
+        return run_app_window(base)
     if argv and (argv[0] in BACKEND_CLI_COMMANDS or argv[0] == "--help-cli"):
         from app.cli.main import cli
 
         args = ["--help"] if argv[0] == "--help-cli" else argv
         try:
-            cli(args=args, prog_name="OpenPETs.exe")
+            cli(args=args, prog_name=Path(sys.executable).name if is_frozen() else "launcher.py")
         except SystemExit as exc:
             return int(exc.code or 0) if not isinstance(exc.code, str) else 1
         return 0
@@ -335,18 +558,24 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()  # 打包後 joblib／multiprocessing 子行程需要
+    cli_args = sys.argv[1:]
+    # 視窗版 OpenPETs.exe 一律開 App 視窗；OpenPETs-cli.exe 與開發時（加 --app 才開視窗）為主控台
+    use_app_window = (is_frozen() and not is_cli_exe()) or "--app" in cli_args
     try:
-        code = main(sys.argv[1:])
+        code = main([a for a in cli_args if a != "--app"], use_app_window)
     except KeyboardInterrupt:
         code = 0
-    except Exception as exc:  # 雙擊執行時讓使用者看得到錯誤
+    except Exception as exc:  # 讓使用者看得到錯誤
         import traceback
 
         traceback.print_exc()
-        print(f"\n[錯誤] 啟動失敗：{exc}")
-        pause_before_exit()
+        if use_app_window:
+            message_box(f"Open-PETs 啟動失敗：{exc}\n\n詳見 {home_dir() / 'data' / 'logs' / 'launcher.log'}", is_error=True)
+        else:
+            print(f"\n[錯誤] 啟動失敗：{exc}")
+            pause_before_exit()
         code = 1
     else:
-        if code:
+        if code and not use_app_window:
             pause_before_exit()
     sys.exit(code)
