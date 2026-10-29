@@ -24,7 +24,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => stableTranslation }));
 vi.mock('echarts-for-react', () => ({ default: () => null }));
 
 import KAnonymityRules from '../../features/step3_rules/KAnonymityRules';
-import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { useWorkspaceStore, DEFAULT_KANON_RULE_PARAMS } from '../../store/useWorkspaceStore';
 
 const baseState = {
     columns: ['年齡', '地區', '疾病'],
@@ -43,7 +43,7 @@ describe('Step3 K-匿名白話版', () => {
     });
     afterEach(() => cleanup());
 
-    it('預設 K=3 選中「標準」，摘要顯示猜中機會最多 1/3', () => {
+    it('K=3 選中「標準」，摘要顯示猜中機會最多 1/3', () => {
         render(<KAnonymityRules />);
         expect(screen.getByTestId('kanon-preset-standard').getAttribute('aria-checked')).toBe('true');
         expect(screen.getByTestId('kanon-plain-level').textContent).toContain('標準');
@@ -53,11 +53,19 @@ describe('Step3 K-匿名白話版', () => {
         expect(screen.queryByLabelText('k-anonymity (k)')).toBeNull();
     });
 
-    it('點「嚴格」寫入 K=10；點「自訂」出現 K 輸入框', () => {
+    it('2026-10-22：「加強」標示預設；Store 初始 K=5；嚴格 K=12', () => {
+        render(<KAnonymityRules />);
+        expect(screen.getByTestId('kanon-preset-enhanced').textContent).toContain('預設');
+        expect(screen.getByTestId('kanon-preset-standard').textContent).not.toContain('預設');
+        expect(screen.getByTestId('kanon-preset-strict').textContent).toContain('12');
+        expect(DEFAULT_KANON_RULE_PARAMS.kValue).toBe(5);
+    });
+
+    it('點「嚴格」寫入 K=12；點「自訂」出現 K 輸入框', () => {
         render(<KAnonymityRules />);
         fireEvent.click(screen.getByTestId('kanon-preset-strict'));
-        expect(useWorkspaceStore.getState().kValue).toBe(10);
-        expect(screen.getByTestId('kanon-plain-sum-guess').textContent).toContain('10%');
+        expect(useWorkspaceStore.getState().kValue).toBe(12);
+        expect(screen.getByTestId('kanon-plain-sum-guess').textContent).toContain('8%');
         fireEvent.click(screen.getByTestId('kanon-preset-custom'));
         expect(screen.getByLabelText('k-anonymity (k)')).toBeTruthy();
         expect(screen.getByTestId('kanon-plain-level').textContent).toContain('自訂');

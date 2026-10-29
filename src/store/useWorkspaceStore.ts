@@ -15,7 +15,7 @@ import type { DatasetProfile } from '../utils/datasetProfile';
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  */
 const MIN_STEP_INDEX = 0;
-const DEFAULT_K_ANONYMITY_VALUE = 3; // ★ 修正：K-匿名 K 值預設由 5 改為 3 (依需求調整)
+const DEFAULT_K_ANONYMITY_VALUE = 5; // ★ 2026-10-22 依〈林政委個資去識別化談參〉改回 5（Step3「加強」＝英國 NHS 強匿名）
 const DEFAULT_L_DIVERSITY_VALUE = 2;
 const DEFAULT_T_CLOSENESS_VALUE = 0.15;
 const DEFAULT_MAX_SUPPRESSION_PERCENT = 20; // ★ 2026-10-28 與後端預設一致（suppression_limit_percent 未填為 20），原為 5
@@ -27,7 +27,7 @@ const DEFAULT_TARGET_DELTA = 1e-5; // ★ 2026-10-28 與後端預設一致（後
 
 /**
  * ★ 2026-10-08：K-匿名 Step3 參數（保護強度、l／t、資料抑制）的系統預設值，集中一處。
- *   Store 初始值與 Step2「套用系統推薦設定」共用：套用推薦設定時一併把 Step3 還原成「標準（預設）」、
+ *   Store 初始值與 Step2「套用系統推薦設定」共用：套用推薦設定時一併把 Step3 還原成「加強（預設）」、
  *   敏感資料保護關閉，避免先匯入設定檔帶入的 K、l／t、抑制設定殘留。
  */
 export const DEFAULT_KANON_RULE_PARAMS = {
@@ -40,7 +40,7 @@ export const DEFAULT_KANON_RULE_PARAMS = {
     suppressionMethod: 'row_suppression',
     cellFillMethod: 'star' as 'star' | 'missing',
     cellFillValuesByColumn: {} as Record<string, string>,
-    limitExceededAction: 'stop_and_error',
+    limitExceededAction: 'allow_with_warning', // ★ 2026-10-19 使用者要求：預設改為「仍產出（標示未達標）」，比照後端未填時的預設
 };
 
 /**

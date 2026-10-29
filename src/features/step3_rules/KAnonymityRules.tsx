@@ -55,12 +55,15 @@ const SUPPRESSION_PENALTY_THRESHOLD = 12;  // 計算 Pareto 懲罰之抑制率�
 //   「單一一組」、寫入 k_anonymity 設定區塊送出（注意：子集只會放寬分組條件、降低抑制量）。
 const SHOW_QI_COMBINATION_SCOPE = false;
 /**
- * ★ 2026-10-07 白話版：保護強度預設選項。標準 K=3 與 useWorkspaceStore 預設值一致。
+ * ★ 2026-10-07 白話版：保護強度預設選項。
+ * ★ 2026-10-22 依〈林政委個資去識別化談參〉表 3（K = 1 ÷ 再識別風險閾值）：
+ *   標準 K=3＝英國 NHS 弱匿名（0.33）；加強 K=5＝NHS 強匿名（0.2）；嚴格 K=12＝歐盟 EMA、加拿大 IPCO 低風險（0.09）。
+ *   預設改為「加強」（K=5，與 useWorkspaceStore 預設值一致）：我國 111 憲判 13 採絕對主義，較歐英日嚴格。
  */
 const K_PRESET_OPTIONS: ReadonlyArray<{ key: 'standard' | 'enhanced' | 'strict'; kValue: number; titleText: string; isDefault?: boolean }> = [
-    { key: 'standard', kValue: 3, titleText: '標準', isDefault: true },
-    { key: 'enhanced', kValue: 5, titleText: '加強' },
-    { key: 'strict', kValue: 10, titleText: '嚴格' },
+    { key: 'standard', kValue: 3, titleText: '標準' },
+    { key: 'enhanced', kValue: 5, titleText: '加強', isDefault: true },
+    { key: 'strict', kValue: 12, titleText: '嚴格' },
 ];
 
 /** 白話版選項卡（保護強度、抑制方式共用） */
@@ -806,6 +809,14 @@ export default function KAnonymityRules(): React.ReactElement
                 style={{ textAlign: 'left' }}
                 title={translate('step3.plain_intro_short', '選一個保護強度即可進入下一步，其餘已帶入建議值。')}
             />
+            {/* ★ 2026-10-21 使用者要求：Step3 加但書（參數只是建議值） */}
+            <Alert
+                type="warning"
+                showIcon
+                data-testid="kanon-step3-disclaimer"
+                style={{ textAlign: 'left' }}
+                title={translate('step3.disclaimer_kanon', '保護強度與各項數值為系統建議值，僅供參考。是否足夠，請依資料用途、提供對象及相關法規（如個人資料保護法）自行判斷；本工具無法保證處理後的資料完全無法被識別。')}
+            />
 
             <Row gutter={[20, 16]} align="stretch">
                 {/* 左側：設定 */}
@@ -814,7 +825,15 @@ export default function KAnonymityRules(): React.ReactElement
 
                         {/* ① 保護強度 */}
                         <div style={sectionCardStyle} data-testid="kanon-plain-protection">
-                            {renderSectionHeader('1', translate('step3.plain_sec1_title', '保護強度'))}
+                            {renderSectionHeader('1', translate('step3.plain_sec1_title', '保護強度'), undefined, (
+                                <div style={{ lineHeight: 1.7 }}>
+                                    <div>{translate('step3.plain_sec1_src_intro', '三個選項參考國外去識別化指引的再識別風險上限（K = 1 ÷ 風險上限）：')}</div>
+                                    <div>{translate('step3.plain_sec1_src_standard', '・標準 K=3：英國 NHS 健康與社福資料「弱匿名」，風險 ≤ 33%')}</div>
+                                    <div>{translate('step3.plain_sec1_src_enhanced', '・加強 K=5：英國 NHS「強匿名」，風險 ≤ 20%')}</div>
+                                    <div>{translate('step3.plain_sec1_src_strict', '・嚴格 K=12：歐盟藥物管理局 EMA、加拿大安大略省 IPCO 低風險個資，風險 ≤ 9%')}</div>
+                                    <div style={{ marginTop: 4 }}>{translate('step3.plain_sec1_src_note', '各國標準不同，我國尚無統一數值，請依資料敏感程度與提供對象選擇。')}</div>
+                                </div>
+                            ))}
                             <div role="radiogroup" aria-label={translate('step3.plain_sec1_title', '保護強度')} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                                 {K_PRESET_OPTIONS.map((presetOption) => renderChoiceCard({
                                     cardKey: presetOption.key,

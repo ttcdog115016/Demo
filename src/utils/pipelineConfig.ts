@@ -358,7 +358,7 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
             ...(isEnableLDiversityStatus ? { l: currentLValueNumber } : {}),
             ...(isEnableTClosenessStatus ? { t: currentTValueNumber } : {}),
             suppression_limit_percent: currentMaxSuppressionNumber ?? 20, // ★ 2026-10-28 與後端預設一致
-            limit_exceeded_action: (currentLimitExceededActionStr || 'stop_and_error') as 'stop_and_error' | 'allow_with_warning',
+            limit_exceeded_action: (currentLimitExceededActionStr || 'allow_with_warning') as 'stop_and_error' | 'allow_with_warning',
             suppression_method: (isCellSuppressionMethod(currentSuppressionMethodStr) ? 'cell_suppression' : 'row_suppression') as 'row_suppression' | 'cell_suppression',
             // ★ cell_fill 僅在「值抑制」(cell_suppression) 模式下才有意義，未啟用時完全不送出，
             //   避免像上方 l／t 一樣把無效參數塞進設定檔造成誤解（見上方新增選單處的完整說明）。

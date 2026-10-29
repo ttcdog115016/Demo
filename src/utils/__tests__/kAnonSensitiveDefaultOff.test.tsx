@@ -59,7 +59,7 @@ describe('敏感資料保護（l／t）預設關閉', () => {
         useWorkspaceStore.setState(makeState('none'));
         render(<KAnonymityRules />);
         fireEvent.click(screen.getByTestId('kanon-preset-strict'));
-        expect(useWorkspaceStore.getState().kValue).toBe(10);
+        expect(useWorkspaceStore.getState().kValue).toBe(12);
         expect(useWorkspaceStore.getState().enableLDiversity).toBe(false);
     });
 });

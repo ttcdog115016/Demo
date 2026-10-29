@@ -192,7 +192,7 @@ describe('值抑制逐欄填值 cell_fill_value', () => {
 describe('匯入設定檔後再「套用系統推薦設定」：Step3 還原為系統預設（2026-10-08）', () => {
     afterEach(() => cleanup());
 
-    it('K、l／t、抑制設定回到預設；Step3 顯示「標準」且進階區塊收合；下載設定檔不含 l／t', async () => {
+    it('K、l／t、抑制設定回到預設；Step3 顯示「加強」（2026-10-22 預設 K=5）且進階區塊收合；下載設定檔不含 l／t', async () => {
         resetStore();
         await importThroughStep2(backendConfigKanonText);
         expect(useWorkspaceStore.getState()).toMatchObject({ kValue: 5, enableLDiversity: true, enableTCloseness: true, maxSuppression: 20, limitExceededAction: 'allow_with_warning' });
@@ -201,16 +201,16 @@ describe('匯入設定檔後再「套用系統推薦設定」：Step3 還原為�
         fireEvent.click(screen.getByText('step2.btn_apply_recommend'));
         cleanup();
         expect(useWorkspaceStore.getState()).toMatchObject({
-            kValue: 3, lValue: 2, tValue: 0.15, enableLDiversity: false, enableTCloseness: false,
-            maxSuppression: 20, suppressionMethod: 'row_suppression', limitExceededAction: 'stop_and_error', cellFillValuesByColumn: {}
+            kValue: 5, lValue: 2, tValue: 0.15, enableLDiversity: false, enableTCloseness: false,
+            maxSuppression: 20, suppressionMethod: 'row_suppression', limitExceededAction: 'allow_with_warning', cellFillValuesByColumn: {} // ★ 2026-10-28 抑制上限預設 20
         });
 
         const { getByTestId, container } = render(<KAnonymityRules />);
-        expect(getByTestId('kanon-preset-standard').getAttribute('aria-checked')).toBe('true');
+        expect(getByTestId('kanon-preset-enhanced').getAttribute('aria-checked')).toBe('true');
         expect(container.querySelector('[data-testid="kanon-plain-advanced"] [role="button"]')?.getAttribute('aria-expanded')).toBe('false');
 
         const exportedConfig = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: Record<string, unknown> };
-        expect(exportedConfig.k_anonymity).toMatchObject({ k: 3, suppression_limit_percent: 20, limit_exceeded_action: 'stop_and_error', suppression_method: 'row_suppression' });
+        expect(exportedConfig.k_anonymity).toMatchObject({ k: 5, suppression_limit_percent: 20, limit_exceeded_action: 'allow_with_warning', suppression_method: 'row_suppression' });
         expect(exportedConfig.k_anonymity).not.toHaveProperty('l');
         expect(exportedConfig.k_anonymity).not.toHaveProperty('t');
 

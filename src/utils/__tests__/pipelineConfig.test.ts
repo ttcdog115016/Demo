@@ -76,10 +76,10 @@ describe('K-匿名 config.json 組裝', () => {
         expect(buildKanon().k_anonymity).not.toHaveProperty('cell_fill');
     });
 
-    it('缺值時套用預設（抑制率 20、超限即停止）', () => {
+    it('缺值時套用預設（抑制率 20、超限仍產出並標示未達標；2026-10-28 抑制率與後端預設一致）', () => {
         const kanonBlock = buildKanon({ maxSuppression: null, limitExceededAction: '' }).k_anonymity as Record<string, unknown>;
         expect(kanonBlock.suppression_limit_percent).toBe(20);
-        expect(kanonBlock.limit_exceeded_action).toBe('stop_and_error');
+        expect(kanonBlock.limit_exceeded_action).toBe('allow_with_warning');
     });
 
     it('欄位名稱去除 BOM／零寬空白；舊的 drop 轉為 remove；未設定欄位改用畫面角色', () => {

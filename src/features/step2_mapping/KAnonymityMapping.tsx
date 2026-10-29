@@ -92,7 +92,7 @@ const STRING_PREFIX_STRATEGY_DEFAULT_LEVEL = 4;
 // ★ 修正：與 useWorkspaceStore.ts 之 DEFAULT_K_ANONYMITY_VALUE 同步由 5 改為 3，避免這裡
 // 單獨殘留舊的預設值 5——雖然目前 kValue 於 Store 一律有初始值、正常流程不會走到這個
 // ?? 後備值，但匯入「未包含 k 欄位」的舊版設定檔時仍會用到，故一併同步，避免不一致。
-const BASE_DEFAULT_K_ANONYMITY_VALUE = 3;
+const BASE_DEFAULT_K_ANONYMITY_VALUE = 5; // ★ 2026-10-22 與 useWorkspaceStore 同步改為 5
 const BASE_DEFAULT_L_DIVERSITY_VALUE = 2;
 const BASE_DEFAULT_T_CLOSENESS_VALUE = 0.15;
 const BASE_DEFAULT_SUPPRESSION_LIMIT = 20; // ★ 2026-10-28 與後端預設一致
@@ -381,7 +381,7 @@ const buildExportJSON = (fieldsList: FieldDef[], hierarchiesList: HierarchyTable
                 suppression_method: currentWorkspaceStoreStateData.suppressionMethod ?? "row_suppression",
                 cell_fill: currentWorkspaceStoreStateData.cellFillMethod ?? "star",
                 suppression_limit_percent: currentWorkspaceStoreStateData.maxSuppression ?? BASE_DEFAULT_SUPPRESSION_LIMIT,
-                limit_exceeded_action: currentWorkspaceStoreStateData.limitExceededAction ?? "stop_and_error"
+                limit_exceeded_action: currentWorkspaceStoreStateData.limitExceededAction ?? "allow_with_warning"
             },
             differential_privacy: { enabled: false }
         },
@@ -1549,7 +1549,7 @@ export default function KAnonymityMapping(): React.ReactElement
         // ★ 2026-10-08 使用者反映：先匯入設定檔（帶入 K、l／t、抑制設定）再套用推薦設定，Step3 仍停在匯入的值、
         //   「進階：敏感資料保護」也還開著。推薦設定應整組回到系統預設：Step3 一併還原為「標準（K=3）」、l／t 關閉、抑制預設值。
         useWorkspaceStore.setState({ ...DEFAULT_KANON_RULE_PARAMS, cellFillValuesByColumn: {} });
-        messageApi.success(translate('message.apply_recommend_success_with_step3', '已為所有欄位套用推薦設定；Step3 保護強度也已還原為「標準（預設）」。'));
+        messageApi.success(translate('message.apply_recommend_success_with_step3', '已為所有欄位套用推薦設定；Step3 保護強度也已還原為「加強（預設）」。'));
     };
 
     const handleFieldChange = (targetFieldIdStr: string, targetAttributeKeyName: keyof FieldDef, newAttributeValueData: string | number | null): void => {
