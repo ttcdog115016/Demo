@@ -22,6 +22,7 @@ import Step4_Result from '../step4_result/Step4_Result';
 import { validateProgression } from './validateProgression'; 
 import { listDpFieldsWithBoundsFinerThanNoiseUnit, applyDpDatetimeNoiseUnit } from '../../utils/dpFieldHelpers';
 import { resolveDpFieldRiskRole } from '../../utils/riskAssessment';
+import { confirmIfBackendBusy } from './backendBusyConfirm';
 
 /**
  * ============================================================================
@@ -254,7 +255,8 @@ export default function MainLayout(): React.ReactElement
         // DP：由 Step3 往後時檢查日期欄位雜訊單位（見 confirmDpNoiseUnitBeforeLeavingRules）
         if (currentStepIndexValue === STEP_INDEX_RULES && targetStepIndexValue > currentStepIndexValue)
         {
-            confirmDpNoiseUnitBeforeLeavingRules(jumpToTargetStep);
+            // ★ 2026-10-22：再檢查上一筆是否可能仍在後端執行（見 backendBusyConfirm.tsx；2026-10-29 拔除 DP 執行時間預估）
+            confirmDpNoiseUnitBeforeLeavingRules(() => confirmIfBackendBusy({ modalApi: globalModalApi, translate, proceedAction: jumpToTargetStep, context: 'navigate' }));
             return;
         }
 
@@ -306,7 +308,8 @@ export default function MainLayout(): React.ReactElement
         // DP：由 Step3 前往 Step4 時檢查日期欄位雜訊單位（見 confirmDpNoiseUnitBeforeLeavingRules）
         if (currentStepIndexValue === STEP_INDEX_RULES)
         {
-            confirmDpNoiseUnitBeforeLeavingRules(goToNextStep);
+            // ★ 2026-10-22：再檢查上一筆是否可能仍在後端執行（見 backendBusyConfirm.tsx；2026-10-29 拔除 DP 執行時間預估）
+            confirmDpNoiseUnitBeforeLeavingRules(() => confirmIfBackendBusy({ modalApi: globalModalApi, translate, proceedAction: goToNextStep, context: 'navigate' }));
             return;
         }
 

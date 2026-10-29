@@ -27,6 +27,7 @@ import type { DpStoreField } from '../../utils/pipelineConfig';
 import type { KAnonymityQualityReport, DpQualityReport } from '../../api/apiService';
 
 import { usePipelineRunner } from './usePipelineRunner';
+import { confirmIfBackendBusy } from '../workspace/backendBusyConfirm';
 import BackendReportDetails from './BackendReportDetails';
 import ComplianceReportDocument, { type ComplianceReportEntry } from '../../components/ComplianceReportDocument';
 import { buildComplianceReportSnapshot, formatEpsilonForDisplay, isCapEvaluated, resolveCapExcessRisk, resolveSensitiveGuessRisk } from '../../utils/complianceReport';
@@ -71,7 +72,7 @@ export default function Step4_Result(): React.ReactElement
     const { token } = theme.useToken();
     const isDarkModeActiveStatus = token.colorBgContainer !== '#ffffff';
     const { t: translate } = useTranslation();
-    const { message: messageApi } = AntdApp.useApp();
+    const { message: messageApi, modal: modalApi } = AntdApp.useApp();
 
 
     const datasetColumnsListArray = useWorkspaceStore((state) => state.columns);
@@ -896,39 +897,35 @@ export default function Step4_Result(): React.ReactElement
                                                         : null
                                                 ].filter((item): item is string => item !== null);
 
-                                                const suggestedLValueNumber = Math.max(1, currentLValueNumber - 1);
-                                                const suggestedTValueNumber = Math.min(1, Math.round((currentTValueNumber + 0.05) * 100) / 100);
-                                                // ★ 2026-10-19 使用者反映「提高泛化層級，讓分組人數變多，敏感資料種類自然更多樣」敘述怪：
-                                                // 用語太技術、「自然更多樣」講得太滿。實測（銀髮安居資料，敏感欄位 97% 為同一值）：
-                                                // 後端只刪除不滿 K 筆的分組，l／t 不足的分組不會被刪；光把欄位分粗很難通過，
-                                                // 最有效的是調高 K，讓筆數少、敏感值單一的小分組被刪除。故改為：
-                                                // ① 調高 K ② 欄位分粗一點 ③ 放寬 l／t（l 只能降到 1 時直接說明等於不檢查）；
-                                                // 移除使用者在工具內無法執行的「移除／合併極少數族群」。
-                                                const suggestedHigherKValueNumber = currentKValueNumber * 2;
+                                                // ★ 2026-10-19 使用者要求：建議值原本是前端簡單公式（K×2、l−1、t+0.05、抑制比例+1%），
+                                                // 未經後端驗證，照填仍可能不通過，改為只給調整方向、不給具體數值。
+                                                // 同時刪除／遮蔽比例已超過上限時，不再建議「調高 K」（會刪更多，與抑制率建議互相矛盾），改以欄位分粗優先。
                                                 const ltOptionTextList: string[] = [];
                                                 ltOptionTextList.push(translate(
-                                                    'step4.alert.lt_option_raise_k',
-                                                    `回到 Step3，把 K 值從 ${currentKValueNumber} 調高（例如 ${suggestedHigherKValueNumber}）：筆數太少的分組會被${suppressionActionVerbText}，留下的分組筆數較多，比較容易同時包含不同的敏感值；${suppressionActionVerbText}的資料也會跟著變多`
-                                                ));
-                                                ltOptionTextList.push(translate(
                                                     'step4.alert.lt_option_coarser_qi',
-                                                    '回到 Step2，把「間接識別碼」欄位分得粗一點（例如年齡從每 5 歲一組改成每 10 歲一組），讓更多筆資料落在同一組'
+                                                    '回到 Step2，把「間接識別碼」欄位分廣泛一點（例如把年齡區間放寬），讓更多筆資料落在同一組'
                                                 ));
+                                                if (!isSuppressionExceededStatus) {
+                                                    ltOptionTextList.push(translate(
+                                                        'step4.alert.lt_option_raise_k',
+                                                        `回到 Step3，把 K 值調高：筆數太少的分組會被${suppressionActionVerbText}，留下的分組筆數較多，比較容易同時包含不同的敏感值；但${suppressionActionVerbText}的資料也會變多，請留意不要超過抑制上限`
+                                                    ));
+                                                }
                                                 if (isLFailedStatus) {
-                                                    ltOptionTextList.push(suggestedLValueNumber <= 1
+                                                    ltOptionTextList.push(currentLValueNumber <= 2
                                                         ? translate(
                                                             'step4.alert.lt_option_disable_l',
                                                             '回到 Step3，關閉「進階：敏感資料保護」的敏感值種類（l）檢查（l 設為 1 等於不檢查）'
                                                         )
                                                         : translate(
                                                             'step4.alert.lt_option_lower_l_v2',
-                                                            `回到 Step3，把 l 值從 ${currentLValueNumber} 調低到 ${suggestedLValueNumber}（數字越小，要求越寬鬆）`
+                                                            '回到 Step3，把 l 值調低（數字越小，要求越寬鬆）'
                                                         ));
                                                 }
                                                 if (isTFailedStatus) {
                                                     ltOptionTextList.push(translate(
                                                         'step4.alert.lt_option_raise_t',
-                                                        `回到 Step3，把 t 值從 ${currentTValueNumber} 調高到 ${suggestedTValueNumber}（t 是容許的分佈距離上限，數字越大，門檻越寬鬆）`
+                                                        '回到 Step3，把 t 值調高（t 是容許的分佈距離上限，數字越大，門檻越寬鬆）'
                                                     ));
                                                 }
 
@@ -951,33 +948,38 @@ export default function Step4_Result(): React.ReactElement
                                             }
 
                                             if (failedCheckNamesList.includes('k')) {
-                                                const suggestedKValueNumber = Math.max(2, currentKValueNumber - 1);
                                                 failureGuidanceSectionsList.push({
                                                     key: 'k',
                                                     headlineNode: (
                                                         <>{translate('step4.alert.k_plain_issue', `部分分組的資料筆數不足您設定的 k = ${currentKValueNumber} 筆，代表這些分組裡的人仍可能被單獨辨識出來。`)}</>
                                                     ),
                                                     optionTextList: [
-                                                        translate('step4.alert.k_option_coarser_qi', '回到 Step2，把「間接識別碼」欄位分得粗一點（例如年齡從每 5 歲一組改成每 10 歲一組），讓每個分組的筆數變多'),
-                                                        translate('step4.alert.k_option_lower_k', `回到 Step3，把 k 值從 ${currentKValueNumber} 調低到 ${suggestedKValueNumber}（數字越小，要求越寬鬆）`)
+                                                        translate('step4.alert.k_option_coarser_qi', '回到 Step2，把「間接識別碼」欄位分廣泛一點（例如把年齡區間放寬），讓每個分組的筆數變多'),
+                                                        translate('step4.alert.k_option_lower_k', '回到 Step3，把 k 值調低（數字越小，要求越寬鬆，但保護也較弱）')
                                                     ]
                                                 });
                                             }
 
                                             if (isSuppressionExceededStatus) {
                                                 const currentSuppressionCapNumber = currentMaxSuppressionNumber ?? 20;
-                                                const suggestedSuppressionCapNumber = Math.min(100, Math.ceil(kReport.suppression_rate_percent) + 1);
+                                                // ★ 2026-10-19：刪除／遮蔽比例很高（≥ 50%）時，不建議調高抑制上限（照做會只剩很少資料），改為提醒設定可能不適合
+                                                const isSuppressionSevereStatus = kReport.suppression_rate_percent >= 50;
+                                                const suppressionOptionTextList: string[] = [
+                                                    translate('step4.alert.suppression_option_raise_level', `回到 Step2，把「間接識別碼」欄位分廣泛一點（例如把年齡區間放寬），減少需要被${suppressionActionVerbText}的筆數`),
+                                                    translate('step4.alert.suppression_option_lower_k', `回到 Step3，把 K 值調低：分組需要的筆數變少，被${suppressionActionVerbText}的資料也會減少（保護會變弱）`)
+                                                ];
+                                                if (!isSuppressionSevereStatus) {
+                                                    suppressionOptionTextList.push(translate('step4.alert.suppression_option_raise_cap', `回到 Step3，調高「抑制上限」（上限越高，可能被${suppressionActionVerbText}的資料越多）`));
+                                                }
                                                 failureGuidanceSectionsList.push({
                                                     key: 'suppression',
                                                     headlineNode: (
-                                                        <>{translate('step4.alert.suppression_plain_issue', `目前有 ${formatSuppressionPercentText(kReport.suppression_rate_percent, currentSuppressionCapNumber)}% 的資料筆數太特殊、必須被刪除或打上「*」才符合隱私要求，已超過您設定的上限 ${currentSuppressionCapNumber}%。`)}</>
+                                                        <>
+                                                            {translate('step4.alert.suppression_plain_issue', `目前有 ${formatSuppressionPercentText(kReport.suppression_rate_percent, currentSuppressionCapNumber)}% 的資料筆數太特殊、必須被刪除或打上「*」才符合隱私要求，已超過您設定的上限 ${currentSuppressionCapNumber}%。`)}
+                                                            {isSuppressionSevereStatus && translate('step4.alert.suppression_severe_note', '需要處理的資料已超過一半，不建議直接調高抑制上限（留下的資料會很少），這組設定可能不適合這份資料。')}
+                                                        </>
                                                     ),
-                                                    optionTextList: [
-                                                        translate('step4.alert.suppression_option_raise_cap', suggestedSuppressionCapNumber >= 100
-                                                            ? `回到 Step3，把「抑制上限」從 ${currentSuppressionCapNumber}% 調高到 100%`
-                                                            : `回到 Step3，把「抑制上限」從 ${currentSuppressionCapNumber}% 調高到 ${suggestedSuppressionCapNumber}% 以上`),
-                                                        translate('step4.alert.suppression_option_raise_level', '回到 Step2，提高「間接識別碼」欄位的泛化層級，減少需要被刪除／遮蔽的筆數')
-                                                    ]
+                                                    optionTextList: suppressionOptionTextList
                                                 });
                                             }
 
@@ -1025,7 +1027,7 @@ export default function Step4_Result(): React.ReactElement
                 )}
 
                 <Space size="middle">
-                    <Button icon={<ReloadOutlined spin={isPipelineCalculatingStatus} />} onClick={() => runFullPipeline(true)} disabled={isPipelineCalculatingStatus} size="large">
+                    <Button icon={<ReloadOutlined spin={isPipelineCalculatingStatus} />} onClick={() => confirmIfBackendBusy({ modalApi, translate, proceedAction: () => runFullPipeline(true), context: 'rerun' })} disabled={isPipelineCalculatingStatus} size="large">
                         {translate('step4.btn.recalculate_plain', '重新計算')}
                     </Button>
                     <Button type="default" icon={<FileDoneOutlined />} disabled={isPipelineCalculatingStatus || !!pipelineFailedMessage} onClick={handleOpenReportModal} size="large">

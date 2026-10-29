@@ -19,6 +19,7 @@ import { computeKAnonymityFidelity, type KAnonymityFidelityResult } from '../../
 import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, wrapBackendConfigDocument, type DpStoreField, type KAnonymityPipelineSettings, type DifferentialPrivacyConfigInput } from '../../utils/pipelineConfig';
 import { isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
 import { describePipelineError } from './backendErrorCatalog';
+import { markBackendLikelyBusy, clearBackendBusy, isGatewayTimeoutStatus } from '../../utils/backendBusyCooldown';
 import { runDeidentificationPhase } from './pipeline/deidentificationPhase';
 import { runPreprocessPhase } from './pipeline/preprocessPhase';
 import { runRiskAssessmentPhase } from './pipeline/riskAssessmentPhase';
@@ -703,6 +704,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 }
 
                 appendStepLog(translate('step4.log.step_finished', '處理完成，已產生合規報告'));
+                clearBackendBusy();
 
             } catch (error: unknown) {
                 // ★ 2026-09-30：使用者按「取消運算」→ 不是錯誤，不組錯誤卡片、不寫稽核紀錄
@@ -721,6 +723,12 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     messageApi.error(translate('step4.msg.timeout', '後端回應逾時'));
                     setPipelineFailedMessage(timeoutMessageText);
                     return;
+                }
+                // ★ 2026-10-22：通道等待逾時（524／504）時後端多半仍在算這一筆，
+                //   之後 5 分鐘內再送出會先提醒（見 workspace/backendBusyConfirm.tsx），避免請求在後端疊加排隊。
+                const failedHttpStatus = (error as { response?: { status?: number } } | null)?.response?.status;
+                if (isGatewayTimeoutStatus(failedHttpStatus)) {
+                    markBackendLikelyBusy();
                 }
                 const { errorMessage, displayNode: friendlyDisplayNode, responseData } = await describePipelineError(error);
 

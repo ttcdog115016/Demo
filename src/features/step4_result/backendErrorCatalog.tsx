@@ -68,7 +68,13 @@ export const GENERIC_HTTP_STATUS_FALLBACK_MESSAGE: Record<number, string> = {
     401: '身分驗證失敗，請重新登入後再試。',
     413: '上傳內容超過伺服器允許的大小上限。',
     422: '設定內容不符合後端驗證規則。',
-    500: '系統內部錯誤，請聯絡系統管理員或稍後再試。'
+    500: '系統內部錯誤，請聯絡系統管理員或稍後再試。',
+    // ★ 2026-10-22：通道／反向代理層的錯誤（沒有 error_code），見 GENERIC_HTTP_STATUS_USER_FRIENDLY_ADVICE
+    502: '連線通道無法連到後端服務。',
+    503: '後端服務暫時無法使用。',
+    504: '後端處理超過等待時間，連線已中斷。',
+    524: '後端處理超過 120 秒，連線通道已中斷（Cloudflare 524）。',
+    530: '連線通道目前無法使用（Cloudflare 530）。'
 };
 
 // 上面兩張表（含錯誤代碼、HTTP 狀態碼、後端技術訊息）是寫給工程師排查用的，會寫進
@@ -141,7 +147,23 @@ export const GENERIC_HTTP_STATUS_USER_FRIENDLY_HEADLINE: Record<number, string> 
     401: '登入狀態已失效',
     413: '上傳內容超過系統允許的大小上限',
     422: '送出的設定內容不符合規定',
-    500: '系統發生非預期的錯誤'
+    500: '系統發生非預期的錯誤',
+    502: '連線通道無法連到後端服務',
+    503: '後端服務暫時無法使用',
+    504: '後端處理時間過長，連線已中斷',
+    524: '後端處理時間過長，連線已中斷',
+    530: '連線通道目前無法使用'
+};
+
+// ★ 2026-10-22：DP 總預算 0.1 時 /api/v1/dp 回 524，畫面只顯示「處理過程發生問題」加 Cloudflare 英文原文。
+//   這些狀態碼來自通道或反向代理，沒有後端 error_code，依狀態碼給白話建議。
+//   524／504 時後端通常仍在繼續計算，這時重按會讓請求在後端排隊、一起逾時（見 utils/backendBusyCooldown.ts）。
+export const GENERIC_HTTP_STATUS_USER_FRIENDLY_ADVICE: Record<number, string> = {
+    502: '請稍候 1～2 分鐘再試一次；若持續發生，請聯絡系統管理員確認後端服務與連線通道是否正常。',
+    503: '請稍候幾分鐘再試一次；若持續發生，請聯絡系統管理員。',
+    504: '後端通常仍會繼續把這一筆算完，請等幾分鐘再按「重新計算」，不要連續重按，以免排隊拖慢所有人。若使用差分隱私，且有欄位使用 (ε, δ)-DP、ε 很小，運算會非常久，建議在「隱私設定」把該欄改為 ε-DP 或調大 ε。',
+    524: '後端通常仍會繼續把這一筆算完，請等幾分鐘再按「重新計算」，不要連續重按，以免排隊拖慢所有人。若使用差分隱私，且有欄位使用 (ε, δ)-DP、ε 很小，運算會非常久，建議在「隱私設定」把該欄改為 ε-DP 或調大 ε。',
+    530: '連線通道可能正在重新連線，請稍候 1～2 分鐘後重新整理頁面再試；若持續發生，請聯絡系統管理員。'
 };
 
 // ============================================================================
@@ -181,7 +203,9 @@ export const buildFriendlyErrorDisplayNode = (
     const friendlyHeadline = friendlyInfo?.headline
         ?? (responseHttpStatus ? GENERIC_HTTP_STATUS_USER_FRIENDLY_HEADLINE[responseHttpStatus] : undefined)
         ?? '處理過程發生問題';
-    const friendlyAdvice = friendlyInfo?.defaultAdvice ?? '請稍後再試一次；若持續發生，請聯絡系統管理員協助處理。';
+    const friendlyAdvice = friendlyInfo?.defaultAdvice
+        ?? (responseHttpStatus ? GENERIC_HTTP_STATUS_USER_FRIENDLY_ADVICE[responseHttpStatus] : undefined)
+        ?? '請稍後再試一次；若持續發生，請聯絡系統管理員協助處理。';
 
     // ★ 2026-10-05：能從後端訊息辨識出「哪個欄位、哪裡不對」時，改用「問題／建議」兩行精簡呈現
     //   （比照後端「錯誤訊息與建議」寫法），錯誤代碼仍保留在最下方小字供回報。辨識不出來才用下方通用說明。
