@@ -250,8 +250,7 @@ function InnerApp({ isDarkMode }: InnerAppProps): React.ReactElement {
             okType: 'danger',
             cancelText: translate('modal.cancel', '取消'),
             onOk: () => {
-                executeLogoutAction();
-                resetWorkspaceAction();
+                executeLogoutAction(); // ★ 2026-10-29：清空工作區改由 logout() 統一處理（含閒置逾時、登入逾期）
                 globalMessageApi.success(translate('message.logout_success', '已成功登出'));
             }
         });

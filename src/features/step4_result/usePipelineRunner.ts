@@ -256,6 +256,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
     const handleCancelPipeline = useCallback(() => {
         pipelineAbortControllerRef.current?.abort();
     }, []);
+    // ★ 2026-10-29：離開 Step4（例如閒置逾時被登出）時中止進行中的運算，避免結果在登出後又寫回工作區
+    useEffect(() => () => { pipelineAbortControllerRef.current?.abort(); }, []);
     // ★ 新增：若 processedCsvBlob 明明有內容（bytes > 0），但解析出來的資料列數卻是 0，
     //   代表後端回傳的 CSV 內容本身可能有非預期格式（例如編碼、分隔符號等問題）。
     //   過去這種情況畫面上只會安靜地顯示「無此資料」，使用者與工程師都無從得知

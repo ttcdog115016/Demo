@@ -12,6 +12,23 @@ import { create } from 'zustand';
 import { logSystemEventAndWait } from './useSystemLogStore';
 import { getLoginGeneration, memberLogout, restoreMemberSession, setSessionExpiredListener, clearMemberSession } from '../api/authApi';
 import { useAuditStore } from './useAuditStore';
+import { useSystemLogStore } from './useSystemLogStore';
+import { useWorkspaceStore } from './useWorkspaceStore';
+
+/**
+ * ★ 2026-10-29：不論怎麼登出（手動、閒置逾時、登入逾期），都釋放這次登入在瀏覽器裡的資料——
+ *   原本只有手動登出會清工作區，閒置逾時被登出後再登入，Step1 仍看得到先前上傳的檔案。
+ *   工作區整個還原成初始狀態（下一位登入者可能是別人，K 值、DP 預算等設定也還原）；
+ *   只保留後端同步來的閒置登出時間（見 utils/systemSettingsSync.ts），否則登入頁的閒置計時會退回預設。
+ */
+const releaseSessionData = (): void =>
+{
+	const sessionTimeoutValue = (useWorkspaceStore.getState() as unknown as { sessionTimeout?: number }).sessionTimeout;
+	useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true);
+	if (sessionTimeoutValue !== undefined) useWorkspaceStore.setState({ sessionTimeout: sessionTimeoutValue } as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+	useAuditStore.getState().clearAuditLogs();
+	useSystemLogStore.setState({ logs: [], recentlyArrivedIds: [], lastSyncedAt: null, consecutivePollFailures: 0 });
+};
 
 /** ★ 2026-10-29：處理紀錄存後端，登入（或重新整理接續登入）後載入 */
 const loadServerDataForUser = (): void =>
@@ -122,7 +139,7 @@ export const useAuthStore = create<AuthState>(
 				}
 				else void memberLogout();
 				setStoreStateAction({ isAuthenticated: false, user: null, lastLogoutReason: logoutReasonType });
-				useAuditStore.getState().clearAuditLogs();
+				releaseSessionData();
 			},
 
 			restoreSession: async () =>
