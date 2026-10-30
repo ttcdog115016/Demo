@@ -77,7 +77,9 @@ export const sha256HexOfBlob = async (blob: Blob | null | undefined): Promise<st
 export const computeFileFingerprints = async (
     files: { inputFile?: Blob | null; outputFile?: Blob | null }
 ): Promise<Pick<AuditIntegrityRecord, 'inputFileSha256' | 'outputFileSha256'>> => {
-    const [inputFileSha256, outputFileSha256] = await Promise.all([sha256HexOfBlob(files.inputFile), sha256HexOfBlob(files.outputFile)]);
+    // ★ 2026-10-30：依序計算，不同時把兩個檔案整份讀進記憶體
+    const inputFileSha256 = await sha256HexOfBlob(files.inputFile);
+    const outputFileSha256 = await sha256HexOfBlob(files.outputFile);
     return { inputFileSha256, outputFileSha256 };
 };
 

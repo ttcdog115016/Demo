@@ -476,6 +476,7 @@ def run_server(open_browser: bool) -> int:
 #   後端運算佔住 GIL 時視窗的 UI 執行緒等不到，整個視窗卡住。改為同一個 exe 另開子行程跑後端。
 SERVE_INTERNAL_FLAG = "--serve-internal"
 PARENT_PID_FLAG = "--parent-pid"
+BLAS_THREAD_LIMIT = 4
 SYNCHRONIZE = 0x00100000
 INFINITE = 0xFFFFFFFF
 
@@ -539,10 +540,14 @@ def start_server_subprocess():
     import subprocess
 
     event_handle = ctypes.windll.kernel32.CreateEventW(None, True, False, shutdown_event_name(os.getpid()))
+    # numpy、scipy 各帶一份 OpenBLAS，預設依 CPU 核心數各開一組執行緒並預先配置緩衝區（16 核實測閒置就佔 1.1 GB）；
+    # 本專案運算以 pandas／sklearn 為主，很少用到 BLAS，限制執行緒數後約 360 MB。須在子行程載入 numpy 前設定。
+    env = os.environ.copy()
+    env.setdefault("OPENBLAS_NUM_THREADS", str(BLAS_THREAD_LIMIT))
     process = subprocess.Popen(
         server_subprocess_command(os.getpid()),
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
     )
     return process, event_handle
 

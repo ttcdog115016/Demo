@@ -36,6 +36,29 @@ export const buildCapUnavailableReceipt = (reasonText: string): CapReport => ({
     message: `CAP 前後對比請求失敗，無法評估：${reasonText}`
 });
 
-/** CSV 資料列數（扣除表頭與空白行），用於輸入／刪除／輸出筆數統計 */
-export const countCsvDataRowsForStats = (csvText: string): number =>
-    Math.max(0, csvText.split(/\r\n|\r|\n/).filter((lineText) => lineText.trim() !== '').length - 1);
+/** String.prototype.trim 會去掉的空白字元 */
+const isTrimWhitespaceCode = (charCode: number): boolean =>
+    charCode === 0x20 || (charCode >= 0x09 && charCode <= 0x0D) || charCode === 0xA0 || charCode === 0x1680 ||
+    (charCode >= 0x2000 && charCode <= 0x200A) || charCode === 0x2028 || charCode === 0x2029 || charCode === 0x202F ||
+    charCode === 0x205F || charCode === 0x3000 || charCode === 0xFEFF;
+
+/**
+ * CSV 資料列數（扣除表頭與空白行），用於輸入／刪除／輸出筆數統計。
+ * ★ 2026-10-30：逐字元計數，不再 split 成每行一個字串（大檔約多佔檔案大小 1.5～2 倍記憶體）；結果與 split 版相同。
+ */
+export const countCsvDataRowsForStats = (csvText: string): number => {
+    let nonBlankLineCount = 0;
+    let isCurrentLineNonBlank = false;
+    for (let charIndex = 0; charIndex < csvText.length; charIndex++) {
+        const charCode = csvText.charCodeAt(charIndex);
+        if (charCode === 0x0A || charCode === 0x0D) {
+            if (isCurrentLineNonBlank) nonBlankLineCount++;
+            isCurrentLineNonBlank = false;
+            if (charCode === 0x0D && csvText.charCodeAt(charIndex + 1) === 0x0A) charIndex++;
+            continue;
+        }
+        if (!isCurrentLineNonBlank && !isTrimWhitespaceCode(charCode)) isCurrentLineNonBlank = true;
+    }
+    if (isCurrentLineNonBlank) nonBlankLineCount++;
+    return Math.max(0, nonBlankLineCount - 1);
+};

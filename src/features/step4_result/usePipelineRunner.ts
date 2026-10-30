@@ -16,7 +16,7 @@ import { takeLastProcessingRunId } from '../../api/apiErrorInterceptor';
 import { ensureDatasetProfile } from '../../utils/datasetProfile';
 import { RISK_ATTACK_DEFAULT_PARAMS, type HighCardinalitySensitiveInfo } from '../../utils/riskAssessment';
 import { buildComplianceReportSnapshot } from '../../utils/complianceReport';
-import { computeKAnonymityFidelity, type KAnonymityFidelityResult } from '../../utils/kAnonymityFidelity';
+import { computeKAnonymityFidelityInWorker, type KAnonymityFidelityResult } from '../../utils/kAnonymityFidelity';
 import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, wrapBackendConfigDocument, type DpStoreField, type KAnonymityPipelineSettings, type DifferentialPrivacyConfigInput } from '../../utils/pipelineConfig';
 import { isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
 import { describePipelineError } from './backendErrorCatalog';
@@ -567,7 +567,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 if (currentPrivacyModeTypeStr === 'k-anonymity' && finalCsvBlobData) {
                     appendStepLog(translate('step4.log.step_utility', '計算資料實用性中…'));
                     try {
-                        generatedKAnonymityFidelity = computeKAnonymityFidelity({
+                        generatedKAnonymityFidelity = await computeKAnonymityFidelityInWorker({
                             originalCsvText: cleanedCsvText,
                             processedCsvText: await readProcessedCsvTextOnce(),
                             evaluatedColumns: actualProcessedColumnsList.filter((columnName) => getCalculatedRole(columnName).role !== 'Identifier'),

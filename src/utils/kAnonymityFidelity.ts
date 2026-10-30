@@ -275,7 +275,7 @@ const pearson = (xs: Float64Array, ys: Float64Array): number => {
  * @param input.evaluatedColumns 要評估的欄位（通常為直接識別以外、處理後仍存在的欄位）
  * @param input.anchorColumns 未經處理的欄位（敏感、非敏感），有列被刪除時用來配對
  */
-export const computeKAnonymityFidelity = (input: {
+export interface KAnonymityFidelityInput {
     originalCsvText: string;
     processedCsvText: string;
     evaluatedColumns: string[];
@@ -285,7 +285,9 @@ export const computeKAnonymityFidelity = (input: {
     /** 送給後端的 K-匿名設定（config.k_anonymity），有列被刪除時用來輔助配對 */
     kAnonymityConfig?: Record<string, unknown> | null;
     sampleLimit?: number;
-}): KAnonymityFidelityResult | null => {
+}
+
+export const computeKAnonymityFidelity = (input: KAnonymityFidelityInput): KAnonymityFidelityResult | null => {
     const numericColumnSet = new Set((input.numericColumns ?? []).map(cleanName));
     const originalRows = parseCsvRows(input.originalCsvText);
     const processedRows = parseCsvRows(input.processedCsvText);
@@ -469,3 +471,32 @@ export const formatFidelityPercent = (score: number): string => `${Math.floor(sc
 
 /** 合規報告用（對照指引）：0.9734 → 「0.97」 */
 export const formatFidelityScore = (score: number): string => (Math.floor(score * 100) / 100).toFixed(2);
+
+/**
+ * 在 Web Worker 計算（★ 2026-10-30：處理前後兩份 CSV 全部解析成字串陣列，約佔檔案大小的 10～20 倍記憶體；
+ * 改在 Worker 算完即結束 Worker，整塊記憶體一次釋放，也不卡畫面）。結果與 computeKAnonymityFidelity 相同（仍全部計算、不抽樣）。
+ * 瀏覽器不支援或 Worker 啟動失敗時退回主執行緒計算。
+ */
+export const computeKAnonymityFidelityInWorker = (input: KAnonymityFidelityInput): Promise<KAnonymityFidelityResult | null> => {
+    if (typeof Worker === 'undefined') return Promise.resolve(computeKAnonymityFidelity(input));
+    let fidelityWorker: Worker;
+    try {
+        fidelityWorker = new Worker(new URL('./kAnonymityFidelity.worker.ts', import.meta.url), { type: 'module' });
+    } catch (workerCreateError) {
+        console.warn('資料實用性 Worker 無法啟動，改在主執行緒計算:', workerCreateError);
+        return Promise.resolve(computeKAnonymityFidelity(input));
+    }
+    return new Promise<KAnonymityFidelityResult | null>((resolve, reject) => {
+        fidelityWorker.onmessage = (event: MessageEvent<{ result?: KAnonymityFidelityResult | null; error?: string }>) => {
+            fidelityWorker.terminate();
+            if (event.data.error) reject(new Error(event.data.error));
+            else resolve(event.data.result ?? null);
+        };
+        fidelityWorker.onerror = (workerError) => {
+            fidelityWorker.terminate();
+            console.warn('資料實用性 Worker 執行失敗，改在主執行緒計算:', workerError.message);
+            try { resolve(computeKAnonymityFidelity(input)); } catch (computeError) { reject(computeError); }
+        };
+        fidelityWorker.postMessage({ input });
+    });
+};

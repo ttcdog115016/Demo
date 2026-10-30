@@ -13,7 +13,7 @@ import { buildBackendSubgroupPayload } from '../../../utils/riskSubgroupHelpers'
 import { applySensitiveBinningToCsvText } from '../../../utils/sensitiveBinning';
 import { ENABLE_RISK_UPLOAD_COLUMN_TRIMMING, projectCsvTextToColumns, pruneKAnonymityBlockToColumns, formatMegabytesText } from '../../../utils/riskUploadTrimming';
 import { extractCapRequestFailureReasonText, buildCapUnavailableReceipt } from '../../../utils/riskResultHelpers';
-import { computeCapShuffleBaselineFromCsvText, computeCapExcessRisk, isCapExcessNotApplicable } from '../../../utils/capBaseline';
+import { computeCapShuffleBaseline, encodeCsvForCapBaseline, computeCapExcessRisk, isCapExcessNotApplicable, type CapEncodedTable } from '../../../utils/capBaseline';
 import {
     resolveKAnonymityRiskColumns, selectKAnonymitySensitiveCandidates, describeKAnonymityHighCardinalityHandling,
     buildKAnonymityRiskColumnsForCandidate, buildKAnonymityConfigBlockForRisk, selectDifferentialPrivacySensitiveCandidates,
@@ -371,16 +371,24 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             // 有敏感欄位自動分級距時，CAP 的原始與去識別化兩份資料都要用同一套級距轉換
             // 有敏感欄位自動分級距或欄位裁切時，去識別化資料也套用與原始資料相同的轉換
             // ★ 2026-10-06：另保留送出的處理後資料文字，供前端計算 CAP 亂猜基線（見 utils/capBaseline.ts）
-            const processedCapCsvText = isRiskUploadTransformNeeded()
+            let processedCapCsvText: string | null = isRiskUploadTransformNeeded()
                 ? buildRiskUploadCsvText(await readProcessedCsvTextOnce())
                 : await readProcessedCsvTextOnce();
             const processedFileForCap = isRiskUploadTransformNeeded()
                 ? new File([processedCapCsvText], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' })
                 : new File([finalCsvBlobData], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' });
+            // ★ 2026-10-30：處理後資料只編碼一次、各輪共用；編碼後即放掉整份文字（見 utils/capBaseline.ts）
+            let encodedCapTable: CapEncodedTable | null | undefined;
+            const getEncodedCapTable = (): CapEncodedTable | null => {
+                if (encodedCapTable === undefined) {
+                    encodedCapTable = encodeCsvForCapBaseline(processedCapCsvText ?? '');
+                    processedCapCsvText = null;
+                }
+                return encodedCapTable;
+            };
             const attachCapBaseline = (capReport: CapReport, capColumnsMap: RiskColumnsMap, sensitiveColumnName: string | undefined): CapReport => {
                 if (!sensitiveColumnName || capReport.cap_after < 0) return capReport;
-                const baselineResult = computeCapShuffleBaselineFromCsvText({
-                    csvText: processedCapCsvText,
+                const baselineResult = computeCapShuffleBaseline(getEncodedCapTable(), {
                     quasiIdentifierColumnNames: Object.entries(capColumnsMap).filter(([, columnSpec]) => columnSpec.role === 'quasi_identifier').map(([columnName]) => columnName),
                     sensitiveColumnName,
                     subgroupPayload: resolvedRiskSubgroupPayload
