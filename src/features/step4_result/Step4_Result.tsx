@@ -29,6 +29,7 @@ import type { KAnonymityQualityReport, DpQualityReport } from '../../api/apiServ
 
 import { usePipelineRunner } from './usePipelineRunner';
 import { confirmIfBackendBusy } from '../workspace/backendBusyConfirm';
+import { PipelineElapsedText } from './PipelineElapsedText';
 import BackendReportDetails from './BackendReportDetails';
 import ComplianceReportDocument, { type ComplianceReportEntry } from '../../components/ComplianceReportDocument';
 import { buildComplianceReportSnapshot, formatEpsilonForDisplay, isCapEvaluated, resolveCapExcessRisk, resolveSensitiveGuessRisk } from '../../utils/complianceReport';
@@ -379,6 +380,7 @@ export default function Step4_Result(): React.ReactElement
         calculationProgressValue,
         systemSimulationLogsList,
         uploadProgressText,
+        pipelineStartedAtMs,
         isPipelineCanceledStatus,
         runFullPipeline,
         handleCancelPipeline
@@ -1074,6 +1076,9 @@ export default function Step4_Result(): React.ReactElement
                             <Progress percent={calculationProgressValue} status="active" style={{ maxWidth: '43em', margin: '16px auto' }} strokeColor={token.colorPrimary} />
                             {uploadProgressText && (
                                 <div style={{ fontSize: scaleFontSize(13), color: token.colorTextSecondary, marginBottom: '12px' }}>{uploadProgressText}</div>
+                            )}
+                            {pipelineStartedAtMs !== null && (
+                                <PipelineElapsedText startedAtMs={pipelineStartedAtMs} style={{ fontSize: scaleFontSize(13), color: token.colorTextSecondary, marginBottom: '12px' }} />
                             )}
                             {/* ★ 2026-10-30：Progress 為 inline-block，按鈕直接接在後面會和百分比擠在同一行，獨立一行顯示 */}
                             <div style={{ marginTop: '8px' }}>

@@ -11,7 +11,7 @@ import { Button } from 'antd';
 import type { useAppProps } from 'antd/es/app/context';
 import type { TFunction } from 'i18next';
 
-import { isBackendLikelyBusy } from '../../utils/backendBusyCooldown';
+import { getBackendBusyReason, isBackendLikelyBusy } from '../../utils/backendBusyCooldown';
 
 interface ConfirmIfBackendBusyParams {
     modalApi: useAppProps['modal'];
@@ -37,7 +37,9 @@ export const confirmIfBackendBusy = ({ modalApi, translate, proceedAction, conte
         closable: true,
         content: (
             <p style={{ marginBottom: 0 }} data-testid="backend-busy-notice">
-                {translate('workspace.backend_busy_confirm_desc_v2', '上一次執行等待太久被中斷，但後端通常仍會繼續算完。現在送出會排在它後面，可能一起逾時；建議等幾分鐘再執行。')}
+                {getBackendBusyReason() === 'canceled'
+                    ? translate('workspace.backend_busy_confirm_desc_canceled', '剛才取消的運算，後端可能仍在算完已開始的部分。現在送出會排在它後面，要等它結束才會開始；若不急，建議等幾分鐘再執行。')
+                    : translate('workspace.backend_busy_confirm_desc_v2', '上一次執行等待太久被中斷，但後端通常仍會繼續算完。現在送出會排在它後面，可能一起逾時；建議等幾分鐘再執行。')}
             </p>
         ),
         footer: (

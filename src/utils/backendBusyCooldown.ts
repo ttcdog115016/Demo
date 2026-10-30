@@ -13,14 +13,36 @@
 export const BACKEND_BUSY_COOLDOWN_SECONDS = 5 * 60;
 
 const BACKEND_BUSY_STORAGE_KEY = 'ppt_backend_busy_until_ms';
+const BACKEND_BUSY_REASON_STORAGE_KEY = 'ppt_backend_busy_reason';
 let backendBusyUntilMsMemory = 0;
 
-/** 收到通道逾時（524／504）時呼叫：後端多半仍在跑這一筆 */
-export const markBackendLikelyBusy = (nowMs: number = Date.now()): number => {
+/**
+ * 後端可能仍在計算的原因：
+ * - 'timeout'：通道逾時（524／504）
+ * - 'canceled'：使用者按「取消運算」（★ 2026-10-30：取消只中斷前端連線，已開跑的運算後端仍會算完）
+ */
+export type BackendBusyReason = 'timeout' | 'canceled';
+let backendBusyReasonMemory: BackendBusyReason = 'timeout';
+
+/** 收到通道逾時（524／504）或取消運算時呼叫：後端多半仍在跑這一筆 */
+export const markBackendLikelyBusy = (nowMs: number = Date.now(), reason: BackendBusyReason = 'timeout'): number => {
     const untilMs = nowMs + BACKEND_BUSY_COOLDOWN_SECONDS * 1000;
     backendBusyUntilMsMemory = untilMs;
-    try { sessionStorage.setItem(BACKEND_BUSY_STORAGE_KEY, String(untilMs)); } catch { /* 無法使用 sessionStorage 時只記在記憶體 */ }
+    backendBusyReasonMemory = reason;
+    try {
+        sessionStorage.setItem(BACKEND_BUSY_STORAGE_KEY, String(untilMs));
+        sessionStorage.setItem(BACKEND_BUSY_REASON_STORAGE_KEY, reason);
+    } catch { /* 無法使用 sessionStorage 時只記在記憶體 */ }
     return untilMs;
+};
+
+/** 最近一次標記的原因（決定提醒文字） */
+export const getBackendBusyReason = (): BackendBusyReason => {
+    try {
+        const storedReason = sessionStorage.getItem(BACKEND_BUSY_REASON_STORAGE_KEY);
+        if (storedReason === 'timeout' || storedReason === 'canceled') return storedReason;
+    } catch { /* 忽略 */ }
+    return backendBusyReasonMemory;
 };
 
 /** 是否仍在冷卻提醒期間 */
@@ -36,7 +58,10 @@ export const isBackendLikelyBusy = (nowMs: number = Date.now()): boolean => {
 /** 清除冷卻提醒（之後成功完成一次請求即代表後端已空出來） */
 export const clearBackendBusy = (): void => {
     backendBusyUntilMsMemory = 0;
-    try { sessionStorage.removeItem(BACKEND_BUSY_STORAGE_KEY); } catch { /* 忽略 */ }
+    try {
+        sessionStorage.removeItem(BACKEND_BUSY_STORAGE_KEY);
+        sessionStorage.removeItem(BACKEND_BUSY_REASON_STORAGE_KEY);
+    } catch { /* 忽略 */ }
 };
 
 /** 是否為通道／閘道等待逾時（Cloudflare 524、反向代理 504） */

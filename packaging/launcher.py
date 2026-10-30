@@ -562,8 +562,44 @@ def stop_server_subprocess(process, event_handle) -> None:
         ctypes.windll.kernel32.CloseHandle(event_handle)
 
 
+def watch_server_subprocess(process, closing: threading.Event, log_path: Path) -> None:
+    """視窗開著時後端子行程意外結束（例如記憶體不足被系統終止），畫面只會一直等；改為提示使用者重開。"""
+
+    def worker():
+        while not closing.wait(SERVER_WATCH_INTERVAL_SECONDS):
+            exit_code = process.poll()
+            if exit_code is None:
+                continue
+            if closing.is_set():
+                return
+            print(f"[錯誤] 後端服務意外結束（結束代碼 {exit_code}）")
+            message_box(
+                "Open-PETs 後端服務已意外停止（可能是資料量過大、記憶體不足），進行中的運算無法完成。\n\n"
+                f"請關閉視窗後重新開啟 Open-PETs。詳細紀錄：{log_path}",
+                is_error=True,
+            )
+            return
+
+    threading.Thread(target=worker, name="open-pets-server-watch", daemon=True).start()
+
+
 # ---------------------------------------------------------------- 視窗版：WebView2 調整
 DOWNLOAD_PROGRESS_INTERVAL_SECONDS = 0.5
+SERVER_WATCH_INTERVAL_SECONDS = 5
+# 介面以 1440×900（邏輯像素）設計；視窗大小改變時依比例自動縮放，不必再用 Ctrl＋滑鼠滾輪
+DESIGN_WIDTH = 1440
+DESIGN_HEIGHT = 900
+MIN_ZOOM = 0.8
+MAX_ZOOM = 1.6
+
+
+def auto_zoom_factor(width: int, height: int, dpi: int) -> float | None:
+    """width／height 為實體像素；先換成邏輯像素（系統顯示比例已由 WebView2 處理）再與設計尺寸比較。"""
+    if width <= 0 or height <= 0:  # 最小化
+        return None
+    scale = (dpi or 96) / 96
+    zoom = min(width / scale / DESIGN_WIDTH, height / scale / DESIGN_HEIGHT)
+    return round(max(MIN_ZOOM, min(MAX_ZOOM, zoom)), 2)
 
 
 class DesktopApi:
@@ -603,6 +639,31 @@ def patch_webview_for_open_pets() -> None:
             sender.CoreWebView2.RemoveWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All)
         except Exception as exc:
             print(f"[警告] 無法移除 WebView2 請求攔截：{exc!r}")
+
+        try:
+            # pywebview 不看 zoomable，一律開啟 IsZoomControlEnabled；在此關掉 Ctrl＋滾輪／Ctrl＋± 縮放
+            sender.CoreWebView2.Settings.IsZoomControlEnabled = False
+        except Exception as exc:
+            print(f"[警告] 無法停用手動縮放：{exc!r}")
+
+        import ctypes
+
+        control = self.webview  # WinForms WebView2 控制項（填滿視窗）
+
+        def apply_auto_zoom(_sender=None, _args=None):
+            try:
+                # pywebview 呼叫 SetProcessDPIAware，控制項尺寸為實體像素；DPI 同 pywebview 以 GetDpiForWindow 取得
+                dpi = ctypes.windll.user32.GetDpiForWindow(control.Handle.ToInt32())
+                zoom = auto_zoom_factor(control.Width, control.Height, dpi)
+                if zoom is not None and abs(control.ZoomFactor - zoom) > 0.005:
+                    control.ZoomFactor = zoom
+            except Exception as exc:
+                print(f"[警告] 無法自動調整畫面比例：{exc!r}")
+
+        # 保留參照，避免事件處理函式被回收
+        self._open_pets_auto_zoom = apply_auto_zoom
+        control.SizeChanged += apply_auto_zoom
+        apply_auto_zoom()  # 也蓋掉先前用 Ctrl＋滾輪存在 WebView2 設定檔裡的縮放
 
     def on_download_starting(self, sender, args):
         original_on_download_starting(self, sender, args)  # 另存新檔對話框；按取消時 args.Cancel 為 True
@@ -687,6 +748,7 @@ def run_app_window(base: Path) -> int:
         return 1
 
     server_process, shutdown_event = start_server_subprocess()
+    closing = threading.Event()
     try:
         if not wait_for_service(port, server_process):
             message_box(f"服務啟動失敗，詳見 {base / 'data' / 'logs' / 'launcher.log'}", is_error=True)
@@ -701,8 +763,9 @@ def run_app_window(base: Path) -> int:
         start_url = url.rstrip("/") + SETUP_PAGE_PATH if needs_first_admin() else url
         webview.create_window(
             APP_TITLE, start_url, width=1440, height=900, min_size=(1024, 680), maximized=True,
-            text_select=True, zoomable=True, js_api=DesktopApi(),
+            text_select=True, zoomable=False, js_api=DesktopApi(),  # 比例由 auto_zoom_factor 依視窗大小決定（另見 on_webview_ready）
         )
+        watch_server_subprocess(server_process, closing, base / "data" / "logs" / "launcher.log")
         try:
             # private_mode=False＋storage_path：瀏覽器端儲存（工作區、介面設定）在重開後保留
             webview.start(gui="edgechromium", private_mode=False, storage_path=str(base / "webview"))
@@ -715,6 +778,7 @@ def run_app_window(base: Path) -> int:
             )
             return 1
     finally:
+        closing.set()
         stop_server_subprocess(server_process, shutdown_event)
         print("視窗已關閉，服務停止。")
     return 0

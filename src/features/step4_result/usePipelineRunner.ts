@@ -21,6 +21,7 @@ import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, wrapBackendConfi
 import { isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
 import { describePipelineError } from './backendErrorCatalog';
 import { markBackendLikelyBusy, clearBackendBusy, isGatewayTimeoutStatus } from '../../utils/backendBusyCooldown';
+import { beginComputation } from '../../utils/computationActivity';
 import { runDeidentificationPhase } from './pipeline/deidentificationPhase';
 import { runPreprocessPhase } from './pipeline/preprocessPhase';
 import { runRiskAssessmentPhase } from './pipeline/riskAssessmentPhase';
@@ -253,6 +254,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
     const pipelineAbortControllerRef = useRef<AbortController | null>(null);
     const [uploadProgressText, setUploadProgressText] = useState<string | null>(null);
     const [isPipelineCanceledStatus, setIsPipelineCanceledStatus] = useState<boolean>(false);
+    // ★ 2026-10-30：這一輪開始的時間，畫面顯示「已等待 mm:ss」，讓使用者知道仍在進行而非當掉
+    const [pipelineStartedAtMs, setPipelineStartedAtMs] = useState<number | null>(null);
     const handleCancelPipeline = useCallback(() => {
         pipelineAbortControllerRef.current?.abort();
     }, []);
@@ -354,6 +357,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             setIsPipelineCalculatingStatus(true);
             setCalculationProgressValue(0);
             setCurrentPipelinePhaseType('uploading');
+            setPipelineStartedAtMs(Date.now());
+            const endComputation = beginComputation();
 
             const pipelineAbortController = new AbortController();
             pipelineAbortControllerRef.current = pipelineAbortController;
@@ -704,6 +709,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     appendStepLog('已取消運算');
                     messageApi.info(translate('step4.msg.canceled', '已取消運算'));
                     setIsPipelineCanceledStatus(true);
+                    // ★ 2026-10-30：取消只中斷前端連線，後端已開始的那一步仍會算完；接著再送出會排在它後面，先提醒
+                    markBackendLikelyBusy(Date.now(), 'canceled');
                     setPipelineFailedMessage(translate('step4.msg.canceled_detail', '已取消運算。可調整設定後按「重新運算」再執行一次。'));
                     return;
                 }
@@ -729,6 +736,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 messageApi.error(translate('step4.msg.api_failed', '後端 API 執行失敗，請檢查 Log 訊息'));
                 setPipelineFailedMessage(friendlyDisplayNode);
             } finally {
+                endComputation();
+                setPipelineStartedAtMs(null);
                 isPipelineRunInProgressRef.current = false;
                 pipelineAbortControllerRef.current = null;
                 setUploadProgressText(null);
@@ -778,6 +787,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
         calculationProgressValue,
         systemSimulationLogsList,
         uploadProgressText,
+        pipelineStartedAtMs,
         isPipelineCanceledStatus,
         runFullPipeline,
         handleCancelPipeline

@@ -11,6 +11,7 @@ import { useEffect, useRef } from 'react';
 import { App as AntdApp } from 'antd';
 
 import { useAuthStore } from '../../store/useAuthStore';
+import { isComputationRunning } from '../../utils/computationActivity';
 
 /**
  * 預設連線安全常數宣告
@@ -102,8 +103,15 @@ export const useIdleTimeout = (timeoutMinutesConfig: number = DEFAULT_IDLE_TIMEO
 
 			// 設定定時器 (setInterval)，每隔 CHECK_INTERVAL_MILLISECONDS (1秒) 檢查一次閒置狀態
 			checkIntervalIdRef.current = setInterval(
-				() => 
+				() =>
 				{
+					// ★ 2026-10-30：運算進行中（等後端回應）不算閒置，避免長時間運算被登出而中止
+					if (isComputationRunning())
+					{
+						lastActivityTimestampRef.current = Date.now();
+						return;
+					}
+
 					// ============================================================================
 					// 1. 閒置門檻計算區塊
 					// 規範對照: 符合變數撰寫規範 b) 確認變數取值範圍、d) 防止不合理值發生
