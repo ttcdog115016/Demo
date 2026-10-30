@@ -147,23 +147,28 @@ describe('qi_generalization_levels 層級範圍 [最小, 最大]', () => {
                 ...(qiLevels ? { qi_generalization_levels: qiLevels } : {})
             }
         });
-        const importAndKeepMounted = async (configText: string): Promise<void> => {
+        const importAndKeepMounted = async (configText: string): Promise<HTMLElement> => {
             messageMock.success.mockClear();
             const { container } = render(<KAnonymityMapping />);
             const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
             fireEvent.change(fileInput, { target: { files: [new File([configText], 'config_kanon.json', { type: 'application/json' })] } });
             await waitFor(() => expect(messageMock.success).toHaveBeenCalled());
+            return container;
         };
+        const UNGENERALIZED_WARNING_TEXT = '間接識別碼 「地區」 的泛化層級為 0，執行時不會泛化';
 
         resetStore();
-        await importAndKeepMounted(buildConfigText());
+        const levelZeroContainer = await importAndKeepMounted(buildConfigText());
         await waitFor(() => expect(useWorkspaceStore.getState().isStepValid).toBe(true));
+        // 放行但提醒：畫面上顯示「不泛化、照原值分組」警告
+        await waitFor(() => expect(levelZeroContainer.textContent).toContain(UNGENERALIZED_WARNING_TEXT));
         cleanup();
 
         resetStore();
-        await importAndKeepMounted(buildConfigText({ 地區: 2 }));
+        const levelTwoContainer = await importAndKeepMounted(buildConfigText({ 地區: 2 }));
         await waitFor(() => expect(useWorkspaceStore.getState().stepErrorMessage).toContain('階層樹'));
         expect(useWorkspaceStore.getState().isStepValid).toBe(false);
+        expect(levelTwoContainer.textContent).not.toContain(UNGENERALIZED_WARNING_TEXT);
     });
 
     it('正規化與組回：陣列取最小為實際層級、最大為上限；上下限相同或無上限時為單一整數', () => {

@@ -1648,6 +1648,14 @@ export default function KAnonymityMapping(): React.ReactElement
         () => findDatasetColumnsNotConfigured(kAnonymityFieldsList.map((fieldItemRecord) => fieldItemRecord.name), storeColumnsList),
         [kAnonymityFieldsList, storeColumnsList]
     );
+    // ★ 2026-10-30：類別型間接識別碼層級 0（不泛化）——後端照原值參與 k 分組，不擋但提醒（值種類多時抑制量可能很大）
+    const ungeneralizedCategoricalQiNamesList = useMemo(
+        () => kAnonymityFieldsList
+            .filter((fieldItemRecord) => fieldItemRecord.role === 'Quasi-identifier' && fieldItemRecord.type === 'categorical'
+                && fieldItemRecord.name && !fieldItemRecord.genMaxLevel && !fieldItemRecord.genLevelRangeUpper)
+            .map((fieldItemRecord) => fieldItemRecord.name),
+        [kAnonymityFieldsList]
+    );
 
     // ★ 2026-10-07：「新增定義欄位」只能加回資料中尚未設定的欄位 (預設帶入第一個缺漏欄位，可再用下拉切換)；
     //   全部欄位都已設定時按鈕停用。尚未上傳資料 (理論上不會進到 Step2) 時維持原本新增空白列的行為。
@@ -2432,6 +2440,17 @@ export default function KAnonymityMapping(): React.ReactElement
                                                 defaultValue: `資料中的 ${datasetColumnsNotConfiguredList.map((columnNameString) => `「${columnNameString}」`).join('、')} 尚未設定，執行時會當作「非敏感欄位」原樣保留。`
                                             })}
                                             action={<Button size="small" onClick={addDatasetColumnsNotConfigured}>{translate('step2.btn_add_columns_not_configured', '補上缺漏欄位')}</Button>}
+                                        />
+                                    )}
+                                    {ungeneralizedCategoricalQiNamesList.length > 0 && (
+                                        <Alert
+                                            type="warning"
+                                            showIcon
+                                            style={{ marginBottom: '12px' }}
+                                            title={translate('step2.ungeneralized_categorical_qi_warning', {
+                                                names: ungeneralizedCategoricalQiNamesList.map((columnNameString) => `「${columnNameString}」`).join('、'),
+                                                defaultValue: `間接識別碼 ${ungeneralizedCategoricalQiNamesList.map((columnNameString) => `「${columnNameString}」`).join('、')} 的泛化層級為 0，執行時不會泛化，會以原始值參與 k-匿名分組；值的種類越多，未達 k 而被抑制的資料可能越多。若要泛化，請至「泛化階層對照」分頁建立對照表並調高層級。`
+                                            })}
                                         />
                                     )}
 
