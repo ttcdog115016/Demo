@@ -22,161 +22,70 @@
  *   - dateTimeRanges：可解析為日期時間（YYYY-MM-DD[ HH:mm[:ss]]）的欄位之最早／最晚值，供 DP 日期邊界推薦
  *   - nonNumericDistinctValues：非數值的相異值（最多 MAX_NON_NUMERIC_DISTINCT_SAMPLE 個，供分級距統計）
  */
-import { createColumnValueStats, addValueToColumnStats, type ColumnValueStats } from './backendValueRules';
-import Papa from 'papaparse';
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
-import { parseDpDateTimeBoundTimestamp, formatDpDateTimeBoundFromTimestamp } from './dpFieldHelpers';
+import { scanDatasetFileOnCurrentThread, buildDatasetFileKey, cleanDatasetColumnName, type DatasetProfile } from './datasetProfileScanner';
+import { findNumericMinMax } from './binGeneration';
 
-export const MAX_TRACKED_DISTINCT_VALUES_PER_COLUMN = 200000;
-export const MAX_TOP_VALUES_PER_COLUMN = 1000;
-const MAX_NON_NUMERIC_DISTINCT_SAMPLE = 1000;
-// 看起來像日期（YYYY-MM-DD 開頭）才嘗試解析，避免每個文字儲存格都跑完整解析
-const DATE_TIME_CELL_PREFIX_PATTERN = /^\d{4}-\d{2}-\d{2}/;
-
-export interface DatasetColumnProfile {
-    nonEmptyCount: number;
-    distinctCount: number;
-    isDistinctCountCapped: boolean;
-    topValues: string[];
-    numericCount: number;
-    nonNumericDistinctValues: string[];
-    /** ★ 2026-10-05：與後端一致規則的數值／日期統計（缺值字串、嚴格數值、格式一致性），供 Step2 型態檢查使用 */
-    valueStats?: ColumnValueStats;
-}
-
-export interface DatasetProfile {
-    fileKey: string;
-    rowCount: number;
-    columnNamesList: string[];
-    columns: Record<string, DatasetColumnProfile>;
-    numericValues: Record<string, number[]>;
-    /** 日期時間欄位的最早／最晚值（邊界字串格式，午夜只留日期）與可解析筆數；沒有任何可解析值的欄位不列入 */
-    dateTimeRanges?: Record<string, { min: string; max: string; count: number }>;
-}
-
-/** 以檔名＋大小＋修改時間辨識「同一份檔案」 */
-export const buildDatasetFileKey = (file: File): string => `${file.name}|${file.size}|${file.lastModified}`;
-
-const cleanColumnName = (rawName: string): string => rawName.replace(/^[\uFEFF\u200B]+/, '').trim();
+// ★ 2026-10-30：逐列累計移到 datasetProfileScanner.ts（可在 Web Worker 執行），此處維持原本的對外介面
+export { MAX_TRACKED_DISTINCT_VALUES_PER_COLUMN, MAX_TOP_VALUES_PER_COLUMN, buildDatasetFileKey } from './datasetProfileScanner';
+export type { DatasetProfile, DatasetColumnProfile } from './datasetProfileScanner';
 
 /**
  * 相異值佔比（相異值數 ÷ 非空值筆數）。相異值數被截斷時無法得知真實佔比，回傳 1（保守視為極高），
  * 避免把例如 100 萬筆、幾乎每筆不同的 ID 欄位誤判為低唯一值而送去後端分類器。
  */
 export const getColumnUniqueValueRatio = (profile: DatasetProfile | null | undefined, columnName: string): number => {
-    const columnProfile = profile?.columns[cleanColumnName(columnName)];
+    const columnProfile = profile?.columns[cleanDatasetColumnName(columnName)];
     if (!columnProfile || columnProfile.nonEmptyCount === 0) return 0;
     if (columnProfile.isDistinctCountCapped) return 1;
     return columnProfile.distinctCount / columnProfile.nonEmptyCount;
 };
 
-const scanDatasetFile = (file: File): Promise<DatasetProfile> => new Promise((resolve, reject) => {
-    const distinctCounterMapByColumn: Record<string, Map<string, number>> = {};
-    const cappedColumnsSet = new Set<string>();
-    const nonEmptyCountByColumn: Record<string, number> = {};
-    const numericValuesByColumn: Record<string, number[]> = {};
-    const nonNumericDistinctByColumn: Record<string, Set<string>> = {};
-    const dateTimeExtremaByColumn: Record<string, { minTimestamp: number; maxTimestamp: number; count: number }> = {};
-    const valueStatsByColumn: Record<string, ColumnValueStats> = {};
-    let rawToCleanNameMap: Record<string, string> | null = null;
-    let columnNamesList: string[] = [];
-    let rowCount = 0;
+/**
+ * 欄位數值的最小／最大值：優先讀統計快照記錄的 numericMin／numericMax（不需重掃），
+ * 舊快照沒有這兩個值時才逐筆比較（findNumericMinMax）。沒有任何數值時回傳 null。
+ * ★ 2026-10-30：Step2 原本每次進入都對每個數值欄位的數百萬筆重新求最小值。
+ */
+export const getColumnNumericRange = (
+    profile: DatasetProfile | null | undefined, numericValuesMap: Record<string, number[]> | null | undefined, columnName: string
+): { min: number; max: number } | null => {
+    const columnProfile = profile?.columns[cleanDatasetColumnName(columnName)];
+    if (columnProfile && typeof columnProfile.numericMin === 'number' && typeof columnProfile.numericMax === 'number') {
+        return { min: columnProfile.numericMin, max: columnProfile.numericMax };
+    }
+    const numericValuesList = numericValuesMap?.[columnName];
+    return numericValuesList && numericValuesList.length > 0 ? findNumericMinMax(numericValuesList) : null;
+};
 
-    Papa.parse<Record<string, string>>(file, {
-        header: true,
-        skipEmptyLines: true,
-        chunk: (chunkResult) => {
-            if (!rawToCleanNameMap) {
-                const rawFieldsList = chunkResult.meta.fields || [];
-                rawToCleanNameMap = {};
-                rawFieldsList.forEach((rawFieldName) => { rawToCleanNameMap![rawFieldName] = cleanColumnName(rawFieldName); });
-                columnNamesList = rawFieldsList.map((rawFieldName) => rawToCleanNameMap![rawFieldName]);
-                columnNamesList.forEach((columnName) => {
-                    distinctCounterMapByColumn[columnName] = new Map();
-                    nonEmptyCountByColumn[columnName] = 0;
-                    numericValuesByColumn[columnName] = [];
-                    nonNumericDistinctByColumn[columnName] = new Set();
-                    valueStatsByColumn[columnName] = createColumnValueStats();
-                });
-            }
-            const nameMap = rawToCleanNameMap;
-            for (const rowRecord of chunkResult.data) {
-                rowCount++;
-                for (const rawFieldName in nameMap) {
-                    const columnName = nameMap[rawFieldName];
-                    const rawCellValue = rowRecord[rawFieldName];
-                    if (rawCellValue === undefined || rawCellValue === null) continue;
-                    const trimmedCellValue = String(rawCellValue).trim();
-                    if (trimmedCellValue === '') continue;
-                    nonEmptyCountByColumn[columnName]++;
-                    // 列號：第 1 列為欄位名稱（略過空白列時可能與實際列號略有差異）
-                    addValueToColumnStats(valueStatsByColumn[columnName], trimmedCellValue, rowCount + 1);
-
-                    if (!cappedColumnsSet.has(columnName)) {
-                        const distinctCounterMap = distinctCounterMapByColumn[columnName];
-                        const previousCount = distinctCounterMap.get(trimmedCellValue);
-                        if (previousCount !== undefined) distinctCounterMap.set(trimmedCellValue, previousCount + 1);
-                        else if (distinctCounterMap.size < MAX_TRACKED_DISTINCT_VALUES_PER_COLUMN) distinctCounterMap.set(trimmedCellValue, 1);
-                        else cappedColumnsSet.add(columnName);
-                    }
-
-                    const numericValue = Number(trimmedCellValue);
-                    if (Number.isFinite(numericValue)) {
-                        numericValuesByColumn[columnName].push(numericValue);
-                        continue;
-                    }
-                    if (nonNumericDistinctByColumn[columnName].size < MAX_NON_NUMERIC_DISTINCT_SAMPLE) nonNumericDistinctByColumn[columnName].add(trimmedCellValue);
-                    // ★ 2026-10-01：日期欄位（如生日 1974-06-18）不是數值、不會進 numericValues，先前 DP「自動智慧推薦」
-                    //   因此拿不到實際範圍，日期邊界維持預設值、看起來沒有反應。另記最早／最晚值供推薦使用。
-                    if (DATE_TIME_CELL_PREFIX_PATTERN.test(trimmedCellValue)) {
-                        const cellTimestamp = parseDpDateTimeBoundTimestamp(trimmedCellValue);
-                        if (Number.isFinite(cellTimestamp)) {
-                            const extrema = dateTimeExtremaByColumn[columnName];
-                            if (!extrema) dateTimeExtremaByColumn[columnName] = { minTimestamp: cellTimestamp, maxTimestamp: cellTimestamp, count: 1 };
-                            else {
-                                if (cellTimestamp < extrema.minTimestamp) extrema.minTimestamp = cellTimestamp;
-                                if (cellTimestamp > extrema.maxTimestamp) extrema.maxTimestamp = cellTimestamp;
-                                extrema.count++;
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        complete: () => {
-            const columns: Record<string, DatasetColumnProfile> = {};
-            const numericValues: Record<string, number[]> = {};
-            columnNamesList.forEach((columnName) => {
-                const distinctCounterMap = distinctCounterMapByColumn[columnName];
-                columns[columnName] = {
-                    nonEmptyCount: nonEmptyCountByColumn[columnName],
-                    distinctCount: distinctCounterMap.size,
-                    isDistinctCountCapped: cappedColumnsSet.has(columnName),
-                    topValues: Array.from(distinctCounterMap.entries())
-                        .sort((entryA, entryB) => entryB[1] - entryA[1])
-                        .slice(0, MAX_TOP_VALUES_PER_COLUMN)
-                        .map(([cellValue]) => cellValue),
-                    numericCount: numericValuesByColumn[columnName].length,
-                    nonNumericDistinctValues: Array.from(nonNumericDistinctByColumn[columnName]),
-                    valueStats: valueStatsByColumn[columnName]
-                };
-                // 與原本 datasetColumnNumericValuesMap 的規則一致：至少有 1 筆有效數值的欄位才放入
-                if (numericValuesByColumn[columnName].length > 0) numericValues[columnName] = numericValuesByColumn[columnName];
-            });
-            const dateTimeRanges: Record<string, { min: string; max: string; count: number }> = {};
-            Object.entries(dateTimeExtremaByColumn).forEach(([columnName, extrema]) => {
-                dateTimeRanges[columnName] = {
-                    min: formatDpDateTimeBoundFromTimestamp(extrema.minTimestamp),
-                    max: formatDpDateTimeBoundFromTimestamp(extrema.maxTimestamp),
-                    count: extrema.count
-                };
-            });
-            resolve({ fileKey: buildDatasetFileKey(file), rowCount, columnNamesList, columns, numericValues, dateTimeRanges });
-        },
-        error: (parseError: Error) => reject(parseError)
+/** 在 Web Worker 掃描（不卡畫面）；瀏覽器不支援或 Worker 啟動失敗時退回主執行緒掃描 */
+const scanDatasetFile = (file: File): Promise<DatasetProfile> => {
+    if (typeof Worker === 'undefined') return scanDatasetFileOnCurrentThread(file);
+    let scanWorker: Worker;
+    try {
+        scanWorker = new Worker(new URL('./datasetProfile.worker.ts', import.meta.url), { type: 'module' });
+    } catch (workerCreateError) {
+        console.warn('資料集統計 Worker 無法啟動，改在主執行緒掃描:', workerCreateError);
+        return scanDatasetFileOnCurrentThread(file);
+    }
+    return new Promise<DatasetProfile>((resolve, reject) => {
+        scanWorker.onmessage = (event: MessageEvent<{ profile?: DatasetProfile; error?: string }>) => {
+            scanWorker.terminate();
+            if (event.data.profile) resolve(event.data.profile);
+            else reject(new Error(event.data.error || '資料集統計掃描失敗'));
+        };
+        scanWorker.onerror = (workerError) => {
+            scanWorker.terminate();
+            console.warn('資料集統計 Worker 執行失敗，改在主執行緒掃描:', workerError.message);
+            scanDatasetFileOnCurrentThread(file).then(resolve, reject);
+        };
+        scanWorker.postMessage({ file });
     });
-});
+};
+
+// ★ 2026-10-30：Step4 有前處理時以前處理後的新檔案計算風險統計；該檔案不是目前資料集，不寫入 store，
+//   先前因此每次執行都整份重掃。另以模組變數快取最近一份（只保留一份，避免佔用記憶體）。
+let otherFileProfileCache: DatasetProfile | null = null;
 
 // 同一份檔案同時被多頁要求時共用同一個掃描；只保留最近一份檔案，換檔即釋放舊結果的記憶體
 let inFlightScanRecord: { fileKey: string; promise: Promise<DatasetProfile> } | null = null;
@@ -189,6 +98,7 @@ export const ensureDatasetProfile = (file: File): Promise<DatasetProfile> => {
     const fileKey = buildDatasetFileKey(file);
     const cachedProfile = useWorkspaceStore.getState().datasetProfile;
     if (cachedProfile && cachedProfile.fileKey === fileKey) return Promise.resolve(cachedProfile);
+    if (otherFileProfileCache && otherFileProfileCache.fileKey === fileKey) return Promise.resolve(otherFileProfileCache);
     if (inFlightScanRecord && inFlightScanRecord.fileKey === fileKey) return inFlightScanRecord.promise;
 
     useWorkspaceStore.setState({ isColumnCategoricalValuesScanning: true });
@@ -205,6 +115,9 @@ export const ensureDatasetProfile = (file: File): Promise<DatasetProfile> => {
                     columnCategoricalUniqueValues: categoricalTopValuesMap,
                     isColumnCategoricalValuesScanning: false
                 });
+            } else {
+                otherFileProfileCache = profile;
+                useWorkspaceStore.setState({ isColumnCategoricalValuesScanning: false });
             }
             return profile;
         })

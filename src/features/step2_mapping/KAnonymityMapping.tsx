@@ -22,13 +22,13 @@ import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore, DEFAULT_KANON_RULE_PARAMS, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import ConfigFileButtons from './ConfigFileButtons';
 import { parseConfigFileText, ConfigFileParseError } from '../../utils/configFileParse';
-import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
+import { useEnsureDatasetProfile, getColumnNumericRange } from '../../utils/datasetProfile';
 import { findHierarchyTableProblems, describeHierarchyRowProblem } from '../../utils/hierarchyTableValidation';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
 import { resolveImportedLtSettings, normalizeImportedQiLevel, buildQiLevelValue, extractImportedCellFillValues, normalizeKAnonymityHashAlgorithm } from '../../utils/kAnonymityConfigImport';
 import { TEMPORAL_GRANULARITY_UNITS, TEMPORAL_DEFAULT_GRANULARITY_LEVEL, temporalUnitOfLevel, resolveImportedTemporalLevel } from '../../utils/temporalGranularity';
-import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, findNumericMinMax, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
+import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
 import { detectConfigPrivacyMode } from '../../utils/configModeDetect';
 import { importPreprocessFromConfig } from '../../utils/preprocessConfigImport';
@@ -488,18 +488,16 @@ export default function KAnonymityMapping(): React.ReactElement
     const datasetColumnNumericValuesMap = useWorkspaceStore((state) => state.datasetColumnNumericValuesMap);
     // ★ 2026-09-29：各欄位實際資料最小值（逐一比較求得，避免資料量大時 Math.min(...陣列) 參數過多
     //   觸發 RangeError）。供下方「第一個區間已向下延伸至 0」註解判斷用。
+    // ★ 2026-10-30：改讀統計快照的 numericMin（見 getColumnNumericRange），不再每次進入 Step2 對數百萬筆重掃
+    const datasetProfileSnapshot = useWorkspaceStore((state) => state.datasetProfile);
     const datasetColumnRealMinValueMap = useMemo(() => {
         const minValueByColumnMap: Record<string, number> = {};
-        Object.entries(datasetColumnNumericValuesMap || {}).forEach(([columnNameKey, numericValuesArray]) => {
-            if (!Array.isArray(numericValuesArray) || numericValuesArray.length === 0) return;
-            let currentMinValue = Infinity;
-            for (const numericValue of numericValuesArray) {
-                if (typeof numericValue === 'number' && numericValue < currentMinValue) currentMinValue = numericValue;
-            }
-            if (Number.isFinite(currentMinValue)) minValueByColumnMap[columnNameKey] = currentMinValue;
+        Object.keys(datasetColumnNumericValuesMap || {}).forEach((columnNameKey) => {
+            const numericRange = getColumnNumericRange(datasetProfileSnapshot, datasetColumnNumericValuesMap, columnNameKey);
+            if (numericRange) minValueByColumnMap[columnNameKey] = numericRange.min;
         });
         return minValueByColumnMap;
-    }, [datasetColumnNumericValuesMap]);
+    }, [datasetColumnNumericValuesMap, datasetProfileSnapshot]);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1506,11 +1504,12 @@ export default function KAnonymityMapping(): React.ReactElement
                 } else if (recommendedFieldTypeValue === 'numeric') {
                     recommendedGeneralizationStrategyValue = 'rounding';
 
-                    const columnRealNumericValuesArray = datasetColumnNumericValuesMap[fieldItemRecord.name];
-                    if (columnRealNumericValuesArray && columnRealNumericValuesArray.length > 0) {
+                    // ★ 2026-10-30：先前 Math.min(...陣列) 展開 500 萬個參數會 RangeError，改讀統計快照的最小／最大值
+                    const columnNumericRange = getColumnNumericRange(datasetProfileSnapshot, datasetColumnNumericValuesMap, fieldItemRecord.name);
+                    if (columnNumericRange) {
                         recommendedGenParamValue = calculateNiceRoundingUnit(
-                            Math.min(...columnRealNumericValuesArray),
-                            Math.max(...columnRealNumericValuesArray),
+                            columnNumericRange.min,
+                            columnNumericRange.max,
                             ROUNDING_UNIT_RECOMMENDATION_TARGET_BUCKET_COUNT
                         );
                     }
@@ -1748,8 +1747,8 @@ export default function KAnonymityMapping(): React.ReactElement
             return;
         }
 
-        // 逐一比較求最小／最大值（見 utils/binGeneration.ts findNumericMinMax）
-        const { min: realMinValue, max: realMaxValue } = findNumericMinMax(columnRealNumericValuesArray) ?? { min: 0, max: 0 };
+        // 讀統計快照的最小／最大值；舊快照沒有時逐一比較（見 getColumnNumericRange）
+        const { min: realMinValue, max: realMaxValue } = getColumnNumericRange(datasetProfileSnapshot, datasetColumnNumericValuesMap, targetFieldNameStr) ?? { min: 0, max: 0 };
 
         if (realMaxValue <= realMinValue) {
             messageApi.warning(
@@ -2359,8 +2358,8 @@ export default function KAnonymityMapping(): React.ReactElement
 
     const removeMappingRow = (targetHierarchyTableIdStr: string, targetRowIndexNumber: number): void => setKAnonymityHierarchiesList(kAnonymityHierarchiesList.map(hierarchyItemRecord => hierarchyItemRecord.id === targetHierarchyTableIdStr ? { ...hierarchyItemRecord, mappings: hierarchyItemRecord.mappings.filter((_, mappingRowIndex) => mappingRowIndex !== targetRowIndexNumber) } : hierarchyItemRecord));
 
-    const liveJsonPreviewDataObject = buildSpecCompliantPreviewJSON(kAnonymityFieldsList, kAnonymityHierarchiesList);
-    const liveJsonPreviewFormattedString = JSON.stringify(liveJsonPreviewDataObject, null, 2);
+    // ★ 2026-10-30：預覽收合時不組設定檔、不序列化（先前每次 render 都重算）
+    const liveJsonPreviewFormattedString = isJsonPreviewVisibleStatus ? JSON.stringify(buildSpecCompliantPreviewJSON(kAnonymityFieldsList, kAnonymityHierarchiesList), null, 2) : '';
     const liveJsonPreviewLineArray = liveJsonPreviewFormattedString.split('\n');
 
     /**

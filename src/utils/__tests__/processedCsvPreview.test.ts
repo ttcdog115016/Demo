@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { parseProcessedCsvPreview, PROCESSED_PREVIEW_CHUNK_SIZE } from '../processedCsvPreview';
 
-const HEADER = '﻿ID,IDType,EntryStationName,EntryTime';
+const HEADER = '\uFEFFID,IDType,EntryStationName,EntryTime';
 const buildCsv = (rowCount: number): string =>
     [HEADER, ...Array.from({ length: rowCount }, (_, rowIndex) => `id${rowIndex},EasyCard,市政府,2026-09-07`)].join('\r\n') + '\r\n';
 

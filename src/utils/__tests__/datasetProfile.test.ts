@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
-import { ensureDatasetProfile, getColumnUniqueValueRatio, buildDatasetFileKey } from '../datasetProfile';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { ensureDatasetProfile, getColumnUniqueValueRatio, getColumnNumericRange, buildDatasetFileKey } from '../datasetProfile';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
 const buildCsvFile = (csvText: string, fileName = 'sample.csv'): File =>
@@ -59,5 +59,43 @@ describe('datasetProfile 欄位統計快照', () => {
         const cappedProfile = { ...profile, columns: { ...profile.columns, flag: { ...profile.columns.flag, isDistinctCountCapped: true } } };
         expect(getColumnUniqueValueRatio(cappedProfile, 'flag')).toBe(1);
         expect(getColumnUniqueValueRatio(profile, '不存在的欄位')).toBe(0);
+    });
+
+    it('記錄數值最小／最大值，getColumnNumericRange 優先讀快照（2026-10-30）', async () => {
+        const csvFile = buildCsvFile('年齡,地區\n30,大安區\n-5,板橋區\n88,x\n');
+        useWorkspaceStore.setState({ dataFile: csvFile });
+        const profile = await ensureDatasetProfile(csvFile);
+        expect(profile.columns['年齡']).toMatchObject({ numericMin: -5, numericMax: 88 });
+        expect(profile.columns['地區'].numericMin).toBeUndefined();
+        expect(getColumnNumericRange(profile, profile.numericValues, '年齡')).toEqual({ min: -5, max: 88 });
+        // 舊快照沒有 numericMin／numericMax 時逐筆計算
+        expect(getColumnNumericRange(null, { 薪資: [3, 1, 2] }, '薪資')).toEqual({ min: 1, max: 3 });
+        expect(getColumnNumericRange(profile, profile.numericValues, '地區')).toBeNull();
+    });
+
+    it('非目前資料集的檔案（Step4 前處理後）結果另外快取，不寫入 store、第二次不重掃（2026-10-30）', async () => {
+        const currentFile = buildCsvFile('a\n1\n');
+        const preprocessedFile = buildCsvFile('a\n1\n2\n', 'preprocessed.csv');
+        useWorkspaceStore.setState({ dataFile: currentFile });
+        const firstProfile = await ensureDatasetProfile(preprocessedFile);
+        expect(firstProfile.rowCount).toBe(2);
+        expect(useWorkspaceStore.getState().datasetProfile).toBeNull();
+        expect(useWorkspaceStore.getState().isColumnCategoricalValuesScanning).toBe(false);
+        expect(await ensureDatasetProfile(preprocessedFile)).toBe(firstProfile);
+    });
+
+    it('瀏覽器支援 Worker 時在 Worker 中掃描；Worker 啟動失敗時退回主執行緒，結果相同', async () => {
+        const csvFile = buildCsvFile('年齡\n30\n45\n', 'worker.csv');
+        useWorkspaceStore.setState({ dataFile: csvFile });
+        const createdWorkers: string[] = [];
+        vi.stubGlobal('Worker', class { constructor(url: URL) { createdWorkers.push(String(url)); throw new Error('worker not available'); } });
+        try {
+            const profile = await ensureDatasetProfile(csvFile);
+            expect(createdWorkers).toHaveLength(1);
+            expect(createdWorkers[0]).toContain('datasetProfile.worker');
+            expect(profile.columns['年齡']).toMatchObject({ numericCount: 2, numericMin: 30, numericMax: 45 });
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 });

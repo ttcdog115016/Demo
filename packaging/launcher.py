@@ -100,14 +100,14 @@ def setup_console() -> None:
             pass
 
 
-def redirect_output_to_log(base: Path) -> Path:
+def redirect_output_to_log(base: Path, heading: str = f"啟動 {APP_TITLE}") -> Path:
     """視窗版沒有主控台（sys.stdout 為 None，uvicorn 寫日誌會出錯）；輸出一律寫到檔案。"""
     log_path = base / "data" / "logs" / "launcher.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_file = open(log_path, "a", encoding="utf-8", errors="replace", buffering=1)
     sys.stdout = log_file
     sys.stderr = log_file
-    print(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} 啟動 {APP_TITLE}")
+    print(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} {heading}")
     return log_path
 
 
@@ -471,10 +471,212 @@ def run_server(open_browser: bool) -> int:
     return 0
 
 
-def run_app_window(base: Path) -> int:
-    """視窗版：背景執行服務，開 WebView2 App 視窗；關閉視窗即停止服務。"""
+# ---------------------------------------------------------------- 視窗版：後端子行程
+# ★ 2026-10-30：後端原本跑在 App 視窗同一個行程的執行緒，與 WebView2 的事件處理共用 Python GIL；
+#   後端運算佔住 GIL 時視窗的 UI 執行緒等不到，整個視窗卡住。改為同一個 exe 另開子行程跑後端。
+SERVE_INTERNAL_FLAG = "--serve-internal"
+PARENT_PID_FLAG = "--parent-pid"
+SYNCHRONIZE = 0x00100000
+INFINITE = 0xFFFFFFFF
+
+
+def shutdown_event_name(parent_pid: int) -> str:
+    """視窗關閉時父行程設定此具名事件，子行程收到後正常結束 uvicorn（不硬殺，避免稽核紀錄寫一半）。"""
+    return f"Local\\OpenPETs-shutdown-{parent_pid}"
+
+
+def server_subprocess_command(parent_pid: int) -> list[str]:
+    entry = [sys.executable] if is_frozen() else [sys.executable, str(Path(__file__).resolve())]
+    return [*entry, SERVE_INTERNAL_FLAG, PARENT_PID_FLAG, str(parent_pid)]
+
+
+def parse_parent_pid(argv: list[str]) -> int | None:
+    if PARENT_PID_FLAG in argv:
+        index = argv.index(PARENT_PID_FLAG)
+        if index + 1 < len(argv) and argv[index + 1].isdigit():
+            return int(argv[index + 1])
+    return None
+
+
+def watch_parent_for_shutdown(parent_pid: int, server) -> None:
+    """父行程結束（含當機）或設定關閉事件時，通知 uvicorn 結束。"""
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32
+    handles = [
+        kernel32.OpenProcess(SYNCHRONIZE, False, parent_pid),
+        kernel32.OpenEventW(SYNCHRONIZE, False, shutdown_event_name(parent_pid)),
+    ]
+    handles = [handle for handle in handles if handle]
+    if not handles:
+        return
+
+    def worker():
+        handle_array = (ctypes.c_void_p * len(handles))(*handles)
+        kernel32.WaitForMultipleObjects(len(handles), handle_array, False, INFINITE)
+        server.should_exit = True
+
+    threading.Thread(target=worker, name="open-pets-parent-watch", daemon=True).start()
+
+
+def run_server_subprocess(parent_pid: int | None) -> int:
+    """子行程：只跑後端服務（視窗版 OpenPETs.exe 以 --serve-internal 啟動）。"""
     import uvicorn
 
+    server = uvicorn.Server(uvicorn.Config(
+        build_app(), host=HOST, port=get_port(), server_header=False, log_level="warning", timeout_keep_alive=30,
+    ))
+    if parent_pid and os.name == "nt":
+        watch_parent_for_shutdown(parent_pid, server)
+    server.run()
+    print("後端服務已停止。")
+    return 0
+
+
+def start_server_subprocess():
+    """回傳 (子行程, 關閉事件 handle)。"""
+    import ctypes
+    import subprocess
+
+    event_handle = ctypes.windll.kernel32.CreateEventW(None, True, False, shutdown_event_name(os.getpid()))
+    process = subprocess.Popen(
+        server_subprocess_command(os.getpid()),
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return process, event_handle
+
+
+def stop_server_subprocess(process, event_handle) -> None:
+    import ctypes
+    import subprocess
+
+    if event_handle:
+        ctypes.windll.kernel32.SetEvent(event_handle)
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+    if event_handle:
+        ctypes.windll.kernel32.CloseHandle(event_handle)
+
+
+# ---------------------------------------------------------------- 視窗版：WebView2 調整
+DOWNLOAD_PROGRESS_INTERVAL_SECONDS = 0.5
+
+
+class DesktopApi:
+    """前端以 window.pywebview.api 呼叫（下載完成通知的「開啟資料夾」）。"""
+
+    def reveal_file(self, path: str) -> bool:
+        import subprocess
+
+        target = Path(str(path))
+        if not target.is_file():
+            return False
+        subprocess.Popen(f'explorer /select,"{target}"')
+        return True
+
+
+def patch_webview_for_open_pets() -> None:
+    """調整 pywebview 6 的 WebView2 行為（須在 webview.start 前呼叫）。
+
+    ★ 2026-10-30：
+    - pywebview 對每個請求／回應都掛 Python 處理函式（AddWebResourceRequestedFilter('*')），每次都要在 UI 執行緒
+      取得 GIL；本專案沒用到 request_sent／response_received 事件，移除以免拖慢畫面。
+    - 下載：pywebview 只跳「另存新檔」，之後交給 WebView2 內建下載視窗，大檔完成後仍停在「0 B/秒」且不會自己關閉。
+      改為隱藏內建視窗，把進度與結果送給前端（window.__openPetsDownload），由前端顯示會自動關閉的通知。
+    """
+    from webview.platforms import edgechromium
+    from Microsoft.Web.WebView2.Core import CoreWebView2WebResourceContext
+
+    edge_chrome_class = edgechromium.EdgeChrome
+    original_on_webview_ready = edge_chrome_class.on_webview_ready
+    original_on_download_starting = edge_chrome_class.on_download_starting
+
+    def on_webview_ready(self, sender, args):
+        original_on_webview_ready(self, sender, args)
+        if not args.IsSuccess:
+            return
+        try:
+            sender.CoreWebView2.RemoveWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All)
+        except Exception as exc:
+            print(f"[警告] 無法移除 WebView2 請求攔截：{exc!r}")
+
+    def on_download_starting(self, sender, args):
+        original_on_download_starting(self, sender, args)  # 另存新檔對話框；按取消時 args.Cancel 為 True
+        if args.Cancel:
+            return
+        args.Handled = True  # 不顯示 WebView2 內建下載視窗
+        operation = args.DownloadOperation
+        result_path = str(args.ResultFilePath)
+        download_id = f"download-{time.time_ns()}"
+        core_webview = self.webview.CoreWebView2
+        last_progress_time = [0.0]
+        handlers = {}
+
+        def notify(state: str, reason: str = "") -> None:
+            total_bytes = operation.TotalBytesToReceive
+            payload = {
+                "id": download_id, "fileName": Path(result_path).name, "path": result_path, "state": state,
+                "received": int(operation.BytesReceived), "total": int(total_bytes) if total_bytes is not None else None,
+                "reason": reason,
+            }
+            script = f"window.__openPetsDownload && window.__openPetsDownload({json.dumps(payload, ensure_ascii=False)})"
+            try:
+                core_webview.ExecuteScriptAsync(script)
+            except Exception as exc:
+                print(f"[警告] 下載通知送不到畫面：{exc!r}")
+
+        def on_bytes_received_changed(_sender, _args):
+            now = time.monotonic()
+            if now - last_progress_time[0] >= DOWNLOAD_PROGRESS_INTERVAL_SECONDS:
+                last_progress_time[0] = now
+                notify("progress")
+
+        def on_state_changed(_sender, _args):
+            state_name = str(operation.State)
+            if state_name == "InProgress":
+                return
+            if state_name == "Completed":
+                notify("completed")
+            else:
+                reason = str(operation.InterruptReason)
+                print(f"[警告] 下載中斷：{result_path}（{reason}）")
+                notify("interrupted", reason)
+            operation.BytesReceivedChanged -= handlers["bytes"]
+            operation.StateChanged -= handlers["state"]
+            self._open_pets_download_handlers.pop(download_id, None)
+
+        handlers["bytes"] = on_bytes_received_changed
+        handlers["state"] = on_state_changed
+        # 保留參照，避免事件處理函式被回收
+        if not hasattr(self, "_open_pets_download_handlers"):
+            self._open_pets_download_handlers = {}
+        self._open_pets_download_handlers[download_id] = handlers
+        operation.BytesReceivedChanged += on_bytes_received_changed
+        operation.StateChanged += on_state_changed
+        notify("progress")
+
+    edge_chrome_class.on_webview_ready = on_webview_ready
+    edge_chrome_class.on_download_starting = on_download_starting
+    edge_chrome_class.on_web_resource_request = lambda self, sender, args: None
+    edge_chrome_class.on_web_resource_response = lambda self, sender, args: None
+
+
+def wait_for_service(port: int, process) -> bool:
+    for _ in range(240):  # 最多等 60 秒
+        if process.poll() is not None:
+            return False
+        if is_our_service(port):
+            return True
+        time.sleep(0.25)
+    return False
+
+
+def run_app_window(base: Path) -> int:
+    """視窗版：子行程執行服務，開 WebView2 App 視窗；關閉視窗即停止服務。"""
     port = get_port()
     url = f"http://{HOST}:{port}/"
     if port_in_use(port):
@@ -484,44 +686,36 @@ def run_app_window(base: Path) -> int:
         message_box(f"埠號 {port} 已被其他程式使用。\n\n請用記事本開啟\n{base / '.env'}\n把 OPEN_PETS_PORT 改成其他數字（例如 {port + 1}）後再開啟 Open-PETs。", is_error=True)
         return 1
 
-    app = build_app()
-    server = uvicorn.Server(uvicorn.Config(
-        app, host=HOST, port=port, server_header=False, log_level="warning", timeout_keep_alive=30,
-    ))
-    server_thread = threading.Thread(target=server.run, name="open-pets-server", daemon=True)
-    server_thread.start()
-    for _ in range(240):  # 最多等 60 秒
-        if server.started or not server_thread.is_alive():
-            break
-        time.sleep(0.25)
-    if not server.started:
-        message_box(f"服務啟動失敗，詳見 {base / 'data' / 'logs' / 'launcher.log'}", is_error=True)
-        return 1
-    print(f"服務已啟動：{url}（資料夾 {os.environ['OPEN_PETS_DATA_DIR']}）")
-
-    import webview
-
-    webview.settings["ALLOW_DOWNLOADS"] = True  # 去識別化結果、設定檔、合規報告以下載方式存檔（存到「下載」資料夾）
-    webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
-    start_url = url.rstrip("/") + SETUP_PAGE_PATH if needs_first_admin() else url
-    webview.create_window(
-        APP_TITLE, start_url, width=1440, height=900, min_size=(1024, 680), maximized=True,
-        text_select=True, zoomable=True,
-    )
+    server_process, shutdown_event = start_server_subprocess()
     try:
-        # private_mode=False＋storage_path：瀏覽器端儲存（工作區、介面設定）在重開後保留
-        webview.start(gui="edgechromium", private_mode=False, storage_path=str(base / "webview"))
-    except Exception as exc:
-        print(f"[錯誤] 無法開啟 App 視窗：{exc!r}")
-        message_box(
-            "無法開啟 Open-PETs 視窗：這台電腦可能沒有安裝 Microsoft Edge WebView2 Runtime。\n\n"
-            "請至 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下載安裝後再開啟。",
-            is_error=True,
+        if not wait_for_service(port, server_process):
+            message_box(f"服務啟動失敗，詳見 {base / 'data' / 'logs' / 'launcher.log'}", is_error=True)
+            return 1
+        print(f"服務已啟動：{url}（資料夾 {os.environ['OPEN_PETS_DATA_DIR']}，後端行程 {server_process.pid}）")
+
+        import webview
+
+        webview.settings["ALLOW_DOWNLOADS"] = True  # 去識別化結果、設定檔、合規報告以下載方式存檔（存到「下載」資料夾）
+        webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
+        patch_webview_for_open_pets()
+        start_url = url.rstrip("/") + SETUP_PAGE_PATH if needs_first_admin() else url
+        webview.create_window(
+            APP_TITLE, start_url, width=1440, height=900, min_size=(1024, 680), maximized=True,
+            text_select=True, zoomable=True, js_api=DesktopApi(),
         )
-        return 1
+        try:
+            # private_mode=False＋storage_path：瀏覽器端儲存（工作區、介面設定）在重開後保留
+            webview.start(gui="edgechromium", private_mode=False, storage_path=str(base / "webview"))
+        except Exception as exc:
+            print(f"[錯誤] 無法開啟 App 視窗：{exc!r}")
+            message_box(
+                "無法開啟 Open-PETs 視窗：這台電腦可能沒有安裝 Microsoft Edge WebView2 Runtime。\n\n"
+                "請至 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下載安裝後再開啟。",
+                is_error=True,
+            )
+            return 1
     finally:
-        server.should_exit = True
-        server_thread.join(timeout=10)
+        stop_server_subprocess(server_process, shutdown_event)
         print("視窗已關閉，服務停止。")
     return 0
 
@@ -529,6 +723,12 @@ def run_app_window(base: Path) -> int:
 # ---------------------------------------------------------------- 進入點
 def main(argv: list[str], app_mode: bool) -> int:
     base = home_dir()
+    if argv and argv[0] == SERVE_INTERNAL_FLAG:
+        # 視窗版的後端子行程（沒有主控台），輸出寫到同一份 launcher.log
+        redirect_output_to_log(base, heading="後端服務子行程")
+        load_env(ensure_env_file(base), base)
+        os.chdir(base)
+        return run_server_subprocess(parse_parent_pid(argv))
     if app_mode:
         redirect_output_to_log(base)
     else:
@@ -560,7 +760,7 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()  # 打包後 joblib／multiprocessing 子行程需要
     cli_args = sys.argv[1:]
     # 視窗版 OpenPETs.exe 一律開 App 視窗；OpenPETs-cli.exe 與開發時（加 --app 才開視窗）為主控台
-    use_app_window = (is_frozen() and not is_cli_exe()) or "--app" in cli_args
+    use_app_window = ((is_frozen() and not is_cli_exe()) or "--app" in cli_args) and SERVE_INTERNAL_FLAG not in cli_args
     try:
         code = main([a for a in cli_args if a != "--app"], use_app_window)
     except KeyboardInterrupt:

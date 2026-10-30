@@ -25,7 +25,8 @@ import {
 	resolveIsDateTimeDpField, mapOutOfBoundsStrategyFromBackend, DEFAULT_DATETIME_LOWER_BOUND_DATE, resolveInputNumberStepByDecimals,
 	parseDpDateTimeBoundTimestamp, compactDpDateTimeBoundText, DP_DATETIME_BOUND_PICKER_DISPLAY_FORMAT, DP_DATETIME_BOUND_PICKER_TIME_FORMAT
 } from '../../utils/dpFieldHelpers';
-import { ensureDatasetProfile, useEnsureDatasetProfile, type DatasetProfile } from '../../utils/datasetProfile';
+import { ensureDatasetProfile, useEnsureDatasetProfile, getColumnNumericRange, type DatasetProfile } from '../../utils/datasetProfile';
+import { useShallow } from 'zustand/react/shallow';
 import { inferDpFieldTypeFromProfile } from '../../utils/dpTypeInference';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
 import { parseBackendDpColumnBudgets, type BackendDpColumnBudget } from '../../utils/dpConfigImport';
@@ -85,7 +86,16 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		//   (詳見下方 datasetColumnNumericValuesMap 之 useEffect 與 boundRangeCoverageInfoMap)。
 		datasetColumnNumericValuesMap,
 		setDatasetColumnNumericValuesMap: setDatasetColumnNumericValuesMapAction
-	} = useWorkspaceStore();
+	} = useWorkspaceStore(useShallow((state) => ({
+		// ★ 2026-10-30：原本訂閱整個 store，任何欄位變動都讓這個大表格重繪；改為只取用到的欄位
+		columns: state.columns,
+		dpFields: state.dpFields,
+		setDpFields: state.setDpFields,
+		dataFile: state.dataFile,
+		datasetColumnNumericValuesMap: state.datasetColumnNumericValuesMap,
+		setDatasetColumnNumericValuesMap: state.setDatasetColumnNumericValuesMap
+	})));
+	const datasetProfileSnapshot = useWorkspaceStore((state) => state.datasetProfile);
 	
 	const updateFieldLocal = <AttributeKey extends keyof DPField>(targetFieldIdStr: string, attributeKeyName: AttributeKey, newAttributeValueData: DPField[AttributeKey]): void => 
 	{
@@ -129,12 +139,18 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 	// ★ 新增: 「數值型欄位邊界防呆」——比對使用者設定的邊界 (lowerBound/upperBound) 是否涵蓋實際資料的
 	//   最大/最小值；若有資料落在邊界範圍之外，記錄超出筆數/總筆數/百分比，供下方驗證與表格提示使用。
 	//   已由「下限須嚴格小於上限」檢查涵蓋之欄位 (lowerBound >= upperBound) 不重複判斷，避免混淆。
+	// ★ 2026-10-30：只有「已啟用的數值欄位」的邊界改變時才重算（以字串為依賴）；先前 ε／δ 等任何編輯都會對每個
+	//   數值欄位的數百萬筆再 filter 一次。資料最小／最大值都在邊界內時直接判定無超界，不必逐筆計數。
+	const boundRangeDependencyKey = currentDpFieldsList
+		.filter((fieldItemRecord) => fieldItemRecord.enabled && fieldItemRecord.fieldType === 'Numeric')
+		.map((fieldItemRecord) => `${fieldItemRecord.id}\u0000${fieldItemRecord.fieldName}\u0000${fieldItemRecord.lowerBound}\u0000${fieldItemRecord.upperBound}`)
+		.join('\u0001');
 	const boundRangeCoverageInfoMap = useMemo(
 		(): Record<string, { outOfRangeCount: number; totalValidValueCount: number; percentText: string }> => 
 		{
 			const infoMap: Record<string, { outOfRangeCount: number; totalValidValueCount: number; percentText: string }> = {};
 
-			currentDpFieldsList.forEach(
+			useWorkspaceStore.getState().dpFields.forEach(
 				(fieldItemRecord) => 
 				{
 					if (!fieldItemRecord.enabled || fieldItemRecord.fieldType !== 'Numeric') return;
@@ -147,7 +163,12 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 					const columnRealValuesArray = datasetColumnNumericValuesMap[fieldItemRecord.fieldName];
 					if (!columnRealValuesArray || columnRealValuesArray.length === 0) return;
 
-					const outOfRangeValuesCount = columnRealValuesArray.filter((numericValue) => numericValue < lowerBoundNumValue || numericValue > upperBoundNumValue).length;
+					const columnNumericRange = getColumnNumericRange(datasetProfileSnapshot, datasetColumnNumericValuesMap, fieldItemRecord.fieldName);
+					if (columnNumericRange && columnNumericRange.min >= lowerBoundNumValue && columnNumericRange.max <= upperBoundNumValue) return;
+					let outOfRangeValuesCount = 0;
+					for (const numericValue of columnRealValuesArray) {
+						if (numericValue < lowerBoundNumValue || numericValue > upperBoundNumValue) outOfRangeValuesCount++;
+					}
 					if (outOfRangeValuesCount === 0) return;
 
 					const outOfRangePercentNumValue = (outOfRangeValuesCount / columnRealValuesArray.length) * 100;
@@ -161,7 +182,8 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 
 			return infoMap;
 		}, 
-		[currentDpFieldsList, datasetColumnNumericValuesMap]
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- 以 boundRangeDependencyKey 取代 dpFields，見上方說明
+		[boundRangeDependencyKey, datasetColumnNumericValuesMap, datasetProfileSnapshot]
 	);
 
 	const validationStatusResult = useMemo(
@@ -746,17 +768,10 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		if (fieldItemRecord.fieldType !== 'Numeric') return fieldItemRecord;
 		if (resolveIsDateTimeDpField(fieldItemRecord)) return applyRealDateTimeBounds(fieldItemRecord, useWorkspaceStore.getState().datasetProfile?.dateTimeRanges);
 
-		const realColumnValuesArray = datasetColumnNumericValuesMap[fieldItemRecord.fieldName];
-		if (!realColumnValuesArray || realColumnValuesArray.length === 0) return fieldItemRecord;
-
-		let computedRealMinValue = realColumnValuesArray[0];
-		let computedRealMaxValue = realColumnValuesArray[0];
-		for (let valueIndexNumber = 1; valueIndexNumber < realColumnValuesArray.length; valueIndexNumber++)
-		{
-			const currentRealValue = realColumnValuesArray[valueIndexNumber];
-			if (currentRealValue < computedRealMinValue) computedRealMinValue = currentRealValue;
-			if (currentRealValue > computedRealMaxValue) computedRealMaxValue = currentRealValue;
-		}
+		// ★ 2026-10-30：讀統計快照的最小／最大值，不再逐筆掃描（見 getColumnNumericRange）
+		const columnNumericRange = getColumnNumericRange(useWorkspaceStore.getState().datasetProfile, datasetColumnNumericValuesMap, fieldItemRecord.fieldName);
+		if (!columnNumericRange) return fieldItemRecord;
+		const { min: computedRealMinValue, max: computedRealMaxValue } = columnNumericRange;
 
 		return { ...fieldItemRecord, lowerBound: Math.floor(computedRealMinValue), upperBound: Math.ceil(computedRealMaxValue) };
 	};
@@ -1054,13 +1069,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 													newLower = hasDateStringBoundsStatus ? dateTimeBoundsField.lowerBound : DEFAULT_DATETIME_LOWER_BOUND_DATE;
 													newUpper = hasDateStringBoundsStatus ? dateTimeBoundsField.upperBound : new Date().toISOString().slice(0, 10);
 												} else if (realColumnValuesArray && realColumnValuesArray.length > 0) {
-													let computedRealMinValue = realColumnValuesArray[0];
-													let computedRealMaxValue = realColumnValuesArray[0];
-													for (let valueIndexNumber = 1; valueIndexNumber < realColumnValuesArray.length; valueIndexNumber++) {
-														const currentRealValue = realColumnValuesArray[valueIndexNumber];
-														if (currentRealValue < computedRealMinValue) computedRealMinValue = currentRealValue;
-														if (currentRealValue > computedRealMaxValue) computedRealMaxValue = currentRealValue;
-													}
+													const { min: computedRealMinValue, max: computedRealMaxValue } = getColumnNumericRange(datasetProfileSnapshot, datasetColumnNumericValuesMap, fieldItemRecord.fieldName) ?? { min: 0, max: 0 };
 													newLower = Math.floor(computedRealMinValue);
 													newUpper = Math.ceil(computedRealMaxValue);
 												} else {
@@ -1327,8 +1336,8 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 		}
 	];
 
-	const liveJsonPreviewDataObject = buildSpecCompliantPreviewJSON();
-	const liveJsonPreviewFormattedString = JSON.stringify(liveJsonPreviewDataObject, null, 2);
+	// ★ 2026-10-30：預覽收合時不組設定檔、不序列化（先前每次 render 都重算）
+	const liveJsonPreviewFormattedString = isJsonPreviewVisibleStatus ? JSON.stringify(buildSpecCompliantPreviewJSON(), null, 2) : '';
 	const liveJsonPreviewLineArray = liveJsonPreviewFormattedString.split('\n');
 
 	/**

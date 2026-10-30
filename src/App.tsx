@@ -46,6 +46,7 @@ import AuditLogHub from './features/audit_logs/AuditLogHub';
 import AdminDashboard from './features/admin/AdminDashboard';
 import { Dashboard } from './features/dashboard/Dashboard';
 import MainLayout from './features/workspace/MainLayout';
+import DesktopDownloadNotifier from './features/workspace/DesktopDownloadNotifier';
 import { validateProgression } from './features/workspace/validateProgression';
 import { useIdleTimeout } from './features/settings/useIdleTimeout';
 import { DEFAULT_SESSION_TIMEOUT_MINUTES, loadSystemSettings } from './utils/systemSettingsSync';
@@ -557,6 +558,7 @@ export default function App(): React.ReactElement {
                 style={{ background: 'transparent', width: '100%' }}
                 message={{ duration: GLOBAL_MESSAGE_TOAST_AUTO_CLOSE_SECONDS, pauseOnHover: true }}
             >
+                <DesktopDownloadNotifier />
                 <BrowserRouter>
                     <Routes>
                         <Route path="/login" element={<Login />} />
