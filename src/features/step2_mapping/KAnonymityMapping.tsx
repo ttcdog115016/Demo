@@ -640,6 +640,10 @@ export default function KAnonymityMapping(): React.ReactElement
 
                     const hasValidTreeMappingStatus = targetHierarchyTableRecord && targetHierarchyTableRecord.mappings.length > 0 && targetHierarchyTableRecord.mappings.some(mappingRowArray => mappingRowArray[0] && mappingRowArray[0].trim() !== '');
 
+                    // ★ 2026-10-30：層級 0（不泛化、無範圍上限）且沒有對照表時放行——後端 config.py 只擋「層級 > 0 卻沒有
+                    //   generalization_matrices」，層級 0 照原值參與分組（例如內政_k_年齡10歲.json 的 gender_cd）。
+                    if (!hasValidTreeMappingStatus && !fieldItemRecord.genMaxLevel && !fieldItemRecord.genLevelRangeUpper) continue;
+
                     if (!hasValidTreeMappingStatus) {
                         validationErrorMessageString = `欄位 [${fieldItemRecord.name}] 選擇「階層樹 (Tree)」泛化，請至「泛化階層映射」分頁設定至少一組有效的對應關係。`;
                         break;

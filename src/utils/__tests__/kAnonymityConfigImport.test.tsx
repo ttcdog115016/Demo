@@ -139,6 +139,33 @@ describe('qi_generalization_levels 層級範圍 [最小, 最大]', () => {
         expect(exportedConfig.k_anonymity.generalization_hierarchies).toEqual({ 年齡: { bins: ageBins } });
     });
 
+    it('Step2 防呆：類別型 QI 沒有對照表時，層級 0 可進下一步（後端不泛化、照原值分組），層級 > 0 仍擋', async () => {
+        const buildConfigText = (qiLevels?: Record<string, number>) => JSON.stringify({
+            k_anonymity: {
+                enabled: true, k: 5,
+                columns: { 地區: { role: 'quasi_identifier', type: 'categorical' }, 疾病: { role: 'sensitive', type: 'categorical' } },
+                ...(qiLevels ? { qi_generalization_levels: qiLevels } : {})
+            }
+        });
+        const importAndKeepMounted = async (configText: string): Promise<void> => {
+            messageMock.success.mockClear();
+            const { container } = render(<KAnonymityMapping />);
+            const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+            fireEvent.change(fileInput, { target: { files: [new File([configText], 'config_kanon.json', { type: 'application/json' })] } });
+            await waitFor(() => expect(messageMock.success).toHaveBeenCalled());
+        };
+
+        resetStore();
+        await importAndKeepMounted(buildConfigText());
+        await waitFor(() => expect(useWorkspaceStore.getState().isStepValid).toBe(true));
+        cleanup();
+
+        resetStore();
+        await importAndKeepMounted(buildConfigText({ 地區: 2 }));
+        await waitFor(() => expect(useWorkspaceStore.getState().stepErrorMessage).toContain('階層樹'));
+        expect(useWorkspaceStore.getState().isStepValid).toBe(false);
+    });
+
     it('正規化與組回：陣列取最小為實際層級、最大為上限；上下限相同或無上限時為單一整數', () => {
         expect(normalizeImportedQiLevel([1, 3])).toEqual({ level: 1, rangeUpper: 3 });
         expect(normalizeImportedQiLevel([3, 1])).toEqual({ level: 1, rangeUpper: 3 });
