@@ -8,6 +8,7 @@
  *   抽出共用下載函式，讓 Step2 的匯入按鈕旁也能直接匯出。
  */
 import { buildBackendConfigDocumentFromWorkspace } from './pipelineConfig';
+import { triggerBlobDownload } from './blobDownload';
 import type { useWorkspaceStore } from '../store/useWorkspaceStore';
 
 type WorkspaceSnapshot = ReturnType<typeof useWorkspaceStore.getState>;
@@ -20,14 +21,7 @@ export const downloadWorkspaceConfigJson = (workspaceSnapshot: WorkspaceSnapshot
     if (!configDocument) return 'no_mode';
     try {
         const jsonBlob = new Blob([JSON.stringify(configDocument, null, 2)], { type: 'application/json' });
-        const downloadUrl = URL.createObjectURL(jsonBlob);
-        const downloadLinkElement = document.createElement('a');
-        downloadLinkElement.href = downloadUrl;
-        downloadLinkElement.download = `final_privacy_config_${Date.now()}.json`;
-        document.body.appendChild(downloadLinkElement);
-        downloadLinkElement.click();
-        document.body.removeChild(downloadLinkElement);
-        URL.revokeObjectURL(downloadUrl);
+        triggerBlobDownload(jsonBlob, `final_privacy_config_${Date.now()}.json`);
         return 'ok';
     } catch (downloadError) {
         console.error('Export error:', downloadError);

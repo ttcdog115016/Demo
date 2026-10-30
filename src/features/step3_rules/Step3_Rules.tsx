@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
+import { triggerBlobDownload } from '../../utils/blobDownload';
 
 import KAnonymityRules from './KAnonymityRules';
 import DifferentialPrivacyRules from './DifferentialPrivacyRules';
@@ -93,21 +94,7 @@ export default function Step3_Rules(): React.ReactElement
 
 			const jsonBlobDataObject = new Blob([formattedJsonStringData], { type: "application/json" });
 
-			const temporaryDownloadUrlString = URL.createObjectURL(jsonBlobDataObject);
-
-			const hiddenDownloadLinkElement = document.createElement('a');
-
-			hiddenDownloadLinkElement.href = temporaryDownloadUrlString;
-
-			hiddenDownloadLinkElement.download = `final_privacy_config_${Date.now()}.json`;
-
-			document.body.appendChild(hiddenDownloadLinkElement);
-
-			hiddenDownloadLinkElement.click();
-
-			document.body.removeChild(hiddenDownloadLinkElement);
-
-			URL.revokeObjectURL(temporaryDownloadUrlString);
+			triggerBlobDownload(jsonBlobDataObject, `final_privacy_config_${Date.now()}.json`);
 			
 			messageApi.success(
 				translate('step3.msg_export_success', 'Successfully exported privacy configuration (JSON)!')

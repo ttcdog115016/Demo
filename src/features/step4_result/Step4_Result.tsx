@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { RISK_ATTACK_DEFAULT_PARAMS } from '../../utils/riskAssessment';
+import { triggerBlobDownload } from '../../utils/blobDownload';
 import type { DpStoreField } from '../../utils/pipelineConfig';
 import type { KAnonymityQualityReport, DpQualityReport } from '../../api/apiService';
 
@@ -635,19 +636,6 @@ export default function Step4_Result(): React.ReactElement
 
 
     const handleOpenReportModal = () => setIsReportModalVisibleStatus(true);
-
-    /** 以暫時的 <a download> 觸發瀏覽器下載 */
-    const triggerBlobDownload = (downloadBlob: Blob, downloadFileNameStr: string): void =>
-    {
-        const blobDownloadUrlString = URL.createObjectURL(downloadBlob);
-        const downloadAnchorHtmlElement = document.createElement('a');
-        downloadAnchorHtmlElement.href = blobDownloadUrlString;
-        downloadAnchorHtmlElement.download = downloadFileNameStr;
-        document.body.appendChild(downloadAnchorHtmlElement);
-        downloadAnchorHtmlElement.click();
-        document.body.removeChild(downloadAnchorHtmlElement);
-        URL.revokeObjectURL(blobDownloadUrlString);
-    };
 
     // ★ 2026-10-08 諮詢會（郭博鈞執行長）：資料使用方可能誤用不適用的統計方法而錯誤解讀，下載時附上注意事項。
     const dataUsageNotesContext: DataUsageNotesContext = {
