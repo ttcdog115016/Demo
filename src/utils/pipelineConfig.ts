@@ -99,6 +99,13 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
     // （不是原始 row 陣列），格式依據 app/core/config.py 的 parse_categorical_mapping()
     const generalizationMatricesMap: Record<string, { mapping: Record<string, string[]> }> = {};
     const generalizationHierarchiesMap: Record<string, unknown> = {};
+    // 有實際階層對照的欄位（欄名清理與有效列判斷同下方 generalization_matrices；Step2 自動建的空白表 [['', '']] 不算）
+    const fieldNamesWithHierarchySet = new Set(kAnonymityHierarchiesList
+        .filter((h) => {
+            const mappings = (h as Record<string, unknown>).mappings;
+            return Array.isArray(mappings) && mappings.some((row) => Array.isArray(row) && typeof row[0] === 'string' && row[0].trim() !== '');
+        })
+        .map((h) => String((h as Record<string, unknown>).fieldName || '').replace(/^[﻿​]+/, '').trim()));
 
     actualProcessedColumnsList.forEach((colName) => {
         const cleanName = colName.replace(/^[\uFEFF\u200B]+/, '').trim();
@@ -181,9 +188,13 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
                     // ★ 2026-10-01：類別型階層樹與時間粒度可設層級範圍 [最小, 最大]（後端實際輸出最小層級、評估兩端並回報），
                     //   genMaxLevel 為最小層級、genLevelRangeUpper 為上限，見 utils/kAnonymityConfigImport.buildQiLevelValue。
                     const isLevelRangeSupportedStatus = colType === 'categorical' || (colType === 'temporal' && matchedField.genStrategy === 'time_rounding');
-                    qiGeneralizationLevelsMap[cleanName] = isLevelRangeSupportedStatus
+                    const qiLevelValue = isLevelRangeSupportedStatus
                         ? buildQiLevelValue(resolvedQiLevelValue, matchedField.genLevelRangeUpper)
                         : resolvedQiLevelValue;
+                    // ★ 2026-10-30：類別型沒有階層對照表且層級 0（不泛化）時不寫入，與後端「未列出即不泛化」一致，
+                    //   匯入沒有 qi_generalization_levels 的設定檔再匯出時不會多出這個區塊。
+                    const isUngeneralizedCategoricalStatus = colType === 'categorical' && qiLevelValue === 0 && !fieldNamesWithHierarchySet.has(cleanName);
+                    if (!isUngeneralizedCategoricalStatus) qiGeneralizationLevelsMap[cleanName] = qiLevelValue;
                 }
 
                 // 讀取使用者於 Step2「泛化階層對照」分頁實際填寫的自訂區間，

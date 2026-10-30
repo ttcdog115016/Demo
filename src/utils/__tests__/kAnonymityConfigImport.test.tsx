@@ -115,6 +115,30 @@ describe('qi_generalization_levels 層級範圍 [最小, 最大]', () => {
         expect(exportedConfig.k_anonymity.qi_generalization_levels).toEqual({ 地區: 2, 職業: [1, 3], 生日: 6 });
     });
 
+    it('設定檔沒有 qi_generalization_levels、類別型 QI 也沒有階層表（內政_k_年齡10歲.json）：層級 0，匯出不憑空加層級 2', async () => {
+        resetStore();
+        const ageBins = [{ min: 0, max: 10, label: '0-9' }, { min: 10, max: null, label: '10+' }];
+        await importThroughStep2(JSON.stringify({
+            k_anonymity: {
+                enabled: true, k: 5, suppression_method: 'row_suppression', suppression_limit_percent: 20,
+                columns: {
+                    身分證號: { role: 'identifier', type: 'string', strategy: 'remove' },
+                    地區: { role: 'quasi_identifier', type: 'categorical' },
+                    婚姻狀況: { role: 'quasi_identifier', type: 'categorical' },
+                    年齡: { role: 'quasi_identifier', type: 'numeric' }
+                },
+                generalization_hierarchies: { 年齡: { bins: ageBins } }
+            }
+        }));
+        const fieldsByName = Object.fromEntries((useWorkspaceStore.getState().kAnonymityFields as { name: string }[]).map((field) => [field.name, field]));
+        expect(fieldsByName.地區).toMatchObject({ genMaxLevel: 0 });
+        expect(fieldsByName.婚姻狀況).toMatchObject({ genMaxLevel: 0 });
+
+        const exportedConfig = buildBackendConfigDocumentFromWorkspace(useWorkspaceStore.getState()) as { k_anonymity: Record<string, unknown> };
+        expect(exportedConfig.k_anonymity).not.toHaveProperty('qi_generalization_levels');
+        expect(exportedConfig.k_anonymity.generalization_hierarchies).toEqual({ 年齡: { bins: ageBins } });
+    });
+
     it('正規化與組回：陣列取最小為實際層級、最大為上限；上下限相同或無上限時為單一整數', () => {
         expect(normalizeImportedQiLevel([1, 3])).toEqual({ level: 1, rangeUpper: 3 });
         expect(normalizeImportedQiLevel([3, 1])).toEqual({ level: 1, rangeUpper: 3 });

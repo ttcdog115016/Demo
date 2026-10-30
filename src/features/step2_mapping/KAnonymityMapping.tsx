@@ -1248,6 +1248,14 @@ export default function KAnonymityMapping(): React.ReactElement
                             (!calculatedMaxGeneralizationLevelValue || calculatedMaxGeneralizationLevelValue < 1)
                         ) {
                             calculatedMaxGeneralizationLevelValue = importedHierarchyMaxLevelForThisColumn;
+                        } else if (
+                            !isQiLevelExplicitlySpecifiedInImportedConfig &&
+                            importedHierarchyMaxLevelForThisColumn === undefined &&
+                            currentGeneralizationConfig?.max_level === undefined
+                        ) {
+                            // ★ 2026-10-30：設定檔沒指定層級、也沒有階層對照表（例如內政_k_年齡10歲.json 的 gender_cd），
+                            //   後端語意為不泛化；先前停在通用預設 2，匯出時多出「有層級無階層」的 qi_generalization_levels。
+                            calculatedMaxGeneralizationLevelValue = 0;
                         }
                     } else if (mappedFieldTypeValue === 'string' && calculatedGeneralizationStrategyValue === 'length') {
                         // ★ 使用者反映: 字串「依字串長度」策略只要調「參數設定」(bin_size) 就好，UI 已把
