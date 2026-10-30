@@ -218,6 +218,13 @@ export default function KAnonymityRules(): React.ReactElement
     const effectiveMaxLValue = computeLSliderMaxValue(currentKValue, MIN_L_VALUE, MAX_L_VALUE);
     // 例如匯入的設定檔 l=8，但敏感欄位只有 5 種值：必定無法通過，需提示並擋下一步
     const isLExceedsSensitiveDistinctStatus = isEnableLDiversityStatus && isLValueExceedingSensitiveDistinct(currentLValue, sensitiveColumnDistinctCountInfo);
+    // ★ 2026-10-30：Step2 敏感欄位改為選填；l／t 需要輸出中保留的敏感欄位（處理方式為「移除」者後端會刪掉該欄）
+    const hasKeptSensitiveFieldStatus = useMemo(() => {
+        const fieldsList = (kAnonymityFieldsSnapshotList || []) as Array<Record<string, unknown>>;
+        return fieldsList.length > 0
+            ? fieldsList.some((fieldRecord) => fieldRecord.role === 'Sensitive' && fieldRecord.maskStrategy !== 'remove')
+            : Object.values(rawColumnRolesMapForLUpper || {}).some((roleName) => roleName === 'Sensitive');
+    }, [kAnonymityFieldsSnapshotList, rawColumnRolesMapForLUpper]);
 
     /**
      * ============================================================================
@@ -244,6 +251,17 @@ export default function KAnonymityRules(): React.ReactElement
                     'step3.error_k_exceeds_dataset',
                     '參數錯誤：K 值 ({{k}}) 不可大於資料源總筆數 ({{rows}})。',
                     { k: currentKValue, rows: datasetRowCountValue }
+                ));
+
+                return;
+            }
+
+            // 2-2. 啟用 l／t 卻沒有保留的敏感欄位：後端會判定「未執行」（不算通過），擋下一步（2026-10-30）
+            if ((isEnableLDiversityStatus || isEnableTClosenessStatus) && !hasKeptSensitiveFieldStatus)
+            {
+                setStepValidationAction(false, translate(
+                    'step3.error_lt_without_sensitive',
+                    '已啟用 l-多樣性／t-緊密度，但沒有保留的敏感欄位（未設定，或處理方式皆為「移除」），檢測無法執行。請關閉 l／t，或回 Step2 將至少一個欄位設為「敏感欄位」。'
                 ));
 
                 return;
@@ -287,7 +305,7 @@ export default function KAnonymityRules(): React.ReactElement
             // 驗證通過，解鎖進入下一步的權限
             setStepValidationAction(true, null);
         },
-        [currentKValue, currentLValue, currentTValue, maxSuppressionPercentageValue, datasetRowCountValue, isEnableLDiversityStatus, isEnableTClosenessStatus, setStepValidationAction, translate, isLExceedsSensitiveDistinctStatus, sensitiveColumnDistinctCountInfo]
+        [currentKValue, currentLValue, currentTValue, maxSuppressionPercentageValue, datasetRowCountValue, isEnableLDiversityStatus, isEnableTClosenessStatus, setStepValidationAction, translate, isLExceedsSensitiveDistinctStatus, sensitiveColumnDistinctCountInfo, hasKeptSensitiveFieldStatus]
     );
 
     /**

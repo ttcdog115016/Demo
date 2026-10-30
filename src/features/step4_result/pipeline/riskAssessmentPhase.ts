@@ -305,7 +305,8 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             dpConfigBlockForRisk = buildDifferentialPrivacyConfigBlockForRisk(
                 (configObject as Record<string, unknown>).differential_privacy, dpCandidateSelection.categoricalOverrideColumnNames
             );
-            appendPipelineLog(dpCandidateSelection.designatedSensitiveColumnNames.length > 0
+            if (dpCandidateSelection.skippedReason) appendPipelineLog(`⚠️ ${dpCandidateSelection.skippedReason}`);
+            else appendPipelineLog(dpCandidateSelection.designatedSensitiveColumnNames.length > 0
                 ? `ℹ️ 依步驟二點選的 ${dpCandidateSelection.designatedSensitiveColumnNames.length} 個敏感欄位（${dpCandidateSelection.designatedSensitiveColumnNames.map((name) => `「${name}」`).join('、')}），每輪只以其中 1 個為敏感欄位執行三攻擊／CAP（共 ${dpCandidateSelection.effectiveCandidateColumnNames.length} 輪），取風險最高的結果`
                 : `ℹ️ 步驟二未指定敏感欄位，改為輪流以 ${dpCandidateSelection.effectiveCandidateColumnNames.length} 個類別型欄位為敏感欄位評估，取風險最高的結果`);
             if (dpCandidateSelection.highCardinalityInfo.length > 0) {

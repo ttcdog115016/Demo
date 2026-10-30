@@ -21,7 +21,7 @@ import Step3_Rules from '../step3_rules/Step3_Rules';
 import Step4_Result from '../step4_result/Step4_Result';
 import { validateProgression } from './validateProgression'; 
 import { listDpFieldsWithBoundsFinerThanNoiseUnit, applyDpDatetimeNoiseUnit } from '../../utils/dpFieldHelpers';
-import { resolveDpFieldRiskRole } from '../../utils/riskAssessment';
+import { resolveDpFieldRiskRole, hasDpRiskAttackSurface } from '../../utils/riskAssessment';
 import { confirmIfBackendBusy } from './backendBusyConfirm';
 
 /**
@@ -165,7 +165,10 @@ export default function MainLayout(): React.ReactElement
     {
         const workspaceStateSnapshot = useWorkspaceStore.getState();
         const dpFieldsList = workspaceStateSnapshot.dpFields || [];
-        if (workspaceStateSnapshot.privacyMode !== 'differential-privacy' || dpFieldsList.some((fieldItemRecord) => fieldItemRecord.isRiskSensitive))
+        // ★ 2026-10-30：沒有攻擊面（例如只啟用 1 個欄位）時點選敏感欄位也無法評估，Step4 會略過三攻擊與 CAP，
+        //   Step2 已顯示警告，不再跳「將輪流評估」的視窗
+        if (workspaceStateSnapshot.privacyMode !== 'differential-privacy' || dpFieldsList.some((fieldItemRecord) => fieldItemRecord.isRiskSensitive)
+            || !hasDpRiskAttackSurface(dpFieldsList))
         {
             proceedAction();
             return;

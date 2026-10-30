@@ -246,6 +246,22 @@ export const describeDpRiskSensitiveUnsupportedType = (field: Pick<DpStoreField,
 };
 
 /**
+ * 差分隱私：三攻擊／CAP 是否有攻擊面（間接識別）。後端缺間接識別時不報錯、只回 -1.0（無法評估），
+ * 故沒有攻擊面時 Step2 不擋、Step4 直接略過風險評估（2026-10-30 使用者決議）。
+ * - 有點選敏感欄位：須至少 1 個已啟用、未點選為敏感的欄位。
+ * - 未點選：輪到某欄當敏感時其餘才是間接識別，故參與評估的欄位須至少 2 個。
+ */
+export const hasDpRiskAttackSurface = (dpFields: Array<Pick<DpStoreField, 'enabled' | 'isRiskSensitive'>> | null | undefined): boolean => {
+    const fieldsList = dpFields || [];
+    return fieldsList.some((field) => field.isRiskSensitive)
+        ? fieldsList.some((field) => resolveDpFieldRiskRole(field) === 'quasi_identifier')
+        : fieldsList.filter((field) => resolveDpFieldRiskRole(field) !== 'none').length >= 2;
+};
+
+/** 差分隱私：沒有攻擊面而略過三攻擊／CAP 時的說明（Step2 提示與 Step4 執行紀錄共用） */
+export const DP_RISK_NO_ATTACK_SURFACE_TEXT = '沒有可作為間接識別的欄位，三攻擊與 CAP 缺少攻擊面，Step4 將略過風險評估（去識別化結果與品質分數不受影響）。若需要風險評估，請再啟用至少 1 個未點選為敏感的欄位。';
+
+/**
  * 差分隱私：決定 Step4 三攻擊／CAP 要用哪些欄位、以哪些欄位為敏感欄位。
  * - Step2 已點選敏感欄位（isRiskSensitive，可複數個，2026-10-02 起；類別型或連續數值型，數值型會先分級距）：後端 RiskConfig 每次只接受恰好 1 個
  *   sensitive，因此 Step4 每輪只以其中 1 個為敏感欄位，點選幾個就跑幾輪，取風險最高者；其餘已啟用 DP 且未被
@@ -267,6 +283,8 @@ export const selectDifferentialPrivacySensitiveCandidates = (input: {
     binWidthMap: Record<string, number>;
     /** 風險評估時改宣告為類別型的敏感欄位（點選為敏感的連續數值型欄位，不論是否分級距） */
     categoricalOverrideColumnNames: string[];
+    /** 略過三攻擊／CAP 的原因（沒有攻擊面或沒有可當敏感欄位的類別型欄位）；此時候選為空 */
+    skippedReason?: string;
 } => {
     const allFieldsList = input.dpFields || [];
     if (!allFieldsList.some((field) => field.enabled)) {
@@ -279,10 +297,14 @@ export const selectDifferentialPrivacySensitiveCandidates = (input: {
         if (unsupportedSensitiveField) {
             throw new Error(`敏感欄位「${unsupportedSensitiveField.fieldName}」為${describeDpRiskSensitiveUnsupportedType(unsupportedSensitiveField)}，無法作為推斷性攻擊的預測目標，請回到步驟二改選類別型或連續數值型欄位。`);
         }
-        if (!enabledFields.some((field) => resolveDpFieldRiskRole(field) === 'quasi_identifier')) {
-            throw new Error('已點選敏感欄位，但沒有其他已啟用差分隱私的欄位可作為間接識別，三攻擊缺少攻擊面，請回到步驟二再啟用至少 1 個欄位。');
-        }
     }
+    const skippedSelection = (skippedReason: string) => ({
+        enabledFields, effectiveCandidateColumnNames: [], highCardinalityInfo: [],
+        designatedSensitiveColumnNames: designatedSensitiveFieldsList.map((field) => field.fieldName),
+        binWidthMap: {}, categoricalOverrideColumnNames: [], skippedReason
+    });
+    // ★ 2026-10-30：沒有攻擊面（例如只啟用 1 個欄位）不再 throw 讓整個 Step4 失敗，改為略過風險評估
+    if (!hasDpRiskAttackSurface(allFieldsList)) return skippedSelection(DP_RISK_NO_ATTACK_SURFACE_TEXT);
     // Step2 有點選敏感欄位：比照 K-匿名的處理——高唯一值的連續數值欄位自動（或依 Step4 使用者調整的寬度）分級距，
     //   分級距後佔比降到門檻以下才保留；高唯一值的類別欄位略過（勾選強制執行則保留）
     if (designatedSensitiveFieldsList.length > 0) {
@@ -305,7 +327,7 @@ export const selectDifferentialPrivacySensitiveCandidates = (input: {
     }
     const categoricalCandidateFieldsList = enabledFields.filter((field) => field.fieldType === 'Categorical');
     if (categoricalCandidateFieldsList.length === 0) {
-        throw new Error('風險評估的敏感欄位僅能從已啟用的「類別型」欄位中挑選，目前沒有已啟用的類別型欄位，請回到步驟二欄位設定啟用至少 1 個類別型欄位（或點選敏感欄位）後再重新運算。');
+        return skippedSelection('未點選敏感欄位，且沒有已啟用的類別型欄位可自動當敏感欄位，Step4 將略過三攻擊與 CAP 風險評估（去識別化結果與品質分數不受影響）。若需要風險評估，請在步驟二點選敏感欄位（類別型或連續數值型）。');
     }
     const highCardinalityInfo: HighCardinalitySensitiveInfo[] = [];
     const effectiveCandidateFieldsList = categoricalCandidateFieldsList.filter((field) => {

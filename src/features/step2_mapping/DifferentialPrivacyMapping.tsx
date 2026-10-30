@@ -29,7 +29,7 @@ import { ensureDatasetProfile, useEnsureDatasetProfile, type DatasetProfile } fr
 import { inferDpFieldTypeFromProfile } from '../../utils/dpTypeInference';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
 import { parseBackendDpColumnBudgets, type BackendDpColumnBudget } from '../../utils/dpConfigImport';
-import { resolveDpFieldRiskRole, isDpFieldSelectableAsRiskSensitive } from '../../utils/riskAssessment';
+import { resolveDpFieldRiskRole, isDpFieldSelectableAsRiskSensitive, hasDpRiskAttackSurface, DP_RISK_NO_ATTACK_SURFACE_TEXT } from '../../utils/riskAssessment';
 import { detectConfigPrivacyMode } from '../../utils/configModeDetect';
 import { importPreprocessFromConfig } from '../../utils/preprocessConfigImport';
 import { applyPreprocessImportToWorkspace, applyRiskImportToWorkspace } from './preprocessImportMessages';
@@ -1425,12 +1425,11 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 									</Space>
 								</div>
 								
-								{designatedRiskSensitiveFieldsList.length > 0 ? (
-									riskQuasiIdentifierFieldsCount === 0 ? (
-										<Alert type="error" showIcon style={{ marginBottom: '12px', textAlign: 'left' }} message={translate('step2.dp_risk_sensitive_no_qi', { names: designatedRiskSensitiveNamesText, defaultValue: `已點選 ${designatedRiskSensitiveNamesText} 為敏感欄位，但沒有其他已啟用差分隱私的欄位可作為間接識別，三攻擊缺少攻擊面。請再啟用至少 1 個未點選為敏感的欄位才能進入下一步。` })} />
-									) : (
-										<Alert type="success" showIcon style={{ marginBottom: '12px', textAlign: 'left' }} message={translate('step2.dp_risk_sensitive_designated', { names: designatedRiskSensitiveNamesText, sensitiveCount: designatedRiskSensitiveFieldsList.length, count: riskQuasiIdentifierFieldsCount, defaultValue: `風險評估敏感欄位：${designatedRiskSensitiveNamesText}，其餘 ${riskQuasiIdentifierFieldsCount} 個已啟用差分隱私的欄位為間接識別。Step4 每輪只以 1 個敏感欄位執行三攻擊與 CAP，共 ${designatedRiskSensitiveFieldsList.length} 輪，取風險最高的結果。` })} />
-									)
+								{/* ★ 2026-10-30：沒有攻擊面（例如只啟用 1 個欄位）不再擋下一步，Step4 略過三攻擊與 CAP（後端缺間接識別也只回「無法評估」） */}
+								{!hasDpRiskAttackSurface(currentDpFieldsList) ? (
+									<Alert type="warning" showIcon style={{ marginBottom: '12px', textAlign: 'left' }} message={translate('step2.dp_risk_no_attack_surface', DP_RISK_NO_ATTACK_SURFACE_TEXT)} />
+								) : designatedRiskSensitiveFieldsList.length > 0 ? (
+									<Alert type="success" showIcon style={{ marginBottom: '12px', textAlign: 'left' }} message={translate('step2.dp_risk_sensitive_designated', { names: designatedRiskSensitiveNamesText, sensitiveCount: designatedRiskSensitiveFieldsList.length, count: riskQuasiIdentifierFieldsCount, defaultValue: `風險評估敏感欄位：${designatedRiskSensitiveNamesText}，其餘 ${riskQuasiIdentifierFieldsCount} 個已啟用差分隱私的欄位為間接識別。Step4 每輪只以 1 個敏感欄位執行三攻擊與 CAP，共 ${designatedRiskSensitiveFieldsList.length} 輪，取風險最高的結果。` })} />
 								) : (
 									// ★ 2026-10-02：使用者反映藍色資訊提示不夠明顯，改為黃色警告並放大輪數；按「下一步」時另跳確認視窗（見 MainLayout）
 									<Alert

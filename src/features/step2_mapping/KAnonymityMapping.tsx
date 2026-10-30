@@ -736,16 +736,8 @@ export default function KAnonymityMapping(): React.ReactElement
         //   （上段「0 個不擋」的規則就此改為「0 個要擋」；2 個以上仍不擋）。
         //   角色為「敏感欄位」但處理方式選「移除」者不算數：後端去識別化會把該欄自輸出刪除
         //   （pipeline.py 角色清單只取仍存在於 df_out 的欄位），l/t 檢測與三攻擊／CAP 都拿不到它。
-        const sensitiveFieldsList = kAnonymityFieldsList.filter((fieldItemRecord) => fieldItemRecord.role === 'Sensitive' && isFieldNameInDataset(fieldItemRecord.name, buildDatasetColumnNameSet(storeColumnsList)));
-        const keptSensitiveFieldsCountNumber = sensitiveFieldsList.filter((fieldItemRecord) => fieldItemRecord.maskStrategy !== 'remove').length;
-        if (sensitiveFieldsList.length === 0) {
-            setStepValidationAction(false, translate('step2.error_require_sensitive', '請至少將一個欄位的角色設為「敏感欄位」（例如疾病、收入區間）才能進入下一步。'));
-            return;
-        }
-        if (keptSensitiveFieldsCountNumber === 0) {
-            setStepValidationAction(false, translate('step2.error_sensitive_all_removed', '已設定的敏感欄位處理方式皆為「移除」，去識別化後輸出資料中將沒有任何敏感欄位，l-多樣性／t-緊密度檢測與風險評估都無法執行。請至少保留一個敏感欄位（處理方式選「不處理」）。'));
-            return;
-        }
+        // ★ 2026-10-30：改回選填（後端去識別化不需要敏感欄位），0 個或皆為「移除」只在下方提示列警告；
+        //   l／t 需要敏感欄位，改由 Step3 KAnonymityRules 在啟用 l／t 時擋。
         setStepValidationAction(true, null);
     }, [kAnonymityFieldsList, kAnonymityHierarchiesList, storeColumnsList, preprocessingRulesMap, setStepValidationAction, translate]);
 
@@ -2462,9 +2454,11 @@ export default function KAnonymityMapping(): React.ReactElement
                                         //   跟著 Step4 實際會發生的事情走，不再說「須恰好設定 1 個」（已不成立）。
                                         (() => {
                                             // ★ 2026-10-07：只計算資料中實際存在的欄位 (不存在的欄位執行時會被丟掉)
-                                            const liveSensitiveFieldsCountNumber = kAnonymityFieldsList.filter(
+                                            const liveSensitiveFieldsList = kAnonymityFieldsList.filter(
                                                 (fieldItemRecord) => fieldItemRecord.role === 'Sensitive' && isFieldNameInDataset(fieldItemRecord.name, datasetColumnNameSet)
-                                            ).length;
+                                            );
+                                            const liveSensitiveFieldsCountNumber = liveSensitiveFieldsList.length;
+                                            const isAllSensitiveRemovedStatus = liveSensitiveFieldsCountNumber > 0 && liveSensitiveFieldsList.every((fieldItemRecord) => fieldItemRecord.maskStrategy === 'remove');
 
                                             let bannerIconElement = <CheckCircleOutlined />;
                                             let bannerMessageText = translate('step2.sensitive_count_ok', { count: liveSensitiveFieldsCountNumber, defaultValue: `目前敏感欄位數量：${liveSensitiveFieldsCountNumber}（風險評估將針對此欄位進行）` });
@@ -2472,13 +2466,15 @@ export default function KAnonymityMapping(): React.ReactElement
                                             let bannerAccentColor = '#52c41a';
                                             let bannerBackgroundColor = isDarkModeActive ? 'rgba(82, 196, 26, 0.12)' : '#f6ffed';
 
-                                            if (liveSensitiveFieldsCountNumber === 0) {
-                                                // ★ 2026-10-02：0 個敏感欄位改為阻擋下一步（見上方驗證 Effect），提示改為錯誤樣式
+                                            if (liveSensitiveFieldsCountNumber === 0 || isAllSensitiveRemovedStatus) {
+                                                // ★ 2026-10-30：0 個（或皆為「移除」）改回只警告、不擋下一步（見上方驗證 Effect）
                                                 bannerIconElement = <WarningOutlined />;
-                                                bannerMessageText = translate('step2.sensitive_count_zero_block', '目前敏感欄位數量：0（須至少設定 1 個敏感欄位才能進入下一步）');
-                                                bannerTooltipText = translate('step2.sensitive_count_tooltip_zero_block', '敏感欄位是最需要保護、不希望被別人看出來的內容（例如疾病、薪資），l-多樣性、t-緊密度與風險評估都需要用到它。請在下方表格將其中一欄的「角色」設為「敏感欄位」，再進入下一步。');
-                                                bannerAccentColor = '#ff4d4f';
-                                                bannerBackgroundColor = isDarkModeActive ? 'rgba(255, 77, 79, 0.12)' : '#fff2f0';
+                                                bannerMessageText = liveSensitiveFieldsCountNumber === 0
+                                                    ? translate('step2.sensitive_count_zero_warning', '目前敏感欄位數量：0（l-多樣性／t-緊密度無法啟用，三攻擊與 CAP 會略過；去識別化照常執行）')
+                                                    : translate('step2.sensitive_all_removed_warning', '敏感欄位處理方式皆為「移除」，輸出中沒有敏感欄位（l-多樣性／t-緊密度無法啟用，三攻擊與 CAP 會略過；去識別化照常執行）');
+                                                bannerTooltipText = translate('step2.sensitive_count_tooltip_zero_warning', '敏感欄位是最需要保護、不希望被別人看出來的內容（例如疾病、薪資）。去識別化本身不需要敏感欄位，但 l-多樣性、t-緊密度與三攻擊／CAP 風險評估都需要用到它；若需要這些檢測，請在下方表格將其中一欄的「角色」設為「敏感欄位」（處理方式不選「移除」）。');
+                                                bannerAccentColor = '#d48806';
+                                                bannerBackgroundColor = isDarkModeActive ? 'rgba(250, 173, 20, 0.12)' : '#fffbe6';
                                             } else if (liveSensitiveFieldsCountNumber >= 2) {
                                                 bannerIconElement = <InfoCircleOutlined />;
                                                 bannerMessageText = translate('step2.sensitive_count_multi', { count: liveSensitiveFieldsCountNumber, defaultValue: `目前敏感欄位數量：${liveSensitiveFieldsCountNumber}（將逐一評估每個敏感欄位，取風險最高的保守結果；欄位越多，執行時間越長）` });

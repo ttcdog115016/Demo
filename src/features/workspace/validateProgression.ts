@@ -9,7 +9,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore, type DPField } from '../../store/useWorkspaceStore';
-import { resolveDpFieldRiskRole, isDpFieldSelectableAsRiskSensitive } from '../../utils/riskAssessment';
+import { isDpFieldSelectableAsRiskSensitive } from '../../utils/riskAssessment';
 import { resolveIsDateTimeDpField } from '../../utils/dpFieldHelpers';
 import { findDeclaredTypeConflicts, type DeclaredTypedColumn } from '../../utils/columnTypeConsistency';
 import { findFieldsNotInDataset, countBlankFieldNames, describeFieldsNotInDatasetError, describeBlankFieldNamesError } from '../../utils/datasetFieldConsistency';
@@ -143,18 +143,8 @@ export const validateProgression = (
 				return translateFunction('message.require_qi', '請至少將一個欄位標記為「間接識別碼」才能進入隱私設定！');
 			}
 
-			// ★ 2026-10-02 使用者要求：K-匿名模式必須至少設定 1 個敏感欄位才能進入隱私設定。
-			//   KAnonymityMapping.tsx 的頁面驗證已會擋，此處再擋一次，涵蓋側欄／網址直接跳轉等不經
-			//   「下一步」按鈕的路徑。處理方式為「移除」的敏感欄位不算（後端會自輸出刪除該欄）。
-			const kAnonymityFieldsSnapshotList = (currentWorkspaceStoreStateData.kAnonymityFields || []) as Array<Record<string, unknown>>;
-			const hasKeptSensitiveFieldStatus = kAnonymityFieldsSnapshotList.length > 0
-				? kAnonymityFieldsSnapshotList.some((fieldRecord) => fieldRecord.role === 'Sensitive' && fieldRecord.maskStrategy !== 'remove')
-				: assignedPrivacyRolesListArray.some((roleNameString) => roleNameString === 'Sensitive');
-
-			if (!hasKeptSensitiveFieldStatus)
-			{
-				return translateFunction('message.require_sensitive', '請至少將一個欄位標記為「敏感欄位」（且處理方式不為「移除」）才能進入隱私設定！');
-			}
+			// ★ 2026-10-30：敏感欄位改為選填（2026-10-02 曾改為必填）。後端去識別化不需要敏感欄位，
+			//   只有 l／t 檢測（Step3 KAnonymityRules 啟用 l／t 時另擋）與三攻擊／CAP（Step4 沒有敏感欄位即略過）用到。
 
 			// ★ 新增: 「屬性對應」頁面 (KAnonymityMapping.tsx) 本身已會計算欄位層級的細部防呆 (例如
 			//   Quasi-identifier 選擇「階層樹 (Tree)」泛化策略卻未於「泛化階層映射」設定任何有效對應、
@@ -226,18 +216,12 @@ export const validateProgression = (
 				return translateFunction('message.dp_incomplete', '設定不完整：請先完成所有紅框標示的參數設定，才能進入下一步！');
 			}
 
-			// 子關卡 C（2026-10-02）：有點選風險評估敏感欄位時，須至少 1 個未點選為敏感、已啟用 DP 的欄位作為間接識別（敏感欄位可複數個），且敏感欄位須為類別型或連續數值型（數值型 Step4 會先分級距）
+			// 子關卡 C（2026-10-02）：點選的風險評估敏感欄位須為類別型或連續數值型（數值型 Step4 會先分級距）。
+			// ★ 2026-10-30：不再要求須有間接識別——沒有攻擊面時 Step2 顯示警告、Step4 略過三攻擊與 CAP（見 riskAssessment.hasDpRiskAttackSurface）
 			const designatedRiskSensitiveFieldsList = typedDpFieldsListArray.filter((dpFieldItemRecord) => dpFieldItemRecord.isRiskSensitive);
-			if (designatedRiskSensitiveFieldsList.length > 0)
+			if (designatedRiskSensitiveFieldsList.some((dpFieldItemRecord) => !isDpFieldSelectableAsRiskSensitive(dpFieldItemRecord)))
 			{
-				if (designatedRiskSensitiveFieldsList.some((dpFieldItemRecord) => !isDpFieldSelectableAsRiskSensitive(dpFieldItemRecord)))
-				{
-					return translateFunction('message.dp_risk_sensitive_numeric', '風險評估的敏感欄位須為類別型或連續數值型，文字型與日期時間型欄位不能設為敏感欄位！');
-				}
-				if (!typedDpFieldsListArray.some((dpFieldItemRecord) => resolveDpFieldRiskRole(dpFieldItemRecord) === 'quasi_identifier'))
-				{
-					return translateFunction('message.dp_risk_require_qi', '已點選敏感欄位，請再啟用至少一個欄位的差分隱私作為間接識別，才能進行風險評估！');
-				}
+				return translateFunction('message.dp_risk_sensitive_numeric', '風險評估的敏感欄位須為類別型或連續數值型，文字型與日期時間型欄位不能設為敏感欄位！');
 			}
 
 			// ★ 邊界範圍是否涵蓋實際資料數值 (例如年齡邊界設為 0~1，但真實資料介於 20~80)，
