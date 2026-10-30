@@ -6,7 +6,7 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { App as AntdApp } from 'antd';
-import Papa from 'papaparse';
+import { parseProcessedCsvPreview } from '../../utils/processedCsvPreview';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
@@ -284,46 +284,36 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
         if (processedCsvBlob) {
             const processedBlobByteSizeValue = processedCsvBlob.size;
 
-            // ★ 2026-09-30：預覽只需要前 10 筆，改為直接以串流方式解析 Blob（preview: 10 讀到就停），
-            //   不再先把整份去識別化結果（100 萬筆時近 100 MB）整個讀成字串。欄位名稱開頭的
-            //   UTF-8 BOM／零寬字元以 transformHeader 去除，與上傳原始檔時的清理方式一致，
-            //   避免第一個欄位標頭對不上 actualProcessedColumnsList。
-            // 包成 File（不複製內容）才符合 PapaParse 的串流讀檔型別
-            Papa.parse<Record<string, unknown>>(new File([processedCsvBlob], 'processed_preview.csv', { type: 'text/csv' }), {
-                header: true,
-                skipEmptyLines: true,
-                preview: 10,
-                transformHeader: (rawHeaderName: string) => rawHeaderName.replace(/^[\uFEFF\u200B]+/, ''),
-                complete: (results) => {
-                    if (!isMounted) return;
+            // ★ 2026-09-30：預覽只需要前 10 筆，不再先把整份去識別化結果整個讀成字串。
+            // ★ 2026-10-30：先前的寫法其實仍整份讀入（610 MB 超過瀏覽器字串上限而預覽 0 筆），見 utils/processedCsvPreview.ts。
+            parseProcessedCsvPreview(processedCsvBlob).then((results) => {
+                if (!isMounted) return;
 
-                    setRealMaskedDataRows(results.data as Record<string, unknown>[]);
+                setRealMaskedDataRows(results.data);
 
-                    // ★ 診斷：後端明明回傳了有內容的檔案（bytes > 0），但解析出來的資料列數卻是 0，
-                    //   代表 CSV 內容本身可能有非預期格式（例如編碼、分隔符號問題），而不是「後端真的
-                    //   沒有輸出資料」。只在這種情況才讀取檔案開頭一小段內容供診斷顯示。
-                    if (results.data.length === 0 && processedBlobByteSizeValue > 0) {
-                        processedCsvBlob.slice(0, 4096).text().then((headSnippetText) => {
-                            if (!isMounted) return;
-                            const cleanedHeadSnippetText = headSnippetText.replace(/^[\uFEFF\u200B]+/, '');
-                            if (cleanedHeadSnippetText.trim().length === 0) { setPreviewParseDiagnosticText(null); return; }
-                            const diagnosticDetailText =
-                                `後端回傳檔案大小：${processedBlobByteSizeValue} bytes；` +
-                                `解析錯誤數：${results.errors.length}` +
-                                (results.errors.length > 0 ? `（第一筆：${JSON.stringify(results.errors[0])}）` : '') +
-                                `；內容開頭前 200 字：${cleanedHeadSnippetText.slice(0, 200)}`;
-                            console.error('⚠️ 結果預覽對照：後端有回傳資料，但解析後資料列數為 0。', diagnosticDetailText);
-                            setPreviewParseDiagnosticText(diagnosticDetailText);
-                        }).catch(() => undefined);
-                    } else {
-                        setPreviewParseDiagnosticText(null);
-                    }
-                },
-                error: (error: Error) => {
-                    console.error('Error parsing processed CSV blob:', error);
-                    if (isMounted) {
-                        setPreviewParseDiagnosticText(`CSV 解析發生例外：${error.message}`);
-                    }
+                // ★ 診斷：後端明明回傳了有內容的檔案（bytes > 0），但解析出來的資料列數卻是 0，
+                //   代表 CSV 內容本身可能有非預期格式（例如編碼、分隔符號問題），而不是「後端真的
+                //   沒有輸出資料」。只在這種情況才讀取檔案開頭一小段內容供診斷顯示。
+                if (results.data.length === 0 && processedBlobByteSizeValue > 0) {
+                    processedCsvBlob.slice(0, 4096).text().then((headSnippetText) => {
+                        if (!isMounted) return;
+                        const cleanedHeadSnippetText = headSnippetText.replace(/^[\uFEFF\u200B]+/, '');
+                        if (cleanedHeadSnippetText.trim().length === 0) { setPreviewParseDiagnosticText(null); return; }
+                        const diagnosticDetailText =
+                            `後端回傳檔案大小：${processedBlobByteSizeValue} bytes；` +
+                            `解析錯誤數：${results.errors.length}` +
+                            (results.errors.length > 0 ? `（第一筆：${JSON.stringify(results.errors[0])}）` : '') +
+                            `；內容開頭前 200 字：${cleanedHeadSnippetText.slice(0, 200)}`;
+                        console.error('⚠️ 結果預覽對照：後端有回傳資料，但解析後資料列數為 0。', diagnosticDetailText);
+                        setPreviewParseDiagnosticText(diagnosticDetailText);
+                    }).catch(() => undefined);
+                } else {
+                    setPreviewParseDiagnosticText(null);
+                }
+            }).catch((error: Error) => {
+                console.error('Error parsing processed CSV blob:', error);
+                if (isMounted) {
+                    setPreviewParseDiagnosticText(`CSV 解析發生例外：${error.message}`);
                 }
             });
         }

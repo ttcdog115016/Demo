@@ -1087,9 +1087,12 @@ export default function Step4_Result(): React.ReactElement
                             {uploadProgressText && (
                                 <div style={{ fontSize: scaleFontSize(13), color: token.colorTextSecondary, marginBottom: '12px' }}>{uploadProgressText}</div>
                             )}
-                            <Button danger onClick={handleCancelPipeline}>
-                                {translate('step4.btn.cancel_pipeline', '取消運算')}
-                            </Button>
+                            {/* ★ 2026-10-30：Progress 為 inline-block，按鈕直接接在後面會和百分比擠在同一行，獨立一行顯示 */}
+                            <div style={{ marginTop: '8px' }}>
+                                <Button danger onClick={handleCancelPipeline}>
+                                    {translate('step4.btn.cancel_pipeline', '取消運算')}
+                                </Button>
+                            </div>
                         </div>
                         
                         <div style={{ maxWidth: '57em', margin: '0 auto', background: isDarkModeActiveStatus ? '#000000' : '#1e1e1e', color: '#00ff66', fontFamily: 'monospace', padding: '16px', borderRadius: '8px', textAlign: 'left', fontSize: scaleFontSize(13), height: '180px', overflowY: 'auto', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)' }}>
