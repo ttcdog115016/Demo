@@ -68,6 +68,7 @@ while ($true) {
         if ($url -and $url -ne $lastUrl) {
             Set-Content -Path $UrlFile -Value $url -Encoding UTF8
             Write-Log "NEW URL: $url"
+            & "C:\Users\TTCWEI\Desktop\Demo\push_url.ps1" -Url $url
             $lastUrl = $url
         }
     }
@@ -76,4 +77,5 @@ while ($true) {
     }
     Start-Sleep -Seconds $CheckEverySec
 }
+
 

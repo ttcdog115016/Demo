@@ -1,0 +1,15 @@
+version: 3
+agent:
+  authtoken: "<在此填入你的 ngrok authtoken，勿提交此檔>"
+endpoints:
+  - name: pets-frontend
+    url: https://wheat-stratus-gecko.ngrok-free.dev
+    upstream:
+      url: 5173
+    traffic_policy:
+      on_http_request:
+        - actions:
+            - type: add-headers
+              config:
+                headers:
+                  host: "http://127.0.0.1:5173"

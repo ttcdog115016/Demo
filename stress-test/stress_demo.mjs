@@ -20,6 +20,9 @@
  *   node stress-test/stress_demo.mjs --base https://xxx.trycloudflare.com   # 走 cloudflared 通道（最接近 Demo）
  *   node stress-test/stress_demo.mjs --csv D:\data\demo.csv --rows 0        # 改用 Demo 要用的真實資料
  *   node stress-test/stress_demo.mjs --users kanon,kanon,dp,dp --stagger 3000 --no-baseline
+ *   node stress-test/stress_demo.mjs --user someone@x.com --password '...'   # 換測試帳號
+ * ★ 2026-10-30：處理端點須登入，預設以 Demo 帳號 owner@test.com 登入（可用 --user／--password
+ *   或環境變數 STRESS_USER／STRESS_PASSWORD 指定），access token 每 10 分鐘重新取得一次。
  * 參數說明見 README.md 或 --help。
  */
 import http from 'node:http';
@@ -48,6 +51,8 @@ const DEFAULTS = {
     timeoutSec: 900,     // 單一請求逾時（與前端 DEFAULT_API_TIMEOUT_MS 15 分鐘一致）
     maxSec: 300,         // 判定 PASS 的單人完整流程上限秒數（Demo 現場可接受的等待時間）
     docker: true,        // 嘗試以 docker stats 監看後端容器 CPU／記憶體
+    user: process.env.STRESS_USER || 'owner@test.com',
+    password: process.env.STRESS_PASSWORD || 'Owner@123456',
     out: path.join(SCRIPT_DIR, 'results'),
 };
 
@@ -66,6 +71,8 @@ const parseArgs = (argv) => {
             case '--timeout': opts.timeoutSec = Number(next()); break;
             case '--max-sec': opts.maxSec = Number(next()); break;
             case '--out': opts.out = next(); break;
+            case '--user': opts.user = next(); break;
+            case '--password': opts.password = next(); break;
             case '--no-baseline': opts.baseline = false; break;
             case '--no-report': opts.report = false; break;
             case '--no-page-load': opts.pageLoad = false; break;
@@ -110,12 +117,13 @@ const buildMultipart = (parts) => {
 };
 
 /** 送出請求；不論成功或失敗都回傳 { status, headers, body, ms, error } 不丟例外 */
-const request = (opts, method, urlPath, { body, contentType, accept } = {}) => new Promise((resolve) => {
+const rawRequest = (opts, method, urlPath, { body, contentType, accept, authorization } = {}) => new Promise((resolve) => {
     const url = new URL(opts.base + urlPath);
     const lib = url.protocol === 'https:' ? https : http;
     const started = performance.now();
     const headers = { 'User-Agent': 'privacy-stress-test/1.0', Accept: accept || '*/*' };
     if (body) { headers['Content-Type'] = contentType; headers['Content-Length'] = body.length; }
+    if (authorization) headers.Authorization = authorization;
     const req = lib.request(url, {
         method, headers,
         agent: url.protocol === 'https:' ? keepAliveHttps : keepAliveHttp,
@@ -134,6 +142,29 @@ const request = (opts, method, urlPath, { body, contentType, accept } = {}) => n
     if (body) req.write(body);
     req.end();
 });
+
+// ★ 2026-10-30：處理端點須登入。access token 15 分鐘到期，提前於 10 分鐘重新登入；同時多位使用者共用同一次登入
+const TOKEN_REFRESH_MS = 10 * 60 * 1000;
+let authState = { token: '', at: 0, pending: null };
+const ensureAuth = async (opts) => {
+    if (authState.token && performance.now() - authState.at < TOKEN_REFRESH_MS) return authState.token;
+    if (!authState.pending) {
+        authState.pending = (async () => {
+            const body = Buffer.from(JSON.stringify({ username: opts.user, password: opts.password }));
+            const r = await rawRequest(opts, 'POST', '/api/v1/auth/login', { body, contentType: 'application/json', accept: 'application/json' });
+            if (r.status !== 200) throw new Error(`登入 ${opts.user} 失敗（HTTP ${r.status}）：${r.body.toString('utf8').slice(0, 200)}`);
+            authState = { token: JSON.parse(r.body.toString('utf8')).access_token, at: performance.now(), pending: null };
+            return authState.token;
+        })().finally(() => { authState.pending = null; });
+    }
+    return authState.pending;
+};
+
+/** 送出請求；API 呼叫自動帶上 access token */
+const request = async (opts, method, urlPath, options = {}) => {
+    if (!urlPath.startsWith('/api/v1/')) return rawRequest(opts, method, urlPath, options);
+    return rawRequest(opts, method, urlPath, { ...options, authorization: `Bearer ${await ensureAuth(opts)}` });
+};
 
 const errorDetail = (res) => {
     if (res.error) return res.error;
@@ -496,6 +527,9 @@ const main = async () => {
         console.error(`✗ 無法連到 ${opts.base}（${errorDetail(ping)}）。請先啟動前端（npm run preview 或 run_preview.bat）與後端 Docker。`);
         process.exit(1);
     }
+
+    try { await ensureAuth(opts); }
+    catch (e) { console.error(`✗ ${e.message}`); process.exit(1); }
 
     const docker = startDockerMonitor(opts.docker);
 

@@ -53,6 +53,7 @@ node stress-test\stress_demo.mjs --repeat 3
 | `--no-report` | | 不呼叫 `/report` 產生 PDF |
 | `--no-page-load` | | 不模擬載入首頁和 JS/CSS |
 | `--no-docker` | | 不用 `docker stats` 監看後端 CPU 和記憶體 |
+| `--user` / `--password` | `owner@test.com` / `Owner@123456` | 處理端點須登入，以此帳號取得 token（也可用環境變數 `STRESS_USER`、`STRESS_PASSWORD`） |
 
 ## 結果
 
