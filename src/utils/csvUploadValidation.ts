@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
 import { createColumnValueStats, addValueToColumnStats, evaluateNumericConflict, evaluateDateConflict, getDominantShape, isDateShape, type ColumnValueStats, type ValueExample } from './backendValueRules';
+import { forEachDecodedChunk, DEFAULT_STREAM_CHUNK_BYTES, LARGE_FILE_SAMPLING_BYTES } from './blobStreaming';
 
 /**
  * ============================================================================
@@ -15,8 +16,186 @@ import { createColumnValueStats, addValueToColumnStats, evaluateNumericConflict,
  *       全站以「欄位名稱當物件鍵值」查表會取到內建函式，Step2 直接崩潰（steps.map is not a function）。
  *   (3) 標題列前多了說明文字、或有未成對的引號，第一列不再是欄位名稱，整份資料錯位。
  *   本模組只做判斷、回傳結構化結果，訊息顯示由 Step1_Upload.tsx 負責，方便單元測試。
+ * ★ 2026-11-02（F12）：約 650 MB 的 CSV 整份解碼成單一字串會超過 WebView2（V8）字串長度上限
+ *   （約 5.37 億字元，「Invalid string length」）。各項檢查改為接受 Blob、逐段解碼（見下方
+ *   forEachCsvRecordBatch：每段只在「完整資料列」的邊界切開），原本接受字串的函式保留為同一套實作的包裝。
+ *   超過 LARGE_FILE_SAMPLING_BYTES（200 MB）的檔案只抽樣檢查前 200 MB（最後一筆不完整的資料列略過）。
  * ============================================================================
  */
+
+// ============================================================================
+// ★ 2026-11-02（F12）：CSV Blob 逐段讀取（以完整資料列為單位）
+//   不直接用 Papa.parse(blob)：PapaParse 的 FileStreamer 對每一段位元組各自 readAsText，
+//   UTF-8 中文字（3 個位元組）剛好被段落邊界切開時會變成替代字元 (U+FFFD)，造成誤判為編碼毀損。
+//   這裡改以 TextDecoder stream 模式逐段解碼（blobStreaming.forEachDecodedChunk），再依 RFC 4180 規則
+//   （欄位開頭的 " 開啟引號區段、區段內 "" 為跳脫、換行屬於同一筆）找出資料列邊界，每次交出「完整的
+//   若干筆資料列」文字，交給 PapaParse／正規表示式處理，結果與一次處理整份文字相同。
+// ============================================================================
+
+/** 單筆資料列（例如未成對引號吞掉後面全部內容）超過此字元數時不再等待邊界，直接交出，避免累積成整檔字串 */
+const MAX_PENDING_RECORD_CHARS = 64 * 1024 * 1024;
+
+/** 逐段掃描的共用選項（chunkBytes／samplingBytes 主要供測試以小數值驗證跨段邊界與抽樣） */
+export interface CsvBlobScanOptions {
+    /** 每段讀取的位元組數（預設 8 MB） */
+    chunkBytes?: number;
+    /** 檔案超過此大小時只檢查前段（預設 LARGE_FILE_SAMPLING_BYTES = 200 MB） */
+    samplingBytes?: number;
+    /** CSV 分隔字元（預設逗號；Step1 以 detectCsvDelimiterFromHeadText 取得） */
+    delimiter?: string;
+}
+
+/** 檔案是否大到只抽樣檢查前段 */
+export const isCsvBlobSampled = (blob: Blob, samplingBytes: number = LARGE_FILE_SAMPLING_BYTES): boolean => blob.size > samplingBytes;
+
+interface CsvRecordSplitter {
+    /** 餵入下一段文字，回傳到目前為止「完整資料列」的部分（沒有完整資料列時為空字串） */
+    push: (text: string) => string;
+    /** 取出尚未遇到邊界的剩餘文字 */
+    takePending: () => string;
+    /** 已完成、且非空白的資料列數（含標題列） */
+    getCompletedRecordCount: () => number;
+}
+
+const createCsvRecordSplitter = (delimiter: string = ','): CsvRecordSplitter => {
+    const delimiterCode = (delimiter || ',').charCodeAt(0);
+    let pendingText = '';
+    let scannedLength = 0;
+    let isInsideQuotedField = false;
+    let isAtFieldStart = true;
+    let pendingQuoteInsideField = false; // 引號區段內的 " 剛好在已讀文字結尾：要看下一個字元才知道是跳脫還是結束
+    let isCurrentRecordNonEmpty = false;
+    let completedRecordCount = 0;
+
+    const push = (text: string): string => {
+        pendingText += text;
+        const textLength = pendingText.length;
+        let lastBoundaryEnd = -1;
+        for (let charIndex = scannedLength; charIndex < textLength; charIndex++) {
+            const charCode = pendingText.charCodeAt(charIndex);
+            if (pendingQuoteInsideField) {
+                pendingQuoteInsideField = false;
+                if (charCode === 0x22) continue; // "" 跳脫，仍在引號區段內
+                isInsideQuotedField = false;     // 單一 " 結束引號區段，這個字元照一般規則處理
+            }
+            if (isInsideQuotedField) {
+                if (charCode === 0x22) {
+                    if (charIndex + 1 >= textLength) pendingQuoteInsideField = true;
+                    else if (pendingText.charCodeAt(charIndex + 1) === 0x22) charIndex++;
+                    else isInsideQuotedField = false;
+                }
+                continue;
+            }
+            if (charCode === 0x0A || charCode === 0x0D) {
+                // CR 在已讀文字結尾時先不切：下一段開頭可能是同一個換行的 LF
+                if (charCode === 0x0A || (charIndex + 1 < textLength && pendingText.charCodeAt(charIndex + 1) !== 0x0A)) {
+                    lastBoundaryEnd = charIndex + 1;
+                    if (isCurrentRecordNonEmpty) completedRecordCount++;
+                    isCurrentRecordNonEmpty = false;
+                }
+                isAtFieldStart = true;
+                continue;
+            }
+            isCurrentRecordNonEmpty = true;
+            if (charCode === 0x22 && isAtFieldStart) {
+                isInsideQuotedField = true;
+                isAtFieldStart = false;
+                continue;
+            }
+            isAtFieldStart = charCode === delimiterCode;
+        }
+        scannedLength = textLength;
+        if (lastBoundaryEnd < 0) {
+            if (textLength <= MAX_PENDING_RECORD_CHARS) return '';
+            lastBoundaryEnd = textLength;
+        }
+        const completeText = pendingText.slice(0, lastBoundaryEnd);
+        pendingText = pendingText.slice(lastBoundaryEnd);
+        scannedLength = pendingText.length;
+        return completeText;
+    };
+
+    const takePending = (): string => {
+        const restText = pendingText;
+        if (restText.trim() !== '') completedRecordCount++;
+        pendingText = '';
+        scannedLength = 0;
+        return restText;
+    };
+
+    return { push, takePending, getCompletedRecordCount: () => completedRecordCount };
+};
+
+/**
+ * 函數名稱: forEachCsvRecordBatch
+ * 函數功能: 逐段解碼 UTF-8 CSV Blob，每次以「完整的若干筆資料列」文字呼叫 onBatch（不會把一筆資料切在兩段）。
+ *           dropIncompleteTail 為 true（抽樣切片）時，最後一筆可能被切斷的資料列不交出。
+ */
+export const forEachCsvRecordBatch = async (
+    blob: Blob,
+    onBatch: (batchText: string) => void,
+    options: { chunkBytes?: number; delimiter?: string; dropIncompleteTail?: boolean } = {}
+): Promise<void> => {
+    const splitter = createCsvRecordSplitter(options.delimiter);
+    await forEachDecodedChunk(blob, (text) => {
+        const completeText = splitter.push(text);
+        if (completeText) onBatch(completeText);
+    }, { chunkBytes: options.chunkBytes ?? DEFAULT_STREAM_CHUNK_BYTES });
+    const restText = splitter.takePending();
+    if (restText && !options.dropIncompleteTail) onBatch(restText);
+};
+
+/** 依抽樣門檻取得要檢查的範圍，並以完整資料列為單位逐段處理 */
+const forEachScannedBatch = (blob: Blob, onBatch: (batchText: string) => void, options: CsvBlobScanOptions): Promise<void> => {
+    const samplingBytes = options.samplingBytes ?? LARGE_FILE_SAMPLING_BYTES;
+    const isSampled = isCsvBlobSampled(blob, samplingBytes);
+    return forEachCsvRecordBatch(isSampled ? blob.slice(0, samplingBytes) : blob, onBatch, {
+        chunkBytes: options.chunkBytes,
+        delimiter: options.delimiter,
+        dropIncompleteTail: isSampled
+    });
+};
+
+/** 讀取開頭資料預覽時預設的每段大小與讀取上限 */
+const HEAD_READ_CHUNK_BYTES = 1024 * 1024;
+const HEAD_READ_MAX_BYTES = 64 * 1024 * 1024;
+
+/**
+ * 函數名稱: readCsvHeadText
+ * 函數功能: ★ 2026-11-02（F12）：只讀出 CSV 開頭「至少 minRecordCount 筆非空白資料列（含標題列）」的文字，
+ *           供標題列檢查與前 1000 筆預覽使用（PapaParse preview 的結果與餵入整份文字相同）。
+ *           讀到檔尾則回傳整份；讀了 maxBytes 仍湊不滿（例如未成對引號吞掉後面內容）時，連同未完成的
+ *           部分一起回傳，讓 PapaParse 照樣回報引號錯誤。
+ */
+export const readCsvHeadText = async (
+    utf8Blob: Blob,
+    minRecordCount: number,
+    options: { chunkBytes?: number; maxBytes?: number; delimiter?: string } = {}
+): Promise<string> => {
+    const chunkBytes = options.chunkBytes ?? HEAD_READ_CHUNK_BYTES;
+    const maxBytes = options.maxBytes ?? HEAD_READ_MAX_BYTES;
+    const decoder = new TextDecoder('utf-8');
+    const splitter = createCsvRecordSplitter(options.delimiter);
+    const completeParts: string[] = [];
+    for (let startOffset = 0; startOffset < utf8Blob.size; startOffset += chunkBytes) {
+        const isLastChunk = startOffset + chunkBytes >= utf8Blob.size;
+        const bytes = new Uint8Array(await utf8Blob.slice(startOffset, startOffset + chunkBytes).arrayBuffer());
+        const completeText = splitter.push(decoder.decode(bytes, { stream: !isLastChunk }));
+        if (completeText) completeParts.push(completeText);
+        if (splitter.getCompletedRecordCount() >= minRecordCount) return completeParts.join('');
+        if (startOffset + chunkBytes >= maxBytes) break;
+    }
+    completeParts.push(splitter.takePending());
+    return completeParts.join('');
+};
+
+/** 自開頭文字推測分隔字元（與 PapaParse 自動判斷相同，看前 10 列）；判斷不出時為逗號 */
+export const detectCsvDelimiterFromHeadText = (headTextContent: string): string =>
+    Papa.parse<string[]>(headTextContent, { preview: 10, skipEmptyLines: 'greedy' }).meta.delimiter || ',';
+
+/** 未指定分隔字元時，讀開頭幾列判斷（各段一律沿用同一個分隔字元，不讓每段各自猜） */
+const resolveCsvDelimiter = async (utf8Blob: Blob, delimiter: string | undefined): Promise<string> =>
+    delimiter || detectCsvDelimiterFromHeadText(await readCsvHeadText(utf8Blob, 11));
 
 /** 混用／毀損判定門檻：無法解碼的字元數佔非 ASCII 字元的比例上限（超過即視為「根本不是這種編碼」） */
 export const CORRUPTED_ENCODING_MAX_INVALID_RATIO = 0.01;
@@ -87,12 +266,43 @@ export const findEncodingCorruption = (sampleBytesArray: Uint8Array, isSampleTru
  * 函數名稱: findReplacementCharLine
  * 函數功能: 已解碼的完整文字中若仍有替代字元（例如毀損位置在偵測樣本 64KB 之後），回傳數量與首次出現列號。
  */
+interface ReplacementCharScanState { count: number; firstLineNumber: number; lineNumberBase: number }
+
+const countNewlines = (textContent: string, fromIndex: number = 0): number => {
+    let newlineCount = 0;
+    for (let i = fromIndex; i < textContent.length; i++) if (textContent.charCodeAt(i) === 10) newlineCount++;
+    return newlineCount;
+};
+
+// ★ 2026-11-02（F12）：可分段累計；找到第一個替代字元前才需要數列號
+const scanReplacementChars = (textContent: string, state: ReplacementCharScanState): void => {
+    let fromIndex = 0;
+    if (state.count === 0) {
+        const firstIndex = textContent.indexOf(REPLACEMENT_CHAR);
+        if (firstIndex < 0) {
+            state.lineNumberBase += countNewlines(textContent);
+            return;
+        }
+        state.firstLineNumber = state.lineNumberBase + countLineNumberAt(textContent, firstIndex) - 1;
+        fromIndex = firstIndex;
+    }
+    for (let i = fromIndex; i < textContent.length; i++) if (textContent[i] === REPLACEMENT_CHAR) state.count++;
+};
+
+const toReplacementCharInfo = (state: ReplacementCharScanState): { count: number; firstLineNumber: number } | null =>
+    state.count > 0 ? { count: state.count, firstLineNumber: state.firstLineNumber } : null;
+
 export const findReplacementCharInfo = (decodedTextContent: string): { count: number; firstLineNumber: number } | null => {
-    const firstIndex = decodedTextContent.indexOf(REPLACEMENT_CHAR);
-    if (firstIndex < 0) return null;
-    let count = 0;
-    for (let i = firstIndex; i < decodedTextContent.length; i++) if (decodedTextContent[i] === REPLACEMENT_CHAR) count++;
-    return { count, firstLineNumber: countLineNumberAt(decodedTextContent, firstIndex) };
+    const state: ReplacementCharScanState = { count: 0, firstLineNumber: 0, lineNumberBase: 1 };
+    scanReplacementChars(decodedTextContent, state);
+    return toReplacementCharInfo(state);
+};
+
+/** ★ 2026-11-02（F12）：同 findReplacementCharInfo，逐段讀取 UTF-8 Blob（超過 200 MB 只檢查前 200 MB） */
+export const findReplacementCharInfoInBlob = async (utf8Blob: Blob, options: CsvBlobScanOptions = {}): Promise<{ count: number; firstLineNumber: number } | null> => {
+    const state: ReplacementCharScanState = { count: 0, firstLineNumber: 0, lineNumberBase: 1 };
+    await forEachScannedBatch(utf8Blob, (batchText) => scanReplacementChars(batchText, state), options);
+    return toReplacementCharInfo(state);
 };
 
 /** JavaScript 物件內建屬性名稱：作為欄位名稱時，以欄位名稱為鍵值的查表會取到內建函式／原型 */
@@ -249,19 +459,45 @@ export interface HeaderCleanResult {
  *   只改標題列，資料列內容一律不動。
  * @param rawHeaderFieldsList PapaParse 解析出的原始標題列欄位（未改名）
  */
-export const cleanCsvHeaderLine = (csvTextContent: string, rawHeaderFieldsList: string[]): HeaderCleanResult => {
+// ★ 2026-11-02（F12）：字串版與 Blob 版共用：算出清理後的標題列（含原本的換行字元）
+const buildCleanedHeaderLine = (headTextContent: string, rawHeaderFieldsList: string[]): { originalHeaderLine: string; rebuiltHeaderLine: string; changedColumns: HeaderCleanResult['changedColumns'] } => {
     const changedColumns: HeaderCleanResult['changedColumns'] = [];
     const cleanedHeaderFieldsList = rawHeaderFieldsList.map((rawName, index) => {
         const cleanedName = cleanColumnHeaderName(rawName);
         if (cleanedName !== rawName) changedColumns.push({ columnNumber: index + 1, fromLabel: toVisibleColumnLabel(rawName), to: cleanedName });
         return cleanedName;
     });
-    if (changedColumns.length === 0) return { cleanedCsvText: csvTextContent, changedColumns };
-    const headerEndIndex = findHeaderLineEndIndex(csvTextContent);
-    const originalHeaderLine = csvTextContent.slice(0, headerEndIndex);
+    if (changedColumns.length === 0) return { originalHeaderLine: '', rebuiltHeaderLine: '', changedColumns };
+    const originalHeaderLine = headTextContent.slice(0, findHeaderLineEndIndex(headTextContent));
     const lineBreak = originalHeaderLine.endsWith('\r\n') ? '\r\n' : originalHeaderLine.endsWith('\r') ? '\r' : originalHeaderLine.endsWith('\n') ? '\n' : '';
     const rebuiltHeaderLine = cleanedHeaderFieldsList.map(quoteCsvCell).join(',') + lineBreak;
-    return { cleanedCsvText: rebuiltHeaderLine + csvTextContent.slice(headerEndIndex), changedColumns };
+    return { originalHeaderLine, rebuiltHeaderLine, changedColumns };
+};
+
+export const cleanCsvHeaderLine = (csvTextContent: string, rawHeaderFieldsList: string[]): HeaderCleanResult => {
+    const { originalHeaderLine, rebuiltHeaderLine, changedColumns } = buildCleanedHeaderLine(csvTextContent, rawHeaderFieldsList);
+    if (changedColumns.length === 0) return { cleanedCsvText: csvTextContent, changedColumns };
+    return { cleanedCsvText: rebuiltHeaderLine + csvTextContent.slice(originalHeaderLine.length), changedColumns };
+};
+
+/**
+ * 函數名稱: cleanCsvHeaderInBlob
+ * 函數功能: ★ 2026-11-02（F12）：同 cleanCsvHeaderLine，但只改寫 Blob 的標題列：
+ *           以 headTextContent（readCsvHeadText 讀出的開頭文字）找出原標題列，換算成 UTF-8 位元組長度，
+ *           新檔案 = 清理後標題列 + 原 Blob 自標題列之後的切片（不讀取、不複製其餘內容）。
+ *           原 Blob 開頭若有 UTF-8 BOM 也一併去除。
+ */
+export const cleanCsvHeaderInBlob = async (
+    utf8Blob: Blob,
+    headTextContent: string,
+    rawHeaderFieldsList: string[]
+): Promise<{ cleanedBlob: Blob; changedColumns: HeaderCleanResult['changedColumns'] }> => {
+    const { originalHeaderLine, rebuiltHeaderLine, changedColumns } = buildCleanedHeaderLine(headTextContent, rawHeaderFieldsList);
+    if (changedColumns.length === 0) return { cleanedBlob: utf8Blob, changedColumns };
+    const leadingBytes = new Uint8Array(await utf8Blob.slice(0, 3).arrayBuffer());
+    const bomByteLength = leadingBytes[0] === 0xEF && leadingBytes[1] === 0xBB && leadingBytes[2] === 0xBF ? 3 : 0;
+    const headerByteLength = bomByteLength + new TextEncoder().encode(originalHeaderLine).length;
+    return { cleanedBlob: new Blob([rebuiltHeaderLine, utf8Blob.slice(headerByteLength)], { type: 'text/csv' }), changedColumns };
 };
 
 // ============================================================================
@@ -332,25 +568,32 @@ const splitCsvLineWithOffsets = (lineText: string): { value: string; start: numb
     return cells;
 };
 
-/**
- * 函數名稱: findSpecialCharacterCells
- * 函數功能: 掃描整份 CSV 文字，找出含特殊字元的儲存格，回傳數量、前幾筆範例（列號、欄位、內容）與出現的字元。
- *           沒有發現時回傳 null。以正規表示式直接掃描全文（不逐格解析），大檔案也只需一次線性掃描。
- */
-export const findSpecialCharacterCells = (csvTextContent: string): SpecialCharacterScanResult | null => {
+// ★ 2026-11-02（F12）：特殊字元掃描改為可分段累計（每段為完整資料列），字串版與 Blob 版共用
+interface SpecialCharacterScanState {
+    headerCells: string[] | null;
+    examples: SpecialCharacterCell[];
+    foundCharacterSet: Set<string>;
+    /** 上一個計入的儲存格（列號:欄序）；比對依位置遞增，同一格只會連續出現，故不必保留全部儲存格 */
+    lastCountedCellKey: string;
+    cellCount: number;
+    /** 本段第一列的列號 */
+    lineNumberBase: number;
+}
+
+const createSpecialCharacterScanState = (): SpecialCharacterScanState => ({
+    headerCells: null, examples: [], foundCharacterSet: new Set<string>(), lastCountedCellKey: '', cellCount: 0, lineNumberBase: 1
+});
+
+const scanSpecialCharactersInText = (csvTextContent: string, state: SpecialCharacterScanState): void => {
+    if (!state.headerCells) {
+        const headerEndIndex = findHeaderLineEndIndex(csvTextContent);
+        state.headerCells = splitCsvLineWithOffsets(csvTextContent.slice(0, headerEndIndex).replace(/\r?\n$|\r$/, '')).map((cell) => cell.value);
+    }
+    const headerCells = state.headerCells;
+    let lineNumber = state.lineNumberBase;
+    let scannedUntilIndex = 0;
     SPECIAL_CHARACTER_PATTERN.lastIndex = 0;
     let match: RegExpExecArray | null = SPECIAL_CHARACTER_PATTERN.exec(csvTextContent);
-    if (!match) return null;
-
-    const headerEndIndex = findHeaderLineEndIndex(csvTextContent);
-    const headerCells = splitCsvLineWithOffsets(csvTextContent.slice(0, headerEndIndex).replace(/\r?\n$|\r$/, '')).map((cell) => cell.value);
-
-    const examples: SpecialCharacterCell[] = [];
-    const foundCharacterSet = new Set<string>();
-    const countedCellKeys = new Set<string>();
-    let cellCount = 0;
-    let lineNumber = 1;
-    let scannedUntilIndex = 0;
 
     while (match) {
         const matchIndex = match.index;
@@ -367,14 +610,14 @@ export const findSpecialCharacterCells = (csvTextContent: string): SpecialCharac
         const cellIndex = Math.max(0, cells.findIndex((cell) => offsetInLine >= cell.start && offsetInLine <= cell.end));
         const cellKey = `${lineNumber}:${cellIndex}`;
         const isExemptCellStatus = isSpecialCharacterExemptValue(cells[cellIndex]?.value ?? '');
-        if (!isExemptCellStatus) foundCharacterSet.add(matchedCharacter);
+        if (!isExemptCellStatus) state.foundCharacterSet.add(matchedCharacter);
 
-        if (!isExemptCellStatus && !countedCellKeys.has(cellKey)) {
-            countedCellKeys.add(cellKey);
-            cellCount++;
-            if (examples.length < SPECIAL_CHARACTER_MAX_EXAMPLES) {
+        if (!isExemptCellStatus && state.lastCountedCellKey !== cellKey) {
+            state.lastCountedCellKey = cellKey;
+            state.cellCount++;
+            if (state.examples.length < SPECIAL_CHARACTER_MAX_EXAMPLES) {
                 const rawValue = cells[cellIndex]?.value ?? '';
-                examples.push({
+                state.examples.push({
                     lineNumber,
                     columnName: headerCells[cellIndex] ?? `第 ${cellIndex + 1} 欄`,
                     cellValue: rawValue.length > EXAMPLE_VALUE_MAX_LENGTH ? `${rawValue.slice(0, EXAMPLE_VALUE_MAX_LENGTH)}…` : rawValue
@@ -385,12 +628,58 @@ export const findSpecialCharacterCells = (csvTextContent: string): SpecialCharac
         const cellEndInText = lineStartIndex + (cells[cellIndex]?.end ?? offsetInLine);
         SPECIAL_CHARACTER_PATTERN.lastIndex = Math.max(SPECIAL_CHARACTER_PATTERN.lastIndex, matchIndex + 1);
         const cellRemainder = csvTextContent.slice(matchIndex + 1, cellEndInText);
-        if (!isExemptCellStatus) for (const ch of cellRemainder) if (BLOCKED_SPECIAL_CHARACTERS.includes(ch)) foundCharacterSet.add(ch);
+        if (!isExemptCellStatus) for (const ch of cellRemainder) if (BLOCKED_SPECIAL_CHARACTERS.includes(ch)) state.foundCharacterSet.add(ch);
         SPECIAL_CHARACTER_PATTERN.lastIndex = Math.max(SPECIAL_CHARACTER_PATTERN.lastIndex, cellEndInText);
         match = SPECIAL_CHARACTER_PATTERN.exec(csvTextContent);
     }
-    if (cellCount === 0) return null;
-    return { cellCount, examples, foundCharacters: [...foundCharacterSet] };
+    SPECIAL_CHARACTER_PATTERN.lastIndex = 0;
+    state.lineNumberBase = lineNumber + countNewlines(csvTextContent, scannedUntilIndex);
+};
+
+const toSpecialCharacterScanResult = (state: SpecialCharacterScanState): SpecialCharacterScanResult | null =>
+    state.cellCount === 0 ? null : { cellCount: state.cellCount, examples: state.examples, foundCharacters: [...state.foundCharacterSet] };
+
+/**
+ * 函數名稱: findSpecialCharacterCells
+ * 函數功能: 掃描整份 CSV 文字，找出含特殊字元的儲存格，回傳數量、前幾筆範例（列號、欄位、內容）與出現的字元。
+ *           沒有發現時回傳 null。以正規表示式直接掃描全文（不逐格解析），大檔案也只需一次線性掃描。
+ */
+export const findSpecialCharacterCells = (csvTextContent: string): SpecialCharacterScanResult | null => {
+    const state = createSpecialCharacterScanState();
+    scanSpecialCharactersInText(csvTextContent, state);
+    return toSpecialCharacterScanResult(state);
+};
+
+/** ★ 2026-11-02（F12）：同 findSpecialCharacterCells，逐段讀取 UTF-8 Blob（超過 200 MB 只檢查前 200 MB） */
+export const findSpecialCharacterCellsInBlob = async (utf8Blob: Blob, options: CsvBlobScanOptions = {}): Promise<SpecialCharacterScanResult | null> => {
+    const state = createSpecialCharacterScanState();
+    await forEachScannedBatch(utf8Blob, (batchText) => scanSpecialCharactersInText(batchText, state), options);
+    return toSpecialCharacterScanResult(state);
+};
+
+// 移除單一儲存格中的特殊字元；回傳 null 代表不需變動
+const stripSpecialCharactersInCell = (cellValue: string): string | null => {
+    if (isSpecialCharacterExemptValue(cellValue)) return null;
+    SPECIAL_CHARACTER_PATTERN.lastIndex = 0;
+    if (!SPECIAL_CHARACTER_PATTERN.test(cellValue)) return null;
+    // 移除後殘留在開頭／結尾的冒號（例：「:{}1938-11-26」→「:1938-11-26」）一併去除；日期、時間不會以冒號開頭或結尾
+    const cleanedValue = cellValue.replace(SPECIAL_CHARACTER_PATTERN, '').replace(/^[:：\s]+|[:：\s]+$/g, '');
+    SPECIAL_CHARACTER_PATTERN.lastIndex = 0;
+    return cleanedValue;
+};
+
+// ★ 2026-11-02（F12）：一段完整資料列 → 移除特殊字元後的 CSV 文字（換行一律為 \n，結尾含換行）
+const stripSpecialCharactersInBatch = (batchText: string, delimiter: string | undefined): { csvText: string; changedCellCount: number } => {
+    const parsedRows = Papa.parse<string[]>(batchText, { skipEmptyLines: 'greedy', ...(delimiter ? { delimiter } : {}) }).data;
+    let changedCellCount = 0;
+    const cleanedRows = parsedRows.map((rowCells) => rowCells.map((cellValue) => {
+        const cleanedValue = stripSpecialCharactersInCell(cellValue);
+        if (cleanedValue === null) return cellValue;
+        changedCellCount++;
+        return cleanedValue;
+    }));
+    SPECIAL_CHARACTER_PATTERN.lastIndex = 0;
+    return { csvText: cleanedRows.length > 0 ? Papa.unparse(cleanedRows, { newline: '\n' }) + '\n' : '', changedCellCount };
 };
 
 /**
@@ -399,18 +688,31 @@ export const findSpecialCharacterCells = (csvTextContent: string): SpecialCharac
  *           以 PapaParse 解析後重組，CSV 語法（逗號、引號、換行）保持正確。
  */
 export const stripSpecialCharacters = (csvTextContent: string): { csvText: string; changedCellCount: number } => {
-    const parsedRows = Papa.parse<string[]>(csvTextContent, { skipEmptyLines: 'greedy' }).data;
+    const { csvText, changedCellCount } = stripSpecialCharactersInBatch(csvTextContent, undefined);
+    return { csvText: csvText || '\n', changedCellCount };
+};
+
+/**
+ * 函數名稱: stripSpecialCharactersInBlob
+ * 函數功能: ★ 2026-11-02（F12）：同 stripSpecialCharacters，但逐段處理整個 UTF-8 Blob（不抽樣），
+ *           每段解析→清理→Papa.unparse 後放入 Blob 片段，全程不產生整檔字串或整份資料列陣列。
+ *           分隔字元以開頭幾列判斷一次（與 PapaParse 自動判斷相同），各段一律沿用，確保一致。
+ */
+export const stripSpecialCharactersInBlob = async (
+    utf8Blob: Blob,
+    options: { chunkBytes?: number; delimiter?: string } = {}
+): Promise<{ strippedBlob: Blob; changedCellCount: number }> => {
+    const encoder = new TextEncoder();
+    const outputParts: BlobPart[] = [];
     let changedCellCount = 0;
-    const cleanedRows = parsedRows.map((rowCells) => rowCells.map((cellValue) => {
-        if (isSpecialCharacterExemptValue(cellValue)) return cellValue;
-        SPECIAL_CHARACTER_PATTERN.lastIndex = 0;
-        if (!SPECIAL_CHARACTER_PATTERN.test(cellValue)) return cellValue;
-        changedCellCount++;
-        // 移除後殘留在開頭／結尾的冒號（例：「:{}1938-11-26」→「:1938-11-26」）一併去除；日期、時間不會以冒號開頭或結尾
-        return cellValue.replace(SPECIAL_CHARACTER_PATTERN, '').replace(/^[:：\s]+|[:：\s]+$/g, '');
-    }));
-    SPECIAL_CHARACTER_PATTERN.lastIndex = 0;
-    return { csvText: Papa.unparse(cleanedRows, { newline: '\n' }) + '\n', changedCellCount };
+    const delimiter = await resolveCsvDelimiter(utf8Blob, options.delimiter);
+    await forEachCsvRecordBatch(utf8Blob, (batchText) => {
+        const batchResult = stripSpecialCharactersInBatch(batchText, delimiter);
+        changedCellCount += batchResult.changedCellCount;
+        if (batchResult.csvText) outputParts.push(encoder.encode(batchResult.csvText));
+    }, { chunkBytes: options.chunkBytes, delimiter });
+    if (outputParts.length === 0) outputParts.push('\n');
+    return { strippedBlob: new Blob(outputParts, { type: 'text/csv' }), changedCellCount };
 };
 
 // ============================================================================
@@ -431,35 +733,39 @@ export interface TypedColumnOutlier {
     examples: { lineNumber: number; cellValue: string }[];
 }
 
-/**
- * 函數名稱: findTypedColumnOutliers
- * 函數功能: 逐列掃描整份 CSV（PapaParse step 模式，不保留全部資料列），找出「大多是數字／日期、
- *           但有少數無法轉換」的欄位。轉換規則與後端一致（見 backendValueRules.ts：缺值字串不算錯、
- *           千分位與十六進位不算數字、日期須同一欄格式一致且日期存在）。
- */
-export const findTypedColumnOutliers = (csvTextContent: string): TypedColumnOutlier[] => {
-    let headerCells: string[] | null = null;
-    let rowIndex = 0;
-    const statsList: ColumnValueStats[] = [];
+// ★ 2026-11-02（F12）：可分段累計（每段為完整資料列），字串版與 Blob 版共用
+interface TypedColumnScanState {
+    headerCells: string[] | null;
+    rowIndex: number;
+    statsList: ColumnValueStats[];
+    delimiter: string | undefined;
+}
+
+const scanTypedColumnsInText = (csvTextContent: string, state: TypedColumnScanState): void => {
     Papa.parse<string[]>(csvTextContent, {
         skipEmptyLines: 'greedy',
+        ...(state.delimiter ? { delimiter: state.delimiter } : {}),
         step: (stepResult) => {
+            if (!state.delimiter) state.delimiter = stepResult.meta.delimiter;
             const rowCells = stepResult.data;
-            if (!headerCells) {
-                headerCells = rowCells.map((cell) => String(cell ?? ''));
-                headerCells.forEach(() => statsList.push(createColumnValueStats()));
+            if (!state.headerCells) {
+                state.headerCells = rowCells.map((cell) => String(cell ?? ''));
+                state.headerCells.forEach(() => state.statsList.push(createColumnValueStats()));
                 return;
             }
-            rowIndex++;
-            for (let columnIndex = 0; columnIndex < statsList.length; columnIndex++) {
-                addValueToColumnStats(statsList[columnIndex], String(rowCells[columnIndex] ?? '').trim(), rowIndex + 1);
+            state.rowIndex++;
+            for (let columnIndex = 0; columnIndex < state.statsList.length; columnIndex++) {
+                addValueToColumnStats(state.statsList[columnIndex], String(rowCells[columnIndex] ?? '').trim(), state.rowIndex + 1);
             }
         }
     });
+};
+
+const toTypedColumnOutliers = (state: TypedColumnScanState): TypedColumnOutlier[] => {
     const outliers: TypedColumnOutlier[] = [];
-    const header: string[] = headerCells ?? [];
+    const header: string[] = state.headerCells ?? [];
     const toOutlierExamples = (examples: ValueExample[]) => examples.map((example) => ({ lineNumber: example.lineNumber ?? 0, cellValue: example.value }));
-    statsList.forEach((stats, columnIndex) => {
+    state.statsList.forEach((stats, columnIndex) => {
         if (stats.nonMissingCount < TYPED_COLUMN_MIN_NON_EMPTY) return;
         const columnName = header[columnIndex] ?? `第 ${columnIndex + 1} 欄`;
         if (stats.strictNumericCount / stats.nonMissingCount >= TYPED_COLUMN_DOMINANT_RATIO) {
@@ -474,4 +780,24 @@ export const findTypedColumnOutliers = (csvTextContent: string): TypedColumnOutl
         }
     });
     return outliers;
+};
+
+/**
+ * 函數名稱: findTypedColumnOutliers
+ * 函數功能: 逐列掃描整份 CSV（PapaParse step 模式，不保留全部資料列），找出「大多是數字／日期、
+ *           但有少數無法轉換」的欄位。轉換規則與後端一致（見 backendValueRules.ts：缺值字串不算錯、
+ *           千分位與十六進位不算數字、日期須同一欄格式一致且日期存在）。
+ */
+export const findTypedColumnOutliers = (csvTextContent: string): TypedColumnOutlier[] => {
+    const state: TypedColumnScanState = { headerCells: null, rowIndex: 0, statsList: [], delimiter: undefined };
+    scanTypedColumnsInText(csvTextContent, state);
+    return toTypedColumnOutliers(state);
+};
+
+/** ★ 2026-11-02（F12）：同 findTypedColumnOutliers，逐段讀取 UTF-8 Blob（超過 200 MB 只檢查前 200 MB） */
+export const findTypedColumnOutliersInBlob = async (utf8Blob: Blob, options: CsvBlobScanOptions = {}): Promise<TypedColumnOutlier[]> => {
+    const delimiter = await resolveCsvDelimiter(utf8Blob, options.delimiter);
+    const state: TypedColumnScanState = { headerCells: null, rowIndex: 0, statsList: [], delimiter };
+    await forEachScannedBatch(utf8Blob, (batchText) => scanTypedColumnsInText(batchText, state), { ...options, delimiter });
+    return toTypedColumnOutliers(state);
 };

@@ -15,8 +15,9 @@ import * as XLSX from 'xlsx';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-import { detectCsvBytesEncoding, decodeCsvBytesToText, detectByteOrderMark, CSV_ENCODING_DETECTION_SAMPLE_BYTES } from '../../utils/csvEncodingDetect';
-import { findEncodingCorruption, findReplacementCharInfo, findHeaderProblems, findStructureProblem, cleanCsvHeaderLine, findSpecialCharacterCells, findTypedColumnOutliers, stripSpecialCharacters, BLOCKING_HEADER_PROBLEM_KINDS, type HeaderProblem, type SpecialCharacterScanResult, type TypedColumnOutlier } from '../../utils/csvUploadValidation';
+import { detectCsvBytesEncoding, detectByteOrderMark, CSV_ENCODING_DETECTION_SAMPLE_BYTES } from '../../utils/csvEncodingDetect';
+import { findEncodingCorruption, findReplacementCharInfoInBlob, findHeaderProblems, findStructureProblem, cleanCsvHeaderInBlob, findSpecialCharacterCellsInBlob, findTypedColumnOutliersInBlob, stripSpecialCharactersInBlob, readCsvHeadText, detectCsvDelimiterFromHeadText, isCsvBlobSampled, BLOCKING_HEADER_PROBLEM_KINDS, type HeaderProblem, type SpecialCharacterScanResult, type TypedColumnOutlier } from '../../utils/csvUploadValidation';
+import { transcodeToUtf8Blob } from '../../utils/blobStreaming';
 
 const { Dragger } = Upload;
 
@@ -37,11 +38,15 @@ const { Text, Title } = Typography;
 const MAX_FILE_SIZE_LIMIT_MB = 1024;
 const MAX_COLUMN_COUNT = 50;
 const PARSE_PREVIEW_ROW_LIMIT = 1000;
+// ★ 2026-11-02（F12）：預覽與標題列檢查只讀開頭「標題列 + 前 1000 筆」，不再整份解碼成字串
+const PREVIEW_HEAD_RECORD_COUNT = PARSE_PREVIEW_ROW_LIMIT + 1;
+// ★ 2026-11-02（F12）：SheetJS 必須一次讀入整個活頁簿，Excel 檔案過大時提醒先另存為 CSV
+const EXCEL_LARGE_FILE_WARNING_MB = 100;
 
 // ★ 2026-10-05：解碼完成後、寫入 store 前的上傳參數（CSV 與 Excel 共用）
 interface FinalizeUploadParams {
-    /** 已正確解碼的 CSV 文字 */
-    csvText: string;
+    /** ★ 2026-11-02（F12）：已轉為 UTF-8（不含 BOM）的 CSV 內容；原本為整份文字字串，大檔會超過字串長度上限 */
+    csvBlob: Blob;
     /** 使用者選的原始檔案（可原樣送出時使用）；Excel 轉出的 CSV 為 null */
     originalFile: File | null;
     /** 送往後端的檔名 */
@@ -124,6 +129,19 @@ const BYTES_PER_MEGABYTE = 1048576; // 1024 * 1024
 //   跳過 BOM 位元組) 後重新編碼為「乾淨、不含 BOM」的 UTF-8 位元組再送出，讓後端無論落在
 //   utf-8 或 utf-8-sig 哪個分支，解出來的欄位名稱都保證乾淨，不再有這個落差。
 const BACKEND_NATIVELY_SUPPORTED_CSV_ENCODINGS = new Set(['utf-8']);
+
+/**
+ * 函數名稱: toUtf8CsvBlob
+ * 函數功能: ★ 2026-11-02（F12）：依偵測到的編碼取得 UTF-8（不含 BOM）的 CSV Blob，全程不產生整檔字串：
+ *           utf-8 原樣使用原始檔案；utf-8-bom 以切片去掉 BOM；其他編碼（UTF-16、Big5、GBK…）逐段轉成 UTF-8。
+ *           （取代原本 decodeCsvBytesToText 整份解碼；去 BOM／跳過 UTF-16 BOM 的規則相同）
+ */
+const toUtf8CsvBlob = async (csvFile: File, detectedEncodingLabel: string): Promise<Blob> => {
+    if (detectedEncodingLabel === 'utf-8') return csvFile;
+    if (detectedEncodingLabel === 'utf-8-bom') return csvFile.slice(3, csvFile.size, 'text/csv');
+    if (detectedEncodingLabel === 'utf-16le' || detectedEncodingLabel === 'utf-16be') return transcodeToUtf8Blob(csvFile.slice(2), detectedEncodingLabel);
+    return transcodeToUtf8Blob(csvFile, detectedEncodingLabel === 'unknown' ? 'utf-8' : detectedEncodingLabel);
+};
 
 
 /**
@@ -237,7 +255,8 @@ export default function Step1_Upload(): React.ReactElement
         return true;
     };
     // ★ 2026-10-05：第 3 級（特殊字元）與上傳時推斷之第 2 級（數值／日期欄位異常值）待使用者確認的上傳
-    const [pendingContentReview, setPendingContentReview] = useState<{ params: FinalizeUploadParams; specialChars: SpecialCharacterScanResult | null; outliers: TypedColumnOutlier[] } | null>(null);
+    // ★ 2026-11-02（F12）：isSampled＝檔案超過 200 MB、只抽樣檢查前 200 MB
+    const [pendingContentReview, setPendingContentReview] = useState<{ params: FinalizeUploadParams; specialChars: SpecialCharacterScanResult | null; outliers: TypedColumnOutlier[]; isSampled: boolean } | null>(null);
 
     // 判斷當前是否已有載入完成之資料集 (依據欄位陣列是否存在且長度大於 0) (符合規範 g)
     const isDatasetLoadedStatus = datasetColumnsList && datasetColumnsList.length > 0;
@@ -245,13 +264,15 @@ export default function Step1_Upload(): React.ReactElement
     // ★ 2026-10-05：欄位名稱有前後空白或看不見的字元時自動清理標題列（只改標題列，資料不動），
     //   並以清理後的內容送往後端。原因：前端設定檔一律使用 trim 後的欄位名稱，但後端照檔案原樣比對，
     //   實測「␣姓名」必定回傳 422 ERR_CONFIG_DATA_MISMATCH。清理後才會是一致的名稱。
-    const cleanHeaderAndNotify = (csvTextContent: string): { csvText: string; wasHeaderCleaned: boolean } =>
+    //   ★ 2026-11-02（F12）：只讀標題列所在的開頭文字，新檔案＝清理後標題列＋原內容自標題列之後的切片。
+    const cleanHeaderAndNotify = async (csvBlob: Blob): Promise<{ csvBlob: Blob; wasHeaderCleaned: boolean }> =>
     {
-        const headerParseResult = Papa.parse<string[]>(csvTextContent, { preview: 1 });
+        const headText = await readCsvHeadText(csvBlob, 1);
+        const headerParseResult = Papa.parse<string[]>(headText, { preview: 1 });
         // 標題列有未成對引號時不清理，留給下方結構檢查報錯（否則整份內容會被當成一個欄位名稱改寫）
-        if (headerParseResult.errors.some((errorItem) => errorItem.type === 'Quotes')) return { csvText: csvTextContent, wasHeaderCleaned: false };
+        if (headerParseResult.errors.some((errorItem) => errorItem.type === 'Quotes')) return { csvBlob, wasHeaderCleaned: false };
         const rawHeaderFieldsList = (headerParseResult.data[0] || []).map((cellValue) => String(cellValue ?? ''));
-        const { cleanedCsvText, changedColumns } = cleanCsvHeaderLine(csvTextContent, rawHeaderFieldsList);
+        const { cleanedBlob, changedColumns } = await cleanCsvHeaderInBlob(csvBlob, headText, rawHeaderFieldsList);
         if (changedColumns.length > 0)
         {
             messageApi.info({
@@ -262,35 +283,53 @@ export default function Step1_Upload(): React.ReactElement
                 duration: 8
             });
         }
-        return { csvText: cleanedCsvText, wasHeaderCleaned: changedColumns.length > 0 };
+        return { csvBlob: cleanedBlob, wasHeaderCleaned: changedColumns.length > 0 };
+    };
+
+    // ★ 2026-11-02（F12）：非同步流程（逐段讀檔）發生例外時共用：關閉載入動畫並顯示解析失敗
+    const reportUploadFailure = (failureErrorObj: unknown): void =>
+    {
+        setIsFileUploading(false);
+        messageApi.error(
+            translate('step1.parse_error', { error: failureErrorObj instanceof Error ? failureErrorObj.message : String(failureErrorObj) })
+        );
     };
 
     // ★ 2026-10-05：內容檢查通過（或使用者確認）後，清理標題列、寫入 store 並解析預覽。
-    const finalizeUpload = (params: FinalizeUploadParams): void =>
+    const finalizeUpload = async (params: FinalizeUploadParams): Promise<void> =>
     {
-        const { csvText: csvTextForUpload, wasHeaderCleaned } = cleanHeaderAndNotify(params.csvText);
-        const originalFileToReuse = params.canUploadOriginalBytes && !wasHeaderCleaned ? params.originalFile : null;
-        const fileObjectToUpload = originalFileToReuse
-            ?? new File([new TextEncoder().encode(csvTextForUpload)], params.uploadFileName, { type: 'text/csv' });
-
-        setDataFileAction(fileObjectToUpload);
-
-        // ★ 新增：記錄本次上傳診斷快照，供發生 API 錯誤時一併附上回報
-        setLastUploadDiagnosticsAction({
-            fileName: params.displayFileName,
-            detectedEncoding: params.detectedEncoding,
-            wasReencoded: !originalFileToReuse
-        });
-
-        if (params.detectedEncoding !== 'xlsx' && !BACKEND_NATIVELY_SUPPORTED_CSV_ENCODINGS.has(params.detectedEncoding))
+        try
         {
-            messageApi.info(
-                translate('step1.encoding_auto_converted', { encoding: params.detectedEncoding.toUpperCase(), defaultValue: `偵測到檔案編碼為 ${params.detectedEncoding.toUpperCase()}，已自動轉換為 UTF-8 後上傳` })
-            );
-        }
+            const { csvBlob: csvBlobForUpload, wasHeaderCleaned } = await cleanHeaderAndNotify(params.csvBlob);
+            const originalFileToReuse = params.canUploadOriginalBytes && !wasHeaderCleaned ? params.originalFile : null;
+            // ★ 2026-11-02（F12）：以 Blob 片段組成 File（不複製、不解碼整份內容）；內容一律為 UTF-8
+            const fileObjectToUpload = originalFileToReuse
+                ?? new File([csvBlobForUpload], params.uploadFileName, { type: 'text/csv' });
 
-        // 資料預覽表格一併採用實際要送出的內容，確保「畫面預覽」與「實際送給後端處理的內容」一致。
-        runPapaParseOnCsvText(csvTextForUpload, params.displayFileName);
+            setDataFileAction(fileObjectToUpload);
+
+            // ★ 新增：記錄本次上傳診斷快照，供發生 API 錯誤時一併附上回報
+            setLastUploadDiagnosticsAction({
+                fileName: params.displayFileName,
+                detectedEncoding: params.detectedEncoding,
+                wasReencoded: !originalFileToReuse
+            });
+
+            if (params.detectedEncoding !== 'xlsx' && !BACKEND_NATIVELY_SUPPORTED_CSV_ENCODINGS.has(params.detectedEncoding))
+            {
+                messageApi.info(
+                    translate('step1.encoding_auto_converted', { encoding: params.detectedEncoding.toUpperCase(), defaultValue: `偵測到檔案編碼為 ${params.detectedEncoding.toUpperCase()}，已自動轉換為 UTF-8 後上傳` })
+                );
+            }
+
+            // 資料預覽表格一併採用實際要送出的內容，確保「畫面預覽」與「實際送給後端處理的內容」一致。
+            // ★ 2026-11-02（F12）：只讀開頭「標題列 + 前 1000 筆」（PapaParse preview 結果與整份文字相同）
+            runPapaParseOnCsvText(await readCsvHeadText(fileObjectToUpload, PREVIEW_HEAD_RECORD_COUNT), params.displayFileName);
+        }
+        catch (finalizeErrorObj)
+        {
+            reportUploadFailure(finalizeErrorObj);
+        }
     };
 
     // ★ 2026-10-05：依嚴重程度分三級（使用者確認）：
@@ -298,27 +337,42 @@ export default function Step1_Upload(): React.ReactElement
     //   第 2 級（數值／日期欄位中有無法轉換的值）→ 上傳時欄位型態未定，以內容推斷並在此列出；
     //            真正阻擋在 Step2 使用者設為數值／日期時（validateProgression.ts）。
     //   第 3 級（其他欄位含特殊字元）→ 列出清單，由使用者選擇取消／移除後上傳／仍要上傳。
-    const reviewContentThenFinalize = (params: FinalizeUploadParams): void =>
+    // ★ 2026-11-02（F12）：改為逐段讀取 Blob；檔案超過 200 MB 時第 2、3 級只抽樣檢查前 200 MB 並提示。
+    const reviewContentThenFinalize = async (params: FinalizeUploadParams): Promise<void> =>
     {
-        // 第 1 級問題（結構錯亂、欄位名稱保留字／空白／重複）優先：直接交給 finalize 的解析檢查報錯，不先跳確認視窗
-        const previewParseResult = Papa.parse<Record<string, unknown>>(params.csvText, { header: true, skipEmptyLines: true, preview: PARSE_PREVIEW_ROW_LIMIT });
-        const rawHeaderCellsForReview = ((Papa.parse<string[]>(params.csvText, { preview: 1 }).data[0]) || []).map((cellValue) => String(cellValue ?? ''));
-        const hasBlockingHeaderProblemStatus = findHeaderProblems(rawHeaderCellsForReview.map((headerName) => headerName.trim()))
-            .some((problemItem) => BLOCKING_HEADER_PROBLEM_KINDS.has(problemItem.kind));
-        if (hasBlockingHeaderProblemStatus || findStructureProblem(previewParseResult.errors, previewParseResult.meta.fields?.length ?? 0, previewParseResult.data))
+        try
         {
-            finalizeUpload(params);
-            return;
+            // 第 1 級問題（結構錯亂、欄位名稱保留字／空白／重複）優先：直接交給 finalize 的解析檢查報錯，不先跳確認視窗
+            const headText = await readCsvHeadText(params.csvBlob, PREVIEW_HEAD_RECORD_COUNT);
+            const previewParseResult = Papa.parse<Record<string, unknown>>(headText, { header: true, skipEmptyLines: true, preview: PARSE_PREVIEW_ROW_LIMIT });
+            const rawHeaderCellsForReview = ((Papa.parse<string[]>(headText, { preview: 1 }).data[0]) || []).map((cellValue) => String(cellValue ?? ''));
+            const hasBlockingHeaderProblemStatus = findHeaderProblems(rawHeaderCellsForReview.map((headerName) => headerName.trim()))
+                .some((problemItem) => BLOCKING_HEADER_PROBLEM_KINDS.has(problemItem.kind));
+            if (hasBlockingHeaderProblemStatus || findStructureProblem(previewParseResult.errors, previewParseResult.meta.fields?.length ?? 0, previewParseResult.data))
+            {
+                await finalizeUpload(params);
+                return;
+            }
+            const isSampled = isCsvBlobSampled(params.csvBlob);
+            if (isSampled)
+            {
+                messageApi.info({ content: translate('step1.large_file_sampled', '檔案超過 200 MB，僅抽樣檢查前 200 MB 的內容。'), duration: 8 });
+            }
+            const delimiter = detectCsvDelimiterFromHeadText(headText);
+            const specialChars = await findSpecialCharacterCellsInBlob(params.csvBlob, { delimiter });
+            const outliers = await findTypedColumnOutliersInBlob(params.csvBlob, { delimiter });
+            if (!specialChars && outliers.length === 0)
+            {
+                await finalizeUpload(params);
+                return;
+            }
+            setIsFileUploading(false);
+            setPendingContentReview({ params, specialChars, outliers, isSampled });
         }
-        const specialChars = findSpecialCharacterCells(params.csvText);
-        const outliers = findTypedColumnOutliers(params.csvText);
-        if (!specialChars && outliers.length === 0)
+        catch (reviewErrorObj)
         {
-            finalizeUpload(params);
-            return;
+            reportUploadFailure(reviewErrorObj);
         }
-        setIsFileUploading(false);
-        setPendingContentReview({ params, specialChars, outliers });
     };
 
     const handleContentReviewCancel = (): void =>
@@ -330,12 +384,17 @@ export default function Step1_Upload(): React.ReactElement
     const handleContentReviewStrip = (): void =>
     {
         if (!pendingContentReview) return;
-        const { csvText: strippedCsvText, changedCellCount } = stripSpecialCharacters(pendingContentReview.params.csvText);
         const reviewParams = pendingContentReview.params;
         setPendingContentReview(null);
         setIsFileUploading(true);
-        messageApi.success(translate('step1.special_chars_removed', { count: changedCellCount }));
-        finalizeUpload({ ...reviewParams, csvText: strippedCsvText, canUploadOriginalBytes: false });
+        // ★ 2026-11-02（F12）：逐段移除特殊字元並組成新的 Blob（整份檔案都處理，不抽樣）
+        stripSpecialCharactersInBlob(reviewParams.csvBlob)
+            .then(({ strippedBlob, changedCellCount }) =>
+            {
+                messageApi.success(translate('step1.special_chars_removed', { count: changedCellCount }));
+                return finalizeUpload({ ...reviewParams, csvBlob: strippedBlob, canUploadOriginalBytes: false });
+            })
+            .catch(reportUploadFailure);
     };
 
     const handleContentReviewProceed = (): void =>
@@ -344,7 +403,7 @@ export default function Step1_Upload(): React.ReactElement
         const reviewParams = pendingContentReview.params;
         setPendingContentReview(null);
         setIsFileUploading(true);
-        finalizeUpload(reviewParams);
+        void finalizeUpload(reviewParams);
     };
 
     // ★ 2026-10-05：上傳檢查不通過時共用：關閉載入動畫、清掉已暫存的檔案，並以「問題／建議」兩行
@@ -366,6 +425,7 @@ export default function Step1_Upload(): React.ReactElement
      * 函數名稱: runPapaParseOnCsvText
      * 函數功能: 對「已經正確解碼好的文字內容」執行 PapaParse 解析 (抽出與原本 Papa.parse 呼叫共用的
      *           complete／error 處理邏輯，供 CSV 編碼偵測完成後呼叫)。
+     *           ★ 2026-11-02（F12）：傳入的是開頭「標題列 + 前 1000 筆」的文字（readCsvHeadText），不是整份檔案。
      */
     const runPapaParseOnCsvText = (csvTextContent: string, originalFileNameString: string): void =>
     {
@@ -468,7 +528,7 @@ export default function Step1_Upload(): React.ReactElement
     /**
      * 函數名稱: handleFileUpload
      * 函數功能: 驗證上傳檔案大小限制 (最大 1GB)。CSV 檔案會先偵測實際文字編碼 (見上方
-     *           detectCsvBytesEncoding／decodeCsvBytesToText)：偵測到純 utf-8 (不含 BOM) 則
+     *           detectCsvBytesEncoding／toUtf8CsvBlob)：偵測到純 utf-8 (不含 BOM) 則
      *           原樣送出；偵測到其他編碼 (含 utf-8-bom、Big5、GBK、Shift-JIS 等) 則在瀏覽器端
      *           先解碼、去除 BOM 後重新編碼為乾淨 UTF-8 位元組再送出 (詳見
      *           BACKEND_NATIVELY_SUPPORTED_CSV_ENCODINGS 上方 2026-09-17 註解)，避免後端誤判
@@ -507,6 +567,15 @@ export default function Step1_Upload(): React.ReactElement
             //   CSV 文字後，比照既有 CSV 路徑處理：`runPapaParseOnCsvText` 供畫面預覽與欄位清單，
             //   並包成 .csv 的 File 物件取代原始 Excel 二進位存入 dataFile，確保後續送給後端的
             //   內容與畫面預覽一致，且沿用既有 CSV 上傳流程 (Step4_Result.tsx 以 `.text()` 讀取)。
+            // ★ 2026-11-02（F12）：SheetJS 需一次讀入整個活頁簿並轉成 CSV 文字（無法分段），Excel 維持整份處理；
+            //   檔案過大時提醒先在 Excel 另存為 CSV（CSV 會逐段處理，不受此限制）。
+            if (targetFileObj.size / BYTES_PER_MEGABYTE > EXCEL_LARGE_FILE_WARNING_MB)
+            {
+                messageApi.warning({
+                    content: translate('step1.excel_large_warning', `Excel 檔案超過 ${EXCEL_LARGE_FILE_WARNING_MB} MB，讀取可能很慢或失敗；建議先在 Excel 另存為「CSV UTF-8」再上傳。`),
+                    duration: 10
+                });
+            }
             targetFileObj.arrayBuffer()
                 .then((fullArrayBufferData) =>
                 {
@@ -532,8 +601,8 @@ export default function Step1_Upload(): React.ReactElement
                     }
 
                     // 送給後端與後續流程一律採轉換後的 CSV 內容（不保留原始 Excel 二進位），確保畫面預覽與送出內容一致。
-                    reviewContentThenFinalize({
-                        csvText: XLSX.utils.sheet_to_csv(parsedWorkbook.Sheets[firstSheetNameString]),
+                    void reviewContentThenFinalize({
+                        csvBlob: new Blob([XLSX.utils.sheet_to_csv(parsedWorkbook.Sheets[firstSheetNameString])], { type: 'text/csv' }),
                         originalFile: null,
                         uploadFileName: targetFileObj.name.replace(/\.(xlsx|xls)$/i, '.csv'),
                         displayFileName: targetFileObj.name,
@@ -553,49 +622,51 @@ export default function Step1_Upload(): React.ReactElement
         }
 
         // ★ 修正: 使用者反映「現在只能讀取 Big5 的 CSV，其他類型都會出現亂碼」，根因與修正
-        // 說明詳見上方 detectCsvBytesEncoding／decodeCsvBytesToText 之函數註解。
-        targetFileObj.arrayBuffer()
-            .then((fullArrayBufferData) =>
+        // 說明詳見上方 detectCsvBytesEncoding／toUtf8CsvBlob 之函數註解。
+        // ★ 2026-11-02（F12）：不再整份 arrayBuffer() 再解碼成單一字串（約 610 MB 以上的 CSV 會超過 WebView2 字串
+        //   長度上限而「Invalid string length」）。只讀開頭 64KB 偵測編碼，內容以 Blob 逐段處理。
+        const handleCsvFileAsync = async (): Promise<void> =>
+        {
+            const detectionSampleBytesArray = new Uint8Array(await targetFileObj.slice(0, CSV_ENCODING_DETECTION_SAMPLE_BYTES).arrayBuffer());
+
+            // ★ 2026-10-05：編碼混用／毀損檢查。檔案以 UTF-8（或 Big5）為主、但混入少量其他編碼的
+            //   位元組時，原本嚴格解碼全部失敗會退到 windows-1252（或把 Big5 誤判成 GBK），整份
+            //   檔案變成亂碼且照樣送往後端。改為辨識出「主要編碼 + 少數壞掉的位置」並阻擋上傳。
+            if (!detectByteOrderMark(detectionSampleBytesArray))
             {
-                const fullBytesArray = new Uint8Array(fullArrayBufferData);
-
-                // ★ 2026-10-05：編碼混用／毀損檢查。檔案以 UTF-8（或 Big5）為主、但混入少量其他編碼的
-                //   位元組時，原本嚴格解碼全部失敗會退到 windows-1252（或把 Big5 誤判成 GBK），整份
-                //   檔案變成亂碼且照樣送往後端。改為辨識出「主要編碼 + 少數壞掉的位置」並阻擋上傳。
-                if (!detectByteOrderMark(fullBytesArray))
+                const encodingCorruptionInfo = findEncodingCorruption(detectionSampleBytesArray, detectionSampleBytesArray.length < targetFileObj.size);
+                if (encodingCorruptionInfo)
                 {
-                    const detectionSampleBytesArray = fullBytesArray.subarray(0, Math.min(fullBytesArray.length, CSV_ENCODING_DETECTION_SAMPLE_BYTES));
-                    const encodingCorruptionInfo = findEncodingCorruption(detectionSampleBytesArray, detectionSampleBytesArray.length < fullBytesArray.length);
-                    if (encodingCorruptionInfo)
-                    {
-                        rejectUploadWithMessage(translate('step1.encoding_mixed_problem', { encoding: encodingCorruptionInfo.baseEncoding.toUpperCase(), count: encodingCorruptionInfo.invalidCharCount, line: encodingCorruptionInfo.firstInvalidLineNumber }), translate('step1.encoding_mixed_advice'));
-                        return;
-                    }
+                    rejectUploadWithMessage(translate('step1.encoding_mixed_problem', { encoding: encodingCorruptionInfo.baseEncoding.toUpperCase(), count: encodingCorruptionInfo.invalidCharCount, line: encodingCorruptionInfo.firstInvalidLineNumber }), translate('step1.encoding_mixed_advice'));
+                    return;
                 }
+            }
 
-                const detectedEncodingLabel = detectCsvBytesEncoding(fullBytesArray);
-                const decodedCsvTextContent = decodeCsvBytesToText(fullBytesArray, detectedEncodingLabel);
+            const detectedEncodingLabel = detectCsvBytesEncoding(detectionSampleBytesArray, targetFileObj.size);
+            const utf8CsvBlob = await toUtf8CsvBlob(targetFileObj, detectedEncodingLabel);
 
-                // ★ 2026-10-05：偵測只取前 64KB；毀損位置在更後面時，UTF-8 寬鬆解碼會靜默產生替代字元 (�)。
-                if (detectedEncodingLabel === 'utf-8' || detectedEncodingLabel === 'utf-8-bom' || detectedEncodingLabel === 'unknown')
+            // ★ 2026-10-05：偵測只取前 64KB；毀損位置在更後面時，UTF-8 寬鬆解碼會靜默產生替代字元 (�)。
+            //   ★ 2026-11-02（F12）：逐段檢查；超過 200 MB 只檢查前 200 MB。
+            if (detectedEncodingLabel === 'utf-8' || detectedEncodingLabel === 'utf-8-bom' || detectedEncodingLabel === 'unknown')
+            {
+                const replacementCharInfo = await findReplacementCharInfoInBlob(utf8CsvBlob);
+                if (replacementCharInfo)
                 {
-                    const replacementCharInfo = findReplacementCharInfo(decodedCsvTextContent);
-                    if (replacementCharInfo)
-                    {
-                        rejectUploadWithMessage(translate('step1.encoding_mixed_problem', { encoding: 'UTF-8', count: replacementCharInfo.count, line: replacementCharInfo.firstLineNumber }), translate('step1.encoding_mixed_advice'));
-                        return;
-                    }
+                    rejectUploadWithMessage(translate('step1.encoding_mixed_problem', { encoding: 'UTF-8', count: replacementCharInfo.count, line: replacementCharInfo.firstLineNumber }), translate('step1.encoding_mixed_advice'));
+                    return;
                 }
+            }
 
-                reviewContentThenFinalize({
-                    csvText: decodedCsvTextContent,
-                    originalFile: targetFileObj,
-                    uploadFileName: targetFileObj.name,
-                    displayFileName: targetFileObj.name,
-                    detectedEncoding: detectedEncodingLabel,
-                    canUploadOriginalBytes: BACKEND_NATIVELY_SUPPORTED_CSV_ENCODINGS.has(detectedEncodingLabel)
-                });
-            })
+            await reviewContentThenFinalize({
+                csvBlob: utf8CsvBlob,
+                originalFile: targetFileObj,
+                uploadFileName: targetFileObj.name,
+                displayFileName: targetFileObj.name,
+                detectedEncoding: detectedEncodingLabel,
+                canUploadOriginalBytes: BACKEND_NATIVELY_SUPPORTED_CSV_ENCODINGS.has(detectedEncodingLabel)
+            });
+        };
+        handleCsvFileAsync()
             .catch((encodingDetectErrorObj: Error) =>
             {
                 setIsFileUploading(false);
@@ -687,6 +758,12 @@ export default function Step1_Upload(): React.ReactElement
                             )}
                         </ul>
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>{translate('step1.special_chars_note', '「移除特殊字元後上傳」只會刪掉上列字元，其餘內容不變；完整的 Email 與百分比不受影響。')}</Typography.Text>
+                    </div>
+                )}
+                {/* ★ 2026-11-02（F12）：大檔只抽樣檢查前 200 MB（「移除特殊字元」仍會處理整份檔案） */}
+                {pendingContentReview?.isSampled && (
+                    <div style={{ marginTop: 8 }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{translate('step1.large_file_sampled', '檔案超過 200 MB，僅抽樣檢查前 200 MB 的內容。')}</Typography.Text>
                     </div>
                 )}
             </Modal>

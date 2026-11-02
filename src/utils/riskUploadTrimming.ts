@@ -13,6 +13,8 @@
  * 若日後發現後端結果有差異，把 ENABLE_RISK_UPLOAD_COLUMN_TRIMMING 改為 false 即恢復上傳完整 CSV。
  */
 import Papa from 'papaparse';
+import { parseCsvBlobInChunks, readCsvBlobHeader } from './csvBlobParse';
+import { convertNumberToBinLabel, parseNumericCellForBinning } from './sensitiveBinning';
 
 export const ENABLE_RISK_UPLOAD_COLUMN_TRIMMING = true;
 
@@ -86,3 +88,65 @@ export const pruneKAnonymityBlockToColumns = (kAnonBlock: unknown, keepColumnNam
 
 /** 把位元組數換成 MB 文字（執行紀錄用） */
 export const formatMegabytesText = (byteCount: number): string => (byteCount / 1024 / 1024).toFixed(1);
+
+// 需要加引號的儲存格：含逗號、引號、換行，或前後有空白（與 Papa.unparse 的判斷一致）
+const CSV_CELL_NEEDS_QUOTES = /[",\r\n]|^\s|\s$/;
+const serializeCsvCell = (cellValue: string): string =>
+    CSV_CELL_NEEDS_QUOTES.test(cellValue) ? `"${cellValue.replace(/"/g, '""')}"` : cellValue;
+/** 轉成 CSV 文字（列與列之間以換行分隔；非第一段時前面補一個換行接續上一段） */
+const serializeCsvRows = (rows: string[][], isFirstPart: boolean): string =>
+    (isFirstPart ? '' : '\n') + rows.map((rowCells) => rowCells.map(serializeCsvCell).join(',')).join('\n');
+
+/**
+ * ★ 2026-11-02（F12）：送風險評估的資料轉換（欄位裁切＋敏感欄位分級距）改為 Blob 進、Blob 出，逐段處理。
+ * 規則與 projectCsvTextToColumns＋applySensitiveBinningToCsvText 相同：
+ *   - 只保留 keepColumnNames（對得到的欄位少於 2 個、或沒有要拿掉的欄位時不裁切）
+ *   - binWidthByColumnMap 中的欄位，數值儲存格換成級距標籤，非數值儲存格原樣保留
+ * 兩者都不需要時直接回傳原 Blob（不複製）。大檔（數百 MB）不會產生整檔字串或整份列陣列。
+ */
+export const transformCsvBlobForRiskUpload = async (
+    sourceBlob: Blob,
+    keepColumnNames: Iterable<string> | null,
+    binWidthByColumnMap: Record<string, number>,
+    options: { chunkBytes?: number } = {}
+): Promise<Blob> => {
+    const headerCells = await readCsvBlobHeader(sourceBlob);
+    const cleanHeaderNames = headerCells.map(cleanColumnName);
+    let outputIndexList = cleanHeaderNames.map((_, columnIndex) => columnIndex);
+    let isProjected = false;
+    if (keepColumnNames) {
+        const keepColumnNameSet = new Set(Array.from(keepColumnNames, cleanColumnName));
+        const keptIndexList = outputIndexList.filter((columnIndex) => keepColumnNameSet.has(cleanHeaderNames[columnIndex]));
+        if (keptIndexList.length >= 2 && keptIndexList.length < cleanHeaderNames.length) {
+            outputIndexList = keptIndexList;
+            isProjected = true;
+        }
+    }
+    const binWidthByOutputPosition = outputIndexList.map((columnIndex) => binWidthByColumnMap[cleanHeaderNames[columnIndex]] || 0);
+    const isBinningNeeded = binWidthByOutputPosition.some((binWidthValue) => binWidthValue > 0);
+    if (!isProjected && !isBinningNeeded) return sourceBlob;
+
+    // 每段立刻編成 UTF-8 位元組（字串在 JS 內是 UTF-16，留著會佔兩倍以上記憶體）
+    const outputParts: BlobPart[] = [];
+    const encoder = new TextEncoder();
+    let isHeaderPending = true;
+    await parseCsvBlobInChunks(sourceBlob, (rowsChunk) => {
+        const outputRows: string[][] = [];
+        for (const rowCells of rowsChunk) {
+            if (isHeaderPending) {
+                isHeaderPending = false;
+                outputRows.push(isProjected ? outputIndexList.map((columnIndex) => cleanHeaderNames[columnIndex]) : outputIndexList.map((columnIndex) => headerCells[columnIndex]));
+                continue;
+            }
+            outputRows.push(outputIndexList.map((columnIndex, outputPosition) => {
+                const cellValue = rowCells[columnIndex] ?? '';
+                const binWidthValue = binWidthByOutputPosition[outputPosition];
+                if (!binWidthValue) return cellValue;
+                const parsedValue = parseNumericCellForBinning(cellValue);
+                return parsedValue === null ? cellValue : convertNumberToBinLabel(parsedValue, binWidthValue);
+            }));
+        }
+        if (outputRows.length > 0) outputParts.push(encoder.encode(serializeCsvRows(outputRows, outputParts.length === 0)));
+    }, { chunkBytes: options.chunkBytes });
+    return new Blob(outputParts, { type: 'text/csv;charset=utf-8' });
+};

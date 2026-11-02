@@ -7,6 +7,7 @@
  *   單元測試見 utils/__tests__/riskResultHelpers.test.ts。
  */
 import type { CapReport } from '../api/apiService';
+import { createCsvRowCounter } from './blobStreaming';
 
 /**
  * 把 CAP 請求失敗的錯誤轉成可顯示的原因文字：優先取後端回傳的 HTTP 狀態碼＋錯誤碼＋訊息，
@@ -37,28 +38,15 @@ export const buildCapUnavailableReceipt = (reasonText: string): CapReport => ({
 });
 
 /** String.prototype.trim 會去掉的空白字元 */
-const isTrimWhitespaceCode = (charCode: number): boolean =>
-    charCode === 0x20 || (charCode >= 0x09 && charCode <= 0x0D) || charCode === 0xA0 || charCode === 0x1680 ||
-    (charCode >= 0x2000 && charCode <= 0x200A) || charCode === 0x2028 || charCode === 0x2029 || charCode === 0x202F ||
-    charCode === 0x205F || charCode === 0x3000 || charCode === 0xFEFF;
-
 /**
  * CSV 資料列數（扣除表頭與空白行），用於輸入／刪除／輸出筆數統計。
  * ★ 2026-10-30：逐字元計數，不再 split 成每行一個字串（大檔約多佔檔案大小 1.5～2 倍記憶體）；結果與 split 版相同。
+ * ★ 2026-11-02：追蹤引號狀態（RFC 4180：欄位開頭的 " 開啟引號區段，區段內 "" 為跳脫的引號），
+ *   引號內的換行屬於同一筆資料，不再多算成新的一列；未加引號的欄位中間出現的 " 視為一般字元。
  */
+// ★ 2026-11-02（F12）：與大檔逐段計數共用同一個狀態機（utils/blobStreaming.ts createCsvRowCounter），兩者結果必定一致
 export const countCsvDataRowsForStats = (csvText: string): number => {
-    let nonBlankLineCount = 0;
-    let isCurrentLineNonBlank = false;
-    for (let charIndex = 0; charIndex < csvText.length; charIndex++) {
-        const charCode = csvText.charCodeAt(charIndex);
-        if (charCode === 0x0A || charCode === 0x0D) {
-            if (isCurrentLineNonBlank) nonBlankLineCount++;
-            isCurrentLineNonBlank = false;
-            if (charCode === 0x0D && csvText.charCodeAt(charIndex + 1) === 0x0A) charIndex++;
-            continue;
-        }
-        if (!isCurrentLineNonBlank && !isTrimWhitespaceCode(charCode)) isCurrentLineNonBlank = true;
-    }
-    if (isCurrentLineNonBlank) nonBlankLineCount++;
-    return Math.max(0, nonBlankLineCount - 1);
+    const counter = createCsvRowCounter();
+    counter.push(csvText);
+    return counter.finish();
 };

@@ -23,4 +23,15 @@ describe('Step4 風險結果小工具', () => {
         expect(countCsvDataRowsForStats('a,b')).toBe(0);
         expect(countCsvDataRowsForStats('')).toBe(0);
     });
+
+    // ★ 2026-11-02：引號內的換行屬於同一筆資料，不可算成多列（先前逐字元計數會把它們多算）
+    it('資料列數：引號內的換行（含 CRLF、"" 跳脫）不算新的一列；BOM 與結尾換行不影響', () => {
+        expect(countCsvDataRowsForStats('a,b\n1,"第一行\n第二行"\n3,4\n')).toBe(2);
+        expect(countCsvDataRowsForStats('a,b\r\n1,"x\r\ny"\r\n2,3\r\n')).toBe(2);
+        expect(countCsvDataRowsForStats('a,b\n1,"他說 ""嗨""\n好"\n2,3')).toBe(2);
+        expect(countCsvDataRowsForStats('﻿"a",b\n"1\n\n2",3\n')).toBe(1);
+        expect(countCsvDataRowsForStats('﻿a,b\n1,2\n\n')).toBe(1);
+        // 未加引號的欄位中間出現的引號是一般字元（例如 5"），不會開啟引號區段
+        expect(countCsvDataRowsForStats('a,b\n5",x\n6,y\n')).toBe(2);
+    });
 });

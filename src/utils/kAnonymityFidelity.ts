@@ -27,6 +27,8 @@
  * 大資料：預設全部計算（2026-10-16 起）；僅在呼叫端指定 sampleLimit 時才等距抽樣。
  */
 import Papa from 'papaparse';
+import { LARGE_FILE_SAMPLING_BYTES, stripLeadingBom } from './blobStreaming';
+import { readCsvBlobRows } from './csvBlobParse';
 
 /** 指引建議值（各 ≥ 0.75） */
 export const FIDELITY_PASS_THRESHOLD = 0.75;
@@ -139,13 +141,13 @@ const buildCompatibilityCheckers = (kAnonymityConfig: Record<string, unknown> | 
 };
 
 /** 單一種配對方式；失敗回傳 null */
-const pairProcessedRowsOnce = (originalHeader: string[], originalBody: string[][], processedHeader: string[], processedBody: string[][], anchorColumns: string[], checkers: CompatibilityChecker[]): number[] | null => {
+const pairProcessedRowsOnce = (originalHeader: string[], originalBody: string[][], processedHeader: string[], processedBody: string[][], anchorColumns: string[], checkers: CompatibilityChecker[], allowTruncatedTail = false): number[] | null => {
     const pairedIndexList: number[] = [];
-    if (processedBody.length === originalBody.length) {
+    if (processedBody.length === originalBody.length && !allowTruncatedTail) {
         for (let rowIndex = 0; rowIndex < processedBody.length; rowIndex += 1) pairedIndexList.push(rowIndex);
         return pairedIndexList;
     }
-    if (processedBody.length > originalBody.length) return null;
+    if (processedBody.length > originalBody.length && !allowTruncatedTail) return null;
     const usableAnchors = anchorColumns.map(cleanName).filter((column) => originalHeader.includes(column) && processedHeader.includes(column));
     if (usableAnchors.length === 0 && checkers.length === 0) return null;
     const originalAnchorIndexes = usableAnchors.map((column) => originalHeader.indexOf(column));
@@ -162,7 +164,8 @@ const pairProcessedRowsOnce = (originalHeader: string[], originalBody: string[][
         const targetFingerprint = fingerprint(processedRow, processedAnchorIndexes);
         while (originalPointer < originalBody.length
             && (fingerprint(originalBody[originalPointer], originalAnchorIndexes) !== targetFingerprint || !isRowCompatible(originalBody[originalPointer], processedRow))) originalPointer += 1;
-        if (originalPointer >= originalBody.length) return null;
+        // ★ 2026-11-02（F12）：大檔抽樣只讀了原始資料前段，配到前段結尾即停止（之後的處理後列不納入計算）
+        if (originalPointer >= originalBody.length) return allowTruncatedTail && pairedIndexList.length > 0 ? pairedIndexList : null;
         pairedIndexList.push(originalPointer);
         originalPointer += 1;
     }
@@ -174,11 +177,11 @@ const pairProcessedRowsOnce = (originalHeader: string[], originalBody: string[][
  * ★ 2026-10-16：依序嘗試「未處理欄位＋泛化檢查」→「只用泛化檢查」→「只用未處理欄位」，
  *   避免單一條件（例如格式不同、未處理欄位被改寫）就整個算不出來。
  */
-const pairProcessedRows = (originalHeader: string[], originalBody: string[][], processedHeader: string[], processedBody: string[][], anchorColumns: string[], checkers: CompatibilityChecker[] = []): number[] | null => {
+const pairProcessedRows = (originalHeader: string[], originalBody: string[][], processedHeader: string[], processedBody: string[][], anchorColumns: string[], checkers: CompatibilityChecker[] = [], allowTruncatedTail = false): number[] | null => {
     const attempts: Array<[string[], CompatibilityChecker[]]> = [[anchorColumns, checkers]];
     if (checkers.length > 0) attempts.push([[], checkers], [anchorColumns, []]);
     for (const [attemptAnchors, attemptCheckers] of attempts) {
-        const paired = pairProcessedRowsOnce(originalHeader, originalBody, processedHeader, processedBody, attemptAnchors, attemptCheckers);
+        const paired = pairProcessedRowsOnce(originalHeader, originalBody, processedHeader, processedBody, attemptAnchors, attemptCheckers, allowTruncatedTail);
         if (paired) return paired;
     }
     return null;
@@ -287,18 +290,26 @@ export interface KAnonymityFidelityInput {
     sampleLimit?: number;
 }
 
-export const computeKAnonymityFidelity = (input: KAnonymityFidelityInput): KAnonymityFidelityResult | null => {
+export const computeKAnonymityFidelity = (input: KAnonymityFidelityInput): KAnonymityFidelityResult | null =>
+    computeKAnonymityFidelityFromRows(parseCsvRows(input.originalCsvText), parseCsvRows(input.processedCsvText), input);
+
+/** 以已解析的列計算（含標頭列）；isPrefixSample＝原始資料只讀了前段（大檔抽樣） */
+const computeKAnonymityFidelityFromRows = (
+    originalRows: string[][],
+    processedRows: string[][],
+    input: Omit<KAnonymityFidelityInput, 'originalCsvText' | 'processedCsvText'>,
+    isPrefixSample = false
+): KAnonymityFidelityResult | null => {
     const numericColumnSet = new Set((input.numericColumns ?? []).map(cleanName));
-    const originalRows = parseCsvRows(input.originalCsvText);
-    const processedRows = parseCsvRows(input.processedCsvText);
     if (originalRows.length < 2 || processedRows.length < 2) return null;
     const originalHeader = originalRows[0].map(cleanName);
     const processedHeader = processedRows[0].map(cleanName);
     const originalBody = originalRows.slice(1);
-    const processedBody = processedRows.slice(1);
-    const pairedIndexList = pairProcessedRows(originalHeader, originalBody, processedHeader, processedBody, input.anchorColumns,
-        buildCompatibilityCheckers(input.kAnonymityConfig, originalHeader, processedHeader));
+    const pairedIndexList = pairProcessedRows(originalHeader, originalBody, processedHeader, processedRows.slice(1), input.anchorColumns,
+        buildCompatibilityCheckers(input.kAnonymityConfig, originalHeader, processedHeader), isPrefixSample);
     if (!pairedIndexList) return null;
+    // 抽樣時只保留配得到的處理後列（原始資料前段範圍內）
+    const processedBody = processedRows.slice(1, 1 + pairedIndexList.length);
 
     const sampleLimit = input.sampleLimit ?? DEFAULT_SAMPLE_LIMIT;
     const originalStep = Math.max(1, Math.ceil(originalBody.length / sampleLimit));
@@ -461,7 +472,7 @@ export const computeKAnonymityFidelity = (input: KAnonymityFidelityInput): KAnon
         isPassed,
         belowThresholdItems: itemScores.filter((item) => item.score < FIDELITY_PASS_THRESHOLD).sort((left, right) => left.score - right.score),
         evaluatedColumns: columnModels.map((model) => model.name),
-        sampled: originalStep > 1 || processedStep > 1,
+        sampled: isPrefixSample || originalStep > 1 || processedStep > 1,
         sampleRows: processedSampleIndexes.length
     };
 };
@@ -477,14 +488,15 @@ export const formatFidelityScore = (score: number): string => (Math.floor(score 
  * 改在 Worker 算完即結束 Worker，整塊記憶體一次釋放，也不卡畫面）。結果與 computeKAnonymityFidelity 相同（仍全部計算、不抽樣）。
  * 瀏覽器不支援或 Worker 啟動失敗時退回主執行緒計算。
  */
-export const computeKAnonymityFidelityInWorker = (input: KAnonymityFidelityInput): Promise<KAnonymityFidelityResult | null> => {
-    if (typeof Worker === 'undefined') return Promise.resolve(computeKAnonymityFidelity(input));
+export const computeKAnonymityFidelityInWorker = (input: KAnonymityFidelityBlobInput): Promise<KAnonymityFidelityResult | null> => {
+    // ★ 2026-11-02（F12）：改送 Blob（傳給 Worker 只是參照，不複製整份資料），Worker 內逐段解析
+    if (typeof Worker === 'undefined') return computeKAnonymityFidelityFromBlobs(input);
     let fidelityWorker: Worker;
     try {
         fidelityWorker = new Worker(new URL('./kAnonymityFidelity.worker.ts', import.meta.url), { type: 'module' });
     } catch (workerCreateError) {
         console.warn('資料實用性 Worker 無法啟動，改在主執行緒計算:', workerCreateError);
-        return Promise.resolve(computeKAnonymityFidelity(input));
+        return computeKAnonymityFidelityFromBlobs(input);
     }
     return new Promise<KAnonymityFidelityResult | null>((resolve, reject) => {
         fidelityWorker.onmessage = (event: MessageEvent<{ result?: KAnonymityFidelityResult | null; error?: string }>) => {
@@ -495,8 +507,34 @@ export const computeKAnonymityFidelityInWorker = (input: KAnonymityFidelityInput
         fidelityWorker.onerror = (workerError) => {
             fidelityWorker.terminate();
             console.warn('資料實用性 Worker 執行失敗，改在主執行緒計算:', workerError.message);
-            try { resolve(computeKAnonymityFidelity(input)); } catch (computeError) { reject(computeError); }
+            computeKAnonymityFidelityFromBlobs(input).then(resolve, reject);
         };
         fidelityWorker.postMessage({ input });
     });
+};
+
+/** ★ 2026-11-02（F12）：直接讀 Blob 的輸入（大檔不先讀成整份字串） */
+export interface KAnonymityFidelityBlobInput extends Omit<KAnonymityFidelityInput, 'originalCsvText' | 'processedCsvText'> {
+    originalCsvBlob: Blob;
+    processedCsvBlob: Blob;
+    /** 任一檔案超過此大小即改為抽樣（預設 LARGE_FILE_SAMPLING_BYTES） */
+    samplingThresholdBytes?: number;
+    /** 抽樣時讀取的原始資料列數（預設 20 萬列） */
+    sampleRowLimit?: number;
+}
+
+export const LARGE_FILE_FIDELITY_SAMPLE_ROWS = 200_000;
+
+/**
+ * 從 Blob 計算資料實用性。大檔（預設 200 MB 以上）只讀原始資料前 20 萬列與對應的處理後資料列計算，
+ * 結果 sampled＝true、sampleRows 為實際計算的處理後列數（報告註明「抽樣計算」）。
+ * 不抽樣時與 computeKAnonymityFidelity 結果相同。
+ */
+export const computeKAnonymityFidelityFromBlobs = async (input: KAnonymityFidelityBlobInput): Promise<KAnonymityFidelityResult | null> => {
+    const threshold = input.samplingThresholdBytes ?? LARGE_FILE_SAMPLING_BYTES;
+    const isLarge = input.originalCsvBlob.size > threshold || input.processedCsvBlob.size > threshold;
+    const rowLimit = isLarge ? (input.sampleRowLimit ?? LARGE_FILE_FIDELITY_SAMPLE_ROWS) + 1 : undefined;
+    const originalRows = await readCsvBlobRows(await stripLeadingBom(input.originalCsvBlob), rowLimit);
+    const processedRows = await readCsvBlobRows(await stripLeadingBom(input.processedCsvBlob), rowLimit);
+    return computeKAnonymityFidelityFromRows(originalRows, processedRows, input, isLarge);
 };

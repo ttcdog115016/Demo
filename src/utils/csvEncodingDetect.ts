@@ -54,8 +54,10 @@ export const detectByteOrderMark = (fullBytesArray: Uint8Array): 'utf-8-bom' | '
 /**
  * 函數名稱: detectCsvBytesEncoding
  * 函數功能: 依 BOM 判斷與「嚴格解碼」(fatal: true) 逐一嘗試候選編碼，偵測位元組陣列的真實文字編碼。
+ * ★ 2026-11-02（F12）：大檔不再整份讀成位元組陣列，呼叫端只傳入檔頭樣本（file.slice(0, 64KB)），
+ *   另以 totalByteLength 告知整個檔案大小，用來判斷樣本是否被截斷（未傳時視為整份檔案）。
  */
-export const detectCsvBytesEncoding = (fullBytesArray: Uint8Array): string => {
+export const detectCsvBytesEncoding = (fullBytesArray: Uint8Array, totalByteLength: number = fullBytesArray.length): string => {
     const byteOrderMarkEncodingLabel = detectByteOrderMark(fullBytesArray);
     if (byteOrderMarkEncodingLabel) {
         return byteOrderMarkEncodingLabel;
@@ -63,7 +65,7 @@ export const detectCsvBytesEncoding = (fullBytesArray: Uint8Array): string => {
 
     const sampleForDetectionArray = fullBytesArray.subarray(0, Math.min(fullBytesArray.length, CSV_ENCODING_DETECTION_SAMPLE_BYTES));
     // 樣本是被截斷的 (檔案大於樣本大小) 時才用 stream 模式，允許尾端出現不完整字元
-    const isSampleTruncated = sampleForDetectionArray.length < fullBytesArray.length;
+    const isSampleTruncated = sampleForDetectionArray.length < Math.max(fullBytesArray.length, totalByteLength);
     const isStrictlyDecodable = (encodingLabel: string): boolean => {
         try {
             new TextDecoder(encodingLabel, { fatal: true }).decode(sampleForDetectionArray, { stream: isSampleTruncated });

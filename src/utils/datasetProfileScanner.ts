@@ -6,7 +6,7 @@
  *   改由 datasetProfile.worker.ts 在背景執行；Worker 不可用（例如測試環境）時退回主執行緒，兩者結果相同。
  *   另順便記錄每欄數值的最小／最大值（numericMin／numericMax），Step2 不必再對數百萬筆數值重掃。
  */
-import Papa from 'papaparse';
+import { parseCsvBlobInChunks } from './csvBlobParse';
 import { createColumnValueStats, addValueToColumnStats, type ColumnValueStats } from './backendValueRules';
 import { parseDpDateTimeBoundTimestamp, formatDpDateTimeBoundFromTimestamp } from './dpFieldHelpers';
 
@@ -45,8 +45,22 @@ export const buildDatasetFileKey = (file: File): string => `${file.name}|${file.
 
 export const cleanDatasetColumnName = (rawName: string): string => rawName.replace(/^[\uFEFF\u200B]+/, '').trim();
 
-/** 以 Papa.parse 的 chunk 串流模式掃描整份檔案（每次只處理一個區塊、不保留列物件） */
-export const scanDatasetFileOnCurrentThread = (file: File): Promise<DatasetProfile> => new Promise((resolve, reject) => {
+/** 重複欄名比照 Papa header 模式加上 _1、_2…（與改寫前的結果一致） */
+const dedupeHeaderNames = (rawNames: string[]): string[] => {
+    const seenCounts = new Map<string, number>();
+    return rawNames.map((rawName) => {
+        const seen = seenCounts.get(rawName) ?? 0;
+        seenCounts.set(rawName, seen + 1);
+        return seen === 0 ? rawName : `${rawName}_${seen}`;
+    });
+};
+
+/**
+ * 逐段掃描整份檔案（每次只處理一個區塊、不保留列物件）。
+ * ★ 2026-11-02（F12 追加）：原本用 Papa.parse(file, { chunk })，Papa 把每 10 MB 切片各自解碼，
+ *   落在切片邊界的中文字會變成亂碼（U+FFFD），統計值因此有誤；改用 csvBlobParse（跨段解碼正確）。
+ */
+export const scanDatasetFileOnCurrentThread = (file: File, options: { chunkBytes?: number } = {}): Promise<DatasetProfile> => new Promise((resolve, reject) => {
     const distinctCounterMapByColumn: Record<string, Map<string, number>> = {};
     const cappedColumnsSet = new Set<string>();
     const nonEmptyCountByColumn: Record<string, number> = {};
@@ -56,19 +70,16 @@ export const scanDatasetFileOnCurrentThread = (file: File): Promise<DatasetProfi
     const nonNumericDistinctByColumn: Record<string, Set<string>> = {};
     const dateTimeExtremaByColumn: Record<string, { minTimestamp: number; maxTimestamp: number; count: number }> = {};
     const valueStatsByColumn: Record<string, ColumnValueStats> = {};
-    let rawToCleanNameMap: Record<string, string> | null = null;
+    let isHeaderRead = false;
     let columnNamesList: string[] = [];
     let rowCount = 0;
 
-    Papa.parse<Record<string, string>>(file, {
-        header: true,
-        skipEmptyLines: true,
-        chunk: (chunkResult) => {
-            if (!rawToCleanNameMap) {
-                const rawFieldsList = chunkResult.meta.fields || [];
-                rawToCleanNameMap = {};
-                rawFieldsList.forEach((rawFieldName) => { rawToCleanNameMap![rawFieldName] = cleanDatasetColumnName(rawFieldName); });
-                columnNamesList = rawFieldsList.map((rawFieldName) => rawToCleanNameMap![rawFieldName]);
+    parseCsvBlobInChunks(file, (rowsChunk) => {
+            let firstDataRowIndex = 0;
+            if (!isHeaderRead) {
+                isHeaderRead = true;
+                firstDataRowIndex = 1;
+                columnNamesList = dedupeHeaderNames(rowsChunk[0] || []).map(cleanDatasetColumnName);
                 columnNamesList.forEach((columnName) => {
                     distinctCounterMapByColumn[columnName] = new Map();
                     nonEmptyCountByColumn[columnName] = 0;
@@ -77,12 +88,12 @@ export const scanDatasetFileOnCurrentThread = (file: File): Promise<DatasetProfi
                     valueStatsByColumn[columnName] = createColumnValueStats();
                 });
             }
-            const nameMap = rawToCleanNameMap;
-            for (const rowRecord of chunkResult.data) {
+            for (let rowIndex = firstDataRowIndex; rowIndex < rowsChunk.length; rowIndex++) {
+                const rowCells = rowsChunk[rowIndex];
                 rowCount++;
-                for (const rawFieldName in nameMap) {
-                    const columnName = nameMap[rawFieldName];
-                    const rawCellValue = rowRecord[rawFieldName];
+                for (let fieldIndex = 0; fieldIndex < columnNamesList.length; fieldIndex++) {
+                    const columnName = columnNamesList[fieldIndex];
+                    const rawCellValue = rowCells[fieldIndex];
                     if (rawCellValue === undefined || rawCellValue === null) continue;
                     const trimmedCellValue = String(rawCellValue).trim();
                     if (trimmedCellValue === '') continue;
@@ -122,8 +133,7 @@ export const scanDatasetFileOnCurrentThread = (file: File): Promise<DatasetProfi
                     }
                 }
             }
-        },
-        complete: () => {
+    }, { chunkBytes: options.chunkBytes }).then(() => {
             const columns: Record<string, DatasetColumnProfile> = {};
             const numericValues: Record<string, number[]> = {};
             columnNamesList.forEach((columnName) => {
@@ -153,7 +163,5 @@ export const scanDatasetFileOnCurrentThread = (file: File): Promise<DatasetProfi
                 };
             });
             resolve({ fileKey: buildDatasetFileKey(file), rowCount, columnNamesList, columns, numericValues, dateTimeRanges });
-        },
-        error: (parseError: Error) => reject(parseError)
-    });
+    }, reject);
 });

@@ -18,6 +18,7 @@
  *   亂數用固定種子，同一份資料每次結果相同。
  */
 import Papa from 'papaparse';
+import { parseCsvBlobInChunks } from './csvBlobParse';
 
 /** pandas read_csv 預設視為缺值的字串（後端 CAP 的敏感值缺值不算進分子、但留在分母） */
 const PANDAS_DEFAULT_NA_VALUE_SET = new Set([
@@ -133,39 +134,52 @@ export interface CapEncodedTable {
     columnDictionaries: string[][];
 }
 
-export const encodeCsvForCapBaseline = (csvText: string): CapEncodedTable | null => {
+// ★ 2026-11-02（F12）：逐列編碼的狀態抽成共用的 builder，字串版與 Blob 串流版共用同一套規則
+const createCapTableBuilder = () => {
     let headerCells: string[] | null = null;
     let idListsByColumn: number[][] = [];
     let idMapsByColumn: Map<string, number>[] = [];
     let rowCount = 0;
-    Papa.parse<string[]>(csvText, {
-        skipEmptyLines: true,
-        step: (stepResult) => {
-            const rowCells = stepResult.data;
-            if (!headerCells) {
-                headerCells = rowCells.map((headerText) => String(headerText).replace(/^\uFEFF/, ''));
-                idListsByColumn = headerCells.map(() => []);
-                idMapsByColumn = headerCells.map(() => new Map<string, number>());
-                return;
-            }
-            for (let columnIndex = 0; columnIndex < idListsByColumn.length; columnIndex++) {
-                const cellText = rowCells[columnIndex];
-                if (cellText === undefined) { idListsByColumn[columnIndex].push(-1); continue; }
-                const idMap = idMapsByColumn[columnIndex];
-                let cellId = idMap.get(cellText);
-                if (cellId === undefined) { cellId = idMap.size; idMap.set(cellText, cellId); }
-                idListsByColumn[columnIndex].push(cellId);
-            }
-            rowCount++;
+    const addRow = (rowCells: string[]): void => {
+        if (!headerCells) {
+            headerCells = rowCells.map((headerText) => String(headerText).replace(/^\uFEFF/, ''));
+            idListsByColumn = headerCells.map(() => []);
+            idMapsByColumn = headerCells.map(() => new Map<string, number>());
+            return;
         }
-    });
-    if (!headerCells || rowCount === 0) return null;
-    return {
-        headerCells,
-        rowCount,
-        columnIds: idListsByColumn.map((idList) => Int32Array.from(idList)),
-        columnDictionaries: idMapsByColumn.map((idMap) => Array.from(idMap.keys()))
+        for (let columnIndex = 0; columnIndex < idListsByColumn.length; columnIndex++) {
+            const cellText = rowCells[columnIndex];
+            if (cellText === undefined) { idListsByColumn[columnIndex].push(-1); continue; }
+            const idMap = idMapsByColumn[columnIndex];
+            let cellId = idMap.get(cellText);
+            if (cellId === undefined) { cellId = idMap.size; idMap.set(cellText, cellId); }
+            idListsByColumn[columnIndex].push(cellId);
+        }
+        rowCount++;
     };
+    const build = (): CapEncodedTable | null => {
+        if (!headerCells || rowCount === 0) return null;
+        return {
+            headerCells,
+            rowCount,
+            columnIds: idListsByColumn.map((idList) => Int32Array.from(idList)),
+            columnDictionaries: idMapsByColumn.map((idMap) => Array.from(idMap.keys()))
+        };
+    };
+    return { addRow, build };
+};
+
+export const encodeCsvForCapBaseline = (csvText: string): CapEncodedTable | null => {
+    const builder = createCapTableBuilder();
+    Papa.parse<string[]>(csvText, { skipEmptyLines: true, step: (stepResult) => builder.addRow(stepResult.data) });
+    return builder.build();
+};
+
+/** ★ 2026-11-02（F12）：直接從 Blob 逐段編碼（大檔不必先讀成整檔字串） */
+export const encodeCsvBlobForCapBaseline = async (csvBlob: Blob, chunkBytes?: number): Promise<CapEncodedTable | null> => {
+    const builder = createCapTableBuilder();
+    await parseCsvBlobInChunks(csvBlob, (rowsChunk) => { for (const rowCells of rowsChunk) builder.addRow(rowCells); }, { chunkBytes });
+    return builder.build();
 };
 
 /**

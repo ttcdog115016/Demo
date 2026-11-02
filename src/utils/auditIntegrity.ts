@@ -12,11 +12,11 @@
  * ============================================================================
  */
 import CryptoJS from 'crypto-js';
+import { sha256HexOfBlobStreaming } from './blobStreaming';
 import { verifyHistoryRecord } from '../api/systemApi';
 
-/** 檔案超過此大小時不計算檔案指紋（避免一次讀入記憶體造成頁面卡死）；Web Crypto／CryptoJS 各自上限 */
+/** 不超過此大小時以 Web Crypto 一次計算；更大的檔案改為逐段累加（★ 2026-11-02 F12） */
 const MAX_FILE_HASH_BYTES_WEBCRYPTO = 512 * 1024 * 1024;
-const MAX_FILE_HASH_BYTES_FALLBACK = 100 * 1024 * 1024;
 
 /** 舊版（2026-10-02～10-29）瀏覽器簽章金鑰的 IndexedDB 名稱；main.tsx 啟動時刪除 */
 export const LEGACY_SIGNING_KEY_DB_NAME = 'privacy-toolkit-audit';
@@ -55,18 +55,16 @@ export const sha256HexOfText = async (text: string): Promise<string> => {
     return CryptoJS.SHA256(CryptoJS.enc.Utf8.parse(text)).toString(CryptoJS.enc.Hex);
 };
 
-/** 檔案／Blob SHA-256（hex）；超過大小上限或讀取失敗時回傳 null */
+/** 檔案／Blob SHA-256（hex）；讀取失敗時回傳 null */
 export const sha256HexOfBlob = async (blob: Blob | null | undefined): Promise<string | null> => {
     if (!blob) return null;
     try {
         const subtle = getSubtleCrypto();
-        if (subtle) {
-            if (blob.size > MAX_FILE_HASH_BYTES_WEBCRYPTO) return null;
+        if (subtle && blob.size <= MAX_FILE_HASH_BYTES_WEBCRYPTO) {
             return bytesToHex(await subtle.digest('SHA-256', await blob.arrayBuffer()));
         }
-        if (blob.size > MAX_FILE_HASH_BYTES_FALLBACK) return null;
-        const wordArray = CryptoJS.lib.WordArray.create(new Uint8Array(await blob.arrayBuffer()) as unknown as number[]);
-        return CryptoJS.SHA256(wordArray).toString(CryptoJS.enc.Hex);
+        // ★ 2026-11-02（F12）：大檔（或沒有 Web Crypto）改為逐段累加計算，不再因超過大小上限而沒有指紋
+        return await sha256HexOfBlobStreaming(blob);
     } catch (hashErrorPayload) {
         console.error('計算檔案 SHA-256 失敗:', hashErrorPayload);
         return null;
