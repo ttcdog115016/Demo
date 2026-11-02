@@ -356,7 +356,7 @@ export default function Step1_Upload(): React.ReactElement
             const isSampled = isCsvBlobSampled(params.csvBlob);
             if (isSampled)
             {
-                messageApi.info({ content: translate('step1.large_file_sampled', '檔案超過 200 MB，僅抽樣檢查前 200 MB 的內容。'), duration: 8 });
+                messageApi.info({ content: translate('step1.large_file_sampled', '檔案超過 200 MB：上傳前的內容檢查只檢查前 200 MB；去識別化與風險評估仍處理整份資料。'), duration: 8 });
             }
             const delimiter = detectCsvDelimiterFromHeadText(headText);
             const specialChars = await findSpecialCharacterCellsInBlob(params.csvBlob, { delimiter });
@@ -763,7 +763,7 @@ export default function Step1_Upload(): React.ReactElement
                 {/* ★ 2026-11-02（F12）：大檔只抽樣檢查前 200 MB（「移除特殊字元」仍會處理整份檔案） */}
                 {pendingContentReview?.isSampled && (
                     <div style={{ marginTop: 8 }}>
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{translate('step1.large_file_sampled', '檔案超過 200 MB，僅抽樣檢查前 200 MB 的內容。')}</Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{translate('step1.large_file_sampled', '檔案超過 200 MB：上傳前的內容檢查只檢查前 200 MB；去識別化與風險評估仍處理整份資料。')}</Typography.Text>
                     </div>
                 )}
             </Modal>
