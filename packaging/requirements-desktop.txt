@@ -1,0 +1,18 @@
+# 單機版才需要、後端 uv.lock 沒有的套件（含全部間接相依；build_exe.ps1 以 --no-deps 安裝，版本完全照此鎖定）
+# ★ 2026-10-30：原本不鎖版本，每次建置可能裝到不同版本。更新時：改版本 → 重跑 build_exe.ps1 → 確認 pip check 通過。
+# App 視窗（WebView2）：pywebview 與其相依
+pywebview==6.2.1
+bottle==0.13.4
+proxy_tools==0.1.0
+pythonnet==3.2.1
+clr_loader==0.3.1
+cffi==2.1.1
+pycparser==3.12
+cloudpickle==3.1.2
+# 打包工具（只在建置時使用，不進安裝檔；pyinstaller 的 bootloader 例外條款見 THIRD_PARTY_NOTICES）
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.9
+altgraph==0.17.5
+pefile==2024.8.26
+pywin32-ctypes==0.2.3
+packaging==26.3

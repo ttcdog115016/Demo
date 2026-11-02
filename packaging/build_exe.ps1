@@ -54,12 +54,14 @@ if (-not (Test-Path $VenvPy)) {
     & $pyExe @pyPre -m venv $VenvDir; if ($LASTEXITCODE) { Fail '建立虛擬環境失敗' }
 }
 & $VenvPy -m pip install --upgrade pip --quiet
-# 依後端 pyproject.toml 的 dependencies（只裝執行必要套件；版本已鎖定）
+# ★ 2026-10-30：依後端 uv.lock 安裝（含間接相依，與後端 Docker 同一組版本），再加上單機版專用套件；
+#   兩份清單都已列出完整相依，故以 --no-deps 安裝，不讓 pip 現場改選版本
 $req = Join-Path $BuildDir 'requirements-runtime.txt'
-& $VenvPy (Join-Path $PackDir 'write_requirements.py') (Join-Path $BackendSrc 'pyproject.toml') $req; if ($LASTEXITCODE) { Fail '讀取後端 pyproject.toml 失敗' }
-$pipArgs = @('-m', 'pip', 'install', '-r', $req, 'pyinstaller>=6.10,<7', 'pywebview>=6.2,<7', '--quiet')   # pywebview：App 視窗（WebView2）
+& $VenvPy (Join-Path $PackDir 'write_requirements.py') (Join-Path $BackendSrc 'uv.lock') $req; if ($LASTEXITCODE) { Fail '讀取後端 uv.lock 失敗' }
+$pipArgs = @('-m', 'pip', 'install', '--no-deps', '-r', $req, '-r', (Join-Path $PackDir 'requirements-desktop.txt'), '--quiet')
 if (Test-Path $Wheels) { $pipArgs += @('--find-links', $Wheels) }   # 優先用交付包所附 wheel
 & $VenvPy @pipArgs; if ($LASTEXITCODE) { Fail '安裝 Python 套件失敗' }
+& $VenvPy -m pip check; if ($LASTEXITCODE) { Fail '套件相依不一致（見上方 pip check），請更新 requirements-desktop.txt' }
 
 # ---------------------------------------------------------------- 3. PyInstaller
 Step '3/4 打包（PyInstaller，約 2~5 分鐘）'
@@ -70,6 +72,17 @@ if ($LASTEXITCODE) { Fail 'PyInstaller 打包失敗' }
 
 $AppDir = Join-Path $DistDir 'OpenPETs'
 Copy-Item (Join-Path $PackDir '使用說明.txt') $AppDir -Force
+
+# ★ 2026-10-30：第三方授權聲明與 SBOM（授權工具裝在另一個 venv，不污染要打包的環境）
+$LicVenvPy = Join-Path $BuildDir 'licvenv\Scripts\python.exe'
+if (-not (Test-Path $LicVenvPy)) {
+    & $pyExe @pyPre -m venv (Join-Path $BuildDir 'licvenv'); if ($LASTEXITCODE) { Fail '建立授權工具環境失敗' }
+}
+& $LicVenvPy -m pip install 'pip-licenses>=5,<6' 'cyclonedx-bom>=7,<8' --quiet; if ($LASTEXITCODE) { Fail '安裝授權工具失敗' }
+$env:PYTHONIOENCODING = 'utf-8'
+$FrontSbom = Join-Path $Root 'sbom\frontend-sbom.cdx.json'
+& $LicVenvPy (Join-Path $PackDir 'gen_third_party.py') $VenvPy $FrontSbom (Join-Path $Root 'node_modules') $AppDir
+if ($LASTEXITCODE) { Fail '產生第三方授權聲明失敗' }
 
 # ---------------------------------------------------------------- 4. 安裝程式
 Step '4/4 製作安裝程式（Inno Setup）'

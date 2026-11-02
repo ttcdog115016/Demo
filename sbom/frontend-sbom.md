@@ -1,6 +1,6 @@
 # Open-PETs 前端軟體物料清單（SBOM）摘要
 
-- 產生時間：2026-10-30T06:40:49Z
+- 產生時間：2026-11-02T05:44:30Z
 - 格式：CycloneDX 1.5（JSON），完整清單見 `frontend-sbom.cdx.json`
 - 主元件：open-pets-frontend 2.0.0（MIT）
 - 範圍：正式執行相依（package.json 的 dependencies 及其傳遞相依）；建置與測試工具（devDependencies）不隨產品交付，不列入
@@ -15,7 +15,7 @@
 | @ant-design/icons | 6.3.2 | MIT |
 | @tanstack/react-query | 5.101.2 | MIT |
 | antd | 6.5.0 | MIT |
-| axios | 1.18.1 | MIT |
+| axios | 1.20.0 | MIT |
 | crypto-js | 4.2.0 | MIT |
 | echarts | 6.1.0 | Apache-2.0 |
 | echarts-for-react | 3.0.6 | MIT |
@@ -30,7 +30,7 @@
 | react-router-dom | 7.18.2 | MIT |
 | recharts | 3.9.2 | MIT |
 | xlsx | 0.20.3 | Apache-2.0 |
-| yaml | 2.8.1 | ISC |
+| yaml | 2.8.4 | ISC |
 | zustand | 5.0.14 | MIT |
 
 ## 授權統計（全部元件）

@@ -192,10 +192,14 @@ def needs_first_admin() -> bool:
 
 
 def prompt_new_password(min_length: int) -> str:
+    # ★ 2026-10-30：與網頁、後端同一規則（長度＋大小寫、數字、特殊符號），不只檢查長度
+    from app.governance.auth import password_policy_error
+
     while True:
-        pw1 = getpass.getpass(f"  密碼（至少 {min_length} 個字元，輸入時不會顯示）：")
-        if len(pw1) < min_length:
-            print(f"  密碼太短，至少需要 {min_length} 個字元。")
+        pw1 = getpass.getpass(f"  密碼（至少 {min_length} 個字元，需含大小寫字母、數字及特殊符號，輸入時不會顯示）：")
+        error = password_policy_error(pw1)
+        if error:
+            print(f"  {error}")
             continue
         pw2 = getpass.getpass("  再輸入一次密碼：")
         if pw1 != pw2:
@@ -301,13 +305,14 @@ SETUP_PAGE_HTML = """<!doctype html>
     if (!s.needs_setup) { location.replace("/"); return; }
     minLength = s.password_min_length || minLength;
   } catch (e) {}
-  $("pwHint").textContent = "至少 " + minLength + " 個字元";
+  $("pwHint").textContent = "至少 " + minLength + " 個字元，需含大寫字母、小寫字母、數字及特殊符號";
   const show = (text, cls) => { $("m").textContent = text; $("m").className = "msg " + cls; };
   $("f").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const username = $("u").value.trim(), password = $("p1").value;
     if (!username) return show("帳號不可空白。", "error");
     if (password.length < minLength) return show("密碼太短，至少需要 " + minLength + " 個字元。", "error");
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).+$/.test(password)) return show("密碼需包含大寫字母、小寫字母、數字及特殊符號。", "error");
     if (password !== $("p2").value) return show("兩次輸入的密碼不一致。", "error");
     $("b").disabled = true;
     try {
@@ -331,6 +336,16 @@ def attach_first_run_setup(app) -> None:
     from app.governance.auth import get_auth_manager, get_password_min_length
 
     create_lock = threading.Lock()
+    port = get_port()
+    local_hosts = {f"{HOST}:{port}", f"localhost:{port}"}
+
+    def is_local_request(request: Request) -> bool:
+        """★ 2026-10-30：只綁 127.0.0.1 擋不住同機網頁（CORS 為 *）與 DNS rebinding，
+        建立管理員前須確認 Host 是本機位址、且 Origin（若有）就是本服務。"""
+        if request.headers.get("host", "").lower() not in local_hosts:
+            return False
+        origin = request.headers.get("origin")
+        return origin is None or origin.lower() in {f"http://{h}" for h in local_hosts}
 
     @app.get(SETUP_API_PATH, include_in_schema=False)
     def setup_status():
@@ -338,6 +353,8 @@ def attach_first_run_setup(app) -> None:
 
     @app.post(SETUP_API_PATH, include_in_schema=False)
     async def setup_create_admin(request: Request):
+        if not is_local_request(request):
+            return JSONResponse({"message": "只接受本機 Open-PETs 視窗建立管理員。"}, status_code=403)
         try:
             payload = await request.json()
         except Exception:
@@ -402,6 +419,9 @@ def attach_frontend(app, dist: Path) -> None:
 
 
 def build_app():
+    # ★ 2026-11-02（資安掃描 2-4）：只接受本機 Host，擋下 DNS rebinding（須在匯入 server 之前設定）；
+    #   跨網域不開放（不設 OPEN_PETS_CORS_ORIGINS，前端與 API 同源）
+    os.environ.setdefault("OPEN_PETS_ALLOWED_HOSTS", "127.0.0.1,localhost")
     from app.api.server import app
 
     attach_first_run_setup(app)  # 須在前端 catch-all 路由之前註冊

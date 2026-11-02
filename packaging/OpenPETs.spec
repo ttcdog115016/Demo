@@ -40,6 +40,9 @@ a = Analysis(
     # 執行時用不到、但會被間接拉進來的大型套件
     excludes=["tkinter", "matplotlib", "IPython", "pytest", "notebook", "jupyter", "PyQt5", "PySide6"],
     noarchive=False,
+    # ★ 2026-10-30：fpdf2 為 LGPL-3.0，以原始碼檔（_internal\fpdf\*.py）存放、不封進 PYZ，
+    #   使用者可自行替換為其他版本（LGPL 的可替換義務，見 THIRD_PARTY_NOTICES.txt）
+    module_collection_mode={"fpdf": "py"},
 )
 pyz = PYZ(a.pure)
 

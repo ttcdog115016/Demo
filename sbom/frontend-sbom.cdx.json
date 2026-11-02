@@ -127,7 +127,7 @@
         "value": "npm run sbom（scripts/gen-sbom.mjs，@cyclonedx/cyclonedx-npm）"
       }
     ],
-    "timestamp": "2026-10-30T06:40:49Z"
+    "timestamp": "2026-11-02T05:44:30Z"
   },
   "components": [
     {
@@ -3893,8 +3893,8 @@
     {
       "type": "library",
       "name": "axios",
-      "version": "1.18.1",
-      "bom-ref": "open-pets-frontend@2.0.0|axios@1.18.1",
+      "version": "1.20.0",
+      "bom-ref": "open-pets-frontend@2.0.0|axios@1.20.0",
       "author": "Matt Zabriskie",
       "description": "Promise based HTTP client for the browser and node.js",
       "licenses": [
@@ -3904,15 +3904,15 @@
           }
         }
       ],
-      "purl": "pkg:npm/axios@1.18.1",
+      "purl": "pkg:npm/axios@1.20.0",
       "externalReferences": [
         {
-          "url": "https://registry.npmjs.org/axios/-/axios-1.18.1.tgz",
+          "url": "https://registry.npmjs.org/axios/-/axios-1.20.0.tgz",
           "type": "distribution",
           "hashes": [
             {
               "alg": "SHA-512",
-              "content": "de74ef165be99fd66efd190752ab5cefff9a978529456e5acfbd5aa79cdc729e9ef1101813384c4de717f03cf5c160d8acfa54a01d4701010610012f52bed2f6"
+              "content": "afc68e87c8fd7062a981002aa73ad41e748873a6b9f58dd77ff72ff2ccb50eb1c29191f340612ea2ad6d01193aa92c8376d4064838296fd90596bbb33efae0c2"
             }
           ],
           "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
@@ -9434,8 +9434,8 @@
     {
       "type": "library",
       "name": "yaml",
-      "version": "2.8.1",
-      "bom-ref": "open-pets-frontend@2.0.0|yaml@2.8.1",
+      "version": "2.8.4",
+      "bom-ref": "open-pets-frontend@2.0.0|yaml@2.8.4",
       "author": "Eemeli Aro",
       "description": "JavaScript parser and stringifier for YAML",
       "licenses": [
@@ -9445,15 +9445,15 @@
           }
         }
       ],
-      "purl": "pkg:npm/yaml@2.8.1",
+      "purl": "pkg:npm/yaml@2.8.4",
       "externalReferences": [
         {
-          "url": "https://registry.npmjs.org/yaml/-/yaml-2.8.1.tgz",
+          "url": "https://registry.npmjs.org/yaml/-/yaml-2.8.4.tgz",
           "type": "distribution",
           "hashes": [
             {
               "alg": "SHA-512",
-              "content": "95c61c3315f63cef57306bc02642773ac34cc3effb14a7aceff8607ab1946162285aee63ffe610a9c66be499cf656cceb0406031b49b8924e7fddbffebd324a7"
+              "content": "9a5fc93ce8fd7ce40af113675a88c0ebb19b6740295c0525376510725c2fd9e5604e09fb3bd820f68ee969958a329e20d07de74cbb52f4b573864a4e1482b3a2"
             }
           ],
           "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
@@ -9596,7 +9596,7 @@
         "open-pets-frontend@2.0.0|@ant-design/icons@6.3.2",
         "open-pets-frontend@2.0.0|@tanstack/react-query@5.101.2",
         "open-pets-frontend@2.0.0|antd@6.5.0",
-        "open-pets-frontend@2.0.0|axios@1.18.1",
+        "open-pets-frontend@2.0.0|axios@1.20.0",
         "open-pets-frontend@2.0.0|crypto-js@4.2.0",
         "open-pets-frontend@2.0.0|echarts-for-react@3.0.6",
         "open-pets-frontend@2.0.0|echarts@6.1.0",
@@ -9611,7 +9611,7 @@
         "open-pets-frontend@2.0.0|react@19.2.7",
         "open-pets-frontend@2.0.0|recharts@3.9.2",
         "open-pets-frontend@2.0.0|xlsx@0.20.3",
-        "open-pets-frontend@2.0.0|yaml@2.8.1",
+        "open-pets-frontend@2.0.0|yaml@2.8.4",
         "open-pets-frontend@2.0.0|zustand@5.0.14"
       ]
     },
@@ -10243,7 +10243,7 @@
       "ref": "open-pets-frontend@2.0.0|attr-accept@2.2.5"
     },
     {
-      "ref": "open-pets-frontend@2.0.0|axios@1.18.1",
+      "ref": "open-pets-frontend@2.0.0|axios@1.20.0",
       "dependsOn": [
         "open-pets-frontend@2.0.0|follow-redirects@1.16.0",
         "open-pets-frontend@2.0.0|form-data@4.0.6",
@@ -10793,7 +10793,7 @@
       "ref": "open-pets-frontend@2.0.0|xlsx@0.20.3"
     },
     {
-      "ref": "open-pets-frontend@2.0.0|yaml@2.8.1"
+      "ref": "open-pets-frontend@2.0.0|yaml@2.8.4"
     },
     {
       "ref": "open-pets-frontend@2.0.0|zrender@6.1.0",
