@@ -42,7 +42,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
 import { SHOW_SYSTEM_LOG_TAB } from '../../config/featureFlags';
-import { saveSystemSettings, loadSystemSettings, DEFAULT_SESSION_TIMEOUT_MINUTES } from '../../utils/systemSettingsSync';
+import { saveSystemSettings, loadSystemSettings, DEFAULT_SESSION_TIMEOUT_MINUTES, getPasswordMinLength } from '../../utils/systemSettingsSync';
 import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
 import SystemLogCharts, { type SystemLogChartSelection } from './SystemLogCharts';
 import { filterLogsByRange, resolveRangeStartMs, type SystemLogRangeKey } from '../../utils/systemLogStats';
@@ -544,7 +544,7 @@ export default function SystemPreferences(): React.ReactElement
 	const handleSaveUser = (): void => 
 	{
 		userFormInstance.validateFields().then(
-			async (userFormValuesObj: { email: string; role: AccountRole; initialPassword?: string }) => 
+			async (userFormValuesObj: { email: string; role: AccountRole; initialPassword?: string; operatorPassword?: string }) =>
 			{
 				if (editingUserRecordObj) 
 				{
@@ -559,9 +559,15 @@ export default function SystemPreferences(): React.ReactElement
 						return;
 					}
 					const actionError = await runUserAction(
-						() => changeMemberRole(editingUserRecordObj.username, userFormValuesObj.role),
+						() => changeMemberRole(editingUserRecordObj.username, userFormValuesObj.role, userFormValuesObj.operatorPassword),
 						translate('admin.msg_role_updated', '角色已變更')
 					);
+					// ★ 2026-11-02（B4）：降級管理員時密碼確認失敗，標在密碼欄位上
+					if (actionError?.status === 403 && editingUserRecordObj.role === 'admin')
+					{
+						userFormInstance.setFields([{ name: 'operatorPassword', errors: [translate('admin.operator_password_wrong', '密碼不正確')] }]);
+						return;
+					}
 					if (actionError) return;
 					logSystemEvent('INFO', `變更帳號角色：${editingUserRecordObj.username} → ${getRoleDisplayName(userFormValuesObj.role)}`, operatorNameString);
 				} 
@@ -1065,14 +1071,14 @@ export default function SystemPreferences(): React.ReactElement
 								extra={translate('admin.initial_password_desc', '請將此密碼交給使用者，並提醒對方登入後至「個人設定」自行變更。')}
 								rules={[
 									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
-									{ min: 12, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') },
+									{ min: getPasswordMinLength(), message: translate('profile.password_min_length', '密碼長度至少需要 {{min}} 個字元', { min: getPasswordMinLength() }) },
 									{
-										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, // ★ 2026-10-29：不再限定可用字元（空白、句點等也可當特殊符號），後端只檢查長度 ≥ 12
+										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, // ★ 2026-10-29：不再限定可用字元（空白、句點等也可當特殊符號）；★ 2026-10-30：後端同一規則
 										message: translate('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
 									}
 								]}
 							>
-								<Input.Password placeholder={translate('profile.ph_new_password', '至少 12 個字元')} autoComplete="new-password" />
+								<Input.Password placeholder={translate('profile.ph_new_password', '至少 {{min}} 個字元', { min: getPasswordMinLength() })} autoComplete="new-password" />
 							</Form.Item>
 						)}
 
@@ -1090,6 +1096,22 @@ export default function SystemPreferences(): React.ReactElement
 								} 
 							/>
 						</Form.Item>
+
+						{/* ★ 2026-11-02（B4）：把管理員降級時，後端要求再次輸入「自己的」密碼確認（防止降級→重設密碼→升回以接管對方帳號） */}
+						{editingUserRecordObj?.role === 'admin' && (
+							<Form.Item noStyle shouldUpdate={(prevValues, nextValues) => prevValues.role !== nextValues.role}>
+								{({ getFieldValue }) => getFieldValue('role') !== 'admin' && (
+									<Form.Item
+										name="operatorPassword"
+										label={translate('admin.operator_password', '您的密碼（降級管理員須確認）')}
+										extra={translate('admin.operator_password_desc', '被降級的帳號 24 小時內不可被重設密碼。')}
+										rules={[{ required: true, message: translate('admin.operator_password_required', '請輸入您自己的密碼') }]}
+									>
+										<Input.Password autoComplete="current-password" />
+									</Form.Item>
+								)}
+							</Form.Item>
+						)}
 					</Form>
 				</Modal>
 
@@ -1122,16 +1144,16 @@ export default function SystemPreferences(): React.ReactElement
 							rules={
 								[
 									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
-									{ min: 12, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') },
+									{ min: getPasswordMinLength(), message: translate('profile.password_min_length', '密碼長度至少需要 {{min}} 個字元', { min: getPasswordMinLength() }) },
 									{
-										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, // ★ 2026-10-29：不再限定可用字元（空白、句點等也可當特殊符號），後端只檢查長度 ≥ 12
+										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, // ★ 2026-10-29：不再限定可用字元（空白、句點等也可當特殊符號）；★ 2026-10-30：後端同一規則
 										message: translate('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
 									}
 								]
 							}
 							hasFeedback
 						>
-							<Input.Password placeholder={translate('profile.ph_new_password', '至少 12 個字元')} size="large" />
+							<Input.Password placeholder={translate('profile.ph_new_password', '至少 {{min}} 個字元', { min: getPasswordMinLength() })} size="large" />
 						</Form.Item>
 
 						<Form.Item

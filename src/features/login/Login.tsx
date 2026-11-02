@@ -114,7 +114,9 @@ export default function Login(): React.ReactElement
 		try 
 		{
 			// ★ 2026-10-27：改由後端驗證帳密。帳號不存在／密碼錯誤／帳號停用，後端一律回 401 同一句話（避免探測帳號）；
-			//   180 秒內失敗 5 次鎖 15 分鐘（423，帶 Retry-After）；後端未設定 JWT 金鑰回 503。不回退到前端帳號。
+			//   180 秒內失敗 5 次鎖 15 分鐘；後端未設定 JWT 金鑰回 503。不回退到前端帳號。
+			// ★ 2026-11-02（B10）：鎖定期間後端同樣回 401（避免以 423 探測帳號是否存在），一般錯誤訊息已附上鎖定提示；
+			//   下方 423 分支保留給舊版後端。
 			const memberSession = await memberLogin(usernameInputString, formValuesObj.password || '');
 
 			executeLoginAction(

@@ -85,6 +85,7 @@ export interface MemberSession
 
 let accessTokenInMemory: string | null = null;
 // 每次登入成功加 1（換發 token 不變），供延後執行的登出判斷是否仍是同一次登入
+// ★ 2026-11-02：清除本機 Session（登出、逾期）時也加 1，讓登出前就開始的換發／運算在完成時能判斷「已不是同一次登入」
 let loginGeneration = 0;
 export const getLoginGeneration = (): number => loginGeneration;
 let sessionExpiredListener: (() => void) | null = null;
@@ -117,9 +118,78 @@ const storeTokens = (accessToken: string, refreshToken: string, username?: strin
 	if (username) writeSessionStorage(SESSION_USERNAME_STORAGE_KEY, username);
 };
 
+// ============================================================================
+// ★ 2026-11-02（F8）：複製分頁共用 refresh token
+// ============================================================================
+// 「複製分頁」會連 sessionStorage 一起複製，兩個分頁拿著同一張 refresh token。後端換發後舊 token 作廢，
+// 已換發的 token 再出現即視為外流、撤銷整個帳號的登入——兩個分頁各自換發就會一起被登出。
+// 換發成功後以 BroadcastChannel 通知：仍持有那張舊 token 的分頁（即複製出來的分頁）改用新 token。
+// 各自登入的分頁 token 不同，不受影響，也不會拿到別人的 token。
+export const AUTH_TAB_SYNC_CHANNEL_NAME = 'open-pets-auth-tab-sync';
+const TOKEN_REFRESH_LOCK_NAME = 'open-pets-token-refresh';
+// 換發完成後多握住鎖一下，讓通知先送到其他分頁，再讓排隊的分頁進來檢查
+const TOKEN_REFRESH_LOCK_HOLD_MS = 150;
+
+interface TokenRotatedMessage
+{
+	type: 'token-rotated';
+	previousRefreshToken: string;
+	refreshToken: string;
+	accessToken: string;
+}
+
+let tabSyncChannel: BroadcastChannel | null = null;
+const getTabSyncChannel = (): BroadcastChannel | null =>
+{
+	if (tabSyncChannel || typeof BroadcastChannel === 'undefined') return tabSyncChannel;
+	try
+	{
+		tabSyncChannel = new BroadcastChannel(AUTH_TAB_SYNC_CHANNEL_NAME);
+		tabSyncChannel.onmessage = (event: MessageEvent) =>
+		{
+			const message = event.data as Partial<TokenRotatedMessage> | null;
+			if (message?.type !== 'token-rotated' || !message.refreshToken || !message.accessToken) return;
+			// 只接手「同一張舊 token」的換發結果：本分頁是從那個分頁複製出來的同一次登入
+			if (!message.previousRefreshToken || message.previousRefreshToken !== getRefreshToken()) return;
+			storeTokens(message.accessToken, message.refreshToken);
+		};
+	}
+	catch
+	{
+		tabSyncChannel = null;
+	}
+	return tabSyncChannel;
+};
+
+const announceTokenRotation = (previousRefreshToken: string, refreshToken: string, accessToken: string): void =>
+{
+	try
+	{
+		getTabSyncChannel()?.postMessage({ type: 'token-rotated', previousRefreshToken, refreshToken, accessToken } satisfies TokenRotatedMessage);
+	}
+	catch
+	{
+		// 通知失敗不影響本分頁；複製出來的分頁之後換發會被後端拒絕，回登入頁重新登入
+	}
+};
+
+/** 瀏覽器支援 Web Locks（HTTPS 或 localhost）時，各分頁的換發依序進行；不支援時直接執行 */
+const withTokenRefreshLock = async <ResultType>(task: () => Promise<ResultType>): Promise<ResultType> =>
+{
+	const locks = typeof navigator !== 'undefined' ? (navigator as Navigator & { locks?: LockManager }).locks : undefined;
+	if (!locks?.request) return task();
+	return locks.request(TOKEN_REFRESH_LOCK_NAME, async () =>
+	{
+		const result = await task();
+		await new Promise((resolve) => setTimeout(resolve, TOKEN_REFRESH_LOCK_HOLD_MS));
+		return result;
+	}) as Promise<ResultType>;
+};
+
 /** 清除本機保存的 token（不呼叫後端） */
 export const clearMemberSession = (): void =>
 {
+	loginGeneration += 1;
 	accessTokenInMemory = null;
 	refreshTokenInMemory = null;
 	writeSessionStorage(REFRESH_TOKEN_STORAGE_KEY, null);
@@ -237,24 +307,42 @@ export const decodeJwtPayload = (jwtToken: string): Record<string, unknown> | nu
 // ============================================================================
 
 let refreshInFlightPromise: Promise<void> | null = null;
+// ★ 2026-11-02：進行中的換發是在哪一次登入開始的；登入世代不同時不共用、結果也不採用
+let refreshInFlightLoginGeneration = -1;
+
+/** ★ 2026-11-02：換發途中已登出或換人登入，舊的換發結果一律捨棄 */
+const SESSION_CHANGED_ERROR_MESSAGE = '登入狀態已變更，已捨棄先前的換發結果，請重新操作。';
 
 // ★ 2026-10-29：export 給 apiErrorInterceptor（處理 API 改須登入，全域 axios 也要帶 token、401 時換發）
 export const refreshTokensOnce = (): Promise<void> =>
 {
-	if (!refreshInFlightPromise)
+	if (!refreshInFlightPromise || refreshInFlightLoginGeneration !== loginGeneration)
 	{
-		refreshInFlightPromise = (async () =>
+		// ★ 2026-11-02：記下開始時的登入世代。換發完成前若已登出或換人登入，完成時不可 storeTokens()
+		//   蓋掉新登入的 token（或把已登出的 Session 寫回），被拒（401）時也不可清除新登入、通知登出。
+		const refreshStartLoginGeneration = loginGeneration;
+		getTabSyncChannel();
+		const refreshTokenAtRequest = getRefreshToken();
+		const thisRefreshPromise: Promise<void> = withTokenRefreshLock(async () =>
 		{
 			const refreshToken = getRefreshToken();
 			if (!refreshToken) throw new MemberApiError('登入已逾期，請重新登入。', 401, 'ERR_UNAUTHORIZED', null);
+			// ★ 2026-11-02（F8）：等待換發鎖期間，複製出來的另一個分頁已換發並通知、本分頁已改用新 token：
+			//   不再送出（拿舊 token 換發會被後端當成外流而撤銷整個帳號的登入）
+			if (refreshToken !== refreshTokenAtRequest && accessTokenInMemory) return;
+			// 狀態碼刻意給 null（不是 401），避免 authorizedRequest 把它當成 token 過期、改用新登入的 token 重送舊請求
+			const throwIfSessionChanged = () =>
+			{
+				if (loginGeneration !== refreshStartLoginGeneration) throw new MemberApiError(SESSION_CHANGED_ERROR_MESSAGE, null, 'ERR_SESSION_CHANGED', null);
+			};
+			let responseObj;
 			try
 			{
-				const responseObj = await memberHttpClient.post('/auth/refresh', { refresh_token: refreshToken });
-				const parsedTokens = parseTokenResponse(responseObj.data);
-				storeTokens(parsedTokens.accessToken, parsedTokens.refreshToken);
+				responseObj = await memberHttpClient.post('/auth/refresh', { refresh_token: refreshToken });
 			}
 			catch (refreshErrorValue)
 			{
+				throwIfSessionChanged();
 				const memberErrorObj = toMemberApiError(refreshErrorValue);
 				// 只有後端明確拒絕（401）才清除 Session；網路中斷不清，讓使用者稍後再試
 				if (memberErrorObj.status === 401)
@@ -264,7 +352,23 @@ export const refreshTokensOnce = (): Promise<void> =>
 				}
 				throw memberErrorObj;
 			}
-		})().finally(() => { refreshInFlightPromise = null; });
+			throwIfSessionChanged();
+			try
+			{
+				const parsedTokens = parseTokenResponse(responseObj.data);
+				storeTokens(parsedTokens.accessToken, parsedTokens.refreshToken);
+				announceTokenRotation(refreshToken, parsedTokens.refreshToken, parsedTokens.accessToken);
+			}
+			catch (parseErrorValue)
+			{
+				throw toMemberApiError(parseErrorValue);
+			}
+		}).finally(() =>
+		{
+			if (refreshInFlightPromise === thisRefreshPromise) refreshInFlightPromise = null;
+		});
+		refreshInFlightPromise = thisRefreshPromise;
+		refreshInFlightLoginGeneration = refreshStartLoginGeneration;
 	}
 	return refreshInFlightPromise;
 };
@@ -286,6 +390,7 @@ export const authorizedRequest = async <ResponseType>(requestConfig: AxiosReques
 		const firstMemberErrorObj = toMemberApiError(firstErrorValue);
 		// 401 可能是 access token 過期 → 換發後重送一次；變更密碼的 401 則是舊密碼錯誤，不換發
 		if (firstMemberErrorObj.status !== 401 || requestConfig.url === '/auth/password') throw firstMemberErrorObj;
+		const requestLoginGeneration = loginGeneration;
 		await refreshTokensOnce();
 		try
 		{
@@ -294,7 +399,8 @@ export const authorizedRequest = async <ResponseType>(requestConfig: AxiosReques
 		catch (secondErrorValue)
 		{
 			const secondMemberErrorObj = toMemberApiError(secondErrorValue);
-			if (secondMemberErrorObj.status === 401)
+			// ★ 2026-11-02：重送途中已登出或換人登入時，不可清除新登入的 Session
+			if (secondMemberErrorObj.status === 401 && loginGeneration === requestLoginGeneration)
 			{
 				// 換發成功卻仍 401：帳號已停用或刪除
 				clearMemberSession();
@@ -400,7 +506,7 @@ export const changeOwnPassword = async (oldPassword: string, newPassword: string
 	// 此端點的 401 代表「目前密碼錯誤」，不會自動換發重送；為免 access token 恰好過期（15 分鐘）被誤判為密碼錯誤，
 	// 送出前先換發一次（換發被拒時會丟出 401 並通知登出）
 	await refreshTokensOnce();
-	await authorizedRequest({ method: 'PATCH', url: '/auth/password', data: { current_password: oldPassword, new_password: newPassword } });
+	await authorizedRequest({ method: 'PATCH', url: '/auth/password', data: { current_password: oldPassword, new_password: newPassword, refresh_token: getRefreshToken() } });
 };
 
 // ============================================================================
@@ -465,9 +571,14 @@ export const createMemberAccount = async (username: string, password: string, ro
 };
 
 /** PATCH /users/{username}/role */
-export const changeMemberRole = async (username: string, role: FrontendRole): Promise<void> =>
+export const changeMemberRole = async (username: string, role: FrontendRole, currentPassword?: string): Promise<void> =>
 {
-	await authorizedRequest({ method: 'PATCH', url: `/users/${encodeUsername(username)}/role`, data: { role: toBackendRole(role) } });
+	// ★ 2026-11-02（B4）：把管理員降級時須帶操作者自己的密碼（current_password），後端再次驗證
+	await authorizedRequest({
+		method: 'PATCH',
+		url: `/users/${encodeUsername(username)}/role`,
+		data: { role: toBackendRole(role), ...(currentPassword ? { current_password: currentPassword } : {}) },
+	});
 };
 
 /** POST /users/{username}/reset-password（不能重設 admin 的密碼） */

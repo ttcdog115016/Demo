@@ -6,10 +6,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { AxiosError, AxiosHeaders, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import {
 	__memberHttpClientForTest, __resetMemberApiStateForTest, setSessionExpiredListener,
-	memberLogin, memberLogout, restoreMemberSession, listMemberAccounts, changeOwnPassword, createMemberAccount,
+	memberLogin, memberLogout, restoreMemberSession, refreshTokensOnce, getAccessToken, getLoginGeneration, listMemberAccounts, changeOwnPassword, createMemberAccount,
 	normalizeMemberAccount, parseBackendTimestamp, toFrontendRole, toBackendRole, decodeJwtPayload,
 	REFRESH_TOKEN_STORAGE_KEY, type MemberApiError,
 } from '../../api/authApi';
+import { cancelBackendRun } from '../../api/systemApi';
 
 type FakeRoute = (config: InternalAxiosRequestConfig) => { status: number; data?: unknown; headers?: Record<string, string> };
 
@@ -157,7 +158,22 @@ describe('access token 過期自動換發', () =>
 		await expect(changeOwnPassword('wrong', 'New@Password123')).rejects.toMatchObject({ status: 401 });
 		expect(requestLog.filter(logItem => logItem.url === '/auth/refresh')).toHaveLength(1);
 		expect(requestLog.filter(logItem => logItem.url === '/auth/password')).toHaveLength(1);
-		expect(requestLog.at(-1)?.data).toEqual({ current_password: 'wrong', new_password: 'New@Password123' });
+		// ★ 2026-10-30：帶上換發後的 refresh token，後端改密碼後只保留這一次登入
+		expect(requestLog.at(-1)?.data).toEqual({ current_password: 'wrong', new_password: 'New@Password123', refresh_token: 'r2' });
+	});
+
+	it('取消運算：帶 token 呼叫 POST /runs/{id}/cancel，回傳後端是否找到這一輪（★ 2026-10-31）', async () =>
+	{
+		installFakeBackend((config) =>
+		{
+			if (config.url === '/auth/login') return { status: 200, data: { access_token: makeJwt({ sub: 'u', role: 'user' }), refresh_token: 'r1', username: 'u', role: 'user' } };
+			if (config.url === '/runs/abc-123/cancel') return { status: 200, data: { cancelled: true } };
+			return { status: 404, data: {} };
+		});
+		await memberLogin('u', 'pw');
+		expect(await cancelBackendRun('abc-123')).toBe(true);
+		expect(requestLog.at(-1)).toMatchObject({ method: 'POST', url: '/runs/abc-123/cancel' });
+		expect(requestLog.at(-1)?.auth).toMatch(/^Bearer /);
 	});
 });
 
@@ -186,5 +202,90 @@ describe('重新整理接續登入與登出', () =>
 		await memberLogout();
 		expect(requestLog[0]).toMatchObject({ method: 'POST', url: '/auth/logout', data: { refresh_token: 'r5' } });
 		expect(window.sessionStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)).toBeNull();
+	});
+});
+
+// ★ 2026-11-02：登出或換人登入之前就開始的 token 換發，晚回來時不可覆蓋新的登入、也不可把新登入的人登出
+describe('換發途中登出／換人登入', () =>
+{
+	/** 假後端：/auth/refresh 先掛著，由測試決定何時回應 */
+	const installDeferredRefreshBackend = (refreshResponse: { status: number; data?: unknown }) =>
+	{
+		let releaseRefresh: () => void = () => {};
+		const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+		__memberHttpClientForTest.defaults.adapter = async (config) =>
+		{
+			const bodyValue = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+			requestLog.push({ method: (config.method || 'get').toUpperCase(), url: config.url || '', data: bodyValue, auth: config.headers?.Authorization as string | undefined });
+			let status = 200;
+			let data: unknown = {};
+			if (config.url === '/auth/login') data = { access_token: makeJwt({ sub: bodyValue.username, role: 'user' }), refresh_token: `r-${bodyValue.username}`, username: bodyValue.username, role: 'user' };
+			if (config.url === '/auth/refresh') { await refreshGate; ({ status, data } = { data: {}, ...refreshResponse }); }
+			const responseObj: AxiosResponse = { status, statusText: String(status), data, headers: new AxiosHeaders({}), config };
+			if (status >= 200 && status < 300) return responseObj;
+			throw new AxiosError(`HTTP ${status}`, 'ERR_BAD_RESPONSE', config, null, responseObj);
+		};
+		return () => releaseRefresh();
+	};
+
+	it('換人登入後，舊的換發結果不覆蓋新使用者的 token', async () =>
+	{
+		const releaseRefresh = installDeferredRefreshBackend({ status: 200, data: { access_token: makeJwt({ sub: 'old', role: 'user' }), refresh_token: 'r-old-rotated' } });
+		await memberLogin('old', 'pw');
+		const staleRefresh = refreshTokensOnce();
+		staleRefresh.catch(() => undefined);
+		await memberLogout();
+		await memberLogin('new', 'pw');
+		const newAccessToken = getAccessToken();
+		releaseRefresh();
+		await expect(staleRefresh).rejects.toBeTruthy();
+		expect(getAccessToken()).toBe(newAccessToken);
+		expect(window.sessionStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)).toBe('r-new');
+	});
+
+	it('登出後，舊的換發結果不會把 token 寫回本機', async () =>
+	{
+		const releaseRefresh = installDeferredRefreshBackend({ status: 200, data: { access_token: makeJwt({ sub: 'old', role: 'user' }), refresh_token: 'r-old-rotated' } });
+		await memberLogin('old', 'pw');
+		const generationBeforeLogout = getLoginGeneration();
+		const staleRefresh = refreshTokensOnce();
+		staleRefresh.catch(() => undefined);
+		await memberLogout();
+		expect(getLoginGeneration()).not.toBe(generationBeforeLogout);
+		releaseRefresh();
+		await expect(staleRefresh).rejects.toBeTruthy();
+		expect(getAccessToken()).toBeNull();
+		expect(window.sessionStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)).toBeNull();
+	});
+
+	it('換人登入後，舊的換發被拒（401）不清除新登入、也不通知登出', async () =>
+	{
+		const sessionExpiredSpy = vi.fn();
+		setSessionExpiredListener(sessionExpiredSpy);
+		const releaseRefresh = installDeferredRefreshBackend({ status: 401, data: { error_code: 'ERR_UNAUTHORIZED', message: 'refresh token 已失效' } });
+		await memberLogin('old', 'pw');
+		const staleRefresh = refreshTokensOnce();
+		staleRefresh.catch(() => undefined);
+		await memberLogin('new', 'pw');
+		const newAccessToken = getAccessToken();
+		releaseRefresh();
+		await expect(staleRefresh).rejects.toBeTruthy();
+		expect(sessionExpiredSpy).not.toHaveBeenCalled();
+		expect(getAccessToken()).toBe(newAccessToken);
+		expect(window.sessionStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)).toBe('r-new');
+	});
+
+	it('新登入之後再換發，不會沿用舊登入那一次尚未完成的換發', async () =>
+	{
+		const releaseRefresh = installDeferredRefreshBackend({ status: 200, data: { access_token: makeJwt({ sub: 'x', role: 'user' }), refresh_token: 'r-rotated' } });
+		await memberLogin('old', 'pw');
+		const staleRefresh = refreshTokensOnce();
+		staleRefresh.catch(() => undefined);
+		await memberLogin('new', 'pw');
+		const freshRefresh = refreshTokensOnce();
+		expect(freshRefresh).not.toBe(staleRefresh);
+		releaseRefresh();
+		await expect(freshRefresh).resolves.toBeUndefined();
+		expect(window.sessionStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)).toBe('r-rotated');
 	});
 });

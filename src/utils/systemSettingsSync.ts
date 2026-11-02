@@ -12,8 +12,14 @@ import { fetchSystemSettings, putSystemSettings, type SystemSettings } from '../
 
 export const DEFAULT_SESSION_TIMEOUT_MINUTES = 15;
 
+// ★ 2026-10-30：密碼長度下限以後端為準（GET /settings 一併回傳），避免後端調整後前端仍寫死 12
+export const DEFAULT_PASSWORD_MIN_LENGTH = 12;
+let passwordMinLength = DEFAULT_PASSWORD_MIN_LENGTH;
+export const getPasswordMinLength = (): number => passwordMinLength;
+
 const applySettingsToWorkspace = (settingsObj: SystemSettings): void =>
 {
+	if (settingsObj.password_min_length && settingsObj.password_min_length > 0) passwordMinLength = settingsObj.password_min_length;
 	useWorkspaceStore.setState({
 		sessionTimeout: settingsObj.session_timeout_minutes || DEFAULT_SESSION_TIMEOUT_MINUTES,
 	} as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>);

@@ -20,13 +20,8 @@ import { useUIStore } from '../../store/useUIStore';
 
 import { scaleFontSize } from '../../utils/fontScale';
 import { calculatePasswordStrength, toStrengthBarPercent, PASSWORD_STRENGTH_WEAK_MAX, PASSWORD_STRENGTH_MEDIUM_MAX } from '../../utils/passwordStrength';
+import { getPasswordMinLength } from '../../utils/systemSettingsSync';
 const { Title, Text } = Typography;
-
-/**
- * 密碼強度評估與長度常數宣告
- * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
- */
-const MIN_PASSWORD_LENGTH_LIMIT = 12;
 
 /**
  * 函數名稱: ProfileSettings
@@ -310,9 +305,9 @@ export default function ProfileSettings(): React.ReactElement
 							rules={
 								[
 									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
-									{ min: MIN_PASSWORD_LENGTH_LIMIT, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') }, 
+									{ min: getPasswordMinLength(), message: translate('profile.password_min_length', '密碼長度至少需要 {{min}} 個字元', { min: getPasswordMinLength() }) }, 
 									{
-										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, // ★ 2026-10-29：不再限定可用字元（空白、句點等也可當特殊符號），後端只檢查長度 ≥ 12
+										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, // ★ 2026-10-29：不再限定可用字元（空白、句點等也可當特殊符號）；★ 2026-10-30：後端同一規則
 										message: translate('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
 									},
 									({ getFieldValue }) => (
@@ -334,7 +329,7 @@ export default function ProfileSettings(): React.ReactElement
 							}
 							hasFeedback
 						>
-							<Input.Password placeholder={translate('profile.ph_new_password', '至少 12 個字元')} size="large" />
+							<Input.Password placeholder={translate('profile.ph_new_password', '至少 {{min}} 個字元', { min: getPasswordMinLength() })} size="large" />
 						</Form.Item>
 
 						{/* 確認新密碼 */}
