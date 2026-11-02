@@ -1,0 +1,720 @@
+diff --git a/app/api/auth_router.py b/app/api/auth_router.py
+index 38589f2..fed1aa3 100644
+--- a/app/api/auth_router.py
++++ b/app/api/auth_router.py
+@@ -8,7 +8,6 @@ token 一經簽出內容就固定了，若照它判斷，降級與停權要等
+ """
+ 
+ from fastapi import APIRouter, Depends
+-from fastapi.responses import JSONResponse
+ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+ from pydantic import BaseModel, Field
+ 
+@@ -123,19 +122,10 @@ def login(req: LoginRequest, _: None = Depends(ensure_auth_enabled)):
+             f"登入失敗（帳號鎖定中，約 {max(1, -(-int(result.retry_after or 0) // 60))} 分鐘後解除）",
+             req.username,
+         )
+-        # 直接組回應而非拋例外：423 必須帶 Retry-After 標頭告知還要等多久，
+-        # 統一的例外處理器只負責主體，帶不了標頭。
+-        return JSONResponse(
+-            status_code=423,
+-            headers={"Retry-After": str(result.retry_after)},
+-            content={
+-                "error_code": "ERR_ACCOUNT_LOCKED",
+-                "message": (
+-                    f"連續登入失敗次數過多，帳號已暫時鎖定，"
+-                    f"請於 {result.retry_after} 秒後再試。"
+-                ),
+-            },
+-        )
++        # ★ TTC 2026-11-02（B10）：對外與帳密錯誤回同一個 401、同一句話、不帶 Retry-After。
++        #   原本回 423＋Retry-After，而不存在的帳號永遠是 401，錯 5 次就能分辨帳號是否存在。
++        #   鎖定原因與剩餘時間只記在稽核紀錄與系統維運日誌（管理者看得到）。
++        raise PetsError("ERR_UNAUTHORIZED", _CREDENTIALS_MESSAGE)
+ 
+     if not result.ok:
+         # 失敗也要留痕：只記成功的話，日誌上看得到誰進得來，卻看不到有人正在反覆嘗試。
+diff --git a/app/api/processing_guard.py b/app/api/processing_guard.py
+index 375e2c6..0bb1669 100644
+--- a/app/api/processing_guard.py
++++ b/app/api/processing_guard.py
+@@ -26,6 +26,7 @@ API_PREFIX = "/api/v1"
+ def require_processing_user(request: Request, user: dict = Depends(get_current_user)) -> dict:
+     """處理端點的登入要求；把帳號記在 request.state，供中介層寫日誌與 run。"""
+     request.state.processing_user = user["username"]
++    request.state.processing_user_id = user.get("user_id")  # ★ TTC 2026-11-02（B5）
+     return user
+ 
+ 
+@@ -58,7 +59,7 @@ def register_processing_logging(app: FastAPI) -> None:
+                 store.add_log("INFO", f"使用者已取消運算（耗時 {elapsed_seconds:.1f} 秒）", source, username)
+             elif 200 <= status < 300:
+                 run_id = uuid.uuid4().hex
+-                store.add_run(run_id, username, source, status)
++                store.add_run(run_id, username, source, status, user_id=getattr(request.state, "processing_user_id", None))
+                 response.headers["X-Run-Id"] = run_id
+                 store.add_log("INFO", f"後端 API 呼叫成功（HTTP {status}，耗時 {elapsed_seconds:.1f} 秒）", source, username)
+             else:
+diff --git a/app/api/system_router.py b/app/api/system_router.py
+index 2bcfb2e..326caff 100644
+--- a/app/api/system_router.py
++++ b/app/api/system_router.py
+@@ -15,7 +15,11 @@ processing_guard）；前端只回報後端看不到的事件（閒置登出、
+ """
+ 
+ import json
++import threading
++import time
++import unicodedata
+ import uuid
++from collections import deque
+ from typing import Literal
+ 
+ from fastapi import APIRouter, Depends, Query
+@@ -36,7 +40,8 @@ def list_history(all: bool = False, user: dict = Depends(get_current_user)):
+     """處理紀錄（新的在前）。一般使用者只看得到自己的；admin 帶 all=1 列出所有人的。"""
+     if all and user["role"] != "admin":
+         raise PetsError("ERR_FORBIDDEN", "權限不足，列出所有人的紀錄僅限 admin。")
+-    records = get_system_store().list_history(None if all else user["username"])
++    # ★ TTC 2026-11-02（B5）：以 user_id 篩選，同名的新帳號看不到前一人的紀錄
++    records = get_system_store().list_history(None if all else user["user_id"])
+     return {"records": records, "total": len(records)}
+ 
+ 
+@@ -70,14 +75,14 @@ def add_history(record: dict, user: dict = Depends(get_current_user)):
+     store = get_system_store()
+     _require_storable_record(record)
+     run_id = record.get("runId")
+-    if not isinstance(run_id, str) or not store.consume_run(run_id, user["username"]):
++    if not isinstance(run_id, str) or not store.consume_run(run_id, user["username"], user["user_id"]):
+         raise PetsError("ERR_RUN_INVALID", "找不到對應的處理執行紀錄（runId 不存在、不是本帳號、已過期或已被使用），無法存檔。")
+     record_id = record.get("id")
+     if not isinstance(record_id, str) or not record_id:
+         record_id = str(uuid.uuid4())
+     payload = {**record, "id": record_id, "operator": user["username"], "operatorRole": user["role"]}
+     payload["integrity"] = sign_record(payload)
+-    if not store.add_history(user["username"], record_id, payload):
++    if not store.add_history(user["username"], record_id, payload, user_id=user["user_id"]):
+         raise PetsError("ERR_RECORD_EXISTS", "這筆處理紀錄已存在，不能覆寫。")
+     return payload
+ 
+@@ -89,7 +94,7 @@ def verify_history(record_id: str, user: dict = Depends(get_current_user)):
+     找不到（或不是本人的紀錄）一律回 missing，不透露紀錄是否存在。
+     """
+     found = get_system_store().get_history(record_id)
+-    if found is None or (found[0] != user["username"] and user["role"] != "admin"):
++    if found is None or (found[0] != user["user_id"] and user["role"] != "admin"):
+         return {"status": "missing", "fingerprintMatches": None, "signatureValid": None}
+     return verify_record(found[1])
+ 
+@@ -110,12 +115,37 @@ class LogBatch(BaseModel):
+     entries: list[LogEntry] = Field(..., max_length=50)
+ 
+ 
++# ★ TTC 2026-11-02（B8）：每個帳號每分鐘最多寫入的前端日誌筆數（前端一事件一請求，正常操作遠低於此）
++CLIENT_LOG_ENTRIES_PER_MINUTE = 300
++_client_log_windows: dict[str, deque] = {}
++_client_log_lock = threading.Lock()
++_INVISIBLE_CHARS = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff"))
++
++
++def _normalized_event(event: str) -> str:
++    """保留字比對前先正規化：全形半形統一、去掉零寬字元與前後空白，避免加個看不見的字元就繞過。"""
++    return unicodedata.normalize("NFKC", event).translate(_INVISIBLE_CHARS).strip()
++
++
++def _charge_client_log_quota(username: str, count: int) -> None:
++    now = time.monotonic()
++    with _client_log_lock:
++        window = _client_log_windows.setdefault(username, deque())
++        while window and now - window[0][0] > 60:
++            window.popleft()
++        used = sum(n for _, n in window)
++        if used + count > CLIENT_LOG_ENTRIES_PER_MINUTE:
++            raise PetsError("ERR_RATE_LIMITED", "日誌寫入過於頻繁，請稍後再試。")
++        window.append((now, count))
++
++
+ @router.post("/system-logs", status_code=201)
+ def add_system_logs(batch: LogBatch, user: dict = Depends(get_current_user)):
+     """批次寫入前端回報的事件（閒置登出、設定變更、帳號管理等），origin=client。"""
+     for entry in batch.entries:
+-        if entry.event.startswith(RESERVED_EVENT_PREFIXES):
++        if _normalized_event(entry.event).startswith(RESERVED_EVENT_PREFIXES):
+             raise PetsError("ERR_INVALID_PARAM", f"「{entry.event[:20]}…」屬於後端自行記錄的事件，前端不得回報。")
++    _charge_client_log_quota(user["username"], len(batch.entries))
+     count = get_system_store().add_logs([e.model_dump() for e in batch.entries], user["username"], origin="client")
+     return {"saved": count}
+ 
+@@ -149,12 +179,12 @@ class PreferencesUpdate(BaseModel):
+ @router.get("/preferences")
+ def get_preferences(user: dict = Depends(get_current_user)):
+     """目前帳號的介面偏好；沒存過回空物件（前端用預設值）。"""
+-    return get_system_store().get_preferences(user["username"])
++    return get_system_store().get_preferences(user["username"], user["user_id"])
+ 
+ 
+ @router.put("/preferences")
+ def update_preferences(req: PreferencesUpdate, user: dict = Depends(get_current_user)):
+-    return get_system_store().save_preferences(user["username"], req.model_dump(exclude_unset=True))
++    return get_system_store().save_preferences(user["username"], req.model_dump(exclude_unset=True), user["user_id"])
+ 
+ 
+ # ── 系統設定 ────────────────────────────────────────────────────────────────
+diff --git a/app/api/users_router.py b/app/api/users_router.py
+index 8e92ed5..15fa57c 100644
+--- a/app/api/users_router.py
++++ b/app/api/users_router.py
+@@ -31,6 +31,8 @@ class CreateUserRequest(BaseModel):
+ 
+ class ChangeRoleRequest(BaseModel):
+     role: str = Field(..., description=_ROLE_HELP)
++    # ★ TTC 2026-11-02（B4）：把 admin 降級時須帶操作者自己的密碼再次確認
++    current_password: str | None = Field(None, max_length=MAX_PASSWORD_LENGTH)
+ 
+ 
+ class ResetPasswordRequest(BaseModel):
+@@ -80,9 +82,24 @@ def change_role(
+     if username == admin["username"]:
+         raise PetsError("ERR_FORBIDDEN", "不得變更自己的角色。")
+ 
+-    updated = get_auth_manager().set_role(username, req.role)
++    manager = get_auth_manager()
++    target = manager.get_user(username)
++    demoting_admin = (
++        target is not None and target["role"] == "admin" and req.role.strip().lower() != "admin"
++    )
++    if demoting_admin:
++        # ★ TTC 2026-11-02（B4）：原本可「降級另一位 admin → 重設其密碼 → 升回 admin」接管對方帳號。
++        #   降級 admin 須再次輸入自己的密碼（驗錯計入自己的登入鎖定），且被降級者 24 小時內不可被重設密碼。
++        if not req.current_password or not manager.authenticate(admin["username"], req.current_password).ok:
++            get_audit_logger().log_operation(
++                "demote_admin", "failed", {"target": username, "reason": "reauth_failed"},
++                user=admin["username"],
++            )
++            raise PetsError("ERR_FORBIDDEN", "降級管理員須輸入您自己的密碼確認，密碼不正確。")
++
++    updated = manager.set_role(username, req.role)
+     get_audit_logger().log_operation(
+-        "change_role",
++        "demote_admin" if demoting_admin else "change_role",
+         "success",
+         {"target": username, "new_role": updated["role"]},
+         user=admin["username"],
+@@ -106,10 +123,11 @@ def reset_password(
+     target = manager.get_user(username)
+     if target is None:
+         raise PetsError("ERR_NOT_FOUND", f"使用者 [{username}] 不存在。")
+-    if target["role"] == "admin":
++    # ★ TTC 2026-11-02（B4）：24 小時內曾是 admin 者同樣不可重設，堵住「先降級再重設」
++    if manager.was_admin_recently(username):
+         raise PetsError(
+             "ERR_FORBIDDEN",
+-            "不得重設管理員的密碼；管理員請以 PATCH /auth/password 自行變更。",
++            "不得重設管理員（含 24 小時內被降級者）的密碼；管理員請以 PATCH /auth/password 自行變更。",
+         )
+ 
+     manager.reset_password(username, req.new_password)
+diff --git a/app/core/errors.py b/app/core/errors.py
+index 61e439b..ab37ebd 100644
+--- a/app/core/errors.py
++++ b/app/core/errors.py
+@@ -70,6 +70,8 @@ ERROR_HTTP_STATUS: dict[str, int] = {
+     # 前處理：清單的欄位名稱資料裡沒有、或功能與該欄的資料型別對不上
+     "ERR_PREPROCESS_COLUMN_NOT_FOUND": 422,
+     "ERR_PREPROCESS_TYPE_MISMATCH": 422,
++    # ★ TTC 2026-11-02（B8）：寫入頻率超過上限
++    "ERR_RATE_LIMITED": 429,
+     # ★ TTC 2026-10-31：使用者取消運算（沿用 nginx 的 499「用戶端關閉請求」）
+     "ERR_CANCELLED": 499,
+     # 500：伺服器自身的問題，呼叫方改請求也修不了
+@@ -94,6 +96,7 @@ HTTP_STATUS_EXIT_CODE: dict[int, int] = {
+     403: 9,
+     409: 10,
+     423: 11,
++    429: 14,
+     499: 13,
+ }
+ 
+@@ -114,6 +117,7 @@ DEFAULT_CODE_BY_STATUS: dict[int, str] = {
+     415: "ERR_UNSUPPORTED_FILE_FORMAT",
+     422: "ERR_VALIDATION_FAILED",
+     423: "ERR_ACCOUNT_LOCKED",
++    429: "ERR_RATE_LIMITED",
+     500: "ERR_INTERNAL",
+ }
+ 
+diff --git a/app/governance/auth.py b/app/governance/auth.py
+index 658349b..19c66ad 100644
+--- a/app/governance/auth.py
++++ b/app/governance/auth.py
+@@ -6,6 +6,7 @@ import math
+ import os
+ import secrets
+ import sqlite3
++import uuid
+ import warnings
+ from dataclasses import dataclass
+ from datetime import UTC, datetime, timedelta
+@@ -26,6 +27,8 @@ ROLES = ("admin", "user")
+ LOGIN_MAX_ATTEMPTS = 5
+ LOGIN_ATTEMPT_WINDOW_SECONDS = 180
+ LOGIN_LOCKOUT_SECONDS = 900
++# ★ TTC 2026-11-02（B4）：admin 被降級後多久內仍視同 admin（不可被他人重設密碼）
++ADMIN_DEMOTION_COOLDOWN_HOURS = 24
+ 
+ # ★ TTC 2026-10-28：密碼長度下限（與前端「至少 12 個字元」一致），可用環境變數 OPEN_PETS_PASSWORD_MIN_LENGTH 調整。
+ #   建立帳號（含 CLI create-user）、本人變更密碼、管理者重設密碼一律檢查；
+@@ -188,6 +191,23 @@ class AuthManager:
+                 "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_username "
+                 "ON refresh_tokens (username)"
+             )
++            # ★ TTC 2026-11-02：舊資料庫補欄位。
++            #   demoted_at（B4）：admin 被降級的時間，近期曾是 admin 者不可被重設密碼。
++            #   user_id（B5）：不可變的使用者識別碼；處理紀錄等改綁 user_id，刪除後建立同名帳號看不到前一人的資料。
++            columns = {row[1] for row in cursor.execute("PRAGMA table_info(users)")}
++            if "demoted_at" not in columns:
++                cursor.execute("ALTER TABLE users ADD COLUMN demoted_at TEXT")
++            if "user_id" not in columns:
++                cursor.execute("ALTER TABLE users ADD COLUMN user_id TEXT")
++            for (username,) in cursor.execute(
++                "SELECT username FROM users WHERE user_id IS NULL"
++            ).fetchall():
++                cursor.execute(
++                    "UPDATE users SET user_id = ? WHERE username = ?", (uuid.uuid4().hex, username)
++                )
++            cursor.execute(
++                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_id ON users (user_id)"
++            )
+             conn.commit()
+ 
+     def _hash_password(self, password: str, salt: bytes | None = None) -> str:
+@@ -267,9 +287,9 @@ class AuthManager:
+         try:
+             with sqlite3.connect(self.db_path) as conn:
+                 conn.execute(
+-                    "INSERT INTO users (username, password_hash, role, is_active, created_at) "
+-                    "VALUES (?, ?, ?, 1, ?)",
+-                    (username, pwd_hash, role, _to_text(_now())),
++                    "INSERT INTO users (username, password_hash, role, is_active, created_at, user_id) "
++                    "VALUES (?, ?, ?, 1, ?, ?)",
++                    (username, pwd_hash, role, _to_text(_now()), uuid.uuid4().hex),
+                 )
+                 conn.commit()
+         except sqlite3.IntegrityError as exc:
+@@ -281,10 +301,21 @@ class AuthManager:
+         """回傳單一帳號的公開欄位（不含密碼雜湊）；帳號不存在時回傳 None。"""
+         with sqlite3.connect(self.db_path) as conn:
+             row = conn.execute(
+-                "SELECT username, role, is_active, created_at FROM users WHERE username = ?",
++                "SELECT username, role, is_active, created_at, user_id FROM users WHERE username = ?",
+                 (username,),
+             ).fetchone()
+-        return self._as_public(row) if row else None
++        # ★ TTC 2026-11-02（B5）：附上不可變的 user_id，供處理紀錄、偏好以 user_id 歸屬
++        return {**self._as_public(row[:4]), "user_id": row[4]} if row else None
++
++    def account_ids_with_creation_ms(self) -> dict[str, tuple[str, int]]:
++        """帳號 → (user_id, 建立時間 epoch ms)；供系統資料庫舊紀錄補 user_id（★ TTC 2026-11-02 B5）。"""
++        with sqlite3.connect(self.db_path) as conn:
++            rows = conn.execute("SELECT username, user_id, created_at FROM users").fetchall()
++        result = {}
++        for username, user_id, created_at in rows:
++            created = _from_text(created_at)
++            result[username] = (user_id, int(created.timestamp() * 1000) if created else 0)
++        return result
+ 
+     def list_users(self) -> list[dict]:
+         """回傳所有帳號的公開欄位，依帳號排序。密碼雜湊一律不出現在回傳值裡。
+@@ -512,12 +543,37 @@ class AuthManager:
+         role = self._normalize_role(role)
+         with sqlite3.connect(self.db_path) as conn:
+             self._require_user(conn, username)
++            # ★ TTC 2026-11-02（B4）：admin 降為 user 時記下時間（見 was_admin_recently）
+             conn.execute(
+-                "UPDATE users SET role = ? WHERE username = ?", (role, username)
++                "UPDATE users SET demoted_at = CASE WHEN role = 'admin' AND ? <> 'admin' THEN ? "
++                "ELSE demoted_at END, role = ? WHERE username = ?",
++                (role, _to_text(_now()), role, username),
+             )
+             conn.commit()
+         return self.get_user(username)
+ 
++    def was_admin_recently(self, username: str, hours: int = ADMIN_DEMOTION_COOLDOWN_HOURS) -> bool:
++        """目前是 admin，或在最近 hours 小時內被降級過（★ TTC 2026-11-02 B4）。"""
++        with sqlite3.connect(self.db_path) as conn:
++            row = conn.execute(
++                "SELECT role, demoted_at FROM users WHERE username = ?", (username,)
++            ).fetchone()
++        if row is None:
++            return False
++        role, demoted_at = row
++        demoted = _from_text(demoted_at)
++        return role == "admin" or (
++            demoted is not None and _now() - demoted < timedelta(hours=hours)
++        )
++
++    def get_user_id(self, username: str) -> str | None:
++        """不可變的使用者識別碼（★ TTC 2026-11-02 B5）；帳號不存在回傳 None。"""
++        with sqlite3.connect(self.db_path) as conn:
++            row = conn.execute(
++                "SELECT user_id FROM users WHERE username = ?", (username,)
++            ).fetchone()
++        return row[0] if row else None
++
+     def set_active(self, username: str, is_active: bool) -> dict:
+         """停用或恢復帳號，回傳變更後的帳號資料。
+ 
+diff --git a/app/governance/system_store.py b/app/governance/system_store.py
+index 2ca4084..b794904 100644
+--- a/app/governance/system_store.py
++++ b/app/governance/system_store.py
+@@ -101,62 +101,91 @@ class SystemStore:
+             columns = {row["name"] for row in conn.execute("PRAGMA table_info(system_logs)").fetchall()}
+             if "origin" not in columns:
+                 conn.execute("ALTER TABLE system_logs ADD COLUMN origin TEXT NOT NULL DEFAULT 'client'")
++            # ★ TTC 2026-11-02（B5）：處理紀錄、執行紀錄、偏好改綁不可變的 user_id（見 auth.users.user_id）。
++            #   原本以帳號名稱為鍵：刪除帳號後建立同名帳號，就看得到前一人的處理紀錄（檔名、雜湊、參數）。
++            for table in ("history", "runs", "user_preferences"):
++                table_columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
++                if "user_id" not in table_columns:
++                    conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT")
++            conn.execute("CREATE INDEX IF NOT EXISTS idx_history_user_id ON history (user_id, created_at)")
++
++    def backfill_user_ids(self, accounts: dict[str, tuple[str, int]]) -> None:
++        """舊資料補上 user_id（★ TTC 2026-11-02 B5）。
++
++        accounts：帳號 → (user_id, 帳號建立時間 ms)。只認領帳號建立之後的紀錄——
++        建立前的同名紀錄屬於之前被刪除的另一個人，維持 NULL（只有 admin 列出全部時看得到）。
++        """
++        with self._connect() as conn:
++            for username, (user_id, created_ms) in accounts.items():
++                for table in ("history", "runs"):
++                    conn.execute(
++                        f"UPDATE {table} SET user_id = ? WHERE user_id IS NULL AND username = ? AND created_at >= ?",
++                        (user_id, username, created_ms),
++                    )
++                conn.execute(
++                    "UPDATE user_preferences SET user_id = ? WHERE user_id IS NULL AND username = ? AND updated_at >= ?",
++                    (user_id, username, created_ms),
++                )
+ 
+     # ── 處理紀錄 ──────────────────────────────────────────────────────────
+-    def add_history(self, username: str, record_id: str, payload: dict) -> bool:
++    def add_history(self, username: str, record_id: str, payload: dict, user_id: str | None = None) -> bool:
+         """新增一筆處理紀錄；id 已存在時不覆寫、回 False。超過上限時刪掉該使用者最舊的。
+ 
+         排序時間一律用伺服器時間（前端給的時間不可信，未來的時間會讓紀錄永遠不被裁掉）。
+         """
+         with self._connect() as conn:
+             inserted = conn.execute(
+-                "INSERT OR IGNORE INTO history (id, username, created_at, payload_json) VALUES (?, ?, ?, ?)",
+-                (record_id, username, _now_ms(), json.dumps(payload, ensure_ascii=False)),
++                "INSERT OR IGNORE INTO history (id, username, created_at, payload_json, user_id) VALUES (?, ?, ?, ?, ?)",
++                (record_id, username, _now_ms(), json.dumps(payload, ensure_ascii=False), user_id),
+             ).rowcount
+             if not inserted:
+                 return False
+             conn.execute(
+-                """DELETE FROM history WHERE username = ? AND id NOT IN (
+-                       SELECT id FROM history WHERE username = ? ORDER BY created_at DESC LIMIT ?)""",
+-                (username, username, MAX_HISTORY_PER_USER),
++                """DELETE FROM history WHERE user_id IS ? AND username = ? AND id NOT IN (
++                       SELECT id FROM history WHERE user_id IS ? AND username = ? ORDER BY created_at DESC LIMIT ?)""",
++                (user_id, username, user_id, username, MAX_HISTORY_PER_USER),
+             )
+         return True
+ 
+     # ── 處理執行紀錄（runs） ──────────────────────────────────────────────
+-    def add_run(self, run_id: str, username: str, endpoint: str, status: int) -> None:
++    def add_run(self, run_id: str, username: str, endpoint: str, status: int, user_id: str | None = None) -> None:
+         with self._connect() as conn:
+             conn.execute(
+-                "INSERT INTO runs (run_id, username, endpoint, status, created_at) VALUES (?, ?, ?, ?, ?)",
+-                (run_id, username, endpoint, status, _now_ms()),
++                "INSERT INTO runs (run_id, username, endpoint, status, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?)",
++                (run_id, username, endpoint, status, _now_ms(), user_id),
+             )
+             conn.execute("DELETE FROM runs WHERE created_at < ?", (_now_ms() - 7 * RUN_VALID_MS,))
+ 
+-    def consume_run(self, run_id: str, username: str) -> bool:
+-        """處理紀錄引用一筆 run：須為同帳號、成功（2xx）、未過期、未被引用過；成功時標記為已用。"""
++    def consume_run(self, run_id: str, username: str, user_id: str | None = None) -> bool:
++        """處理紀錄引用一筆 run：須為同帳號、成功（2xx）、未過期、未被引用過；成功時標記為已用。
++
++        ★ TTC 2026-11-02（B5）：有 user_id 的 run 必須同一個 user_id（同名的新帳號不算同一人）。
++        """
+         with self._connect() as conn:
+             return conn.execute(
+                 """UPDATE runs SET used = 1
+-                   WHERE run_id = ? AND username = ? AND used = 0 AND status BETWEEN 200 AND 299 AND created_at >= ?""",
+-                (run_id, username, _now_ms() - RUN_VALID_MS),
++                   WHERE run_id = ? AND username = ? AND (user_id IS NULL OR user_id = ?)
++                     AND used = 0 AND status BETWEEN 200 AND 299 AND created_at >= ?""",
++                (run_id, username, user_id, _now_ms() - RUN_VALID_MS),
+             ).rowcount == 1
+ 
+-    def get_history(self, record_id: str) -> tuple[str, dict] | None:
+-        """（擁有者帳號, 紀錄內容）；不存在時回 None。"""
++    def get_history(self, record_id: str) -> tuple[str | None, dict] | None:
++        """（擁有者 user_id, 紀錄內容）；不存在時回 None。舊紀錄未能歸屬時 user_id 為 None。"""
+         with self._connect() as conn:
+             row = conn.execute(
+-                "SELECT username, payload_json FROM history WHERE id = ?", (record_id,)
++                "SELECT user_id, payload_json FROM history WHERE id = ?", (record_id,)
+             ).fetchone()
+-        return (row["username"], json.loads(row["payload_json"])) if row else None
++        return (row["user_id"], json.loads(row["payload_json"])) if row else None
+ 
+-    def list_history(self, username: str | None = None) -> list[dict]:
+-        """處理紀錄（新的在前）；username 為 None 時列出所有人的。"""
++    def list_history(self, user_id: str | None = None) -> list[dict]:
++        """處理紀錄（新的在前）；user_id 為 None 時列出所有人的（★ TTC 2026-11-02 B5：以 user_id 篩選）。"""
+         with self._connect() as conn:
+-            if username is None:
++            if user_id is None:
+                 rows = conn.execute("SELECT payload_json FROM history ORDER BY created_at DESC").fetchall()
+             else:
+                 rows = conn.execute(
+-                    "SELECT payload_json FROM history WHERE username = ? ORDER BY created_at DESC",
+-                    (username,),
++                    "SELECT payload_json FROM history WHERE user_id = ? ORDER BY created_at DESC",
++                    (user_id,),
+                 ).fetchall()
+         return [json.loads(row["payload_json"]) for row in rows]
+ 
+@@ -171,9 +200,12 @@ class SystemStore:
+                 "INSERT INTO system_logs (ts, level, event, source, username, origin) VALUES (?, ?, ?, ?, ?, ?)",
+                 [(now, e["level"], e["event"], e["source"], username, origin) for e in entries],
+             )
++            # ★ TTC 2026-11-02（B8）：依來源分別保留。原本不分來源只留最新 2 萬筆，任何登入者灌前端日誌
++            #   就能把後端記錄的登入失敗、鎖定等安全事件擠掉。
+             conn.execute(
+-                "DELETE FROM system_logs WHERE id NOT IN (SELECT id FROM system_logs ORDER BY id DESC LIMIT ?)",
+-                (MAX_SYSTEM_LOGS,),
++                "DELETE FROM system_logs WHERE origin = ? AND id NOT IN "
++                "(SELECT id FROM system_logs WHERE origin = ? ORDER BY id DESC LIMIT ?)",
++                (origin, origin, MAX_SYSTEM_LOGS),
+             )
+         return len(entries)
+ 
+@@ -201,18 +233,20 @@ class SystemStore:
+             conn.execute("DELETE FROM system_logs")
+ 
+     # ── 介面偏好（★ TTC 2026-10-29：依帳號記住外觀主題、語系、字體大小） ──
+-    def get_preferences(self, username: str) -> dict[str, Any]:
++    def get_preferences(self, username: str, user_id: str | None = None) -> dict[str, Any]:
+         with self._connect() as conn:
+-            row = conn.execute("SELECT prefs_json FROM user_preferences WHERE username = ?", (username,)).fetchone()
++            row = conn.execute(
++                "SELECT prefs_json FROM user_preferences WHERE username = ? AND user_id IS ?", (username, user_id)
++            ).fetchone()
+         return json.loads(row["prefs_json"]) if row else {}
+ 
+-    def save_preferences(self, username: str, changes: dict[str, Any]) -> dict[str, Any]:
+-        """只更新有送的欄位，回傳更新後的完整偏好。"""
+-        merged = {**self.get_preferences(username), **changes}
++    def save_preferences(self, username: str, changes: dict[str, Any], user_id: str | None = None) -> dict[str, Any]:
++        """只更新有送的欄位，回傳更新後的完整偏好。同名的前一個帳號留下的偏好不沿用（以新帳號的 user_id 覆寫）。"""
++        merged = {**self.get_preferences(username, user_id), **changes}
+         with self._connect() as conn:
+             conn.execute(
+-                "INSERT OR REPLACE INTO user_preferences (username, prefs_json, updated_at) VALUES (?, ?, ?)",
+-                (username, json.dumps(merged, ensure_ascii=False), _now_ms()),
++                "INSERT OR REPLACE INTO user_preferences (username, prefs_json, updated_at, user_id) VALUES (?, ?, ?, ?)",
++                (username, json.dumps(merged, ensure_ascii=False), _now_ms(), user_id),
+             )
+         return merged
+ 
+@@ -243,4 +277,8 @@ def get_system_store() -> SystemStore:
+     global _system_store
+     if _system_store is None:
+         _system_store = SystemStore()
++        # ★ TTC 2026-11-02（B5）：舊資料補上 user_id（只認領各帳號建立之後的紀錄）
++        from app.governance.auth import get_auth_manager
++
++        _system_store.backfill_user_ids(get_auth_manager().account_ids_with_creation_ms())
+     return _system_store
+diff --git a/tests/api/test_api_auth.py b/tests/api/test_api_auth.py
+index 4892374..07c5333 100644
+--- a/tests/api/test_api_auth.py
++++ b/tests/api/test_api_auth.py
+@@ -69,14 +69,30 @@ def test_login_missing_fields(client, api_auth):
+ 
+ 
+ def test_repeated_failures_lock_the_account(client, api_auth):
+-    """連續登入失敗達門檻應回 423，並以 Retry-After 告知還要等多久"""
++    """連續登入失敗達門檻即鎖定：鎖定期間即使密碼正確也登不進來。
++
++    ★ TTC 2026-11-02（B10）：原本回 423＋Retry-After，不存在的帳號則永遠是 401，
++    攻擊者錯 5 次就能分辨帳號是否存在；改為與帳密錯誤同一個 401 回應，鎖定原因只寫入稽核紀錄。
++    """
+     for _ in range(LOGIN_MAX_ATTEMPTS):
+         client.post(f"{BASE}/auth/login", json={"username": "admin", "password": "wrong"})
+ 
+     resp = client.post(f"{BASE}/auth/login", json={"username": "admin", "password": "admin123"})
+-    assert resp.status_code == 423
+-    assert int(resp.headers["Retry-After"]) > 0
+-    assert resp.json()["error_code"] == "ERR_ACCOUNT_LOCKED"
++    assert resp.status_code == 401
++    assert api_auth.authenticate("admin", "admin123").reason == "locked"
++
++
++def test_locked_account_is_indistinguishable_from_unknown_account(client, api_auth):
++    """B10：錯 5 次之後，存在（已鎖定）與不存在的帳號回應完全相同"""
++    for _ in range(LOGIN_MAX_ATTEMPTS):
++        client.post(f"{BASE}/auth/login", json={"username": "admin", "password": "wrong"})
++        client.post(f"{BASE}/auth/login", json={"username": "nobody", "password": "wrong"})
++
++    locked = client.post(f"{BASE}/auth/login", json={"username": "admin", "password": "wrong"})
++    unknown = client.post(f"{BASE}/auth/login", json={"username": "nobody", "password": "wrong"})
++    assert locked.status_code == unknown.status_code == 401
++    assert locked.json() == unknown.json()
++    assert "Retry-After" not in locked.headers
+ 
+ 
+ # ──────────────────────────────────────────────────────────────
+diff --git a/tests/api/test_api_system.py b/tests/api/test_api_system.py
+index ffc151a..b74b8a5 100644
+--- a/tests/api/test_api_system.py
++++ b/tests/api/test_api_system.py
+@@ -248,3 +248,87 @@ def test_preferences_are_per_user(client, api_auth, login):
+ 
+ def test_announcements_removed(client, api_auth, login):
+     assert client.get(f"{BASE}/announcements", headers=login()).status_code == 404
++
++
++# ──────────────────────────────────────────────────────────────
++# ★ TTC 2026-11-02（B5）：處理紀錄與偏好綁不可變的 user_id；刪除後建立同名帳號看不到前一人的資料
++# ──────────────────────────────────────────────────────────────
++def _save_history_as(client, api_auth, login, username, password, record_id):
++    from app.governance.system_store import get_system_store
++
++    run_id = f"run-{record_id}"
++    get_system_store().add_run(run_id, username, "POST /k-anonymity", 200, user_id=api_auth.get_user_id(username))
++    resp = client.post(
++        f"{BASE}/history", json={"runId": run_id, "id": record_id}, headers=login(username, password)
++    )
++    assert resp.status_code == 201, resp.text
++
++
++def test_recreated_username_does_not_see_previous_owners_data(client, api_auth, login):
++    api_auth.create_user("alice", "alice-pass", "user")
++    _save_history_as(client, api_auth, login, "alice", "alice-pass", "old-record")
++    client.put(f"{BASE}/preferences", json={"theme": "dark"}, headers=login("alice", "alice-pass"))
++
++    api_auth.delete_user("alice")
++    api_auth.create_user("alice", "new-alice-pass", "user")
++    headers = login("alice", "new-alice-pass")
++
++    assert client.get(f"{BASE}/history", headers=headers).json()["records"] == []
++    assert client.get(f"{BASE}/history/old-record/verify", headers=headers).json()["status"] == "missing"
++    assert client.get(f"{BASE}/preferences", headers=headers).json().get("theme") is None
++    # 舊紀錄仍保留供稽核：admin 列出所有人的紀錄看得到
++    admin_ids = [r["id"] for r in client.get(f"{BASE}/history", params={"all": 1}, headers=login()).json()["records"]]
++    assert "old-record" in admin_ids
++
++
++def test_legacy_rows_backfilled_only_for_records_after_account_creation(tmp_path):
++    from app.governance.system_store import SystemStore
++
++    store = SystemStore(db_path=str(tmp_path / "system.db"))
++    store.add_history("bob", "before", {"id": "before"})
++    store.add_history("bob", "after", {"id": "after"})
++    with store._connect() as conn:
++        conn.execute("UPDATE history SET user_id = NULL")
++        conn.execute("UPDATE history SET created_at = 1000 WHERE id = 'before'")
++    # bob 帳號建立於 2000 ms：1000 ms 那筆屬於之前同名的另一個人
++    store.backfill_user_ids({"bob": ("uid-bob", 2000)})
++    assert [r["id"] for r in store.list_history("uid-bob")] == ["after"]
++
++
++# ──────────────────────────────────────────────────────────────
++# ★ TTC 2026-11-02（B8）：前端回報的日誌不可擠掉後端記錄的安全事件；寫入頻率有上限
++# ──────────────────────────────────────────────────────────────
++def test_client_logs_do_not_evict_server_events(tmp_path, monkeypatch):
++    from app.governance import system_store as store_module
++
++    monkeypatch.setattr(store_module, "MAX_SYSTEM_LOGS", 10)
++    store = store_module.SystemStore(db_path=str(tmp_path / "system.db"))
++    store.add_log("WARN", "登入失敗（帳號或密碼錯誤）", "POST /auth/login", "victim")
++    store.add_logs([{"level": "INFO", "event": f"灌水 {i}", "source": "x"} for i in range(50)], "mallory")
++    events = [log["event"] for log in store.list_logs(limit=100)]
++    assert "登入失敗（帳號或密碼錯誤）" in events
++    assert sum(1 for e in events if e.startswith("灌水")) == 10
++
++
++def test_client_log_posting_is_rate_limited(client, api_auth, login, monkeypatch):
++    from app.api import system_router
++
++    monkeypatch.setattr(system_router, "CLIENT_LOG_ENTRIES_PER_MINUTE", 60)
++    system_router._client_log_windows.clear()
++    headers = login("user", "user123")
++    batch = {"entries": [{"level": "INFO", "event": "e", "source": "s"}] * 30}
++    assert client.post(f"{BASE}/system-logs", json=batch, headers=headers).status_code == 201
++    assert client.post(f"{BASE}/system-logs", json=batch, headers=headers).status_code == 201
++    resp = client.post(f"{BASE}/system-logs", json=batch, headers=headers)
++    assert resp.status_code == 429
++    assert resp.json()["error_code"] == "ERR_RATE_LIMITED"
++
++
++def test_reserved_prefix_cannot_be_bypassed_with_invisible_characters(client, api_auth, login):
++    for disguised in ["\u200b登入失敗（偽造）", " 登入失敗（偽造）", "\ufeff使用者登入成功"]:
++        resp = client.post(
++            f"{BASE}/system-logs",
++            json={"entries": [{"level": "INFO", "event": disguised, "source": "s"}]},
++            headers=login("user", "user123"),
++        )
++        assert resp.status_code == 400, disguised
+diff --git a/tests/api/test_api_users.py b/tests/api/test_api_users.py
+index 29792db..73ae6be 100644
+--- a/tests/api/test_api_users.py
++++ b/tests/api/test_api_users.py
+@@ -219,3 +219,47 @@ def test_admin_cannot_delete_self(client, api_auth, login):
+ 
+ def test_delete_missing_user_returns_404(client, api_auth, login):
+     assert client.delete(f"{BASE}/users/ghost", headers=login()).status_code == 404
++
++
++# ──────────────────────────────────────────────────────────────
++# ★ TTC 2026-11-02（B4）：admin 不可藉「降級→重設密碼→升回」接管另一位 admin
++# ──────────────────────────────────────────────────────────────
++def test_demoting_admin_requires_operator_password(client, api_auth, login):
++    api_auth.create_user("admin2", "admin2-pass", "admin")
++    headers = login()
++    missing = client.patch(f"{BASE}/users/admin2/role", json={"role": "user"}, headers=headers)
++    assert missing.status_code == 403
++    wrong = client.patch(
++        f"{BASE}/users/admin2/role",
++        json={"role": "user", "current_password": "not-my-password"},
++        headers=headers,
++    )
++    assert wrong.status_code == 403
++    assert api_auth.get_user("admin2")["role"] == "admin"
++    ok = client.patch(
++        f"{BASE}/users/admin2/role",
++        json={"role": "user", "current_password": "admin123"},
++        headers=headers,
++    )
++    assert ok.status_code == 200
++    assert ok.json()["role"] == "user"
++
++
++def test_recently_demoted_admin_cannot_be_reset(client, api_auth, login):
++    api_auth.create_user("admin2", "admin2-pass", "admin")
++    headers = login()
++    client.patch(
++        f"{BASE}/users/admin2/role",
++        json={"role": "user", "current_password": "admin123"},
++        headers=headers,
++    )
++    resp = client.post(
++        f"{BASE}/users/admin2/reset-password", json={"new_password": "taken-over"}, headers=headers
++    )
++    assert resp.status_code == 403
++    assert api_auth.authenticate("admin2", "admin2-pass").ok
++
++
++def test_promoting_user_needs_no_password(client, api_auth, login):
++    resp = client.patch(f"{BASE}/users/user/role", json={"role": "admin"}, headers=login())
++    assert resp.status_code == 200

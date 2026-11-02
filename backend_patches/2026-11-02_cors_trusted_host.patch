@@ -1,0 +1,198 @@
+diff --git a/.env.example b/.env.example
+index 49f9e9c..b57a1f6 100644
+--- a/.env.example
++++ b/.env.example
+@@ -33,6 +33,13 @@ OPEN_PETS_JWT_SECRET=
+ # × 10 欄的 CSV 約 430~540 MB）。設為 0 代表明確要求不設限。
+ OPEN_PETS_MAX_UPLOAD_MB=
+ 
++# 允許跨網域呼叫 API 的來源（逗號分隔，例如 https://demo.example.com）。
++# 未設定＝不開放跨網域：單機版、經 Vite／nginx 代理的部署都是同源，不需要設定。
++OPEN_PETS_CORS_ORIGINS=
++
++# 允許的 Host 標頭（逗號分隔），防止 DNS rebinding；未設定＝不限制。單機版啟動時自動設為 127.0.0.1,localhost。
++OPEN_PETS_ALLOWED_HOSTS=
++
+ # API 以 source／*_source 欄位讀取「伺服器本機」資料檔或 sqlite:/// 時允許的目錄，
+ # 多個目錄以作業系統路徑分隔字元分隔（Linux「:」、Windows「;」）。
+ # 未設定即停用，處理端點只收上傳檔案；OPEN_PETS_DATA_DIR（帳號、系統資料庫、稽核日誌）一律不可讀。
+diff --git a/app/api/server.py b/app/api/server.py
+index d5445ef..a3d75c9 100644
+--- a/app/api/server.py
++++ b/app/api/server.py
+@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
+ 
+ from fastapi import Depends, FastAPI
+ from fastapi.middleware.cors import CORSMiddleware
++from starlette.middleware.trustedhost import TrustedHostMiddleware
+ 
+ from app.api.auth_router import router as auth_router
+ from app.api.compute import build_cancel_router
+@@ -14,7 +15,7 @@ from app.api.risk_router import router as risk_router
+ from app.api.system_router import router as system_router
+ from app.api.users_router import router as users_router
+ from app.core.logging_setup import configure_logging
+-from app.core.settings import DEFAULT_SALT_ENV, get_default_salt
++from app.core.settings import DEFAULT_SALT_ENV, get_allowed_hosts, get_cors_origins, get_default_salt
+ from app.governance.token import log_availability
+ 
+ logger = logging.getLogger(__name__)
+@@ -48,23 +49,39 @@ app = FastAPI(
+     lifespan=lifespan,
+ )
+ 
+-# 支援前端跨網域訪問 (CORS)
+-app.add_middleware(
+-    CORSMiddleware,
+-    allow_origins=["*"],
+-    allow_credentials=True,
+-    allow_methods=["*"],
+-    allow_headers=["*"],
+-    # ★ TTC 2026-10-29：前端需讀取的回應標頭（同源部署不受影響；跨網域時才需要）
+-    expose_headers=["X-Run-Id", "X-Quality-Report", "X-Budget-Report", "Content-Disposition", "Retry-After"],
+-)
+-
+ # 錯誤回應的形狀與狀態碼統一在此掛載
+ register_upload_limit(app)
+ register_error_handlers(app)
+ # ★ TTC 2026-10-29：處理端點呼叫紀錄（日誌＋X-Run-Id），見 api/processing_guard
+ register_processing_logging(app)
+ 
++
++def register_cross_origin_policy(target_app: FastAPI) -> None:
++    """★ TTC 2026-11-02（資安掃描 2-4／B14）：跨網域與 Host 限制，依環境變數設定。
++
++    - OPEN_PETS_CORS_ORIGINS 未設定：不掛 CORS，只接受同源（.exe、Vite proxy、nginx 皆同源）。
++      有設定：只允許清單內來源，且不帶 credentials（前端以 Authorization 標頭傳 token，不用 cookie）。
++    - OPEN_PETS_ALLOWED_HOSTS 有設定：Host 不在清單內一律 400（擋 DNS rebinding）；單機版由 launcher 設定。
++    須在其他中介層之後加入：後加入者在最外層，連上傳上限的 413 也會帶正確的 CORS 標頭。
++    """
++    cors_origins = get_cors_origins()
++    if cors_origins:
++        target_app.add_middleware(
++            CORSMiddleware,
++            allow_origins=cors_origins,
++            allow_credentials=False,
++            allow_methods=["*"],
++            allow_headers=["*"],
++            # ★ TTC 2026-10-29：前端需讀取的回應標頭（同源部署不受影響；跨網域時才需要）
++            expose_headers=["X-Run-Id", "X-Quality-Report", "X-Budget-Report", "Content-Disposition", "Retry-After"],
++        )
++    allowed_hosts = get_allowed_hosts()
++    if allowed_hosts:
++        target_app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
++
++
++register_cross_origin_policy(app)
++
+ # 掛載路由：各路由保留完整路徑，統一掛在同一個版本前綴下
+ # ★ TTC 2026-10-29：處理端點改須登入（原本不掛身分驗證，透過公開網址任何人都能呼叫）
+ _processing_auth = [Depends(require_processing_user)]
+diff --git a/app/core/settings.py b/app/core/settings.py
+index b0cbebf..d5dd504 100644
+--- a/app/core/settings.py
++++ b/app/core/settings.py
+@@ -25,6 +25,9 @@ SYSTEM_MASTER_KEY_ENV = "OPEN_PETS_SYSTEM_MASTER_KEY"
+ DATA_DIR_ENV = "OPEN_PETS_DATA_DIR"
+ MAX_UPLOAD_MB_ENV = "OPEN_PETS_MAX_UPLOAD_MB"
+ JWT_SECRET_ENV = "OPEN_PETS_JWT_SECRET"
++# ★ TTC 2026-11-02（資安掃描 2-4）：跨網域與 Host 白名單（逗號分隔）。未設定＝不開放跨網域、不限制 Host。
++CORS_ORIGINS_ENV = "OPEN_PETS_CORS_ORIGINS"
++ALLOWED_HOSTS_ENV = "OPEN_PETS_ALLOWED_HOSTS"
+ # ★ TTC 2026-10-30：API 以 source 欄位讀伺服器本機檔案時允許的目錄（以作業系統路徑分隔字元
+ #   分隔多個，Windows 為「;」、Linux 為「:」）。未設定即停用，只收上傳檔案。
+ ALLOWED_SOURCE_DIRS_ENV = "OPEN_PETS_ALLOWED_SOURCE_DIRS"
+@@ -111,6 +114,24 @@ def get_allowed_source_dirs() -> list[str]:
+     return [os.path.realpath(p) for p in raw.split(os.pathsep) if p.strip()]
+ 
+ 
++def _split_env_list(name: str) -> list[str]:
++    return [item.strip() for item in (os.getenv(name) or "").split(",") if item.strip()]
++
++
++def get_cors_origins() -> list[str]:
++    """允許跨網域呼叫 API 的來源；未設定回傳空串列（不掛 CORS，只接受同源）。
++
++    .exe、線上 demo（Vite proxy）、nginx 部署都是同源，不需要 CORS。原本 allow_origins=["*"]
++    加上 allow_credentials，使用者瀏覽的任何網站都能呼叫本機後端並讀取回應。
++    """
++    return _split_env_list(CORS_ORIGINS_ENV)
++
++
++def get_allowed_hosts() -> list[str]:
++    """允許的 Host 標頭（防 DNS rebinding）；未設定回傳空串列（不限制）。單機版由 launcher 設為本機位址。"""
++    return _split_env_list(ALLOWED_HOSTS_ENV)
++
++
+ def get_max_upload_bytes() -> int:
+     """回傳單次請求允許的最大位元組數；部署方可用環境變數調整。
+ 
+diff --git a/tests/api/test_cors_hosts.py b/tests/api/test_cors_hosts.py
+new file mode 100644
+index 0000000..1b148de
+--- /dev/null
++++ b/tests/api/test_cors_hosts.py
+@@ -0,0 +1,63 @@
++"""★ TTC 2026-11-02（資安掃描 2-4／B14）：跨網域與 Host 限制
++涵蓋：
++  - 未設定 OPEN_PETS_CORS_ORIGINS：不回 Access-Control-Allow-Origin（其他網站不能讀取本機後端的回應）
++  - 設定白名單：只回清單內的來源，且不帶 credentials
++  - 設定 OPEN_PETS_ALLOWED_HOSTS：外來 Host 回 400（防 DNS rebinding），本機位址正常
++  - 正式 app 預設（未設定兩個變數）同源呼叫照常
++"""
++from fastapi import FastAPI
++from fastapi.testclient import TestClient
++
++from app.api.server import register_cross_origin_policy
++
++
++def _build_app() -> FastAPI:
++    test_app = FastAPI()
++
++    @test_app.get("/ping")
++    def ping():
++        return {"ok": True}
++
++    register_cross_origin_policy(test_app)
++    return test_app
++
++
++def _preflight(client: TestClient, origin: str):
++    return client.options(
++        "/ping",
++        headers={"Origin": origin, "Access-Control-Request-Method": "GET"},
++    )
++
++
++def test_no_cors_when_origins_not_configured(monkeypatch):
++    monkeypatch.delenv("OPEN_PETS_CORS_ORIGINS", raising=False)
++    monkeypatch.delenv("OPEN_PETS_ALLOWED_HOSTS", raising=False)
++    client = TestClient(_build_app())
++    resp = client.get("/ping", headers={"Origin": "https://evil.example"})
++    assert resp.status_code == 200
++    assert "access-control-allow-origin" not in resp.headers
++    assert "access-control-allow-origin" not in _preflight(client, "https://evil.example").headers
++
++
++def test_cors_allows_only_listed_origins_without_credentials(monkeypatch):
++    monkeypatch.setenv("OPEN_PETS_CORS_ORIGINS", "https://demo.example.com, https://other.example.com")
++    client = TestClient(_build_app())
++    allowed = client.get("/ping", headers={"Origin": "https://demo.example.com"})
++    assert allowed.headers["access-control-allow-origin"] == "https://demo.example.com"
++    assert "access-control-allow-credentials" not in allowed.headers
++    denied = client.get("/ping", headers={"Origin": "https://evil.example"})
++    assert "access-control-allow-origin" not in denied.headers
++
++
++def test_trusted_hosts_reject_foreign_host(monkeypatch):
++    monkeypatch.setenv("OPEN_PETS_ALLOWED_HOSTS", "127.0.0.1,localhost")
++    client = TestClient(_build_app())
++    assert client.get("/ping", headers={"Host": "evil.example:8765"}).status_code == 400
++    assert client.get("/ping", headers={"Host": "127.0.0.1:8765"}).status_code == 200
++    assert client.get("/ping", headers={"Host": "localhost:8765"}).status_code == 200
++
++
++def test_production_app_same_origin_unaffected_by_default(client):
++    resp = client.get("/", headers={"Origin": "https://evil.example"})
++    assert resp.status_code == 200
++    assert "access-control-allow-origin" not in resp.headers

@@ -1,0 +1,523 @@
+diff --git a/app/api/compute.py b/app/api/compute.py
+index ad710e5..95628cf 100644
+--- a/app/api/compute.py
++++ b/app/api/compute.py
+@@ -4,27 +4,89 @@
+ 事件迴圈完全停擺，連 token 更新、讀設定、健康檢查都回不了，畫面看起來像「沒有回應」。
+ 這裡改丟執行緒池，事件迴圈照常服務其他請求。
+ 
+-同時只跑一個：使用者按「取消運算」只中斷前端連線，已開跑的運算無法中途停下；
+-若再開一個，兩個運算會互搶 CPU 與記憶體，兩邊都更慢。排隊等候期間對方若已中斷連線，
+-輪到時就不開算，避免替已取消的請求白跑一次。
++同時只跑一個：兩個運算會互搶 CPU 與記憶體，兩邊都更慢。
++
++★ TTC 2026-10-31：取消運算。每次運算配一個取消旗標（見 core/cancellation），兩種情況會設起：
++  1. 用戶端中斷連線（前端 abort）：背景等待下一個 ASGI 訊息。表單在進入路由前已讀完，
++     之後伺服器只會送來 http.disconnect。不用 request.is_disconnected()：它在已取消的
++     scope 內讀取，經過 @app.middleware("http") 中介層時永遠讀不到斷線訊息（實測不生效）。
++  2. 前端呼叫 POST /runs/{handle}/cancel：handle 由前端以 X-Client-Run-Id 標頭帶入。
++     走 cloudflared 等代理時連線中斷不一定傳得到後端，這條路徑確保取消一定送達。
++引擎在迴圈斷點檢查旗標，被取消就拋 ERR_CANCELLED（499），運算名額立刻釋放給下一個請求。
++排隊中就被取消的請求，輪到時不開算。
+ """
+ import asyncio
++import re
++import threading
+ from collections.abc import Callable
+ from typing import TypeVar
+ 
+-from fastapi import Request
++from fastapi import APIRouter, Depends, Request
+ from starlette.concurrency import run_in_threadpool
+ 
++from app.core.cancellation import CANCELLED_MESSAGE, run_with_cancel_event
+ from app.core.errors import PetsError
+ 
+ T = TypeVar("T")
+ 
++CLIENT_RUN_ID_HEADER = "X-Client-Run-Id"
++_HANDLE_PATTERN = re.compile(r"^[0-9a-fA-F-]{32,36}$")
++
+ _compute_slot = asyncio.Semaphore(1)
++# 進行中（含排隊中）的運算：handle → (帳號, 取消旗標)
++_active_runs: dict[str, tuple[str | None, threading.Event]] = {}
++
++
++def _client_handle(request: Request) -> str | None:
++    handle = request.headers.get(CLIENT_RUN_ID_HEADER, "").strip()
++    return handle if _HANDLE_PATTERN.match(handle) else None
++
++
++async def _watch_disconnect(request: Request, event: threading.Event) -> None:
++    while not event.is_set():
++        message = await request.receive()
++        if message["type"] == "http.disconnect":
++            event.set()
++            return
++        await asyncio.sleep(0)
+ 
+ 
+ async def run_compute(request: Request, fn: Callable[..., T], *args, **kwargs) -> T:
+-    """在執行緒池執行 fn；排隊輪到時用戶端已離線就不開算。"""
+-    async with _compute_slot:
+-        if await request.is_disconnected():
+-            raise PetsError("ERR_BAD_REQUEST", "用戶端已取消請求，未開始運算。")
+-        return await run_in_threadpool(fn, *args, **kwargs)
++    """在執行緒池執行 fn；用戶端離線或呼叫取消端點時，引擎於下一個斷點停下。"""
++    event = threading.Event()
++    handle = _client_handle(request)
++    if handle:
++        _active_runs[handle] = (getattr(request.state, "processing_user", None), event)
++    watcher = asyncio.create_task(_watch_disconnect(request, event))
++    try:
++        async with _compute_slot:
++            if event.is_set():
++                raise PetsError("ERR_CANCELLED", f"{CANCELLED_MESSAGE}（尚未開始運算）")
++            return await run_in_threadpool(run_with_cancel_event, event, fn, *args, **kwargs)
++    finally:
++        watcher.cancel()
++        if handle:
++            _active_runs.pop(handle, None)
++
++
++def cancel_run(handle: str, username: str) -> bool:
++    """取消自己進行中（或排隊中）的運算；找不到（已結束）回傳 False。"""
++    entry = _active_runs.get(handle)
++    if entry is None:
++        return False
++    owner, event = entry
++    if owner is not None and owner != username:
++        raise PetsError("ERR_FORBIDDEN", "只能取消自己的運算。")
++    event.set()
++    return True
++
++
++def build_cancel_router(require_user: Callable) -> APIRouter:
++    """POST /runs/{handle}/cancel；require_user 由 server.py 傳入處理端點的登入要求。"""
++    router = APIRouter(tags=["Computation"])
++
++    @router.post("/runs/{handle}/cancel")
++    def cancel_computation(handle: str, user: dict = Depends(require_user)):
++        return {"cancelled": cancel_run(handle, user["username"])}
++
++    return router
+diff --git a/app/api/processing_guard.py b/app/api/processing_guard.py
+index 698797e..602bb60 100644
+--- a/app/api/processing_guard.py
++++ b/app/api/processing_guard.py
+@@ -48,7 +48,10 @@ def register_processing_logging(app: FastAPI) -> None:
+         status = response.status_code
+         try:
+             store = get_system_store()
+-            if 200 <= status < 300:
++            if status == 499:
++                # ★ TTC 2026-10-31：使用者取消運算不算失敗
++                store.add_log("INFO", f"使用者已取消運算（耗時 {elapsed_seconds:.1f} 秒）", source, username)
++            elif 200 <= status < 300:
+                 run_id = uuid.uuid4().hex
+                 store.add_run(run_id, username, source, status)
+                 response.headers["X-Run-Id"] = run_id
+diff --git a/app/api/server.py b/app/api/server.py
+index 92dd626..d5445ef 100644
+--- a/app/api/server.py
++++ b/app/api/server.py
+@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI
+ from fastapi.middleware.cors import CORSMiddleware
+ 
+ from app.api.auth_router import router as auth_router
++from app.api.compute import build_cancel_router
+ from app.api.deid_router import router as deid_router
+ from app.api.errors import register_error_handlers, register_upload_limit
+ from app.api.preprocess_router import router as preprocess_router
+@@ -70,6 +71,8 @@ _processing_auth = [Depends(require_processing_user)]
+ app.include_router(preprocess_router, prefix="/api/v1", dependencies=_processing_auth)
+ app.include_router(deid_router, prefix="/api/v1", dependencies=_processing_auth)
+ app.include_router(risk_router, prefix="/api/v1", dependencies=_processing_auth)
++# ★ TTC 2026-10-31：取消進行中的運算（見 api/compute）
++app.include_router(build_cancel_router(require_processing_user), prefix="/api/v1")
+ app.include_router(auth_router, prefix="/api/v1")
+ app.include_router(users_router, prefix="/api/v1")
+ # ★ TTC 2026-10-29：處理紀錄、系統維運日誌、系統設定、系統公告
+diff --git a/app/core/cancellation.py b/app/core/cancellation.py
+new file mode 100644
+index 0000000..74a46c6
+--- /dev/null
++++ b/app/core/cancellation.py
+@@ -0,0 +1,37 @@
++"""運算中途取消（★ TTC 2026-10-31）。
++
++API 把每次運算的取消旗標（threading.Event）放進 ContextVar，引擎在迴圈的自然斷點呼叫
++check_cancelled()；旗標被設起（使用者按「取消運算」或連線中斷）就拋 ERR_CANCELLED，
++運算就此停下、釋放運算名額與記憶體，不再把結果算完才丟掉。
++
++CLI 與單元測試沒有設旗標，check_cancelled() 什麼都不做，引擎行為不變。
++單一 pandas／scikit-learn 呼叫（如 groupby、RandomForest.fit）無法中途打斷，
++最久要等目前這一步做完才會停。
++"""
++import threading
++from contextvars import ContextVar
++
++from app.core.errors import PetsError
++
++_cancel_event: ContextVar[threading.Event | None] = ContextVar("open_pets_cancel_event", default=None)
++
++CANCELLED_MESSAGE = "使用者已取消運算。"
++
++
++def check_cancelled() -> None:
++    """目前這次運算已被取消就拋 ERR_CANCELLED；沒有旗標（CLI、測試）時不做事。"""
++    event = _cancel_event.get()
++    if event is not None and event.is_set():
++        raise PetsError("ERR_CANCELLED", CANCELLED_MESSAGE)
++
++
++def run_with_cancel_event(event: threading.Event, fn, *args, **kwargs):
++    """在目前執行緒設好取消旗標後執行 fn（供 API 丟進執行緒池時使用）。
++
++    不依賴執行緒池是否複製 contextvars：旗標在 worker 執行緒內自行設定、結束時還原。
++    """
++    token = _cancel_event.set(event)
++    try:
++        return fn(*args, **kwargs)
++    finally:
++        _cancel_event.reset(token)
+diff --git a/app/core/dataset_io.py b/app/core/dataset_io.py
+index 7b14fbe..b425b3f 100644
+--- a/app/core/dataset_io.py
++++ b/app/core/dataset_io.py
+@@ -10,6 +10,7 @@ from urllib.parse import quote
+ from sqlalchemy import create_engine, inspect
+ from sqlalchemy.exc import DatabaseError
+ 
++from app.core.cancellation import check_cancelled
+ from app.core.errors import PetsError
+ 
+ # 結果資料沿用輸入的格式輸出，故讀取時要一併帶回「輸入是哪一種格式」。
+@@ -413,6 +414,7 @@ def dataframe_to_bytes(df: pd.DataFrame, fmt: DatasetFormat = CSV_FORMAT) -> byt
+     JSON 明確指定以 ISO 8601 寫日期（pandas 預設寫成 epoch 毫秒，會讓輸出的日期
+     欄變成一串數字），並保留非 ASCII 字元原樣（預設會把中文跳脫成 \\uXXXX）。
+     """
++    check_cancelled()  # ★ TTC 2026-10-31：大檔序列化前最後一次可取消
+     df = _integral_floats_as_int(df)
+     if fmt.kind in ("json", "jsonl"):
+         text = df.to_json(
+diff --git a/app/core/errors.py b/app/core/errors.py
+index c91940a..61e439b 100644
+--- a/app/core/errors.py
++++ b/app/core/errors.py
+@@ -70,6 +70,8 @@ ERROR_HTTP_STATUS: dict[str, int] = {
+     # 前處理：清單的欄位名稱資料裡沒有、或功能與該欄的資料型別對不上
+     "ERR_PREPROCESS_COLUMN_NOT_FOUND": 422,
+     "ERR_PREPROCESS_TYPE_MISMATCH": 422,
++    # ★ TTC 2026-10-31：使用者取消運算（沿用 nginx 的 499「用戶端關閉請求」）
++    "ERR_CANCELLED": 499,
+     # 500：伺服器自身的問題，呼叫方改請求也修不了
+     "ERR_INTERNAL": 500,
+ }
+@@ -92,6 +94,7 @@ HTTP_STATUS_EXIT_CODE: dict[int, int] = {
+     403: 9,
+     409: 10,
+     423: 11,
++    499: 13,
+ }
+ 
+ # verify-log 校驗未全數通過：不是程式出錯（1），也不是請求有誤，另給一個專用代碼，
+diff --git a/app/engines/anonymization/pipeline.py b/app/engines/anonymization/pipeline.py
+index 801668e..11a00e4 100644
+--- a/app/engines/anonymization/pipeline.py
++++ b/app/engines/anonymization/pipeline.py
+@@ -13,6 +13,7 @@ from app.core.config import (
+     parse_level_value,
+     parse_temporal_levels,
+ )
++from app.core.cancellation import check_cancelled
+ from app.core.errors import PetsError
+ from .types import QualityReport, SuppressionOutcome
+ from .validation import ConfigValidator, validate_choice_param, validate_percent_param
+@@ -270,6 +271,7 @@ class Anonymizer:
+             else []
+         )
+         for col in qi_cols:
++            check_cancelled()  # ★ TTC 2026-10-31
+             col_type = config.columns[col].type
+             level = applied_levels.get(col, 0)  # 實際套用各欄 min
+ 
+@@ -403,6 +405,7 @@ class Anonymizer:
+                 for col in k_qi_cols
+                 if config.columns[col].cell_fill_value is not None
+             }
++            check_cancelled()
+             suppressor = self._suppressors[suppression_method](
+                 self.cell_fill, cell_fill_values
+             )
+@@ -437,6 +440,7 @@ class Anonymizer:
+             # 不可與「未設定（None）」混為一談而被靜默跳過。l 同步一致（l=0 檢測必過但語義統一）。
+             if l is not None:
+                 for s_col in valid_lt_cols:
++                    check_cancelled()
+                     l_ok, l_failures = self._l_metric.check(df_out, k_qi_cols, s_col, l)
+                     if not l_ok:
+                         l_passed = False
+@@ -447,6 +451,7 @@ class Anonymizer:
+ 
+             if t is not None:
+                 for s_col in valid_lt_cols:
++                    check_cancelled()
+                     global_dist = df[s_col].value_counts(normalize=True)
+                     t_ok, t_failures = self._t_metric.check(
+                         df_out, k_qi_cols, s_col, t, global_dist
+diff --git a/app/engines/dp/pipeline.py b/app/engines/dp/pipeline.py
+index 387ea00..42730cb 100644
+--- a/app/engines/dp/pipeline.py
++++ b/app/engines/dp/pipeline.py
+@@ -17,6 +17,7 @@ DPProcessor 串起「記帳 → 逐欄加噪 → 產出預算報告」，每一
+ 
+ import pandas as pd
+ 
++from app.core.cancellation import check_cancelled
+ from app.core.config import DPColumnConfig
+ 
+ from .types import BudgetReport, ColumnBudgetDetail, effective_delta
+@@ -109,6 +110,7 @@ class DPProcessor:
+         # 最小單位比資料本身還粗的欄位：能跑，但整欄會被壓成同一個刻度，於報告提醒。
+         coarse_unit: list[str] = []
+         for col, budget in config.column_budgets.items():
++            check_cancelled()  # ★ TTC 2026-10-31
+             # δ 取「實際生效值」：欄位自設（含明確 0）> 全域 default_delta > 0；
+             # categorical 恆 0。與記帳（accountant）同一真相來源。
+             delta = effective_delta(budget, default_delta)
+diff --git a/app/engines/preprocess/pipeline.py b/app/engines/preprocess/pipeline.py
+index df10308..2c048f3 100644
+--- a/app/engines/preprocess/pipeline.py
++++ b/app/engines/preprocess/pipeline.py
+@@ -15,6 +15,7 @@ import logging
+ import pandas as pd
+ 
+ from app.core.config import PreprocessConfig
++from app.core.cancellation import check_cancelled
+ from app.core.errors import PetsError
+ 
+ from .types import PlannedAction
+@@ -55,6 +56,7 @@ class Preprocessor:
+         logger.info("前處理開始，共 %d 個步驟，資料 %d 列", len(self._plan), len(df))
+         df_out = df.copy()
+         for step in self._plan:
++            check_cancelled()  # ★ TTC 2026-10-31
+             # 前處理不產報告，一旦中途失敗，只從錯誤訊息看不出前面已經跑過哪幾步。
+             logger.debug("套用 %s", step.where)
+             try:
+diff --git a/app/engines/risk/attacks/inference.py b/app/engines/risk/attacks/inference.py
+index d9fbd8e..1140e6b 100644
+--- a/app/engines/risk/attacks/inference.py
++++ b/app/engines/risk/attacks/inference.py
+@@ -10,6 +10,8 @@ import numpy as np
+ import pandas as pd
+ from sklearn.ensemble import RandomForestClassifier
+ 
++from app.core.cancellation import check_cancelled
++
+ from .base import AttackStrategy, as_labels, fit_shared_label_encoders
+ 
+ 
+@@ -71,7 +73,9 @@ class InferenceAttack(AttackStrategy):
+         clf = RandomForestClassifier(
+             n_estimators=50, max_depth=10, random_state=rf_seed, n_jobs=-1
+         )
++        check_cancelled()  # ★ TTC 2026-10-31：fit 本身無法中途打斷，前後各查一次
+         clf.fit(X_train, y_train)
++        check_cancelled()
+ 
+         # 主要攻擊成功率
+         s_ori = clf.score(X_ori, y_ori)
+diff --git a/app/engines/risk/attacks/singling_out.py b/app/engines/risk/attacks/singling_out.py
+index cd77d74..707d998 100644
+--- a/app/engines/risk/attacks/singling_out.py
++++ b/app/engines/risk/attacks/singling_out.py
+@@ -14,6 +14,8 @@
+ import numpy as np
+ import pandas as pd
+ 
++from app.core.cancellation import check_cancelled
++
+ from .base import AttackStrategy
+ 
+ 
+@@ -45,6 +47,7 @@ class SinglingOutAttack(AttackStrategy):
+         s_base = 0
+ 
+         for _ in range(n_iter):
++            check_cancelled()  # ★ TTC 2026-10-31
+             # 隨機選取部分 QI 欄位構成查詢條件（主／控／基準攻擊共用同一組欄位，
+             # 使三者查詢形狀相同、差異僅在「值的來源」，相減才公平）
+             n_query_cols = int(rng.integers(1, len(qi_cols) + 1))
+diff --git a/app/engines/risk/mode.py b/app/engines/risk/mode.py
+index 38f60b8..de2ea8f 100644
+--- a/app/engines/risk/mode.py
++++ b/app/engines/risk/mode.py
+@@ -12,6 +12,7 @@ import pandas as pd
+ from app.core.config import DPColumnConfig
+ from app.core.errors import PetsError
+ from app.engines.dp import BudgetAccountant
++from app.core.cancellation import check_cancelled
+ 
+ from .types import AttackReport, ProcessingConfig
+ from .validation import RiskInputValidator, check_inference_feasible, check_scalar_params
+@@ -177,6 +178,7 @@ class AttackAssessor:
+         link_evaluated_list = []
+         inf_block_note = ""
+         for ori, ctrl in round_pairs:
++            check_cancelled()  # ★ TTC 2026-10-31：每輪、每個攻擊之間可取消
+             syn = self._bridge.produce_syn(
+                 self.method, ori, self.deid_config, self.deid_params
+             )
+@@ -190,6 +192,7 @@ class AttackAssessor:
+             )
+             so_scores.append(risk_score(s_ori, s_ctrl, s_base))
+ 
++            check_cancelled()
+             if run_linkability:
+                 sl_ori, sl_ctrl, sl_base, n_evaluated = self._linkability.run(
+                     syn,
+@@ -208,6 +211,7 @@ class AttackAssessor:
+             # 推斷性以敏感欄為分類目標，目標欄位須是可列舉的類別；相異值數量接近筆數
+             # 的欄位（未分組的連續數值、時間戳記、識別碼）評不出東西來，此處於呼叫前
+             # 判定，不可執行就整項降級，連 fit() 都不進。指認性／連結性不受影響。
++            check_cancelled()
+             if not inf_block_note:
+                 inf_block_note = check_inference_feasible(syn, s_col) or ""
+             if not inf_block_note:
+diff --git a/tests/api/test_api_cancel.py b/tests/api/test_api_cancel.py
+new file mode 100644
+index 0000000..aac7f9d
+--- /dev/null
++++ b/tests/api/test_api_cancel.py
+@@ -0,0 +1,129 @@
++"""★ TTC 2026-10-31：取消運算（app.api.compute、app.core.cancellation）
++涵蓋：
++  - 前端呼叫 POST /runs/{handle}/cancel：運算於下一個斷點停下、回 499，運算名額立即釋放
++  - 只能取消自己的運算；已結束的 handle 回 cancelled=false
++  - 用戶端中斷連線：背景偵測到即設起取消旗標
++  - 沒有旗標（CLI、單元測試）時 check_cancelled 不做事
++"""
++import asyncio
++import threading
++import time
++import uuid
++
++import httpx
++import pytest
++
++from app.api import compute, deid_router
++from app.api.server import app
++from app.core.cancellation import check_cancelled, run_with_cancel_event
++from app.core.errors import PetsError
++
++STEP_SECONDS = 0.05
++STEPS = 100  # 不取消要跑 5 秒
++
++
++def _config(payload):
++    return ("config.json", payload, "application/json")
++
++
++@pytest.fixture
++def cancellable_k_anonymity(monkeypatch):
++    real_engine = deid_router.run_k_anonymity
++
++    def _slow(*args, **kwargs):
++        for _ in range(STEPS):
++            check_cancelled()
++            time.sleep(STEP_SECONDS)
++        return real_engine(*args, **kwargs)
++
++    monkeypatch.setattr(deid_router, "run_k_anonymity", _slow)
++    return real_engine
++
++
++def test_cancel_endpoint_stops_computation_and_frees_slot(
++    cancellable_k_anonymity, monkeypatch, sample_csv_bytes, kanon_bundle
++):
++    handle = str(uuid.uuid4())
++
++    async def scenario():
++        transport = httpx.ASGITransport(app=app)
++        async with httpx.AsyncClient(transport=transport, base_url="http://test", timeout=30) as http:
++            def post(headers=None):
++                return http.post(
++                    "/api/v1/k-anonymity",
++                    files={"file": ("data.csv", sample_csv_bytes, "text/csv"), "config": _config(kanon_bundle)},
++                    headers=headers or {},
++                )
++
++            started = time.perf_counter()
++            first = asyncio.create_task(post({compute.CLIENT_RUN_ID_HEADER: handle}))
++            await asyncio.sleep(0.3)
++            cancel = await http.post(f"/api/v1/runs/{handle}/cancel")
++            first_resp = await first
++            first_seconds = time.perf_counter() - started
++
++            # 名額已釋放：下一個請求（引擎不再拖時間）立刻開跑
++            monkeypatch.setattr(deid_router, "run_k_anonymity", cancellable_k_anonymity)
++            second_started = time.perf_counter()
++            second_resp = await post()
++            return cancel, first_resp, first_seconds, second_resp, time.perf_counter() - second_started
++
++    cancel, first_resp, first_seconds, second_resp, second_seconds = asyncio.run(scenario())
++    assert cancel.status_code == 200 and cancel.json() == {"cancelled": True}
++    assert first_resp.status_code == 499
++    assert first_resp.json()["error_code"] == "ERR_CANCELLED"
++    assert first_seconds < STEPS * STEP_SECONDS / 2, f"取消後仍跑了 {first_seconds:.2f} 秒"
++    assert second_resp.status_code == 200
++    assert second_seconds < STEPS * STEP_SECONDS / 2
++    assert handle not in compute._active_runs
++
++
++def test_cancel_unknown_handle_returns_false(client):
++    resp = client.post(f"/api/v1/runs/{uuid.uuid4()}/cancel")
++    assert resp.status_code == 200
++    assert resp.json() == {"cancelled": False}
++
++
++def test_cannot_cancel_someone_elses_run(client):
++    handle = str(uuid.uuid4())
++    event = threading.Event()
++    compute._active_runs[handle] = ("someone-else", event)
++    try:
++        resp = client.post(f"/api/v1/runs/{handle}/cancel")
++        assert resp.status_code == 403
++        assert not event.is_set()
++    finally:
++        compute._active_runs.pop(handle, None)
++
++
++def test_invalid_handle_header_is_ignored():
++    class _Req:
++        headers = {compute.CLIENT_RUN_ID_HEADER: "../../etc"}
++
++    assert compute._client_handle(_Req()) is None
++
++
++def test_disconnect_sets_cancel_flag():
++    class _Req:
++        calls = 0
++
++        async def receive(self):
++            self.calls += 1
++            return {"type": "http.request", "body": b""} if self.calls < 2 else {"type": "http.disconnect"}
++
++    event = threading.Event()
++    asyncio.run(asyncio.wait_for(compute._watch_disconnect(_Req(), event), timeout=5))
++    assert event.is_set()
++
++
++def test_check_cancelled_is_noop_without_flag():
++    check_cancelled()  # CLI／單元測試沒有旗標，不得拋錯
++
++
++def test_check_cancelled_raises_when_flag_set():
++    event = threading.Event()
++    event.set()
++    with pytest.raises(PetsError) as exc_info:
++        run_with_cancel_event(event, check_cancelled)
++    assert exc_info.value.error_code == "ERR_CANCELLED"
++    check_cancelled()  # 旗標只作用於該次執行，結束後還原
