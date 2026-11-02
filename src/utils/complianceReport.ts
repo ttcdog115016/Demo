@@ -144,7 +144,8 @@ export const buildComplianceReportSnapshot = (input: BuildComplianceReportSnapsh
                 dpConfig: {
                     accumulatedEpsilon: input.dpAccumulatedEpsilon ?? 0,
                     accumulatedDelta: input.dpAccumulatedDelta ?? 0,
-                    defaultDelta: input.dpDefaultDelta ?? 1e-5
+                    // ★ 2026-10-31：未設定全域 δ 時不送 default_delta，後端以 δ=0（純 ε）處理；原本誤顯示 1e-5
+                    defaultDelta: input.dpDefaultDelta ?? 0
                 }
             }),
         riskAttackParams: { ...input.riskAttackParams },

@@ -7,10 +7,10 @@ import { runPreprocess, type ApiRequestOptions } from '../../../api/apiService';
 import { wrapBackendConfigDocument } from '../../../utils/pipelineConfig';
 import { buildPreprocessBlock } from '../../../utils/preprocessConfig';
 import type { PreprocessingRule, MissingValueRule } from '../../../store/useWorkspaceStore';
+import { stripLeadingBom } from '../../../utils/blobStreaming';
 
 export interface PreprocessPhaseResult {
     /** 清洗後的 CSV 文字（已去除 BOM） */
-    csvText: string;
     /** 清洗後的資料檔（送給後續去識別化／風險評估） */
     dataFile: File;
     /** 送給後端的設定檔內容（供除錯與稽核） */
@@ -38,10 +38,10 @@ export const runPreprocessPhase = async (input: {
     const response = await runPreprocess(input.safeDataFile, configFile, input.requestOptions);
     if (!response.success || !response.data) throw (response.error || new Error('資料前處理 API 請求未成功'));
 
-    const csvText = (await response.data.text()).replace(/^[\uFEFF\u200B]+/, '');
+    // ★ 2026-11-02（F12）：不再把清洗後的整份資料讀成字串（大檔會超過字串上限），只以 Blob 切片去掉 BOM
+    const cleanedBlob = await stripLeadingBom(response.data);
     return {
-        csvText,
-        dataFile: new File([csvText], 'input_dataset.csv', { type: 'text/csv;charset=utf-8' }),
+        dataFile: new File([cleanedBlob], 'input_dataset.csv', { type: 'text/csv;charset=utf-8' }),
         configObject,
         columnCount: preprocessBlock.columns.length,
         actionCount: preprocessBlock.columns.reduce((totalCount, columnEntry) => totalCount + columnEntry.actions.length, 0),

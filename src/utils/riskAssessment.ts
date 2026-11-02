@@ -465,7 +465,7 @@ export const mergeWorstCaseAttackReport = (
 };
 
 /**
- * CAP：cap_before／cap_after 各自取最大值；其餘欄位取「最危險」的那一輪。
+ * CAP：整份報告取「最危險」的那一輪（★ 2026-11-02 起 cap_before／cap_after 也一樣，不再各自取最大值）。
  * ★ 2026-10-06：有前端算的扣除基線值（cap_after_excess）時以它比較——各敏感欄位的亂猜基線不同，
  *   cap_after 最高的欄位不一定是超出亂猜最多的；基線與扣除值一律跟著最危險那一輪走。
  */
@@ -474,13 +474,11 @@ const resolveCapSeverity = (report: CapReport): number =>
     typeof report.cap_after_excess === 'number'
         ? report.cap_after_excess
         : report.cap_baseline_after !== undefined ? -1 : report.cap_after;
+// ★ 2026-11-02：CAP 的所有欄位（含 cap_before／cap_after）一律取自最危險的那一輪。先前 cap_before／cap_after
+//   各自取各輪最大值，基線、扣除值、訊息、敏感欄位卻來自另一輪，畫面上「處理前 → 處理後」與說明會對不起來。
 export const mergeWorstCaseCapReport = (worstCaseReport: CapReport | null, thisRoundReport: CapReport): CapReport => {
     const isThisRoundNewWorstCapCase: boolean = !worstCaseReport || resolveCapSeverity(thisRoundReport) > resolveCapSeverity(worstCaseReport);
-    return {
-        ...(isThisRoundNewWorstCapCase ? thisRoundReport : worstCaseReport!),
-        cap_before: Math.max(worstCaseReport?.cap_before ?? -Infinity, thisRoundReport.cap_before),
-        cap_after: Math.max(worstCaseReport?.cap_after ?? -Infinity, thisRoundReport.cap_after)
-    };
+    return { ...(isThisRoundNewWorstCapCase ? thisRoundReport : worstCaseReport!) };
 };
 
 /** 對每個候選敏感欄位各跑一輪三攻擊並取最大值；任一輪失敗由 runRound 丟錯中止 */

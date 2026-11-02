@@ -494,7 +494,8 @@ export const buildDifferentialPrivacyConfig = (input: DifferentialPrivacyConfigI
             accumulated_epsilon: dpAccumulatedEpsilonValue ?? 0,
             accumulated_delta: dpAccumulatedDeltaValue ?? 0,
             // ★ 2026-10-29：只在使用者有填全域 δ 時送出；不送時後端預設 δ=0（純 ε），「沿用全域 δ」的欄位即為純 ε
-            ...(globalTargetDeltaValue ? { default_delta: globalTargetDeltaValue } : {})
+            // ★ 2026-10-31：明確填 0 也送出，讓設定檔與畫面一致（後端結果與不送相同）
+            ...(globalTargetDeltaValue !== undefined && globalTargetDeltaValue !== null ? { default_delta: globalTargetDeltaValue } : {})
         }
     };
 };

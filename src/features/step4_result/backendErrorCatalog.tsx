@@ -58,7 +58,9 @@ export const BACKEND_ERROR_CODE_CATEGORY_MAP: Record<string, { status: number; c
     ERR_DEID_CONFIG_MISMATCH: { status: 422, category: '去識別化設定與資料不符' },
     ERR_ANONYMIZATION_SUPPRESSION_EXCEEDED: { status: 422, category: '抑制率超出設定上限' },
     // 500：伺服器自身的問題，調整請求內容無法解決
-    ERR_INTERNAL: { status: 500, category: '系統內部錯誤' }
+    ERR_INTERNAL: { status: 500, category: '系統內部錯誤' },
+    // ★ 2026-11-02：使用者按「取消運算」後，後端在下一個斷點停下並回 499（沿用 nginx「用戶端關閉請求」）
+    ERR_CANCELLED: { status: 499, category: '已取消運算' }
 };
 
 // 找不到對應錯誤碼、或後端連 error_code 都沒回傳時（例如反向代理層直接擋下的錯誤），
@@ -68,6 +70,8 @@ export const GENERIC_HTTP_STATUS_FALLBACK_MESSAGE: Record<number, string> = {
     401: '身分驗證失敗，請重新登入後再試。',
     413: '上傳內容超過伺服器允許的大小上限。',
     422: '設定內容不符合後端驗證規則。',
+    // ★ 2026-11-02：後端因使用者取消而停止運算（ERR_CANCELLED）
+    499: '已取消運算。',
     500: '系統內部錯誤，請聯絡系統管理員或稍後再試。',
     // ★ 2026-10-22：通道／反向代理層的錯誤（沒有 error_code），見 GENERIC_HTTP_STATUS_USER_FRIENDLY_ADVICE
     502: '連線通道無法連到後端服務。',
@@ -139,7 +143,9 @@ export const BACKEND_ERROR_CODE_USER_FRIENDLY_MAP: Record<string, { headline: st
     ERR_RECORD_EXISTS: { headline: '這筆處理紀錄已存在', defaultAdvice: '同一筆紀錄不能重複存檔或修改。請重新執行一次處理。' },
     ERR_RUN_INVALID: { headline: '處理紀錄無法存檔', defaultAdvice: '找不到這筆紀錄對應的處理執行（可能已超過 24 小時或已存過）。請重新執行一次處理。' },
     ERR_ACCOUNT_LOCKED: { headline: '帳號暫時鎖定', defaultAdvice: '登入失敗次數過多，請稍後再試，或請系統管理員重設密碼。' },
-    ERR_AUTH_DISABLED: { headline: '登入功能尚未啟用', defaultAdvice: '這是系統環境設定問題，請聯絡系統管理員。' }
+    ERR_AUTH_DISABLED: { headline: '登入功能尚未啟用', defaultAdvice: '這是系統環境設定問題，請聯絡系統管理員。' },
+    // ★ 2026-11-02：後端 499（使用者取消運算）
+    ERR_CANCELLED: { headline: '已取消運算', defaultAdvice: '可調整設定後按「重新運算」再執行一次。' }
 };
 
 export const GENERIC_HTTP_STATUS_USER_FRIENDLY_HEADLINE: Record<number, string> = {
@@ -147,6 +153,7 @@ export const GENERIC_HTTP_STATUS_USER_FRIENDLY_HEADLINE: Record<number, string> 
     401: '登入狀態已失效',
     413: '上傳內容超過系統允許的大小上限',
     422: '送出的設定內容不符合規定',
+    499: '已取消運算',
     500: '系統發生非預期的錯誤',
     502: '連線通道無法連到後端服務',
     503: '後端服務暫時無法使用',
@@ -159,6 +166,7 @@ export const GENERIC_HTTP_STATUS_USER_FRIENDLY_HEADLINE: Record<number, string> 
 //   這些狀態碼來自通道或反向代理，沒有後端 error_code，依狀態碼給白話建議。
 //   524／504 時後端通常仍在繼續計算，這時重按會讓請求在後端排隊、一起逾時（見 utils/backendBusyCooldown.ts）。
 export const GENERIC_HTTP_STATUS_USER_FRIENDLY_ADVICE: Record<number, string> = {
+    499: '可調整設定後按「重新運算」再執行一次。',
     502: '請稍候 1～2 分鐘再試一次；若持續發生，請聯絡系統管理員確認後端服務與連線通道是否正常。',
     503: '請稍候幾分鐘再試一次；若持續發生，請聯絡系統管理員。',
     504: '後端通常仍會繼續把這一筆算完，請等幾分鐘再按「重新計算」，不要連續重按，以免排隊拖慢所有人。若使用差分隱私，且有欄位使用 (ε, δ)-DP、ε 很小，運算會非常久，建議在「隱私設定」把該欄改為 ε-DP 或調大 ε。',

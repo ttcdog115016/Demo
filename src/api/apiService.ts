@@ -26,12 +26,15 @@ export const DEFAULT_API_TIMEOUT_MS = 15 * 60 * 1000;
 
 export interface ApiRequestOptions {
   signal?: AbortSignal;
+  /** ★ 2026-10-31：這一輪運算的識別碼（X-Client-Run-Id），按「取消運算」時用來通知後端停止 */
+  clientRunId?: string;
   timeoutMs?: number;
   onUploadProgress?: (loadedBytes: number, totalBytes: number | undefined) => void;
 }
 
 const buildAxiosRequestConfig = (requestOptions?: ApiRequestOptions) => ({
   signal: requestOptions?.signal,
+  headers: requestOptions?.clientRunId ? { 'X-Client-Run-Id': requestOptions.clientRunId } : undefined,
   timeout: requestOptions?.timeoutMs ?? DEFAULT_API_TIMEOUT_MS,
   onUploadProgress: requestOptions?.onUploadProgress
     ? (progressEvent: AxiosProgressEvent) => requestOptions.onUploadProgress!(progressEvent.loaded, progressEvent.total)
@@ -42,10 +45,33 @@ const buildAxiosRequestConfig = (requestOptions?: ApiRequestOptions) => ({
 export const isApiRequestCanceled = (error: unknown): boolean =>
   axios.isCancel(error) || (error as { name?: string } | null)?.name === 'CanceledError';
 
-/** 是否為超過 timeout 仍未完成而中斷 */
+/** 是否為超過 timeout 仍未完成而中斷
+ * ★ 2026-11-02：axios 的「連線被中止（Request aborted）」與「逾時」都用 ECONNABORTED，
+ *   只有逾時的訊息含 timeout（timeout of N ms exceeded），以此區分，避免中止被誤報成「15 分鐘逾時」。
+ */
 export const isApiRequestTimeout = (error: unknown): boolean => {
-  const errorCode = (error as { code?: string } | null)?.code;
-  return errorCode === 'ECONNABORTED' || errorCode === 'ETIMEDOUT';
+  const errorRecord = error as { code?: string; message?: string } | null;
+  if (errorRecord?.code === 'ETIMEDOUT') return true;
+  return errorRecord?.code === 'ECONNABORTED' && /timeout/i.test(errorRecord.message ?? '');
+};
+
+/** ★ 2026-11-02：後端未回傳去識別化報告時的錯誤訊息（管線顯示失敗卡片、不寫合規紀錄） */
+export const MISSING_QUALITY_REPORT_MESSAGE = '後端未回傳品質報告，無法確認處理結果是否合規。';
+export const MISSING_BUDGET_REPORT_MESSAGE = '後端未回傳隱私預算報告，無法確認本次消耗的隱私預算。';
+
+/** ★ 2026-11-02：解析 X-Quality-Report／X-Budget-Report 標頭；缺少、無法解析或不是物件時回傳 undefined */
+const parseBackendReportHeader = <ReportType>(headerValue: unknown, headerName: string): ReportType | undefined => {
+  if (!headerValue) return undefined;
+  let parsedValue: unknown = headerValue;
+  if (typeof headerValue === 'string') {
+    try {
+      parsedValue = JSON.parse(headerValue);
+    } catch (parseError) {
+      console.warn(`解析 ${headerName} Header 失敗:`, parseError);
+      return undefined;
+    }
+  }
+  return parsedValue && typeof parsedValue === 'object' && !Array.isArray(parsedValue) ? parsedValue as ReportType : undefined;
 };
 
 // ============================================================================
@@ -148,16 +174,11 @@ export const runKAnonymity = async (
       response.headers['x-quality-report'] || 
       response.headers['X-Quality-Report'];
     
-    let qualityReport: KAnonymityQualityReport | undefined;
-
-    if (reportString) {
-      try {
-        qualityReport = typeof reportString === 'string' 
-          ? JSON.parse(reportString) 
-          : (reportString as KAnonymityQualityReport);
-      } catch (parseError) {
-        console.warn('解析 x-quality-report Header 失敗:', parseError);
-      }
+    // ★ 2026-11-02：沒有品質報告（或無法解析）時視為失敗。先前改用前端捏造的 is_valid:true 報告，
+    //   畫面會顯示「合規」並寫入合規紀錄，但其實沒有任何依據。
+    const qualityReport = parseBackendReportHeader<KAnonymityQualityReport>(reportString, 'x-quality-report');
+    if (!qualityReport) {
+      return { success: false, error: new Error(MISSING_QUALITY_REPORT_MESSAGE) };
     }
 
     // 解析檔名
@@ -213,16 +234,10 @@ export const runDifferentialPrivacy = async (
       response.headers['x-budget-report'] ||
       response.headers['X-Budget-Report'];
 
-    let qualityReport: DpQualityReport | undefined;
-
-    if (reportString) {
-      try {
-        qualityReport = typeof reportString === 'string'
-          ? JSON.parse(reportString)
-          : (reportString as DpQualityReport);
-      } catch (parseError) {
-        console.warn('解析 x-budget-report Header 失敗:', parseError);
-      }
+    // ★ 2026-11-02：沒有預算報告（或無法解析）時視為失敗，不以前端推算的 ε／δ 代替（同上）
+    const qualityReport = parseBackendReportHeader<DpQualityReport>(reportString, 'x-budget-report');
+    if (!qualityReport) {
+      return { success: false, error: new Error(MISSING_BUDGET_REPORT_MESSAGE) };
     }
 
     // 解析檔名

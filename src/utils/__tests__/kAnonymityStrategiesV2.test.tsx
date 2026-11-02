@@ -164,6 +164,25 @@ describe('合規報告補充資訊', () => {
         expect(text).toContain('本次消耗 δ：0.00001');
     });
 
+    it('差分隱私報告：δ 為 0（未設定全域 δ、全為純 ε 欄位）時加註純 ε-DP，不再誤印 0.00001（★ 2026-10-31）', () => {
+        const entry = buildEntry('differential-privacy');
+        const snapshot = entry.reportSnapshot!;
+        const zeroDeltaEntry = {
+            ...entry,
+            reportSnapshot: { ...snapshot, dpConfig: { ...snapshot.dpConfig!, defaultDelta: 0 }, utility: { ...snapshot.utility, consumedDelta: 0 } }
+        };
+        render(<ComplianceReportDocument entry={zeroDeltaEntry} isExportingPdf={false} containerId="r" />);
+        const text = document.body.textContent || '';
+        expect(text).toContain('0（未設定，純 ε-DP）');
+        expect(text).toContain('本次消耗 δ：0（純 ε-DP）');
+        expect(text).not.toContain('0.00001');
+        expect(buildComplianceReportSnapshot({
+            privacyMode: 'differential-privacy', kValue: 5, maxSuppressionPercent: 20, limitExceededAction: 'allow_with_warning', suppressionMethod: 'row_suppression', cellFillMethod: 'star',
+            dpAccumulatedEpsilon: 1, dpAccumulatedDelta: 0, dpDefaultDelta: undefined, riskAttackParams: RISK_ATTACK_DEFAULT_PARAMS, attackRisks: null, capReport: null,
+            suppressionRatePercent: null, consumedEpsilon: 1, consumedDelta: 0, deidentifiedColumnsCount: 1, totalColumnsCount: 1
+        }).dpConfig?.defaultDelta).toBe(0);
+    });
+
     it('舊紀錄（沒有補充欄位）照常繪製，不列新項目', () => {
         const entry = buildEntry('k-anonymity');
         const legacySnapshot = { ...entry.reportSnapshot! };

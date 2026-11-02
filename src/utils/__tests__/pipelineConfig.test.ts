@@ -175,6 +175,11 @@ describe('差分隱私 config.json 組裝', () => {
         expect(config).not.toHaveProperty('default_delta'); // ★ 2026-10-29：targetDelta 未設定時不送，後端預設 δ=0（純 ε）
     });
 
+    it('全域 δ 明確填 0 時仍送出 default_delta: 0（★ 2026-10-31）', () => {
+        const config = buildDifferentialPrivacyConfig({ ...dpInput, targetDelta: 0 }).differential_privacy as Record<string, unknown>;
+        expect(config.default_delta).toBe(0);
+    });
+
     it('預算總和', () => {
         // δ 只計入實際送出的部分：薪資為 ε-DP 模式（送 0），只有生日 (ε,δ)-DP 的 1e-5
         expect(computeDpTotalBudgets(dpInput.dpFields)).toEqual({ totalEpsilonBudget: 4.5, totalDeltaBudget: 1e-5 });

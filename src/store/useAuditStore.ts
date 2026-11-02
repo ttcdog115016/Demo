@@ -80,7 +80,7 @@ interface AuditState
  *   導致 Step4 去識別化流程在寫入稽核紀錄時失敗。改為：有 randomUUID 就用；否則以
  *   crypto.getRandomValues（非安全連線也可用）組出 RFC 4122 v4 格式；兩者皆無時退回時間戳＋亂數。
  */
-const generateAuditLogId = (): string => {
+export const generateAuditLogId = (): string => {
     const cryptoApi = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
     if (cryptoApi && typeof cryptoApi.randomUUID === 'function') return cryptoApi.randomUUID();
     if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {

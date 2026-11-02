@@ -54,9 +54,9 @@ const MEDIUM_SECURITY_EPSILON_THRESHOLD = 10.0;
  * Delta (δ) 相關欄位可容許範圍常數宣告
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  */
-const GLOBAL_TARGET_DELTA_MIN_BOUND = 1e-10;
+const GLOBAL_TARGET_DELTA_MIN_BOUND = 0; // ★ 2026-10-31：允許 0（純 ε-DP）
 const GLOBAL_TARGET_DELTA_MAX_BOUND = 0.9999999999;
-const FIELD_DELTA_INPUT_MIN_BOUND = 1e-10;
+const FIELD_DELTA_INPUT_MIN_BOUND = 0; // ★ 2026-10-31：允許 0，後端改用離散 Laplace（純 ε-DP）
 const FIELD_DELTA_INPUT_MAX_BOUND = 0.99;
 
 /**
@@ -239,9 +239,9 @@ export default function DifferentialPrivacyRules(): React.ReactElement
 		() => 
 		{
 			// ★ 2026-10-29：全域 δ 可不設定（不送 default_delta，後端以 δ=0 純 ε 處理）；有填才檢查範圍
-			if (globalTargetDeltaValue !== undefined && globalTargetDeltaValue !== null && (globalTargetDeltaValue <= 0 || globalTargetDeltaValue >= 1)) 
+			if (globalTargetDeltaValue !== undefined && globalTargetDeltaValue !== null && (globalTargetDeltaValue < 0 || globalTargetDeltaValue >= 1)) 
 			{
-				setStepValidationAction(false, translate('step3_dp.error_delta_invalid', '目標 Delta (δ) 必須介於 0 與 1 之間。'));
+				setStepValidationAction(false, translate('step3_dp.error_delta_invalid', '目標 Delta (δ) 必須大於或等於 0 且小於 1。'));
 				return;
 			}
 			

@@ -10,7 +10,11 @@ import { parseProcessedCsvPreview } from '../../utils/processedCsvPreview';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-import { useAuditStore } from '../../store/useAuditStore';
+import { useAuditStore, generateAuditLogId } from '../../store/useAuditStore';
+import { stripLeadingBom } from '../../utils/blobStreaming';
+import { CanceledError } from 'axios';
+import { cancelBackendRun } from '../../api/systemApi';
+import { getLoginGeneration } from '../../api/authApi';
 import { computeFileFingerprints } from '../../utils/auditIntegrity';
 import { takeLastProcessingRunId } from '../../api/apiErrorInterceptor';
 import { ensureDatasetProfile } from '../../utils/datasetProfile';
@@ -247,7 +251,6 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
     const isPipelineRunInProgressRef = useRef(false);
     // ★ 2026-10-01（第 16 項）：最近一次「真正開始執行」時的參數雜湊，以及每輪結束時遞增的計數，
     //   供下方自動執行 effect 判斷「這組參數是否已經跑過」與「執行中被擋下的參數變更要不要補跑」。
-    const lastAttemptedParamsHashRef = useRef<string | null>(null);
     const [pipelineRunGeneration, setPipelineRunGeneration] = useState(0);
     // ★ 2026-09-30：API 請求可取消、可看上傳進度。每一輪 runFullPipeline 建立一個 AbortController，
     //   畫面上的「取消運算」按鈕呼叫 abort()，這一輪之後所有進行中的請求都會立即中斷。
@@ -256,11 +259,35 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
     const [isPipelineCanceledStatus, setIsPipelineCanceledStatus] = useState<boolean>(false);
     // ★ 2026-10-30：這一輪開始的時間，畫面顯示「已等待 mm:ss」，讓使用者知道仍在進行而非當掉
     const [pipelineStartedAtMs, setPipelineStartedAtMs] = useState<number | null>(null);
+    // ★ 2026-10-31：這一輪的運算識別碼（隨每個請求以 X-Client-Run-Id 送出）；取消時通知後端停止，
+    //   不只中斷前端連線（經 cloudflared 等通道時連線中斷不一定傳得到後端）
+    const pipelineClientRunIdRef = useRef<string | null>(null);
+    const backendCancelRequestRef = useRef<Promise<boolean> | null>(null);
     const handleCancelPipeline = useCallback(() => {
+        const clientRunId = pipelineClientRunIdRef.current;
+        // 後端收到取消請求（不論當下是否有運算在跑）即視為已停止；送不到後端才需要「後端可能仍在計算」的提醒
+        backendCancelRequestRef.current = clientRunId
+            ? cancelBackendRun(clientRunId).then(() => true, () => false)
+            : Promise.resolve(false);
         pipelineAbortControllerRef.current?.abort();
     }, []);
+    // ★ 2026-11-02：每輪結束後延遲關閉「運算中」的計時器；新的一輪開始（例如執行中改參數而補跑）時要先取消，
+    //   否則上一輪排定的關閉會在新一輪剛開始時把進度畫面藏起來
+    const pipelineCompletionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const clearPipelineCompletionTimeout = useCallback(() => {
+        if (pipelineCompletionTimeoutRef.current !== null) clearTimeout(pipelineCompletionTimeoutRef.current);
+        pipelineCompletionTimeoutRef.current = null;
+    }, []);
     // ★ 2026-10-29：離開 Step4（例如閒置逾時被登出）時中止進行中的運算，避免結果在登出後又寫回工作區
-    useEffect(() => () => { pipelineAbortControllerRef.current?.abort(); }, []);
+    // ★ 2026-11-02：同時通知後端停止這一輪（不等結果）；只中斷前端連線時，後端仍會把這一輪算完
+    useEffect(() => () => {
+        clearPipelineCompletionTimeout();
+        const runningAbortController = pipelineAbortControllerRef.current;
+        if (!runningAbortController || runningAbortController.signal.aborted) return;
+        const clientRunId = pipelineClientRunIdRef.current;
+        if (clientRunId) backendCancelRequestRef.current = cancelBackendRun(clientRunId).then(() => true, () => false);
+        runningAbortController.abort();
+    }, [clearPipelineCompletionTimeout]);
     // ★ 新增：若 processedCsvBlob 明明有內容（bytes > 0），但解析出來的資料列數卻是 0，
     //   代表後端回傳的 CSV 內容本身可能有非預期格式（例如編碼、分隔符號等問題）。
     //   過去這種情況畫面上只會安靜地顯示「無此資料」，使用者與工程師都無從得知
@@ -346,11 +373,16 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 return;
             }
             isPipelineRunInProgressRef.current = true;
-            lastAttemptedParamsHashRef.current = currentParametersHashString;
+            // ★ 2026-11-02：記在工作區（不是元件 ref），離開 Step4 再回來仍記得這組參數已嘗試過
+            useWorkspaceStore.setState({ lastAttemptedRunParamsHash: currentParametersHashString });
+            // ★ 2026-11-02：取消上一輪排定的「關閉運算中」，避免補跑的這一輪進度畫面被藏起來
+            clearPipelineCompletionTimeout();
 
             if (!dataFile) {
                 messageApi.error(translate('step4.msg.no_file', '找不到原始資料集，請先回到 Step 1 上傳檔案！'));
                 isPipelineRunInProgressRef.current = false;
+                // ★ 2026-11-02：初始值為「運算中」（快取無效時），沒有資料檔直接結束時要關閉，否則畫面一直轉圈
+                setIsPipelineCalculatingStatus(false);
                 return;
             }
 
@@ -362,12 +394,32 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
 
             const pipelineAbortController = new AbortController();
             pipelineAbortControllerRef.current = pipelineAbortController;
+            pipelineClientRunIdRef.current = generateAuditLogId();
+            backendCancelRequestRef.current = null;
             setUploadProgressText(null);
             setIsPipelineCanceledStatus(false);
+            // ★ 2026-11-02：沒有網路請求的階段（讀檔、資料統計、實用性計算、檔案指紋、寫快取／紀錄）不會因 abort() 中斷，
+            //   每個 await 之後檢查一次：已按取消、已卸載，或已登出／換人登入（登入世代改變）就丟出 CanceledError，
+            //   走下方既有的取消流程，不再把結果寫回工作區（下一個登入者的工作區）。
+            const loginGenerationAtStart = getLoginGeneration();
+            let isPipelineSessionChanged = false;
+            const ensurePipelineStillActive = () => {
+                if (getLoginGeneration() !== loginGenerationAtStart) {
+                    isPipelineSessionChanged = true;
+                    pipelineAbortController.abort();
+                }
+                if (pipelineAbortController.signal.aborted) throw new CanceledError('運算已取消');
+            };
+            // ★ 2026-11-02：前端逾時、通道逾時（524／504）時通知後端停止這一輪；回傳後端是否收到
+            const notifyBackendToStopRun = (): Promise<boolean> => {
+                const clientRunId = pipelineClientRunIdRef.current;
+                return clientRunId ? cancelBackendRun(clientRunId).then(() => true, () => false) : Promise.resolve(false);
+            };
             // 上傳進度每變化 1% 才更新一次畫面，避免大檔案上傳時觸發大量重新渲染
             let lastReportedUploadPercentNumber = -1;
             const pipelineRequestOptions: ApiRequestOptions = {
                 signal: pipelineAbortController.signal,
+                clientRunId: pipelineClientRunIdRef.current,
                 onUploadProgress: (loadedBytes, totalBytes) => {
                     const toMegabytesText = (byteCount: number) => (byteCount / 1024 / 1024).toFixed(1);
                     if (!totalBytes) { setUploadProgressText(`已上傳 ${toMegabytesText(loadedBytes)} MB`); return; }
@@ -384,6 +436,12 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             setRealMaskedDataRows([]);
             setPreviewParseDiagnosticText(null);
             setPipelineFailedMessage(null);
+            // ★ 2026-11-02：上一輪的風險評估與統計結果也要清掉；否則這一輪失敗或略過 CAP 時，畫面仍顯示上一輪的數字
+            setCapReportData(null);
+            setAttackReportData(null);
+            setDatasetRowStatsData(null);
+            setKAnonymityFidelityData(null);
+            setAttackSimulationMetricsData(null);
             // ★ 修正：高唯一值比例敏感欄位警告只會在下方 K-匿名分支重新計算並寫入；若使用者從
             //   「K-匿名（曾觸發警告）」切到差分隱私模式再執行，DP 分支不會呼叫
             //   setHighCardinalitySensitiveWarningInfo，state 會殘留上一輪 K-匿名的舊警告，讓
@@ -458,11 +516,13 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 const configFile = new File([configBlob], 'config.json', { type: 'application/json' });
 
                 const originalFile = dataFile as File;
-                const rawCsvText = await originalFile.text();
-                let cleanedCsvText = rawCsvText.replace(/^[\uFEFF\u200B]+/, '');
+                // ★ 2026-11-02（F12）：不再把整份原始資料讀成字串（約 610 MB 以上會超過 WebView2 的字串上限而失敗）；
+                //   只以 Blob 切片去掉檔頭 BOM，之後的列數統計、風險評估轉換、實用性計算都直接讀 Blob（逐段處理）。
+                const cleanedOriginalBlob = await stripLeadingBom(originalFile);
+                ensurePipelineStillActive();
 
                 let safeDataFile = new File(
-                    [cleanedCsvText],
+                    [cleanedOriginalBlob],
                     'input_dataset.csv',
                     { type: 'text/csv;charset=utf-8' }
                 );
@@ -477,22 +537,17 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     safeDataFile,
                     requestOptions: pipelineRequestOptions
                 });
+                ensurePipelineStillActive();
                 if (preprocessResult) {
-                    cleanedCsvText = preprocessResult.csvText;
                     safeDataFile = preprocessResult.dataFile;
                     appendStepLog(translate('step4.log.step_preprocess_done', '資料預先處理完成（{{columns}} 個欄位）', { columns: preprocessResult.columnCount }));
                 }
-                // 去識別化結果（可達上百 MB）的文字內容只讀一次，CAP 分級距與輸出筆數統計共用
-                let processedCsvTextPromise: Promise<string> | null = null;
-                const readProcessedCsvTextOnce = (): Promise<string> => {
-                    if (!processedCsvTextPromise) processedCsvTextPromise = finalCsvBlobData ? finalCsvBlobData.text() : Promise.resolve('');
-                    return processedCsvTextPromise;
-                };
 
                 // ★ 2026-09-30：不再把整份原始 CSV 另外 Papa.parse 成列物件陣列（100 萬筆時非常吃記憶體），
                 //   改用 utils/datasetProfile.ts 整份資料集只掃描一次的欄位統計快照（Step2／Step3 通常已掃描過，
                 //   這裡直接取用）。相異值數被截斷的極高基數欄位，佔比一律視為 1（保守判定為高唯一值）。
                 const datasetProfileForRisk = await ensureDatasetProfile(preprocessResult ? safeDataFile : originalFile);
+                ensurePipelineStillActive();
 
                 const appendPipelineLog = (messageText: string) => console.info('[運算細節]', messageText);
 
@@ -505,6 +560,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     dpConfigInput: dpPipelineConfigInput,
                     requestOptions: pipelineRequestOptions
                 });
+                // ★ 2026-11-02：已取消或已登出時不寫回 DP 累計預算
+                ensurePipelineStillActive();
                 if (deidentificationResult) {
                     // 差分隱私：跨批次累計 ε／δ 寫回 store，下次執行以此為基準
                     if (deidentificationResult.updatedDpAccumulated) {
@@ -537,7 +594,6 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     datasetProfile: datasetProfileForRisk,
                     binWidthOverrides: sensitiveBinWidthOverridesMap,
                     forceRunHighCardinality: forceRunHighCardinalitySensitiveFieldsStatus,
-                    cleanedCsvText,
                     safeDataFile,
                     configObject,
                     datasetFileName: currentDatasetFileNameString,
@@ -546,20 +602,21 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     riskLinkability: riskLinkabilityGroups,
                     riskAttackParams: riskAttackParamsValue,
                     processedCsvBlob: finalCsvBlobData,
-                    readProcessedCsvText: readProcessedCsvTextOnce,
                     requestOptions: pipelineRequestOptions,
                     appendLog: appendPipelineLog,
                     onHighCardinalityInfo: setHighCardinalitySensitiveWarningInfo,
                     onAttackReport: setAttackReportData,
                     onCapReport: setCapReportData
                 });
+                ensurePipelineStillActive();
                 const attackReportResult = riskAssessmentResult.attackReport;
                 appendStepLog(attackReportResult
                     ? translate('step4.log.step_risk_done', '風險評估完成')
                     : translate('step4.log.step_risk_skipped', '風險評估未執行（未設定敏感欄位或無法評估）'));
 
                 // ③ 結果：筆數統計、風險分數、合規判斷，寫入快取快照與稽核紀錄（見 pipeline/pipelineResults.ts）
-                const generatedDatasetRowStatsObject = await computeDatasetRowStats(cleanedCsvText, finalCsvBlobData ? readProcessedCsvTextOnce : null);
+                const generatedDatasetRowStatsObject = await computeDatasetRowStats(safeDataFile, finalCsvBlobData);
+                ensurePipelineStillActive();
                 setDatasetRowStatsData(generatedDatasetRowStatsObject);
 
                 // ★ 2026-10-15：K-匿名資料實用性＝指引保真度三項指標（欄位分布、欄位間關聯、綜合分數，各 ≥ 0.75），以處理前後資料計算
@@ -568,8 +625,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     appendStepLog(translate('step4.log.step_utility', '計算資料實用性中…'));
                     try {
                         generatedKAnonymityFidelity = await computeKAnonymityFidelityInWorker({
-                            originalCsvText: cleanedCsvText,
-                            processedCsvText: await readProcessedCsvTextOnce(),
+                            originalCsvBlob: safeDataFile,
+                            processedCsvBlob: finalCsvBlobData,
                             evaluatedColumns: actualProcessedColumnsList.filter((columnName) => getCalculatedRole(columnName).role !== 'Identifier'),
                             anchorColumns: actualProcessedColumnsList.filter((columnName) => ['Sensitive', 'Non-sensitive', 'Retained'].includes(getCalculatedRole(columnName).role)),
                             // ★ 2026-10-16：數值 × 數值欄位對改用相關係數相似度（指引第貳章二之（五））
@@ -581,6 +638,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                         console.error('計算資料實用性（保真度）失敗:', fidelityErrorPayload);
                     }
                 }
+                ensurePipelineStillActive();
                 setKAnonymityFidelityData(generatedKAnonymityFidelity);
 
                 setCalculationProgressValue(100);
@@ -691,6 +749,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 // ★ 2026-10-29：計算原始檔／輸出檔 SHA-256 後送後端，由伺服器簽章（見 utils/auditIntegrity.ts）；
                 //   存不進後端時提示使用者（這次的結果仍可下載，但換頁或重新整理後紀錄不會留下）
                 const fileFingerprints = await computeFileFingerprints({ inputFile: safeDataFile, outputFile: finalCsvBlobData });
+                // ★ 2026-11-02：已取消或已登出時不送處理紀錄（避免記到下一個登入者名下）
+                ensurePipelineStillActive();
                 const lastRunIdValue = takeLastProcessingRunId();
                 const isAuditLogSaved = await addAuditLogAction({ ...pipelineAuditLogEntry, integrity: fileFingerprints, ...(lastRunIdValue ? { runId: lastRunIdValue } : {}) });
                 if (isAuditLogSaved) {
@@ -706,11 +766,15 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             } catch (error: unknown) {
                 // ★ 2026-09-30：使用者按「取消運算」→ 不是錯誤，不組錯誤卡片、不寫稽核紀錄
                 if (isApiRequestCanceled(error)) {
+                    // ★ 2026-11-02：已登出或換人登入：這一輪屬於上一次登入，不提示、不標示後端忙碌，安靜結束
+                    if (isPipelineSessionChanged) return;
                     appendStepLog('已取消運算');
                     messageApi.info(translate('step4.msg.canceled', '已取消運算'));
                     setIsPipelineCanceledStatus(true);
-                    // ★ 2026-10-30：取消只中斷前端連線，後端已開始的那一步仍會算完；接著再送出會排在它後面，先提醒
-                    markBackendLikelyBusy(Date.now(), 'canceled');
+                    // ★ 2026-10-31：後端已收到取消即會在下一個斷點停下，不必提醒；取消請求送不到後端時，
+                    //   後端已開始的那一步仍會算完，接著再送出會排在它後面，才提醒
+                    const isBackendCancelReceived = await (backendCancelRequestRef.current ?? Promise.resolve(false));
+                    if (!isBackendCancelReceived) markBackendLikelyBusy(Date.now(), 'canceled');
                     setPipelineFailedMessage(translate('step4.msg.canceled_detail', '已取消運算。可調整設定後按「重新運算」再執行一次。'));
                     return;
                 }
@@ -721,13 +785,16 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     appendStepLog(`請求逾時（${timeoutMinutesNumber} 分鐘）`);
                     messageApi.error(translate('step4.msg.timeout', '後端回應逾時'));
                     setPipelineFailedMessage(timeoutMessageText);
+                    // ★ 2026-11-02：前端停止等待後通知後端停止這一輪；取消請求送不到後端時，後端多半仍在算，才標示忙碌
+                    if (!(await notifyBackendToStopRun())) markBackendLikelyBusy();
                     return;
                 }
                 // ★ 2026-10-22：通道等待逾時（524／504）時後端多半仍在算這一筆，
                 //   之後 5 分鐘內再送出會先提醒（見 workspace/backendBusyConfirm.tsx），避免請求在後端疊加排隊。
+                // ★ 2026-11-02：先通知後端停止這一輪；後端收到取消即不必提醒，送不到後端才標示忙碌
                 const failedHttpStatus = (error as { response?: { status?: number } } | null)?.response?.status;
                 if (isGatewayTimeoutStatus(failedHttpStatus)) {
-                    markBackendLikelyBusy();
+                    if (!(await notifyBackendToStopRun())) markBackendLikelyBusy();
                 }
                 const { errorMessage, displayNode: friendlyDisplayNode, responseData } = await describePipelineError(error);
 
@@ -742,11 +809,16 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                 pipelineAbortControllerRef.current = null;
                 setUploadProgressText(null);
                 setPipelineRunGeneration((generationValue) => generationValue + 1);
-                setTimeout(() => setIsPipelineCalculatingStatus(false), SIMULATION_COMPLETION_DELAY_MS);
+                // ★ 2026-11-02：記下計時器，新一輪開始或卸載時取消（見 pipelineCompletionTimeoutRef）
+                clearPipelineCompletionTimeout();
+                pipelineCompletionTimeoutRef.current = setTimeout(() => {
+                    pipelineCompletionTimeoutRef.current = null;
+                    setIsPipelineCalculatingStatus(false);
+                }, SIMULATION_COMPLETION_DELAY_MS);
             }
 
         },
-        [actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, deidentifiedColumnsCount, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentMissingValueRulesMapDict, currentParametersHashString, currentPreprocessingRulesMapDict, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, resolveQiGeneralizationTech, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, riskColumnOverridesMap, riskLinkabilityGroups, riskAttackParamsValue, effectiveRiskAttackParams, kAnonymityHashAlgorithmValue, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
+        [clearPipelineCompletionTimeout, actualProcessedColumnsList, addAuditLogAction, budgetLimitEpsilonValue, deidentifiedColumnsCount, currentCellFillMethodStr, cellFillValuesByColumnMap, currentColumnTypesMapDict, currentDatasetFileNameString, currentDpFieldsListArray, currentKValueNumber, currentLValueNumber, currentLimitExceededActionStr, currentMaxSuppressionNumber, currentMissingValueRulesMapDict, currentParametersHashString, currentPreprocessingRulesMapDict, currentPrivacyModeTypeStr, currentSuppressionMethodStr, currentTValueNumber, currentUserSession, dataFile, dpAccumulatedDeltaValue, dpAccumulatedEpsilonValue, forceRunHighCardinalitySensitiveFieldsStatus, getCalculatedRole, globalTargetDeltaValue, resolveQiGeneralizationTech, isAnalysisCacheValidStatus, isEnableLDiversityStatus, isEnableTClosenessStatus, kAnonymityFieldsList, kAnonymityHierarchiesList, messageApi, riskSubgroupFiltersMapDict, riskColumnOverridesMap, riskLinkabilityGroups, riskAttackParamsValue, effectiveRiskAttackParams, kAnonymityHashAlgorithmValue, sensitiveBinWidthOverridesMap, setStep4CacheAction, simulatedQueryCountValue, translate]
     );
 
     // ★ 2026-10-01（第 16 項）：自動執行只在「使用者可調整的參數」（currentParametersHashString）改變、且這組
@@ -759,7 +831,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
     const runFullPipelineRef = useRef(runFullPipeline);
     useEffect(() => { runFullPipelineRef.current = runFullPipeline; }, [runFullPipeline]);
     useEffect(() => {
-        if (isAnalysisCacheValidStatus || lastAttemptedParamsHashRef.current === currentParametersHashString) return;
+        if (isAnalysisCacheValidStatus || useWorkspaceStore.getState().lastAttemptedRunParamsHash === currentParametersHashString) return;
         const tId = setTimeout(() => runFullPipelineRef.current(false), 0);
         return () => clearTimeout(tId);
     }, [isAnalysisCacheValidStatus, currentParametersHashString, pipelineRunGeneration]);

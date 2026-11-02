@@ -55,7 +55,6 @@ const baseInput = (privacyMode: string, overrides: Partial<Parameters<typeof run
     datasetProfile: profile,
     binWidthOverrides: {},
     forceRunHighCardinality: false,
-    cleanedCsvText: CSV,
     safeDataFile: new File([CSV], 'input_dataset.csv'),
     configObject: {
         k_anonymity: { enabled: true, k: 2, columns: { 年齡: { role: 'quasi_identifier', type: 'numeric' }, 出生日期: { role: 'quasi_identifier', type: 'temporal' }, 疾病: { role: 'sensitive', type: 'categorical' } } },
@@ -64,7 +63,6 @@ const baseInput = (privacyMode: string, overrides: Partial<Parameters<typeof run
     datasetFileName: 'x.csv',
     riskSubgroupFilters: {},
     processedCsvBlob: new Blob([CSV]),
-    readProcessedCsvText: async () => CSV,
     requestOptions: {},
     appendLog: () => {},
     onHighCardinalityInfo: () => {},
@@ -128,5 +126,24 @@ describe('Step4 風險評估使用匯入的 risk_attacks 設定', () => {
         }));
         expect((await readSentConfig(apiMocks.runRiskKAnonymity, 1)).risk_attacks.columns).toHaveProperty('出生日期');
         expect(logs.some((text) => text.includes('改依原本設定推導'))).toBe(true);
+    });
+
+    // ★ 2026-11-02：略過 CAP 時要清掉畫面上的 CAP 結果，否則會留著上一輪的舊數字
+    it('沒有去識別化資料或沒有候選敏感欄位而略過 CAP 時，通知畫面清空 CAP 結果', async () => {
+        const onCapReportWithoutBlob = vi.fn();
+        const withoutBlob = await runRiskAssessmentPhase(baseInput('k-anonymity', { processedCsvBlob: null, onCapReport: onCapReportWithoutBlob }));
+        expect(withoutBlob.capReport).toBeNull();
+        expect(onCapReportWithoutBlob).toHaveBeenCalledWith(null);
+        expect(apiMocks.runRiskCap).not.toHaveBeenCalled();
+
+        const onCapReportNoSensitive = vi.fn();
+        const noSensitive = await runRiskAssessmentPhase(baseInput('k-anonymity', {
+            kAnonymityFields: [{ name: '年齡', role: 'Quasi-identifier', type: 'numeric' }, { name: '出生日期', role: 'Quasi-identifier', type: 'temporal' }],
+            configObject: { k_anonymity: { enabled: true, k: 2, columns: { 年齡: { role: 'quasi_identifier', type: 'numeric' }, 出生日期: { role: 'quasi_identifier', type: 'temporal' } } } },
+            onCapReport: onCapReportNoSensitive
+        }));
+        expect(noSensitive.capReport).toBeNull();
+        expect(onCapReportNoSensitive).toHaveBeenCalledWith(null);
+        expect(apiMocks.runRiskCap).not.toHaveBeenCalled();
     });
 });

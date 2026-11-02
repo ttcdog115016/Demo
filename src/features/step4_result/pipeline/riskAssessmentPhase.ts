@@ -10,10 +10,9 @@ import {
 import type { DatasetProfile } from '../../../utils/datasetProfile';
 import type { DpStoreField } from '../../../utils/pipelineConfig';
 import { buildBackendSubgroupPayload } from '../../../utils/riskSubgroupHelpers';
-import { applySensitiveBinningToCsvText } from '../../../utils/sensitiveBinning';
-import { ENABLE_RISK_UPLOAD_COLUMN_TRIMMING, projectCsvTextToColumns, pruneKAnonymityBlockToColumns, formatMegabytesText } from '../../../utils/riskUploadTrimming';
+import { ENABLE_RISK_UPLOAD_COLUMN_TRIMMING, transformCsvBlobForRiskUpload, pruneKAnonymityBlockToColumns, formatMegabytesText } from '../../../utils/riskUploadTrimming';
 import { extractCapRequestFailureReasonText, buildCapUnavailableReceipt } from '../../../utils/riskResultHelpers';
-import { computeCapShuffleBaseline, encodeCsvForCapBaseline, computeCapExcessRisk, isCapExcessNotApplicable, type CapEncodedTable } from '../../../utils/capBaseline';
+import { computeCapShuffleBaseline, encodeCsvBlobForCapBaseline, computeCapExcessRisk, isCapExcessNotApplicable, type CapEncodedTable } from '../../../utils/capBaseline';
 import {
     resolveKAnonymityRiskColumns, selectKAnonymitySensitiveCandidates, describeKAnonymityHighCardinalityHandling,
     buildKAnonymityRiskColumnsForCandidate, buildKAnonymityConfigBlockForRisk, selectDifferentialPrivacySensitiveCandidates,
@@ -36,8 +35,7 @@ export interface RiskAssessmentPhaseInput {
     datasetProfile: DatasetProfile;
     binWidthOverrides: Record<string, number>;
     forceRunHighCardinality: boolean;
-    /** 去除 BOM 後的原始 CSV 文字，與 safeDataFile 內容相同 */
-    cleanedCsvText: string;
+    /** 去除 BOM 後的原始資料（★ 2026-11-02 F12：一律以 Blob 逐段處理，不再傳整份文字） */
     safeDataFile: File;
     /** 去識別化時送出的 config（DP 模式的累計值已更新為執行後的值） */
     configObject: Record<string, unknown>;
@@ -50,8 +48,6 @@ export interface RiskAssessmentPhaseInput {
     /** ★ 2026-10-28：三攻擊實驗參數（null＝前端預設） */
     riskAttackParams?: RiskAttackParams | null;
     processedCsvBlob: Blob | null;
-    /** 讀取去識別化結果文字（只讀一次，與筆數統計共用） */
-    readProcessedCsvText: () => Promise<string>;
     requestOptions: ApiRequestOptions;
     appendLog: (messageText: string) => void;
     onHighCardinalityInfo: (highCardinalityInfo: HighCardinalitySensitiveInfo[]) => void;
@@ -89,7 +85,6 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
         datasetProfile: datasetProfileForRisk,
         binWidthOverrides: sensitiveBinWidthOverridesMap,
         forceRunHighCardinality: forceRunHighCardinalitySensitiveFieldsStatus,
-        cleanedCsvText,
         safeDataFile,
         configObject,
         datasetFileName: currentDatasetFileNameString,
@@ -98,7 +93,6 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
         riskLinkability,
         riskAttackParams,
         processedCsvBlob: finalCsvBlobData,
-        readProcessedCsvText: readProcessedCsvTextOnce,
         requestOptions: pipelineRequestOptions,
         appendLog: appendPipelineLog,
         onHighCardinalityInfo: setHighCardinalitySensitiveWarningInfo,
@@ -154,12 +148,9 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
     //   null＝不裁切（功能關閉或尚未決定欄位）。
     let riskUploadKeepColumnNames: Set<string> | null = null;
     // 送風險評估的資料：先裁切欄位、再套用敏感欄位級距（原始資料與去識別化資料用同一套規則）
-    const buildRiskUploadCsvText = (sourceCsvText: string): string => {
-        const projectedCsvText = riskUploadKeepColumnNames
-            ? projectCsvTextToColumns(sourceCsvText, riskUploadKeepColumnNames).csvText
-            : sourceCsvText;
-        return applySensitiveBinningToCsvText(projectedCsvText, riskEvaluationBinWidthMap);
-    };
+    // ★ 2026-11-02（F12）：Blob 進、Blob 出，逐段裁切與分級距（大檔不產生整檔字串）
+    const buildRiskUploadBlob = (sourceBlob: Blob): Promise<Blob> =>
+        transformCsvBlobForRiskUpload(sourceBlob, riskUploadKeepColumnNames, riskEvaluationBinWidthMap);
     const isRiskUploadTransformNeeded = (): boolean =>
         riskUploadKeepColumnNames !== null || Object.keys(riskEvaluationBinWidthMap).length > 0;
     const resolveRiskUploadKeepColumnNames = (requiredColumnNames: Iterable<string>): Set<string> | null => {
@@ -168,10 +159,10 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
         Object.keys(resolvedRiskSubgroupPayload || {}).forEach((columnName) => keepColumnNameSet.add(columnName));
         return keepColumnNameSet.size > 0 ? keepColumnNameSet : null;
     };
-    const prepareRiskOriginalDataFile = () => {
+    const prepareRiskOriginalDataFile = async () => {
         if (!isRiskUploadTransformNeeded()) return;
-        const riskUploadCsvText = buildRiskUploadCsvText(cleanedCsvText);
-        riskOriginalDataFile = new File([riskUploadCsvText], 'input_dataset.csv', { type: 'text/csv;charset=utf-8' });
+        const riskUploadBlob = await buildRiskUploadBlob(safeDataFile);
+        riskOriginalDataFile = new File([riskUploadBlob], 'input_dataset.csv', { type: 'text/csv;charset=utf-8' });
         if (riskUploadKeepColumnNames && riskOriginalDataFile.size < safeDataFile.size) {
             appendPipelineLog(`📦 風險評估只上傳用到的 ${riskUploadKeepColumnNames.size} 個欄位，每次上傳 ${formatMegabytesText(safeDataFile.size)} MB → ${formatMegabytesText(riskOriginalDataFile.size)} MB`);
         }
@@ -215,7 +206,7 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             // 使用匯入的欄位角色時，K-匿名原本的間接識別也要保留（後端依 k_anonymity 區塊重做去識別化，裁掉會改變結果）
             riskUploadKeepColumnNames = resolveRiskUploadKeepColumnNames([...Object.keys(riskColumnsMap), ...Object.keys(kAnonymityDerivedRiskColumnsMap)]);
         }
-        prepareRiskOriginalDataFile();
+        await prepareRiskOriginalDataFile();
         setHighCardinalitySensitiveWarningInfo(kAnonCandidateSelection.highCardinalityInfo);
         finalHighCardinalitySensitiveWarningInfo = kAnonCandidateSelection.highCardinalityInfo;
         describeKAnonymityHighCardinalityHandling(kAnonCandidateSelection.highCardinalityInfo).forEach(appendPipelineLog);
@@ -333,7 +324,7 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             Object.keys(dpColumnBudgetsMap).forEach((columnName) => dpRequiredColumnNameSet.add(columnName));
             riskUploadKeepColumnNames = resolveRiskUploadKeepColumnNames(dpRequiredColumnNameSet);
         }
-        prepareRiskOriginalDataFile();
+        await prepareRiskOriginalDataFile();
 
         // 候選被篩到 0 個時迴圈不執行、attackReportResult 維持 null，等同略過三攻擊／CAP
         const dpAttackRoundsResult = await runWorstCaseAttackRounds({
@@ -371,21 +362,12 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             // 有敏感欄位自動分級距時，CAP 的原始與去識別化兩份資料都要用同一套級距轉換
             // 有敏感欄位自動分級距或欄位裁切時，去識別化資料也套用與原始資料相同的轉換
             // ★ 2026-10-06：另保留送出的處理後資料文字，供前端計算 CAP 亂猜基線（見 utils/capBaseline.ts）
-            let processedCapCsvText: string | null = isRiskUploadTransformNeeded()
-                ? buildRiskUploadCsvText(await readProcessedCsvTextOnce())
-                : await readProcessedCsvTextOnce();
-            const processedFileForCap = isRiskUploadTransformNeeded()
-                ? new File([processedCapCsvText], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' })
-                : new File([finalCsvBlobData], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' });
+            // ★ 2026-11-02（F12）：處理後資料同樣以 Blob 逐段轉換，不讀成整份文字
+            const processedCapBlob = isRiskUploadTransformNeeded() ? await buildRiskUploadBlob(finalCsvBlobData) : finalCsvBlobData;
+            const processedFileForCap = new File([processedCapBlob], 'processed_dataset.csv', { type: 'text/csv;charset=utf-8' });
             // ★ 2026-10-30：處理後資料只編碼一次、各輪共用；編碼後即放掉整份文字（見 utils/capBaseline.ts）
-            let encodedCapTable: CapEncodedTable | null | undefined;
-            const getEncodedCapTable = (): CapEncodedTable | null => {
-                if (encodedCapTable === undefined) {
-                    encodedCapTable = encodeCsvForCapBaseline(processedCapCsvText ?? '');
-                    processedCapCsvText = null;
-                }
-                return encodedCapTable;
-            };
+            const encodedCapTable: CapEncodedTable | null = await encodeCsvBlobForCapBaseline(processedCapBlob);
+            const getEncodedCapTable = (): CapEncodedTable | null => encodedCapTable;
             const attachCapBaseline = (capReport: CapReport, capColumnsMap: RiskColumnsMap, sensitiveColumnName: string | undefined): CapReport => {
                 if (!sensitiveColumnName || capReport.cap_after < 0) return capReport;
                 const baselineResult = computeCapShuffleBaseline(getEncodedCapTable(), {
@@ -462,8 +444,10 @@ export const runRiskAssessmentPhase = async (input: RiskAssessmentPhaseInput): P
             setCapReportData(capReportResult);
             appendPipelineLog(`⚠️ CAP 前後對比失敗，已略過（不影響風險評估結果）：${capFailureReasonText}`);
         }
-    } else if (!finalCsvBlobData) {
-        appendPipelineLog('⚠️ 未取得脫敏後資料集，略過 CAP 前後對比');
+    } else {
+        // ★ 2026-11-02：略過 CAP 時清掉畫面上的 CAP 結果，避免留著上一輪的舊數字
+        setCapReportData(null);
+        if (!finalCsvBlobData) appendPipelineLog('⚠️ 未取得脫敏後資料集，略過 CAP 前後對比');
     }
 
     // ★ 2026-10-28：合規報告記錄本次實際評估的欄位（間接識別取各輪聯集）

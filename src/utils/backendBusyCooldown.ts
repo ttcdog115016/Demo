@@ -19,7 +19,7 @@ let backendBusyUntilMsMemory = 0;
 /**
  * 後端可能仍在計算的原因：
  * - 'timeout'：通道逾時（524／504）
- * - 'canceled'：使用者按「取消運算」（★ 2026-10-30：取消只中斷前端連線，已開跑的運算後端仍會算完）
+ * - 'canceled'：使用者按「取消運算」但取消請求送不到後端（★ 2026-10-31：後端收到取消即停止，不再標記）
  */
 export type BackendBusyReason = 'timeout' | 'canceled';
 let backendBusyReasonMemory: BackendBusyReason = 'timeout';

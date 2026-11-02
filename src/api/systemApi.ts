@@ -12,6 +12,11 @@ import type { AuditLogItem } from '../store/useAuditStore';
 import type { AuditVerificationResult } from '../utils/auditIntegrity';
 import type { SystemLogEntry, SystemLogLevel } from '../store/useSystemLogStore';
 
+// ── 取消運算（★ 2026-10-31） ──────────────────────────────────────────────
+/** POST /runs/{id}/cancel：通知後端停止這一輪進行中的運算；回傳後端是否找到並設起取消 */
+export const cancelBackendRun = async (clientRunId: string): Promise<boolean> =>
+	(await authorizedRequest<{ cancelled: boolean }>({ method: 'POST', url: `/runs/${encodeURIComponent(clientRunId)}/cancel` })).cancelled;
+
 // ── 處理紀錄 ──────────────────────────────────────────────────────────────
 /** GET /history：目前帳號的處理紀錄（新的在前） */
 export const fetchHistory = async (options: { all?: boolean } = {}): Promise<AuditLogItem[]> =>
@@ -50,6 +55,8 @@ export const deleteSystemLogs = (): Promise<unknown> =>
 export interface SystemSettings
 {
 	session_timeout_minutes: number;
+	/** ★ 2026-10-30：後端密碼長度下限（OPEN_PETS_PASSWORD_MIN_LENGTH），唯讀；GET 才有 */
+	password_min_length?: number;
 }
 
 /** GET /settings（免登入） */

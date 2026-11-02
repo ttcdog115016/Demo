@@ -54,7 +54,7 @@ describe('usePipelineRunner 自動執行時機', () => {
             dataFile: new File(['年齡,疾病\n30,感冒\n'], 'data.csv', { lastModified: 1 }), fileName: 'data.csv', columns: ['年齡', '疾病'],
             privacyMode: 'differential-privacy', kValue: 3, dpFields: [{ fieldName: '疾病', enabled: true, fieldType: 'Categorical', epsilon: 1 }] as never,
             kAnonymityFields: [], kAnonymityHierarchies: [], columnRoles: {}, columnTypes: {}, riskSubgroupFilters: {},
-            dpAccumulatedEpsilon: 0, dpAccumulatedDelta: 0, step4Cache: null, lastRunParamsHash: null
+            dpAccumulatedEpsilon: 0, dpAccumulatedDelta: 0, step4Cache: null, lastRunParamsHash: null, lastAttemptedRunParamsHash: null
         });
     });
     afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });

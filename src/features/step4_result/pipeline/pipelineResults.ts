@@ -4,7 +4,7 @@
  */
 import type { AttackReport, KAnonymityQualityReport, DpQualityReport } from '../../../api/apiService';
 import type { AuditLogItem } from '../../../store/useAuditStore';
-import { countCsvDataRowsForStats } from '../../../utils/riskResultHelpers';
+import { countCsvDataRowsInBlob } from '../../../utils/blobStreaming';
 import { isDpBudgetExceeded } from '../../../utils/pipelineConfig';
 import type { ComplianceReportSnapshot } from '../../../utils/complianceReport';
 
@@ -79,14 +79,15 @@ export const computeSimulationMetrics = (attackReport: AttackReport | null): Sim
  * 不依賴各報表裡可能經過抽樣的統計欄位。讀不到去識別化結果時輸出筆數視同輸入筆數。
  */
 export const computeDatasetRowStats = async (
-    cleanedCsvText: string,
-    readProcessedCsvText: (() => Promise<string>) | null
+    originalCsvBlob: Blob,
+    processedCsvBlob: Blob | null
 ): Promise<DatasetRowStats> => {
-    const inputRowCountValue = countCsvDataRowsForStats(cleanedCsvText);
+    // ★ 2026-11-02（F12）：逐段計數（不把整份資料讀成字串），規則與 countCsvDataRowsForStats 相同
+    const inputRowCountValue = await countCsvDataRowsInBlob(originalCsvBlob);
     let outputRowCountValue = inputRowCountValue;
-    if (readProcessedCsvText) {
+    if (processedCsvBlob) {
         try {
-            outputRowCountValue = countCsvDataRowsForStats(await readProcessedCsvText());
+            outputRowCountValue = await countCsvDataRowsInBlob(processedCsvBlob);
         } catch (rowCountErrorPayload) {
             console.error('計算輸出資料筆數失敗:', rowCountErrorPayload);
         }

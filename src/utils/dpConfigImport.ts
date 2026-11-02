@@ -11,7 +11,7 @@ import { mapOutOfBoundsStrategyFromBackend, normalizeDpDatetimeNoiseUnit, clampD
 
 /** 與 DifferentialPrivacyMapping.tsx 相同的預設值 */
 export const DP_IMPORT_DEFAULT_EPSILON_BUDGET = 1.0;
-export const DP_IMPORT_DEFAULT_DELTA_BUDGET = 1e-5; // ★ 2026-10-28 與後端預設一致
+export const DP_IMPORT_DEFAULT_DELTA_BUDGET = 1e-5; // (ε, δ)-DP 模式的起始 δ；後端未指定時為 0（純 ε）
 export const DP_IMPORT_DEFAULT_NUMERIC_UPPER_BOUND = 100;
 
 export interface BackendDpColumnBudget {

@@ -29,13 +29,27 @@ const phaseInput = (privacyMode: string, configObject: Record<string, unknown> =
 describe('去識別化階段', () => {
     beforeEach(() => { apiMocks.runKAnonymity.mockReset(); apiMocks.runDifferentialPrivacy.mockReset(); vi.spyOn(console, 'log').mockImplementation(() => {}); });
 
-    it('K-匿名：只送資料檔與設定檔（不另送表單參數），沒有報告時用預設報告，回傳 CSV', async () => {
+    it('K-匿名：只送資料檔與設定檔（不另送表單參數），回傳後端報告與 CSV', async () => {
         const csvBlob = new Blob(['a\n1\n']);
-        apiMocks.runKAnonymity.mockResolvedValue({ success: true, blob: csvBlob });
+        const backendReport = { is_valid: false, k_passed: true, l_passed: false, t_passed: true, suppression_rate_percent: 3, suppression_unit: 'row', message: '後端說明', recommendations: [], applied_defaults: [] };
+        apiMocks.runKAnonymity.mockResolvedValue({ success: true, blob: csvBlob, report: backendReport });
         const result = await runDeidentificationPhase(phaseInput('k-anonymity'));
         expect(apiMocks.runKAnonymity.mock.calls[0]).toHaveLength(3);
         expect(apiMocks.runKAnonymity.mock.calls[0][2]).toEqual({});
-        expect(result).toMatchObject({ report: { is_valid: true, message: '成功完成去識別化處理' }, csvBlob, updatedDpAccumulated: null, logMessages: ['✅ K-Anonymity API 處理成功！'] });
+        expect(result).toMatchObject({ report: backendReport, csvBlob, updatedDpAccumulated: null, logMessages: ['✅ K-Anonymity API 處理成功！'] });
+    });
+
+    // ★ 2026-11-02：先前沒有報告時捏造 is_valid:true 的預設報告，畫面會顯示合規；改為視為失敗
+    it('K-匿名：後端沒回品質報告時丟出錯誤，不捏造合規報告', async () => {
+        apiMocks.runKAnonymity.mockResolvedValue({ success: true, blob: new Blob(['a\n1\n']) });
+        await expect(runDeidentificationPhase(phaseInput('k-anonymity'))).rejects.toThrow('後端未回傳品質報告');
+    });
+
+    it('差分隱私：後端沒回預算報告時丟出錯誤，不以前端推算值代替、也不改寫累計值', async () => {
+        apiMocks.runDifferentialPrivacy.mockResolvedValue({ success: true, data: 'x\n1\n' });
+        const configObject = { differential_privacy: { accumulated_epsilon: 2, accumulated_delta: 0 } };
+        await expect(runDeidentificationPhase(phaseInput('differential-privacy', configObject))).rejects.toThrow('後端未回傳隱私預算報告');
+        expect(configObject.differential_privacy).toEqual({ accumulated_epsilon: 2, accumulated_delta: 0 });
     });
 
     it('K-匿名：API 失敗時丟出後端錯誤', async () => {
@@ -44,8 +58,8 @@ describe('去識別化階段', () => {
         await expect(runDeidentificationPhase(phaseInput('k-anonymity'))).rejects.toBe(backendError);
     });
 
-    it('差分隱私：後端沒回累計值時以「基準＋本次消耗」推算，並寫回 config 供風險評估使用', async () => {
-        apiMocks.runDifferentialPrivacy.mockResolvedValue({ success: true, data: 'x\n1\n' });
+    it('差分隱私：報告缺累計值欄位時以「基準＋本次消耗」推算，並寫回 config 供風險評估使用', async () => {
+        apiMocks.runDifferentialPrivacy.mockResolvedValue({ success: true, data: 'x\n1\n', report: { consumed_epsilon: 1.5, consumed_delta: 1e-5, message: '', per_column: [] } });
         const configObject = { differential_privacy: { accumulated_epsilon: 2, accumulated_delta: 0 } };
         const result = await runDeidentificationPhase(phaseInput('differential-privacy', configObject));
         expect(apiMocks.runDifferentialPrivacy.mock.calls[0]).toHaveLength(3);
@@ -83,11 +97,13 @@ describe('結果計算', () => {
     });
 
     it('筆數統計：直接數資料列；讀不到去識別化結果時輸出視同輸入', async () => {
-        const originalCsvText = '年齡,疾病\n30,感冒\n40,糖尿病\n50,感冒\n';
-        expect(await computeDatasetRowStats(originalCsvText, async () => '年齡,疾病\n30,感冒\n')).toEqual({ input: 3, deleted: 2, output: 1 });
-        expect(await computeDatasetRowStats(originalCsvText, null)).toEqual({ input: 3, deleted: 0, output: 3 });
+        // ★ 2026-11-02（F12）：改收 Blob、逐段計數
+        const originalCsvBlob = new Blob(['年齡,疾病\n30,感冒\n40,糖尿病\n50,感冒\n']);
+        expect(await computeDatasetRowStats(originalCsvBlob, new Blob(['年齡,疾病\n30,感冒\n']))).toEqual({ input: 3, deleted: 2, output: 1 });
+        expect(await computeDatasetRowStats(originalCsvBlob, null)).toEqual({ input: 3, deleted: 0, output: 3 });
         vi.spyOn(console, 'error').mockImplementation(() => {});
-        expect(await computeDatasetRowStats(originalCsvText, async () => { throw new Error('read failed'); })).toEqual({ input: 3, deleted: 0, output: 3 });
+        const unreadableBlob = { size: 10, slice: () => ({ arrayBuffer: () => Promise.reject(new Error('read failed')) }) } as unknown as Blob;
+        expect(await computeDatasetRowStats(originalCsvBlob, unreadableBlob)).toEqual({ input: 3, deleted: 0, output: 3 });
     });
 
     it('合規判斷：K-匿名看 is_valid，差分隱私看 ε 是否超出預算', () => {

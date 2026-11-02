@@ -210,6 +210,9 @@ interface WorkspaceState
     // 步驟四預覽快照 (符合規範 g)
     step4Cache: Step4Cache | null;                                           // 風險量測快照
     lastRunParamsHash: string | null;                                        // 參數設定校驗 Hash 快照
+    // ★ 2026-11-02：Step4 最後一次「開始執行」的參數 Hash（不論成敗）。原本存在元件 ref，離開 Step4 再回來就歸零，
+    //   去識別化成功、後續失敗（沒寫快取）的 DP 運算會自動重跑、再扣一次隱私預算。
+    lastAttemptedRunParamsHash: string | null;
 
     // 門閥驗證狀態 (符合規範 g)
     isStepValid: boolean;                                                    // 當前步驟是否合規
@@ -328,6 +331,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
             isColumnCategoricalValuesScanning: false,
             step4Cache: null,
             lastRunParamsHash: null,
+            lastAttemptedRunParamsHash: null,
             isStepValid: true,
             stepErrorMessage: null,
             ...DEFAULT_KANON_RULE_PARAMS,
@@ -385,7 +389,8 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 isColumnCategoricalValuesScanning: false,
                 // ★ 累計隱私預算追蹤與資料集綁定：換一份資料集即視為全新的追蹤起點，歸零重新累計。
                 dpAccumulatedEpsilon: 0,
-                dpAccumulatedDelta: 0
+                dpAccumulatedDelta: 0,
+                lastAttemptedRunParamsHash: null
             }),
             setLastUploadDiagnostics: (diagnosticsSnapshotObj) => setStoreStateAction({
                 lastUploadDiagnostics: { ...diagnosticsSnapshotObj, detectedAt: new Date().toISOString() }
@@ -421,6 +426,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 isColumnCategoricalValuesScanning: false, // ★ 新增
                 step4Cache: null,
                 lastRunParamsHash: null,
+                lastAttemptedRunParamsHash: null,
                 isStepValid: true,
                 stepErrorMessage: null,
                 kAnonymityFields: [],

@@ -40,6 +40,9 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
     const isNonCompliant = entry.status === 'failed';
     const isKAnonymity = entry.privacyMode === 'k-anonymity';
     const notSavedText = translate('step4.report.not_saved_legacy', '此紀錄建立於舊版，未保存此項');
+    // ★ 2026-10-31：δ=0 代表純 ε-DP（數值欄位改用離散 Laplace），加註以免誤以為漏填
+    const formatDeltaText = (deltaValue: number, zeroKey: string, zeroText: string): string =>
+        deltaValue === 0 ? translate(zeroKey, zeroText) : String(deltaValue);
 
     const sectionHeadingStyle: CSSProperties = { color: '#000000', fontSize: scaleFontSize(15), fontWeight: 600, marginTop: '24px', marginBottom: '10px', paddingBottom: '6px', borderBottom: '1px solid #d9d9d9' };
     const keyValueRowStyle: CSSProperties = { display: 'flex', justifyContent: 'space-between', fontSize: scaleFontSize(13), color: '#333333', padding: '3px 0' };
@@ -87,7 +90,7 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                 ? [
                     { label: translate('step4.report.accumulated_epsilon_label', '已累計 ε'), value: formatEpsilonForDisplay(dpConfig.accumulatedEpsilon) },
                     { label: translate('step4.report.accumulated_delta_label', '已累計 δ'), value: String(dpConfig.accumulatedDelta) },
-                    { label: translate('step4.report.default_delta_label', '預設 δ'), value: String(dpConfig.defaultDelta) }
+                    { label: translate('step4.report.default_delta_label', '預設 δ'), value: formatDeltaText(dpConfig.defaultDelta, 'step4.report.default_delta_zero', '0（未設定，純 ε-DP）') }
                 ]
                 : [legacyParameterRow])
         ];
@@ -280,7 +283,7 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                             </div>
                             {!isKAnonymity && typeof utility.consumedDelta === 'number' && (
                                 <div style={keyValueRowStyle}>
-                                    <span>{translate('step4.report.consumed_delta', '本次消耗 δ：')}</span><span>{String(utility.consumedDelta)}</span>
+                                    <span>{translate('step4.report.consumed_delta', '本次消耗 δ：')}</span><span>{formatDeltaText(utility.consumedDelta, 'step4.report.delta_zero', '0（純 ε-DP）')}</span>
                                 </div>
                             )}
                             <div style={keyValueRowStyle}>

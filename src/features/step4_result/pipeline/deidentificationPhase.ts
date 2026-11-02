@@ -2,7 +2,7 @@
  * Step4 管線的去識別化階段：呼叫 K-匿名或差分隱私 API，取回品質報告與去識別化 CSV。
  * 2026-09-30 自 Step4_Result.tsx 的 runFullPipeline 抽出，行為不變；畫面狀態與 store 由呼叫端更新。
  */
-import { runKAnonymity, runDifferentialPrivacy, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport } from '../../../api/apiService';
+import { runKAnonymity, runDifferentialPrivacy, MISSING_QUALITY_REPORT_MESSAGE, MISSING_BUDGET_REPORT_MESSAGE, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport } from '../../../api/apiService';
 import { computeDpTotalBudgets, type DifferentialPrivacyConfigInput } from '../../../utils/pipelineConfig';
 
 export interface DeidentificationPhaseResult {
@@ -41,9 +41,9 @@ export const runDeidentificationPhase = async (input: {
         const response = await runKAnonymity(input.safeDataFile, input.configFile, input.requestOptions);
         if (!response.success) throw (response.error || new Error('API 請求未成功'));
 
-        const finalReport = response.report || {
-            is_valid: true, k_passed: true, l_passed: true, t_passed: true, suppression_rate_percent: 0, suppression_unit: 'row' as const, message: '成功完成去識別化處理', recommendations: [], applied_defaults: []
-        };
+        // ★ 2026-11-02：後端沒回品質報告時視為失敗（先前捏造 is_valid:true 的預設報告，畫面會顯示合規並寫入合規紀錄）
+        if (!response.report) throw new Error(MISSING_QUALITY_REPORT_MESSAGE);
+        const finalReport = response.report;
         return {
             report: finalReport,
             csvBlob: extractProcessedCsvBlob(response),
@@ -59,19 +59,13 @@ export const runDeidentificationPhase = async (input: {
         const response = await runDifferentialPrivacy(input.safeDataFile, input.configFile, input.requestOptions);
         if (!response.success) throw (response.error || new Error('DP API 請求未成功'));
 
+        // ★ 2026-11-02：後端沒回預算報告時視為失敗，不再以前端推算的 ε／δ 捏造報告（也不改寫累計值）
+        if (!response.report) throw new Error(MISSING_BUDGET_REPORT_MESSAGE);
+        const finalReport = response.report;
         const accumulatedEpsilonBase = input.dpConfigInput.accumulatedEpsilon ?? 0;
         const accumulatedDeltaBase = input.dpConfigInput.accumulatedDelta ?? 0;
-        const defaultReport = {
-            consumed_epsilon: totalEpsilonBudget,
-            consumed_delta: totalDeltaBudget,
-            accumulated_epsilon: accumulatedEpsilonBase + totalEpsilonBudget,
-            accumulated_delta: accumulatedDeltaBase + totalDeltaBudget,
-            message: '成功完成差分隱私處理',
-            per_column: []
-        };
-        const finalReport = response.report || defaultReport;
 
-        // 後端有回傳累計值即以後端為準（由後端負責組合定理運算），否則以「累計基準 + 本次消耗」推算
+        // 後端有回傳累計值即以後端為準（由後端負責組合定理運算），否則（報告缺累計欄位）以「累計基準 + 本次消耗」推算
         const updatedDpAccumulated = {
             epsilon: finalReport.accumulated_epsilon ?? (accumulatedEpsilonBase + totalEpsilonBudget),
             delta: finalReport.accumulated_delta ?? (accumulatedDeltaBase + totalDeltaBudget)

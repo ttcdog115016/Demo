@@ -5,7 +5,7 @@ import {
     RISK_ATTACK_DEFAULT_PARAMS, resolveKAnonymityRiskColumns, selectKAnonymitySensitiveCandidates, describeKAnonymityHighCardinalityHandling,
     buildKAnonymityRiskColumnsForCandidate, buildKAnonymityConfigBlockForRisk, selectDifferentialPrivacySensitiveCandidates, resolveDpFieldRiskRole,
     describeDifferentialPrivacyHighCardinalityHandling, buildDifferentialPrivacyRiskColumnsForCandidate, buildDifferentialPrivacyConfigBlockForRisk, isDpFieldSelectableAsRiskSensitive, buildRiskAttackConfigObject,
-    buildCapConfigObject, mergeWorstCaseAttackReport, runWorstCaseAttackRounds, runWorstCaseCapRounds,
+    buildCapConfigObject, mergeWorstCaseAttackReport, mergeWorstCaseCapReport, runWorstCaseAttackRounds, runWorstCaseCapRounds,
     hasDpRiskAttackSurface, DP_RISK_NO_ATTACK_SURFACE_TEXT
 } from '../riskAssessment';
 
@@ -271,10 +271,20 @@ describe('逐輪取最大值', () => {
                 : { success: true, report: candidate === '疾病' ? capReport(0.9, 0.2, 'A') : capReport(0.5, 0.4, 'B') }),
             onRoundFailed
         });
-        expect(result).toMatchObject({ cap_before: 0.9, cap_after: 0.4 });
+        // ★ 2026-11-02：CAP 各欄位一律取自最危險的那一輪（不再把各輪 cap_before 取最大值拼在一起）
+        expect(result).toMatchObject({ cap_before: 0.5, cap_after: 0.4 });
         expect(result!.message.startsWith('B 另有 1 個候選敏感欄位的 CAP 請求失敗')).toBe(true);
         expect(result!.message).toContain('「地區」');
         expect(onRoundFailed).toHaveBeenCalledWith(1, '地區', expect.any(String), expect.anything());
+    });
+
+    it('CAP 取最危險一輪：cap_before／cap_after／基線／扣除值／敏感欄位／訊息全部來自同一輪（★ 2026-11-02）', () => {
+        const roundA: CapReport = { ...capReport(0.9, 0.5, 'A'), cap_sensitive_column: '疾病', cap_baseline_after: 0.45, cap_after_excess: 0.09 };
+        const roundB: CapReport = { ...capReport(0.3, 0.4, 'B'), cap_sensitive_column: '地區', cap_baseline_after: 0.1, cap_after_excess: 0.33 };
+        expect(mergeWorstCaseCapReport(roundA, roundB)).toEqual(roundB);
+        expect(mergeWorstCaseCapReport(mergeWorstCaseCapReport(null, roundB), roundA)).toEqual(roundB);
+        // 沒有基線時以 cap_after 判斷最危險，cap_before 也跟著那一輪
+        expect(mergeWorstCaseCapReport(capReport(0.9, 0.2, 'A'), capReport(0.5, 0.4, 'B'))).toEqual(capReport(0.5, 0.4, 'B'));
     });
 
     it('CAP：全部失敗 → 回傳 -1 的「無法評估」收據（同一原因只列一次）', async () => {
