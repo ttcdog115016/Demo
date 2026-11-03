@@ -22,6 +22,9 @@ const STATUS_COLOR_MAP: Record<string, string> = {
 
 const monoStyle: React.CSSProperties = { fontFamily: 'Consolas, "Courier New", monospace', wordBreak: 'break-all' };
 
+/** 只留頭尾各 8 碼，足以人工比對 */
+const shortenHash = (hash: string = ''): string => (hash.length > 20 ? `${hash.slice(0, 8)}…${hash.slice(-8)}` : hash);
+
 export default function AuditIntegrityPanel({ entry, style, className }: AuditIntegrityPanelProps): ReactElement {
     const { t: translate } = useTranslation();
     // 驗證結果連同「驗證的是哪一筆」一起存，切換到別筆時舊結果自動失效（顯示「驗證中」），不需在 effect 內重設 state
@@ -56,23 +59,31 @@ export default function AuditIntegrityPanel({ entry, style, className }: AuditIn
         <div className={className} style={style} data-testid="audit-integrity-panel">
             {/* ★ 2026-10-02：使用者看到「驗證通過」誤以為是合規判定，加註此區只檢查紀錄有無被竄改 */}
             <div style={{ fontWeight: 600, color: '#6b7280' }}>{translate('audit.integrity.section_title', '紀錄防篡改資訊（僅檢查紀錄是否被竄改，與是否符合合規標準無關）')}</div>
-            {integrity && isServerIssued ? (
-                <>
-                    <div>{translate('audit.report_SHA', '數位防篡改指紋 (SHA-256):')} <span style={monoStyle}>{integrity.documentSha256}</span></div>
-                    <div>{translate('audit.integrity.input_file', '原始資料檔 SHA-256：')} <span style={monoStyle}>{integrity.inputFileSha256 ?? notAvailableText}</span></div>
-                    <div>{translate('audit.integrity.output_file', '去識別化輸出檔 SHA-256：')} <span style={monoStyle}>{integrity.outputFileSha256 ?? notAvailableText}</span></div>
-                    <div>
-                        {translate('audit.report_signature_label_server', '伺服器簽章：')}
-                        {integrity.signature
-                            ? <>{integrity.algorithm} ｜ {translate('audit.integrity.key_id', '金鑰 ID')} <span style={monoStyle}>{integrity.keyId}</span> ｜ <span style={monoStyle}>{integrity.signature.slice(0, 44)}…</span></>
-                            : <>{translate('audit.integrity.unsigned', '未簽章')}（{unsignedReasonText}）</>}
-                    </div>
-                    <div>{translate('audit.integrity.signed_at', '簽發時間：')} {new Date(integrity.signedAt ?? '').toLocaleString()}</div>
-                </>
-            ) : null}
+            {/* ★ 2026-11-02：使用者反映整串雜湊與簽章太長，預設只顯示檢查結果、簽發時間與縮短的指紋，完整值收進「技術細節」 */}
             <div style={{ color: STATUS_COLOR_MAP[statusKey], fontWeight: 600 }} data-testid="audit-integrity-status">
                 {translate('audit.integrity.verify_label', '防篡改檢查：')}{statusLabelMap[statusKey]}
             </div>
+            {integrity && isServerIssued ? (
+                <>
+                    <div>
+                        {translate('audit.integrity.signed_at', '簽發時間：')} {new Date(integrity.signedAt ?? '').toLocaleString()}
+                        {' ｜ '}{translate('audit.integrity.fingerprint_short', '紀錄指紋：')}
+                        <span style={monoStyle} title={integrity.documentSha256}>{shortenHash(integrity.documentSha256)}</span>
+                    </div>
+                    <details>
+                        <summary style={{ cursor: 'pointer', color: '#6b7280' }}>{translate('audit.integrity.details_toggle', '技術細節（完整雜湊值與簽章）')}</summary>
+                        <div>{translate('audit.report_SHA', '數位防篡改指紋 (SHA-256):')} <span style={monoStyle}>{integrity.documentSha256}</span></div>
+                        <div>{translate('audit.integrity.input_file', '原始資料檔 SHA-256：')} <span style={monoStyle}>{integrity.inputFileSha256 ?? notAvailableText}</span></div>
+                        <div>{translate('audit.integrity.output_file', '去識別化輸出檔 SHA-256：')} <span style={monoStyle}>{integrity.outputFileSha256 ?? notAvailableText}</span></div>
+                        <div>
+                            {translate('audit.report_signature_label_server', '伺服器簽章：')}
+                            {integrity.signature
+                                ? <>{integrity.algorithm} ｜ {translate('audit.integrity.key_id', '金鑰 ID')} <span style={monoStyle}>{integrity.keyId}</span> ｜ <span style={monoStyle}>{integrity.signature}</span></>
+                                : <>{translate('audit.integrity.unsigned', '未簽章')}（{unsignedReasonText}）</>}
+                        </div>
+                    </details>
+                </>
+            ) : null}
         </div>
     );
 }
