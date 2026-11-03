@@ -1442,10 +1442,15 @@ export default function KAnonymityMapping(): React.ReactElement
                 // ★ 修正: 年齡等數值型間接識別欄位，原本只判斷隱私角色、不會一併判斷資料型態，導致
                 //   欄位一直維持預設的「字串」型態，套用不合適的字串前後綴遮蔽而非數值泛化（四捨五入）。
                 //   使用者更正：生日應歸類為數值型（與年齡同一分類），而非直接識別／字串。
-                recommendedPrivacyRoleValue = 'Quasi-identifier'; 
+                // ★ 修正: 但生日欄位的實際內容多為「1998-05-12」這類日期字串，硬判為數值會在按「下一步」時
+                //   被型態一致性檢查擋下（無法轉成數值）。生日類欄位名稱僅在取樣資料確實全為數字時維持數值型，
+                //   否則改判為「時間」型；年齡仍一律為數值型。
+                const isBirthDateColumnNameStatus = /(birthday|birth_date|dob|生日|出生日期)/.test(lowerCaseFieldNameString);
+                const keywordFieldTypeValue = isBirthDateColumnNameStatus && !isColumnActuallyNumericFromRealData(fieldItemRecord.name) ? 'temporal' : 'numeric';
+                recommendedPrivacyRoleValue = 'Quasi-identifier';
                 recommendedMaskingStrategyValue = 'none';
-                recommendedFieldTypeValue = 'numeric';
-                recommendedGeneralizationStrategyValue = resolveDefaultGenStrategyForType('numeric');
+                recommendedFieldTypeValue = keywordFieldTypeValue;
+                recommendedGeneralizationStrategyValue = resolveDefaultGenStrategyForType(keywordFieldTypeValue);
                 hasExplicitlyClassifiedTypeStatus = true;
             } else if (/(date|日期)/.test(lowerCaseFieldNameString)) {
                 // ★ 修正: 日期等時間型間接識別欄位，同樣需一併判斷為「時間」資料型態（生日已改分類至上方直接識別）。
