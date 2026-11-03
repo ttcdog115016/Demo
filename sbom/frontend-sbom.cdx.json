@@ -127,7 +127,7 @@
         "value": "npm run sbom（scripts/gen-sbom.mjs，@cyclonedx/cyclonedx-npm）"
       }
     ],
-    "timestamp": "2026-11-02T05:44:30Z"
+    "timestamp": "2026-11-03T09:11:18Z"
   },
   "components": [
     {
@@ -3537,6 +3537,56 @@
     },
     {
       "type": "library",
+      "name": "pako",
+      "group": "@types",
+      "version": "2.0.4",
+      "bom-ref": "open-pets-frontend@2.0.0|@types/pako@2.0.4",
+      "description": "TypeScript definitions for pako",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40types/pako@2.0.4",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@types/pako/-/pako-2.0.4.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "5560c26eb2de55724cf5f8a162875c2e222fd24bbe02539afd34354af60e681bb2ad22a011cae8f792c9c88b09e2f4a8e815c8c4e2b188901ab74e029924fd17"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        },
+        {
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
+          "type": "issue-tracker",
+          "comment": "as detected from PackageJson property \"bugs.url\""
+        },
+        {
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/pako",
+          "type": "vcs",
+          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+        },
+        {
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/pako",
+          "type": "website",
+          "comment": "as detected from PackageJson property \"homepage\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "openpets:category",
+          "value": "間接相依"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "raf",
       "group": "@types",
       "version": "3.4.3",
@@ -3575,6 +3625,57 @@
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/raf",
+          "type": "website",
+          "comment": "as detected from PackageJson property \"homepage\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "openpets:category",
+          "value": "間接相依"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "trusted-types",
+      "group": "@types",
+      "version": "2.0.7",
+      "bom-ref": "open-pets-frontend@2.0.0|@types/trusted-types@2.0.7",
+      "description": "TypeScript definitions for trusted-types",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40types/trusted-types@2.0.7",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@types/trusted-types/-/trusted-types-2.0.7.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "49c68f767d5d41cce06e5d101537933a65471542eddfde17260390368c95859eabdaf2e730b25f04f779dd2079d93ff71b7e95235fe0d8c65a5f47300ee5ec7f"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        },
+        {
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
+          "type": "issue-tracker",
+          "comment": "as detected from PackageJson property \"bugs.url\""
+        },
+        {
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/trusted-types",
+          "type": "vcs",
+          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+        },
+        {
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/trusted-types",
           "type": "website",
           "comment": "as detected from PackageJson property \"homepage\""
         }
@@ -3791,53 +3892,6 @@
     },
     {
       "type": "library",
-      "name": "atob",
-      "version": "2.1.2",
-      "bom-ref": "open-pets-frontend@2.0.0|atob@2.1.2",
-      "author": "AJ ONeal",
-      "description": "atob for Node.JS and Linux / Mac / Windows CLI (it's a one-liner)",
-      "licenses": [
-        {
-          "expression": "(MIT OR Apache-2.0)"
-        }
-      ],
-      "purl": "pkg:npm/atob@2.1.2",
-      "externalReferences": [
-        {
-          "url": "https://registry.npmjs.org/atob/-/atob-2.1.2.tgz",
-          "type": "distribution",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "5a6eae92868e1898bfef7a7f725d86bcb8d323924cd64fced788ac0fbdd830bf12b6b1ffeff9511609a0f272026600f76d966f8f0086c6d30e0f7c16340bbc72"
-            }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "git://git.coolaj86.com/coolaj86/atob.js.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
-        },
-        {
-          "url": "https://git.coolaj86.com/coolaj86/atob.js.git",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
-        }
-      ],
-      "properties": [
-        {
-          "name": "cdx:npm:package:constraint:engine:node",
-          "value": ">= 4.5.0"
-        },
-        {
-          "name": "openpets:category",
-          "value": "間接相依"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "name": "attr-accept",
       "version": "2.2.5",
       "bom-ref": "open-pets-frontend@2.0.0|attr-accept@2.2.5",
@@ -3987,53 +4041,6 @@
         {
           "name": "cdx:npm:package:constraint:engine:node",
           "value": ">= 0.6.0"
-        },
-        {
-          "name": "openpets:category",
-          "value": "間接相依"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "btoa",
-      "version": "1.2.1",
-      "bom-ref": "open-pets-frontend@2.0.0|btoa@1.2.1",
-      "author": "AJ ONeal",
-      "description": "btoa for Node.JS (it's a one-liner)",
-      "licenses": [
-        {
-          "expression": "(MIT OR Apache-2.0)"
-        }
-      ],
-      "purl": "pkg:npm/btoa@1.2.1",
-      "externalReferences": [
-        {
-          "url": "https://registry.npmjs.org/btoa/-/btoa-1.2.1.tgz",
-          "type": "distribution",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "481e3f3081a5b2256431c1e64fea529883e8343a0783eedc3339addd4c6deb6f0c4f3db8f3b0ca4aa2bf7ee84506b92eaab62fe540849c00a917875314d29cfe"
-            }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "git://git.coolaj86.com/coolaj86/btoa.js.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
-        },
-        {
-          "url": "https://git.coolaj86.com/coolaj86/btoa.js.git",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
-        }
-      ],
-      "properties": [
-        {
-          "name": "cdx:npm:package:constraint:engine:node",
-          "value": ">= 0.4.0"
         },
         {
           "name": "openpets:category",
@@ -5370,25 +5377,24 @@
     {
       "type": "library",
       "name": "dompurify",
-      "version": "2.5.9",
-      "bom-ref": "open-pets-frontend@2.0.0|dompurify@2.5.9",
-      "author": "Mario Heiderich",
-      "description": "DOMPurify is a DOM-only, super-fast, uber-tolerant XSS sanitizer for HTML, MathML and SVG. It's written in JavaScript and works in all modern browsers (Safari, Opera (15+), Internet Explorer (10+), Firefox and Chrome - as well as almost anything else using Blink or WebKit). DOMPurify is written by security people who have vast background in web attacks and XSS. Fear not.",
-      "scope": "optional",
+      "version": "3.4.17",
+      "bom-ref": "open-pets-frontend@2.0.0|dompurify@3.4.17",
+      "author": "Dr.-Ing. Mario Heiderich, Cure53",
+      "description": "DOMPurify is a DOM-only, super-fast, uber-tolerant XSS sanitizer for HTML, MathML and SVG. It runs as JavaScript and works in all modern browsers, as well as in Node.js (via jsdom). DOMPurify is written by security people who have vast background in web attacks and XSS. Fear not.",
       "licenses": [
         {
           "expression": "(MPL-2.0 OR Apache-2.0)"
         }
       ],
-      "purl": "pkg:npm/dompurify@2.5.9",
+      "purl": "pkg:npm/dompurify@3.4.17",
       "externalReferences": [
         {
-          "url": "https://registry.npmjs.org/dompurify/-/dompurify-2.5.9.tgz",
+          "url": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.17.tgz",
           "type": "distribution",
           "hashes": [
             {
               "alg": "SHA-512",
-              "content": "8ba9af56658de31a3d2eb842399ac3812b3d9e85ba9ce6a16eb9b38d16cf177e983f28f951ee658289343070d6906ef1ce95853b6398b6d5ddccceeb2711ef34"
+              "content": "07fa52958547439f24a88483ff20e3b89d727f3237e26d60178940a1dd9bc1246188de0ae429771fc01fee1a81d8f9932fdd75b5d12e7679d79f9167851a33d3"
             }
           ],
           "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
@@ -5836,56 +5842,6 @@
     },
     {
       "type": "library",
-      "name": "es6-promise",
-      "version": "4.2.8",
-      "bom-ref": "open-pets-frontend@2.0.0|es6-promise@4.2.8",
-      "author": "Yehuda Katz, Tom Dale, Stefan Penner and contributors",
-      "description": "A lightweight library that provides tools for organizing asynchronous code",
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ],
-      "purl": "pkg:npm/es6-promise@4.2.8",
-      "externalReferences": [
-        {
-          "url": "https://registry.npmjs.org/es6-promise/-/es6-promise-4.2.8.tgz",
-          "type": "distribution",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "1c90c6c7975ac5e22fc5d071bc6d9c6fd838b44bf0224de2f3e9e15f4c86ad89995336e4760f106c37af85e0c1f20774fffb8f8f8735110b9af10f8c5624f4ff"
-            }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/stefanpenner/es6-promise/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
-        },
-        {
-          "url": "git://github.com/stefanpenner/es6-promise.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
-        },
-        {
-          "url": "https://github.com/stefanpenner/es6-promise",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
-        }
-      ],
-      "properties": [
-        {
-          "name": "openpets:category",
-          "value": "間接相依"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "name": "eventemitter3",
       "version": "5.0.4",
       "bom-ref": "open-pets-frontend@2.0.0|eventemitter3@5.0.4",
@@ -5973,6 +5929,56 @@
         },
         {
           "url": "https://github.com/epoberezkin/fast-deep-equal#readme",
+          "type": "website",
+          "comment": "as detected from PackageJson property \"homepage\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "openpets:category",
+          "value": "間接相依"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "fast-png",
+      "version": "6.4.0",
+      "bom-ref": "open-pets-frontend@2.0.0|fast-png@6.4.0",
+      "author": "Michaël Zasso",
+      "description": "PNG image decoder and encoder written entirely in JavaScript",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:npm/fast-png@6.4.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/fast-png/-/fast-png-6.4.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "900a99ab54e58018d970baf999c37a34fe51bf85767f6db3d3473783cbd1af091caa37abc7b04484f6ce9d608fa9a1d49765d6401250bce4ff15085d313ed7fd"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        },
+        {
+          "url": "https://github.com/image-js/fast-png/issues",
+          "type": "issue-tracker",
+          "comment": "as detected from PackageJson property \"bugs.url\""
+        },
+        {
+          "url": "git+https://github.com/image-js/fast-png.git",
+          "type": "vcs",
+          "comment": "as detected from PackageJson property \"repository.url\""
+        },
+        {
+          "url": "https://github.com/image-js/fast-png#readme",
           "type": "website",
           "comment": "as detected from PackageJson property \"homepage\""
         }
@@ -6091,8 +6097,8 @@
     {
       "type": "library",
       "name": "follow-redirects",
-      "version": "1.16.0",
-      "bom-ref": "open-pets-frontend@2.0.0|follow-redirects@1.16.0",
+      "version": "1.16.2",
+      "bom-ref": "open-pets-frontend@2.0.0|follow-redirects@1.16.2",
       "author": "Ruben Verborgh",
       "description": "HTTP and HTTPS modules that follow redirects.",
       "licenses": [
@@ -6102,15 +6108,15 @@
           }
         }
       ],
-      "purl": "pkg:npm/follow-redirects@1.16.0",
+      "purl": "pkg:npm/follow-redirects@1.16.2",
       "externalReferences": [
         {
-          "url": "https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.16.0.tgz",
+          "url": "https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.16.2.tgz",
           "type": "distribution",
           "hashes": [
             {
               "alg": "SHA-512",
-              "content": "cb9acdfee3ac69d153fc97d8c21c514b947b41c7be837cc6f7bf89aed159942f64957fd6e610fb8a22f349c2389d9a944bb0cd51d84f830e3123c5b62ee5e553"
+              "content": "fe454fd94f33e7de886b483016bc3221ea3be2d6b9695992794d457c050c0267043f910fef3c9d99a83748b88deb835a44a79fde5c6cabb8bf83b96d2500c6a3"
             }
           ],
           "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
@@ -6677,8 +6683,8 @@
     {
       "type": "library",
       "name": "html2pdf.js",
-      "version": "0.10.1",
-      "bom-ref": "open-pets-frontend@2.0.0|html2pdf.js@0.10.1",
+      "version": "0.14.0",
+      "bom-ref": "open-pets-frontend@2.0.0|html2pdf.js@0.14.0",
       "author": "Erik Koopmans",
       "description": "Client-side HTML-to-PDF rendering using pure JS",
       "licenses": [
@@ -6688,15 +6694,15 @@
           }
         }
       ],
-      "purl": "pkg:npm/html2pdf.js@0.10.1",
+      "purl": "pkg:npm/html2pdf.js@0.14.0",
       "externalReferences": [
         {
-          "url": "https://registry.npmjs.org/html2pdf.js/-/html2pdf.js-0.10.1.tgz",
+          "url": "https://registry.npmjs.org/html2pdf.js/-/html2pdf.js-0.14.0.tgz",
           "type": "distribution",
           "hashes": [
             {
               "alg": "SHA-512",
-              "content": "de89f0c21396b197cd8c867057a60827a15585793e5fd6311d2ab3792ea1ba9fb57468b60c723ecd961427e8859efb5a61c8e5872ac82cbd5fbd109439af0572"
+              "content": "caf349804ffccabbb651e19f9643dd8d6f18118fa70c7e57effd961b8ba2b920b06220a9f0f67c10a3624c06ba1f12753630b9d5f652204abac657790800ca05"
             }
           ],
           "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
@@ -6707,7 +6713,7 @@
           "comment": "as detected from PackageJson property \"bugs.url\""
         },
         {
-          "url": "git+https://github.com/eKoopmans/html2pdf.js.git",
+          "url": "git+ssh://git@github.com/eKoopmans/html2pdf.js.git",
           "type": "vcs",
           "comment": "as detected from PackageJson property \"repository.url\""
         },
@@ -6934,6 +6940,56 @@
     },
     {
       "type": "library",
+      "name": "iobuffer",
+      "version": "5.4.0",
+      "bom-ref": "open-pets-frontend@2.0.0|iobuffer@5.4.0",
+      "author": "Michaël Zasso",
+      "description": "Read and write binary data on ArrayBuffers",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:npm/iobuffer@5.4.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/iobuffer/-/iobuffer-5.4.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "0d179b396baa0efc6e9df90d24095cdc8cd620f0f9c55c7050d6c7afbc4a07c13a68b27120f7cd5f70a83098217058e9bfa45642cadc25b821b44c123e826a30"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        },
+        {
+          "url": "https://github.com/image-js/iobuffer/issues",
+          "type": "issue-tracker",
+          "comment": "as detected from PackageJson property \"bugs.url\""
+        },
+        {
+          "url": "git+https://github.com/image-js/iobuffer.git",
+          "type": "vcs",
+          "comment": "as detected from PackageJson property \"repository.url\""
+        },
+        {
+          "url": "https://github.com/image-js/iobuffer#readme",
+          "type": "website",
+          "comment": "as detected from PackageJson property \"homepage\""
+        }
+      ],
+      "properties": [
+        {
+          "name": "openpets:category",
+          "value": "間接相依"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "is-mobile",
       "version": "5.0.0",
       "bom-ref": "open-pets-frontend@2.0.0|is-mobile@5.0.0",
@@ -7085,8 +7141,8 @@
     {
       "type": "library",
       "name": "jspdf",
-      "version": "2.5.2",
-      "bom-ref": "open-pets-frontend@2.0.0|jspdf@2.5.2",
+      "version": "4.2.1",
+      "bom-ref": "open-pets-frontend@2.0.0|jspdf@4.2.1",
       "description": "PDF Document creation from JavaScript",
       "licenses": [
         {
@@ -7095,31 +7151,31 @@
           }
         }
       ],
-      "purl": "pkg:npm/jspdf@2.5.2",
+      "purl": "pkg:npm/jspdf@4.2.1",
       "externalReferences": [
         {
-          "url": "https://registry.npmjs.org/jspdf/-/jspdf-2.5.2.tgz",
+          "url": "https://registry.npmjs.org/jspdf/-/jspdf-4.2.1.tgz",
           "type": "distribution",
           "hashes": [
             {
               "alg": "SHA-512",
-              "content": "9b2797f5cfa9ef39c358f934793aee8c2ccd8d3f825dd5f293b62626ae670f957bb8b2ca9925e7950fc99ff92ea375f4f4ea7bd00a66d2b4129c55b218af2e11"
+              "content": "632017caf9e68d36d1e1b1d044bcdec770ae20d0839509c1aa8498ca32704cfdb1f630cbb8a0f3cbb68a525d21831dee85c97bc73837d9a827e6f9627ba1c895"
             }
           ],
           "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
         },
         {
-          "url": "https://github.com/MrRio/jsPDF/issues",
+          "url": "https://github.com/parallax/jsPDF/issues",
           "type": "issue-tracker",
           "comment": "as detected from PackageJson property \"bugs.url\""
         },
         {
-          "url": "git+https://github.com/MrRio/jsPDF.git",
+          "url": "git+https://github.com/parallax/jsPDF.git",
           "type": "vcs",
           "comment": "as detected from PackageJson property \"repository.url\""
         },
         {
-          "url": "https://github.com/mrrio/jspdf",
+          "url": "https://github.com/parallax/jsPDF",
           "type": "website",
           "comment": "as detected from PackageJson property \"homepage\""
         }
@@ -7488,6 +7544,53 @@
           "name": "cdx:npm:package:constraint:engine:node",
           "value": ">=0.10.0"
         },
+        {
+          "name": "openpets:category",
+          "value": "間接相依"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pako",
+      "version": "2.2.0",
+      "bom-ref": "open-pets-frontend@2.0.0|pako@2.2.0",
+      "description": "zlib port to javascript - fast, modularized, with browser support",
+      "licenses": [
+        {
+          "expression": "(MIT AND Zlib)"
+        }
+      ],
+      "purl": "pkg:npm/pako@2.2.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/pako/-/pako-2.2.0.tgz",
+          "type": "distribution",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "cc9aba44fff9abe4ced8ea45577147ce53e71639a46fb35cf7d6b948d8c913ebaefcf9290a1b3e3486524b36c1a03fba9238884978df61dc23d59450f35773ff"
+            }
+          ],
+          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
+        },
+        {
+          "url": "https://github.com/nodeca/pako/issues",
+          "type": "issue-tracker",
+          "comment": "as detected from PackageJson property \"bugs.url\""
+        },
+        {
+          "url": "git+https://github.com/nodeca/pako.git",
+          "type": "vcs",
+          "comment": "as detected from PackageJson property \"repository.url\""
+        },
+        {
+          "url": "https://github.com/nodeca/pako#readme",
+          "type": "website",
+          "comment": "as detected from PackageJson property \"homepage\""
+        }
+      ],
+      "properties": [
         {
           "name": "openpets:category",
           "value": "間接相依"
@@ -9600,7 +9703,7 @@
         "open-pets-frontend@2.0.0|crypto-js@4.2.0",
         "open-pets-frontend@2.0.0|echarts-for-react@3.0.6",
         "open-pets-frontend@2.0.0|echarts@6.1.0",
-        "open-pets-frontend@2.0.0|html2pdf.js@0.10.1",
+        "open-pets-frontend@2.0.0|html2pdf.js@0.14.0",
         "open-pets-frontend@2.0.0|i18next@26.3.6",
         "open-pets-frontend@2.0.0|lucide-react@1.25.0",
         "open-pets-frontend@2.0.0|papaparse@5.5.4",
@@ -10168,7 +10271,13 @@
       "ref": "open-pets-frontend@2.0.0|@types/d3-timer@3.0.2"
     },
     {
+      "ref": "open-pets-frontend@2.0.0|@types/pako@2.0.4"
+    },
+    {
       "ref": "open-pets-frontend@2.0.0|@types/raf@3.4.3"
+    },
+    {
+      "ref": "open-pets-frontend@2.0.0|@types/trusted-types@2.0.7"
     },
     {
       "ref": "open-pets-frontend@2.0.0|@types/use-sync-external-store@0.0.6"
@@ -10237,15 +10346,12 @@
       "ref": "open-pets-frontend@2.0.0|asynckit@0.4.0"
     },
     {
-      "ref": "open-pets-frontend@2.0.0|atob@2.1.2"
-    },
-    {
       "ref": "open-pets-frontend@2.0.0|attr-accept@2.2.5"
     },
     {
       "ref": "open-pets-frontend@2.0.0|axios@1.20.0",
       "dependsOn": [
-        "open-pets-frontend@2.0.0|follow-redirects@1.16.0",
+        "open-pets-frontend@2.0.0|follow-redirects@1.16.2",
         "open-pets-frontend@2.0.0|form-data@4.0.6",
         "open-pets-frontend@2.0.0|https-proxy-agent@5.0.1",
         "open-pets-frontend@2.0.0|proxy-from-env@2.1.0"
@@ -10253,9 +10359,6 @@
     },
     {
       "ref": "open-pets-frontend@2.0.0|base64-arraybuffer@1.0.2"
-    },
-    {
-      "ref": "open-pets-frontend@2.0.0|btoa@1.2.1"
     },
     {
       "ref": "open-pets-frontend@2.0.0|call-bind-apply-helpers@1.0.2",
@@ -10378,7 +10481,10 @@
       "ref": "open-pets-frontend@2.0.0|delayed-stream@1.0.0"
     },
     {
-      "ref": "open-pets-frontend@2.0.0|dompurify@2.5.9"
+      "ref": "open-pets-frontend@2.0.0|dompurify@3.4.17",
+      "dependsOn": [
+        "open-pets-frontend@2.0.0|@types/trusted-types@2.0.7"
+      ]
     },
     {
       "ref": "open-pets-frontend@2.0.0|dunder-proto@1.0.1",
@@ -10432,13 +10538,18 @@
       "ref": "open-pets-frontend@2.0.0|es-toolkit@1.49.0"
     },
     {
-      "ref": "open-pets-frontend@2.0.0|es6-promise@4.2.8"
-    },
-    {
       "ref": "open-pets-frontend@2.0.0|eventemitter3@5.0.4"
     },
     {
       "ref": "open-pets-frontend@2.0.0|fast-deep-equal@3.1.3"
+    },
+    {
+      "ref": "open-pets-frontend@2.0.0|fast-png@6.4.0",
+      "dependsOn": [
+        "open-pets-frontend@2.0.0|@types/pako@2.0.4",
+        "open-pets-frontend@2.0.0|iobuffer@5.4.0",
+        "open-pets-frontend@2.0.0|pako@2.2.0"
+      ]
     },
     {
       "ref": "open-pets-frontend@2.0.0|fflate@0.8.3"
@@ -10450,7 +10561,7 @@
       ]
     },
     {
-      "ref": "open-pets-frontend@2.0.0|follow-redirects@1.16.0"
+      "ref": "open-pets-frontend@2.0.0|follow-redirects@1.16.2"
     },
     {
       "ref": "open-pets-frontend@2.0.0|form-data@4.0.6",
@@ -10516,11 +10627,11 @@
       ]
     },
     {
-      "ref": "open-pets-frontend@2.0.0|html2pdf.js@0.10.1",
+      "ref": "open-pets-frontend@2.0.0|html2pdf.js@0.14.0",
       "dependsOn": [
-        "open-pets-frontend@2.0.0|es6-promise@4.2.8",
+        "open-pets-frontend@2.0.0|dompurify@3.4.17",
         "open-pets-frontend@2.0.0|html2canvas@1.4.1",
-        "open-pets-frontend@2.0.0|jspdf@2.5.2"
+        "open-pets-frontend@2.0.0|jspdf@4.2.1"
       ]
     },
     {
@@ -10541,6 +10652,9 @@
       "ref": "open-pets-frontend@2.0.0|internmap@2.0.3"
     },
     {
+      "ref": "open-pets-frontend@2.0.0|iobuffer@5.4.0"
+    },
+    {
       "ref": "open-pets-frontend@2.0.0|is-mobile@5.0.0"
     },
     {
@@ -10553,14 +10667,13 @@
       ]
     },
     {
-      "ref": "open-pets-frontend@2.0.0|jspdf@2.5.2",
+      "ref": "open-pets-frontend@2.0.0|jspdf@4.2.1",
       "dependsOn": [
         "open-pets-frontend@2.0.0|@babel/runtime@7.29.7",
-        "open-pets-frontend@2.0.0|atob@2.1.2",
-        "open-pets-frontend@2.0.0|btoa@1.2.1",
         "open-pets-frontend@2.0.0|canvg@3.0.11",
         "open-pets-frontend@2.0.0|core-js@3.51.0",
-        "open-pets-frontend@2.0.0|dompurify@2.5.9",
+        "open-pets-frontend@2.0.0|dompurify@3.4.17",
+        "open-pets-frontend@2.0.0|fast-png@6.4.0",
         "open-pets-frontend@2.0.0|fflate@0.8.3",
         "open-pets-frontend@2.0.0|html2canvas@1.4.1"
       ]
@@ -10594,6 +10707,9 @@
     },
     {
       "ref": "open-pets-frontend@2.0.0|object-assign@4.1.1"
+    },
+    {
+      "ref": "open-pets-frontend@2.0.0|pako@2.2.0"
     },
     {
       "ref": "open-pets-frontend@2.0.0|papaparse@5.5.4"

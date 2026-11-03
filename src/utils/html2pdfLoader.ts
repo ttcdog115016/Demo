@@ -5,6 +5,7 @@
  * ★ 2026-10-29：原本匯出時才從 cdnjs.cloudflare.com 載入 html2pdf.bundle.min.js，離線（單機版）就無法匯出 PDF；
  *   改用 npm 套件 html2pdf.js（同版本 0.10.1）打包進前端，第一次匯出時才動態載入（不拖慢首頁）。
  *   保留原本 <script> 的 onload／onerror 寫法，AuditLogHub 與 Step4 匯出流程不用改。
+ * ★ 2026-11-03：npm audit 指出 0.10.1 內含之 jspdf／dompurify 有已知弱點，升級為 0.14.0（jspdf 4.x、dompurify 3.x），匯出 API 不變。
  */
 
 export interface Html2PdfLoader
