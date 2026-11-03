@@ -808,7 +808,7 @@ export default function KAnonymityRules(): React.ReactElement
             key: 'guess',
             label: translate('step3.plain_sum_guess_short', '被認出機率'),
             value: translate('step3.plain_sum_guess_value', '≤ {{pct}}', { pct: guessChancePercentText }),
-            tooltip: translate('step3.plain_sum_guess_tip', '每群至少 {{k}} 筆資料在可識別欄位上完全相同，猜中是其中哪一筆的機會最多 1/{{k}}。', { k: currentKValue })
+            tooltip: translate('step3.plain_sum_guess_tip', '每群至少 {{k}} 筆資料在可識別欄位上完全相同，僅憑這些欄位，猜中是其中哪一筆的機會不超過 1/{{k}}。', { k: currentKValue })
         },
         {
             key: 'suppress',

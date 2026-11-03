@@ -138,7 +138,7 @@ export const Dashboard: React.FC = () => {
             >
               <Title level={3} style={{ marginTop: 0 }}>{translate('dashboard.new_task_title', '建立新的去識別化任務')}</Title>
               <Paragraph type="secondary" style={{ fontSize: scaleFontSize(16), marginBottom: '24px', lineHeight: '1.8' }}>
-                {translate('dashboard.new_task_desc', '系統將引導您進行屬性分類與隱私設定。資料只會上傳到本系統的後端處理，不會傳送給任何第三方。')}
+                {translate('dashboard.new_task_desc', '系統將引導您進行屬性分類與隱私設定。資料僅送至本系統的後端處理，本系統不會將資料傳送給第三方。')}
               </Paragraph>
               <div>
                   <Button

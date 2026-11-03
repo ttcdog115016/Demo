@@ -31,7 +31,7 @@ export interface PlainCardColors {
 type HelpIconRenderer = (tooltip: ReactNode) => ReactNode;
 
 const RISK_VERDICT_TEXT: Record<1 | 2 | 3, string> = {
-    1: '資料被認出、被對上或被猜出敏感資料的機會都很低。',
+    1: '依本次評估，資料被認出、被對上或被猜出敏感資料的機會都偏低。',
     2: '仍有一定風險，建議針對下方最高的一項調整設定後重新運算。',
     3: '風險偏高，不建議對外提供；請針對下方最高的一項調整設定後重新運算。',
 };

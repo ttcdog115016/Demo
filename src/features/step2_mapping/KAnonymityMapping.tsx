@@ -1906,7 +1906,7 @@ export default function KAnonymityMapping(): React.ReactElement
                     const maskStrategyOptionList = rowRecordItem.role === 'Identifier'
                         ? [
                             { value: 'remove', label: strategyOptionLabel(translate('step2.opt_drop'), translate('step2.opt_drop_tooltip', '把這個欄位完全刪除，不會出現在輸出資料中。')) },
-                            { value: 'hash', label: strategyOptionLabel(translate('step2.opt_identifier_hash', '雜湊（假名化）'), translate('step2.opt_identifier_hash_tooltip', '把每個值換成一串固定長度的代碼：同一個值永遠得到同一個代碼，可用來串接或計數，但看不出原值。')) },
+                            { value: 'hash', label: strategyOptionLabel(translate('step2.opt_identifier_hash', '雜湊（假名化）'), translate('step2.opt_identifier_hash_tooltip', '把每個值換成一串固定長度的代碼：同一個值會得到同一個代碼，可用來串接或計數，但不易看出原值。')) },
                             { value: 'clear', label: strategyOptionLabel(translate('step2.opt_identifier_clear', '清空（保留欄位）'), translate('step2.opt_identifier_clear_tooltip', '把值全部清空，但欄位本身保留。適用於下游資料表欄位固定、少一欄就無法匯入的情況。')) },
                         ]
                         : [
@@ -1919,7 +1919,7 @@ export default function KAnonymityMapping(): React.ReactElement
                                         ? [{ value: 'mask', label: strategyOptionLabel(translate('step2.opt_mask_full', '全遮蔽'), translate('step2.opt_mask_full_tooltip', '整個值換成遮蔽字元（例如 ****）。可指定固定長度，避免從長度看出原值。日期欄位不適用。')) }]
                                         : []),
                                     { value: 'partial', label: strategyOptionLabel(translate('step2.opt_mask_partial', '部分遮蔽'), translate('step2.opt_mask_partial_tooltip', '只保留開頭或結尾幾個字，其餘換成遮蔽字元（例如 091*******）。')) },
-                                    { value: 'hash', label: strategyOptionLabel(translate('step2.opt_identifier_hash', '雜湊（假名化）'), translate('step2.opt_identifier_hash_tooltip', '把每個值換成一串固定長度的代碼：同一個值永遠得到同一個代碼，可用來串接或計數，但看不出原值。')) },
+                                    { value: 'hash', label: strategyOptionLabel(translate('step2.opt_identifier_hash', '雜湊（假名化）'), translate('step2.opt_identifier_hash_tooltip', '把每個值換成一串固定長度的代碼：同一個值會得到同一個代碼，可用來串接或計數，但不易看出原值。')) },
                                     { value: 'clear', label: strategyOptionLabel(translate('step2.opt_identifier_clear', '清空（保留欄位）'), translate('step2.opt_identifier_clear_tooltip', '把值全部清空，但欄位本身保留。適用於下游資料表欄位固定、少一欄就無法匯入的情況。')) },
                                 ]
                                 : []),

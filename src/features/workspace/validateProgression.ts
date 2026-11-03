@@ -70,7 +70,7 @@ export const validateProgression = (
 	// 禁止跨越超過 1 個步驟之向前跳躍式導航 (向後回退不受限制)
 	if (targetStepIndexValue > currentStepIndexValue + MAX_ALLOWED_STEP_JUMP_COUNT) 
 	{
-		return translateFunction('message.no_skip', '為確保資料安全，請循序漸進完成設定，勿跳躍步驟');
+		return translateFunction('message.no_skip', '請依序完成各步驟設定，勿跳過步驟');
 	}
 
 	// ============================================================================

@@ -299,8 +299,8 @@ export default function Step2_Mapping(): React.ReactElement
                         { value: 'random', label: translate('step2.hash_seed_random', '執行時間鹽值（每次執行不同）') }
                     ],
                     optionHintMap: {
-                        none: translate('step2.hint_hash_seed_none', '效果：使用伺服器設定的預設鹽值（部署時自動產生並固定）。同一台伺服器上同一個值永遠得到相同結果，可跨批次比對，外部也無法查表反推。鹽值只存在伺服器上，預覽不顯示雜湊值，只標示處理方式。'),
-                        fixed: translate('step2.hint_hash_seed_fixed', '效果：以您輸入的鹽值一起計算雜湊，同一個鹽值下，相同的值會得到相同結果。適用情境：需要「跨批次比對」又要「防止被查表反推」時使用；鹽值建議至少 16 個字元並妥善保管，一旦外流就會失去保護效果。'),
+                        none: translate('step2.hint_hash_seed_none', '效果：使用伺服器設定的預設鹽值（部署時自動產生並固定）。同一台伺服器上同一個值會得到相同結果，可跨批次比對；在鹽值未外流的前提下，外部難以查表反推。鹽值只存在伺服器上，預覽不顯示雜湊值，只標示處理方式。'),
+                        fixed: translate('step2.hint_hash_seed_fixed', '效果：以您輸入的鹽值一起計算雜湊，同一個鹽值下，相同的值會得到相同結果。適用情境：需要「跨批次比對」又要「降低被查表反推的風險」時使用；鹽值建議至少 16 個字元並妥善保管，一旦外流就會失去保護效果。'),
                         random: translate('step2.hint_hash_seed_random', '效果：以本次執行的時間（精確到微秒）當鹽值，同一次執行內相同的值結果相同，下次執行即不同、不會保存。適用情境：只需遮蔽本批資料、不需要跨批次比對時使用。注意：鹽值是執行時間，知道大約執行時間的人可縮小猜測範圍，防查表能力不如「伺服器預設鹽值」。')
                     }
                 },
@@ -355,7 +355,7 @@ export default function Step2_Mapping(): React.ReactElement
         type_cast: translate('step2.hint_action_type_cast', '效果：將欄位資料轉換為指定的資料型態（整數、浮點數或布林值）。適用情境：欄位型態與實際用途不符（如數字被存成文字）時使用。'),
         normalize: translate('step2.hint_action_normalize', '效果：統一文字的大小寫及全形／半形格式。適用情境：同一欄位存在格式不一致（如英數字全形與半形混用）需要統一比對基準時使用。'),
         clamp: translate('step2.hint_action_clamp', '效果：將數值限制在指定的上下限範圍內，超出範圍者會被調整為邊界值。適用情境：欄位存在明顯異常值（如年齡出現負數或超過合理上限）需要修正時使用。'),
-        hash: translate('step2.hint_action_hash', '效果：以指定演算法將原始值轉換為不可逆的雜湊字串，無法還原回原始內容。適用情境：需完全隱藏原始值、但仍需保留可比對的唯一性（如識別碼）時使用。'),
+        hash: translate('step2.hint_action_hash', '效果：以指定演算法將原始值轉換為單向雜湊字串，難以由雜湊值推回原始內容。適用情境：需隱藏原始值、但仍需保留可比對的唯一性（如識別碼）時使用。'),
         regex_replace: translate('step2.hint_action_regex_replace', '效果：以正則表達式比對特定樣式的文字並替換為指定內容。適用情境：需遮蔽或移除特定格式的敏感字串（如電話號碼、Email）時使用。')
     };
 

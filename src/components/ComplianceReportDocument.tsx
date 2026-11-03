@@ -184,7 +184,7 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
             <div className="pdf-page-break" style={{ background: '#1f2937', color: '#ffffff', padding: '14px 24px', fontSize: scaleFontSize(12), pageBreakInside: 'avoid' }}>
                 {isNonCompliant
                     ? translate('step4.report.brand_bar_non_compliant', '通用去識別化與隱私保護系統 - 安全驗證檢測紀錄')
-                    : translate('step4.report.brand_bar', '通用去識別化與隱私保護系統 - 安全驗證與合規稽核報告')}
+                    : translate('step4.report.brand_bar', '通用去識別化與隱私保護系統 - 隱私風險檢測與合規稽核報告')}
             </div>
 
             <div style={{ padding: '24px' }}>

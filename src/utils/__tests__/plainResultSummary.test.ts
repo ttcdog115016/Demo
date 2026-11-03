@@ -48,7 +48,7 @@ import { resolveReleaseDecision, pickExampleValue } from '../plainResultSummary'
 
 describe('resolveReleaseDecision', () => {
     it('依保護程度與可用性給出一句話結論', () => {
-        expect(resolveReleaseDecision({ riskLevel: 1, utilityLevel: 1, privacyMode: 'k-anonymity' }).headline).toBe('可以提供');
+        expect(resolveReleaseDecision({ riskLevel: 1, utilityLevel: 1, privacyMode: 'k-anonymity' }).headline).toBe('依本次評估可提供');
         expect(resolveReleaseDecision({ riskLevel: 1, utilityLevel: 3, privacyMode: 'k-anonymity' }).tone).toBe('warning');
         expect(resolveReleaseDecision({ riskLevel: 2, utilityLevel: 1, privacyMode: 'k-anonymity' }).headline).toBe('建議調整後再提供');
         expect(resolveReleaseDecision({ riskLevel: 3, utilityLevel: 1, privacyMode: 'differential-privacy' }).adviceText).toContain('ε');

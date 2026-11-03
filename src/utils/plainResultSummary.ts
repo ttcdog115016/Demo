@@ -205,7 +205,7 @@ export const resolveColumnTreatment = (input: {
 export type ReleaseDecisionTone = 'success' | 'warning' | 'error' | 'info';
 
 export interface ReleaseDecision {
-    /** 一句話結論，例如「可以提供」 */
+    /** 一句話結論，例如「依本次評估可提供」 */
     headline: string;
     /** 下一步建議 */
     adviceText: string;
@@ -240,16 +240,16 @@ export const resolveReleaseDecision = (input: {
         return { headline: '建議調整後再提供', adviceText: `仍有一定的被認出風險。${strengthenAdvice}`, tone: 'warning' };
     }
     if (input.utilityLevel === 3) {
-        return { headline: '可以提供，但資料可能不好用', adviceText: `保護程度足夠，但刪除、遮蔽或雜訊較多。${relaxAdvice}`, tone: 'warning' };
+        return { headline: '依本次評估可提供，但資料可能不好用', adviceText: `依本次評估，保護程度已達設定門檻，但刪除、遮蔽或雜訊較多。${relaxAdvice}`, tone: 'warning' };
     }
     if (input.utilityLevel === 2) {
-        return { headline: '可以提供', adviceText: '保護程度足夠。部分資料已刪除、遮蔽或加入雜訊，分析時請留意。可下載處理後的資料與報告。', tone: 'success' };
+        return { headline: '依本次評估可提供', adviceText: '依本次評估，保護程度已達設定門檻。部分資料已刪除、遮蔽或加入雜訊，分析時請留意。可下載處理後的資料與報告。', tone: 'success' };
     }
     // ★ 2026-10-14：差分隱私不判定可用性（utilityLevel 為 null），結論只講保護程度
     if (input.utilityLevel === null) {
-        return { headline: '可以提供', adviceText: '保護程度足夠。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
+        return { headline: '依本次評估可提供', adviceText: '依本次評估，保護程度已達設定門檻。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
     }
-    return { headline: '可以提供', adviceText: '保護程度足夠，資料也大致完整。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
+    return { headline: '依本次評估可提供', adviceText: '依本次評估，保護程度已達設定門檻，資料也大致完整。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
 };
 
 /** 從處理後資料找一個範例值（略過空白與抑制符號「*」），給「去識別化」（blurred）的欄位顯示「例：30-39」 */

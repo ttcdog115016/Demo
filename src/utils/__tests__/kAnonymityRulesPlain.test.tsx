@@ -43,7 +43,7 @@ describe('Step3 K-匿名白話版', () => {
     });
     afterEach(() => cleanup());
 
-    it('K=3 選中「標準」，摘要顯示猜中機會最多 1/3', () => {
+    it('K=3 選中「標準」，摘要顯示猜中機會不超過 1/3', () => {
         render(<KAnonymityRules />);
         expect(screen.getByTestId('kanon-preset-standard').getAttribute('aria-checked')).toBe('true');
         expect(screen.getByTestId('kanon-plain-level').textContent).toContain('標準');
