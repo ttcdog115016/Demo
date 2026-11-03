@@ -58,6 +58,8 @@ interface WindowWithHtml2Pdf extends Window
 
 const { Text, Title } = Typography;
 
+type ComplianceFilterValue = 'all' | AuditLogItem['status']; // 合規篩選：全部／達標／未達標
+
 /**
  * 函數名稱: AuditLogHub
  * 函數功能: 渲染歷史審計軌跡儀表板，提供關鍵 KPI 統計、歷史憑證條件搜尋過濾，以及 Modal 彈窗調閱與高畫質 PDF 審計憑證匯出功能。
@@ -119,7 +121,18 @@ export default function AuditLogHub(): React.ReactElement
 
 	const [searchKeywordText, setSearchKeywordText] = useState<string>('');
 
-	const [privacyFilterMode, setPrivacyFilterMode] = useState<string>('all'); 
+	const [privacyFilterMode, setPrivacyFilterMode] = useState<string>('all');
+
+	// ★ 2026-11-03：依合規結果篩選；下拉選單與上方統計卡共用此狀態
+	const [complianceFilter, setComplianceFilter] = useState<ComplianceFilterValue>('all');
+
+	// 點統計卡：切到該類，再點一次已選的卡片則回到全部
+	const statsClickHintText = translate('audit.stats_click_hint', '點擊卡片可篩選列表');
+
+	const toggleComplianceFilter = (targetFilterValue: ComplianceFilterValue): void =>
+	{
+		setComplianceFilter((currentFilterValue) => (currentFilterValue === targetFilterValue ? 'all' : targetFilterValue));
+	};
 
 	const [selectedAuditLog, setSelectedAuditLog] = useState<AuditLogItem | null>(null); 
 
@@ -143,11 +156,13 @@ export default function AuditLogHub(): React.ReactElement
 
 					const isPrivacyModeMatched = privacyFilterMode === 'all' || logItemRecord.privacyMode === privacyFilterMode;
 
-					return isSearchKeywordMatched && isPrivacyModeMatched;
+					const isComplianceMatched = complianceFilter === 'all' || logItemRecord.status === complianceFilter;
+
+					return isSearchKeywordMatched && isPrivacyModeMatched && isComplianceMatched;
 				}
 			);
-		}, 
-		[auditLogsList, searchKeywordText, privacyFilterMode]
+		},
+		[auditLogsList, searchKeywordText, privacyFilterMode, complianceFilter]
 	);
 
 	// 計算 KPI 統計數據 (符合規範 c, d)
@@ -370,40 +385,70 @@ export default function AuditLogHub(): React.ReactElement
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 			
+			{/* ★ 2026-11-03：統計卡可點擊篩選列表，套用中的卡片加框標示（未達標卡片原有紅框，選中時加粗） */}
 			<Row gutter={24}>
 				<Col xs={24} md={8}>
-					<Card variant="borderless" style={{ background: token.colorBgContainer }}>
-						<Statistic
-							title={translate('audit.stats_total', '處理紀錄總數')}
-							value={auditDashboardStatistics.totalCount}
-							prefix={<SafetyCertificateOutlined style={{ color: token.colorPrimary }} />}
-							suffix={translate('audit.unit_certificates', '份')}
-						/>
-					</Card>
+					<Tooltip title={statsClickHintText}>
+						<Card
+							variant="borderless"
+							hoverable
+							onClick={() => setComplianceFilter('all')}
+							data-testid="audit-stats-card-total"
+							style={{ background: token.colorBgContainer, cursor: 'pointer', ...(complianceFilter === 'all' ? { border: `2px solid ${token.colorPrimary}` } : {}) }}
+						>
+							<Statistic
+								title={translate('audit.stats_total', '處理紀錄總數')}
+								value={auditDashboardStatistics.totalCount}
+								prefix={<SafetyCertificateOutlined style={{ color: token.colorPrimary }} />}
+								suffix={translate('audit.unit_certificates', '份')}
+							/>
+						</Card>
+					</Tooltip>
 				</Col>
 				<Col xs={24} md={8}>
-					<Card variant="borderless" style={{ background: token.colorBgContainer }}>
-						<Statistic
-							title={translate('audit.stats_passed', '達合規標準')}
-							value={auditDashboardStatistics.passedCount}
-							valueStyle={{ color: '#16a34a' }}
-							prefix={<CheckCircleOutlined />}
-							suffix={translate('audit.unit_certificates', '份')}
-						/>
-					</Card>
+					<Tooltip title={statsClickHintText}>
+						<Card
+							variant="borderless"
+							hoverable
+							onClick={() => toggleComplianceFilter('passed')}
+							data-testid="audit-stats-card-passed"
+							style={{ background: token.colorBgContainer, cursor: 'pointer', ...(complianceFilter === 'passed' ? { border: `2px solid ${token.colorPrimary}` } : {}) }}
+						>
+							<Statistic
+								title={translate('audit.stats_passed', '達合規標準')}
+								value={auditDashboardStatistics.passedCount}
+								valueStyle={{ color: '#16a34a' }}
+								prefix={<CheckCircleOutlined />}
+								suffix={translate('audit.unit_certificates', '份')}
+							/>
+						</Card>
+					</Tooltip>
 				</Col>
 				<Col xs={24} md={8}>
-					<Card variant="borderless" style={{ background: token.colorBgContainer, ...(auditDashboardStatistics.failedCount > 0 ? { border: '1px solid #dc2626' } : {}) }}>
-						<Statistic
-							title={translate('audit.stats_failed', '未達合規標準')}
-							value={auditDashboardStatistics.failedCount}
-							valueStyle={{ color: auditDashboardStatistics.failedCount > 0 ? '#dc2626' : undefined }}
-							prefix={<CloseCircleOutlined />}
-							suffix={translate('audit.unit_certificates', '份')}
-						/>
-					</Card>
+					<Tooltip title={statsClickHintText}>
+						<Card
+							variant="borderless"
+							hoverable
+							onClick={() => toggleComplianceFilter('failed')}
+							data-testid="audit-stats-card-failed"
+							style={{
+								background: token.colorBgContainer,
+								cursor: 'pointer',
+								...(complianceFilter === 'failed'
+									? { border: '2px solid #dc2626' }
+									: auditDashboardStatistics.failedCount > 0 ? { border: '1px solid #dc2626' } : {}),
+							}}
+						>
+							<Statistic
+								title={translate('audit.stats_failed', '未達合規標準')}
+								value={auditDashboardStatistics.failedCount}
+								valueStyle={{ color: auditDashboardStatistics.failedCount > 0 ? '#dc2626' : undefined }}
+								prefix={<CloseCircleOutlined />}
+								suffix={translate('audit.unit_certificates', '份')}
+							/>
+						</Card>
+					</Tooltip>
 				</Col>
-
 			</Row>
 
 			<Card variant="borderless" style={{ background: token.colorBgContainer }}>
@@ -431,6 +476,18 @@ export default function AuditLogHub(): React.ReactElement
 							onChange={(inputEvent) => setSearchKeywordText(inputEvent.target.value)}
 							style={{ width: '20em' }}
 							allowClear
+						/>
+
+						<Select
+							value={complianceFilter}
+							onChange={(selectedComplianceValue: ComplianceFilterValue) => setComplianceFilter(selectedComplianceValue)}
+							style={{ width: '11em' }}
+							data-testid="audit-compliance-filter"
+							options={[
+								{ value: 'all', label: translate('audit.filter_compliance_all', '全部合規結果') },
+								{ value: 'passed', label: translate('audit.stats_passed', '達合規標準') },
+								{ value: 'failed', label: translate('audit.stats_failed', '未達合規標準') },
+							]}
 						/>
 
 						<Select 
@@ -502,4 +559,4 @@ export default function AuditLogHub(): React.ReactElement
 
 		</div>
 	);
-}
+}
