@@ -116,7 +116,8 @@ export function RiskSummaryCard({ summary, rows, colors, helpIcon }: {
                     title={`風險評估${info.labelText}`}
                     verdictText={RISK_VERDICT_TEXT[info.level]}
                     helpIcon={helpIcon}
-                    helpTooltip={`下方三項都低於 ${thresholdPct} 才算通過，任一項達到或超過就不通過（目前最高：${summary.driver.label}）。每一項是對處理後資料實際模擬攻擊、扣除亂猜也能猜中的部分後的超額風險（Anonymeter 方法）；門檻 ${thresholdPct} 參照 PETsARD 依新加坡個資保護委員會（PDPC）合成資料指引建議的 risk < 0.09。通過就代表目前的設定已足夠，不必為了更安全而犧牲資料實用性。`}
+                    // ★ 2026-11-04 使用者要求：說明改為沒有背景知識也看得懂的白話（方法與出處見 utils/riskLevel.ts）
+                    helpTooltip={`系統假裝成攻擊者，拿處理後的資料試三件事：認出是誰、和其他資料對上、猜出敏感資料。每一項都扣掉「亂猜也會中」的部分，每 100 次成功不到 ${thresholdPct.replace('%', '')} 次才算通過；三項都通過，結果才是通過（目前最高的一項：${summary.driver.label}）。門檻 ${thresholdPct} 參考新加坡個資保護委員會的建議。通過就表示保護已經足夠，不必為了更安全而犧牲資料的可用性。`}
                     colors={colors}
                 />
             )}
