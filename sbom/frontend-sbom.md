@@ -1,11 +1,12 @@
 # Open-PETs 前端軟體物料清單（SBOM）摘要
 
-- 產生時間：2026-11-04T06:17:43Z
+- 產生時間：2026-11-04T07:10:21Z
 - 格式：CycloneDX 1.5（JSON），完整清單見 `frontend-sbom.cdx.json`
 - 主元件：open-pets-frontend 2.0.2（MIT）
 - 範圍：正式執行相依（package.json 的 dependencies 及其傳遞相依）；建置與測試工具（devDependencies）不隨產品交付，不列入
 - 元件總數：185（直接相依 20、間接相依 165）
 - 後端（Python）SBOM 另見交付套件「3.2_附件二_軟體物料清單SBOM.json」
+- 授權清單與授權全文：`FRONTEND_THIRD_PARTY_LICENSES.md`、`FRONTEND_THIRD_PARTY_NOTICES.txt`（格式比照後端的 THIRD_PARTY_LICENSES.md、THIRD_PARTY_NOTICES.txt）
 - 重新產生：`npm install` 後執行 `npm run sbom`
 
 ## 直接相依

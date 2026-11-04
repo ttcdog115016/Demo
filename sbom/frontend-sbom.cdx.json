@@ -1,98 +1,16 @@
 {
-  "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
+  "serialNumber": "urn:uuid:6ac9502e-67c0-4981-81c8-957f22fe76fb",
   "version": 1,
   "metadata": {
-    "tools": {
-      "components": [
-        {
-          "type": "application",
-          "name": "npm",
-          "version": "11.17.0"
-        },
-        {
-          "type": "library",
-          "name": "cyclonedx-library",
-          "group": "@cyclonedx",
-          "version": "10.3.0",
-          "author": "Jan Kowalleck",
-          "description": "Core functionality of CycloneDX for JavaScript (Node.js or WebBrowser).",
-          "licenses": [
-            {
-              "license": {
-                "id": "Apache-2.0"
-              }
-            }
-          ],
-          "externalReferences": [
-            {
-              "url": "https://github.com/CycloneDX/cyclonedx-javascript-library/issues",
-              "type": "issue-tracker",
-              "comment": "as detected from PackageJson property \"bugs.url\""
-            },
-            {
-              "url": "git+https://github.com/CycloneDX/cyclonedx-javascript-library.git",
-              "type": "vcs",
-              "comment": "as detected from PackageJson property \"repository.url\""
-            },
-            {
-              "url": "https://github.com/CycloneDX/cyclonedx-javascript-library#readme",
-              "type": "website",
-              "comment": "as detected from PackageJson property \"homepage\""
-            }
-          ],
-          "properties": [
-            {
-              "name": "cdx:npm:package:constraint:engine:node",
-              "value": ">=20.18.0"
-            }
-          ]
-        },
-        {
-          "type": "application",
-          "name": "cyclonedx-npm",
-          "group": "@cyclonedx",
-          "version": "6.0.1",
-          "author": "Jan Kowalleck",
-          "description": "Create CycloneDX Software Bill of Materials (SBOM) from NPM projects.",
-          "licenses": [
-            {
-              "license": {
-                "id": "Apache-2.0"
-              }
-            }
-          ],
-          "externalReferences": [
-            {
-              "url": "https://github.com/CycloneDX/cyclonedx-node-npm/issues",
-              "type": "issue-tracker",
-              "comment": "as detected from PackageJson property \"bugs.url\""
-            },
-            {
-              "url": "git+https://github.com/CycloneDX/cyclonedx-node-npm.git",
-              "type": "vcs",
-              "comment": "as detected from PackageJson property \"repository.url\""
-            },
-            {
-              "url": "https://github.com/CycloneDX/cyclonedx-node-npm#readme",
-              "type": "website",
-              "comment": "as detected from PackageJson property \"homepage\""
-            }
-          ],
-          "properties": [
-            {
-              "name": "cdx:npm:package:constraint:engine:node",
-              "value": ">=20.18.0"
-            },
-            {
-              "name": "cdx:npm:package:constraint:engine:npm",
-              "value": ">=9"
-            }
-          ]
-        }
-      ]
-    },
+    "tools": [
+      {
+        "vendor": "OWASP CycloneDX",
+        "name": "cyclonedx-npm",
+        "version": "6.0.1"
+      }
+    ],
     "component": {
       "type": "application",
       "name": "open-pets-frontend",
@@ -127,7 +45,7 @@
         "value": "npm run sbom（scripts/gen-sbom.mjs，@cyclonedx/cyclonedx-npm）"
       }
     ],
-    "timestamp": "2026-11-04T06:17:43Z"
+    "timestamp": "2026-11-04T07:10:21Z"
   },
   "components": [
     {
@@ -155,23 +73,15 @@
               "alg": "SHA-512",
               "content": "7e83d5974f92588b25194b43ff106bd69f54e002b33e135812c797611468e504b318009866b41b7b5d406096d87c05a7592a46071e898c19927ae814b03f6fa9"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ant-design/ant-design-colors/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ant-design/ant-design-colors.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ant-design/ant-design-colors#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -205,23 +115,15 @@
               "alg": "SHA-512",
               "content": "d87cbc0670841f7d713de48b6e1841d9cb423d7136667012762f8a6d2792efd04d6d484bf610047b6d1291493e051f1a2939aa6faf85285aee93bc3ccf456845"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/ant-design/cssinjs/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/ant-design/cssinjs.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ant-design/cssinjs",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -255,23 +157,15 @@
               "alg": "SHA-512",
               "content": "e5f4c7435e7c8c9279742fc409ec887595332b113f9a910c459c6d8721b5b30fc02911ca809060d34622e800955e0c9c7637bb29a85136f3444ffb8171cc029c"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ant-design/cssinjs-util/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ant-design/cssinjs-util.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ant-design/cssinjs-util",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -306,23 +200,15 @@
               "alg": "SHA-512",
               "content": "7ac2897a0a56e27724874a3a915dd391becd3c86586cf9e71719900d498bd3cba45d902f57ce53641afbd1e1ae91efc2200acb68fe9ac3c96df4a20b8e75ae3b"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ant-design/fast-color/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ant-design/fast-color.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ant-design/fast-color",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -359,23 +245,15 @@
               "alg": "SHA-512",
               "content": "07a3b96b95c9e308ed34e7d97a35d8c075b9cef295e606248c67f5d5d1c62c46ca9f40010c69dda38d7e81f2225f24c586f1128f85d3a2dbae777de650589dd2"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ant-design/ant-design-icons/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ant-design/ant-design-icons.git#master",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ant-design/ant-design-icons/tree/master#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -413,23 +291,15 @@
               "alg": "SHA-512",
               "content": "d414d417228f4c1679dccb933fcb349394851172fba3754710ec0b8336a858ac2705ea8872a52d56c85ce122b3848eae0027ea849a81c01504f45b16477b942c"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ant-design/ant-design-icons/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ant-design/ant-design-icons.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ant-design/ant-design-icons/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -464,23 +334,15 @@
               "alg": "SHA-512",
               "content": "1cc4bdb11a049997b2f0bb04fd8a3afa4961973535d8f8ac8eb55cc9d5b74a8ed176497211ddaa7a1c94e9aed8a7e39837bda682c62cdcd142c8fda508f155aa"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ant-design/react-slick/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ant-design/react-slick.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://react-slick.neostack.com",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -515,23 +377,15 @@
               "alg": "SHA-512",
               "content": "36af0e8465a264864657a84b1e8c8028b2dc26284fff115e04c189a14af14d7da9b08f1d0a27f32e16484856fe5564b7c053110e6086c3947e74ec920aa3cb87"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/babel/babel/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/babel/babel.git#packages/babel-runtime",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://babel.dev/docs/en/next/babel-runtime",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -569,23 +423,15 @@
               "alg": "SHA-512",
               "content": "90126d7fb3c7e9a5b067a7e46b7cd0d29e92058cf1e1f9752e865713646b9d8493f579639bb59f289ad4e20fd7af705e83bd8c2eba750163549ae6094cbec2a3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/emotion-js/emotion/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/emotion-js/emotion.git#master",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/emotion-js/emotion/tree/master#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -619,23 +465,15 @@
               "alg": "SHA-512",
               "content": "3963913697e332c49250156b44154610292159c50b380273f595bcb8af6a8310fef3b33b8c745cbe1fc0f7a5d73615d32e629ca18490b41117ee51cc3bb611c2"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/emotion-js/emotion/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/emotion-js/emotion.git#master",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/emotion-js/emotion/tree/master#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -669,23 +507,15 @@
               "alg": "SHA-512",
               "content": "0f7006430772139f209afc7ac1a5525c9f342463be218e4bd8ef070e748e7b1ec9365cc1dc6b8dff88721cd4dd872daab4e864a5b22399e00dded2fdf77c0a6c"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/async-validator/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/async-validator.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/async-validator",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -724,23 +554,15 @@
               "alg": "SHA-512",
               "content": "ddc54d1b4ceb405d4fa17ab6eb62f7c06094fbf60b102d661925470e5e7bedd42603464a91715b63a9f0c97a3e6de09c33b6eea38f6ddb88e4afe41974becef3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/cascader/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/cascader.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/cascader",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -774,23 +596,15 @@
               "alg": "SHA-512",
               "content": "dc25c63e9011f60b0f29e3b637bf0700f3b3537d1475e983e87189a165493a96ba5a579a181e64cd98f7bfa6dd4d969bdf562e5a063f47157754a3dcb67d03c1"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/checkbox/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/checkbox.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://react-component.github.io/checkbox",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -824,23 +638,15 @@
               "alg": "SHA-512",
               "content": "6516122924b7f6ab05c7dde9dba6dd7bb254649b21b140444119515cfb89625022357d2fc98945e53b009bc2593772dc17c5ef2a291dccf6e002d5d26e42d493"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/collapse/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/collapse.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/collapse",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -874,23 +680,15 @@
               "alg": "SHA-512",
               "content": "3876821cb1eccc27a0757988ab665121904dfc4b694fa5a6f121bf829ccb0131db54a73f6afbee2a2fb394eba4d391535af81a326a71024a38e2e449dccfb6a6"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/color-picker/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/color-picker.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/color-picker",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -924,23 +722,15 @@
               "alg": "SHA-512",
               "content": "ba21a90256e508d9738873f08f84b8232fe87a67aecff851d3799b8848d3097c2ca8e20ddc13b3b113320f0a723b9166d2f2041094547fd66d6d12db864b2e4c"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/context/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/context.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/context",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -975,23 +765,15 @@
               "alg": "SHA-512",
               "content": "783ba4365cfdbcdb33006bfb8b7cca5ddc44777c20566371b898a362df33bd3875ed0c13bbc28afdb75445177f954e2a68cce13b51ca2a632bc0e9e46b0d01bd"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/dialog/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/dialog.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/dialog",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1026,23 +808,15 @@
               "alg": "SHA-512",
               "content": "d626fe7d9129e8506ef98bdc224b66fa7090f90faa229c29a1a247ea8a46af8a1f87640cabea9daf90cb0b8a027f9a9fde97165fd95458f617eb9da4e229e2f1"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/drawer/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/drawer.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/drawer",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1076,23 +850,15 @@
               "alg": "SHA-512",
               "content": "e8f63679c5126210cf8643471dbe307de0326b4e1686999448acdd47ad06fa430d554097daf8d3fc08134b42f3d08fcaeb1acf309dde9d06f056978ddec1c282"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/dropdown/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/dropdown.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/dropdown",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1127,23 +893,15 @@
               "alg": "SHA-512",
               "content": "776e0462dbd438187112d49dfc4a88bbd0da32eaab585d88448bc01424cce8d43f18921836bf03bc4a5449496fdae3f1109d193f0610fb0c2518801a887bddaf"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/field-form/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/field-form.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/field-form",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1181,23 +939,15 @@
               "alg": "SHA-512",
               "content": "92117bc3bc64047e41d5bb01708d4549465d9327756aaa65d9e63220b0aa0b3cd01f75dd7de84651a6539e9b7268925fb34f7f47986ff635d6c9acce30520295"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/image/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/image.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/image",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1231,23 +981,15 @@
               "alg": "SHA-512",
               "content": "885bd3513f56f890bf3128a7d9a18093c36ab15953cdc131342f4365aae238dd485a2ae3bbd36835e124e3b6a7e10f221dace4a1523fcb52e70e2f3cf823dc8a"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/input/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/input.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/input",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1282,23 +1024,15 @@
               "alg": "SHA-512",
               "content": "1a372aee67999423a258dd6dd71082fbbfecf3986e987568913048ecf2604dfa32c3939617be32ddee8ff0f1d7d74e20f7e6f9e23b28745233c9a8faa7c2c8f7"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/input-number/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/input-number.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/input-number",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1332,23 +1066,15 @@
               "alg": "SHA-512",
               "content": "088d678d85156343631ed2e13685665e5272cb9ebc49f7a9f56b1a93abe61a3b53eae6b3c7df1d8c6625097cf6c641e1126ef783dd58dcc4efcd4c84e5abc8ef"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/mentions/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/mentions.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/mentions",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1382,23 +1108,15 @@
               "alg": "SHA-512",
               "content": "dc6b1546843872717f028210e0ff99d616817e07c13d07cb4f544963736ee03cce9e1793b257c288648f8fb6effdc2e3e6c5b9a47a8ddb97435c63f72442c095"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/menu/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/menu.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/menu",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1433,23 +1151,15 @@
               "alg": "SHA-512",
               "content": "c62b9771a0b0c8e5a90fc6bcb1c744c4597e6e7b4da61016f1779e9cbd628367a7d000196343dca78a42d1d236daa27e36fc4a9fd468348a1176a614dc12c7e3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/mini-decimal/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/mini-decimal.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/mini-decimal",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1487,23 +1197,15 @@
               "alg": "SHA-512",
               "content": "5e1dc8b33c6f952bf7fcf2d81720b65198bd2cd07cdf23a7901fcb3664736b2a592ef921a9420f4bb310a4665c08c5ab36c5d5da9e984d259b486bc5a4495ef4"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/motion/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/motion.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://react-component.github.io/motion",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1538,23 +1240,15 @@
               "alg": "SHA-512",
               "content": "0326ab8e82d4e58971b956a5462fb0f09447d99f384c16c53b6468196cfd77c6d2bb416a4fc0edba01f7c42dc157b994c259913856aec96b9716eab82056c7fb"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/mutate-observer/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/mutate-observer.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/mutate-observer",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1592,23 +1286,15 @@
               "alg": "SHA-512",
               "content": "9ea673a5fe813dd6a3fb720bc7bb22efd2cb9aa3cac94990a176beffd820d12907d2fd436c3ebaa0981131204456777fcd44f70f8830c5620750a79b61fd995d"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/notification/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/notification.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/notification",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1646,23 +1332,15 @@
               "alg": "SHA-512",
               "content": "b327e68000016870a7083ccfc0767fdadbaf21ca4e3b78de7d864c99f90dfa99a8f07293cec7e14b9eefc68e24b0f74dd01cbeb9654984958d168ccd0718b678"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/overflow/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/overflow.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://react-component.github.io/overflow",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1696,23 +1374,15 @@
               "alg": "SHA-512",
               "content": "096d60ecff55f2ef9ef0941d52c97645683e182b2879ed26b498d95020b19ffbdbde3ccec032a6ea101dc1d74709505f589e7c786501673dc8be753cad192d8f"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/pagination/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/pagination.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://react-component.github.io/pagination",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1746,23 +1416,15 @@
               "alg": "SHA-512",
               "content": "eaa5c62ada09bcef2c51dd7b9b97323446c426e6f4cdf9421e76994c10668fadc33d16587345841cdf2ba7a8454a5fb2302252fdd258e46fb57d0f1b2c2b83ec"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/picker/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/picker.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://react-component.github.io/picker",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1801,23 +1463,15 @@
               "alg": "SHA-512",
               "content": "724fabd645bf252bf4c313e38b728ddacb3d2ba674aaac2eb30fe67ffd09a1b5e167c842d9e8d9c0224e6d6fd2bc38b4ba10345739829f1d02682722f79b5c98"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/portal/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/portal.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/portal",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1855,23 +1509,15 @@
               "alg": "SHA-512",
               "content": "5995271fd786c47d7ec687592aa76b1e47b9f6ec866525a08f91c13392b093906b4ccb803913bb549d883f941b9bd687de7f71dc871eb2a1c74743563c10bb7d"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/progress/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/progress.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/progress",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1905,23 +1551,15 @@
               "alg": "SHA-512",
               "content": "680bf74213cfd71c9a7ee4d93b1b9be9ae78a427819cddc8c10929113ac1b6d86ae012f9220c6709bba80563c3a5d2f0d72d63e8180150200a57ddbec97d3a0f"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/qrcode/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/qrcode.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/qrcode",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -1959,23 +1597,15 @@
               "alg": "SHA-512",
               "content": "6e45f1781a83a65e48382ef22fb19c4988d0c7d1bc1feea42d842735959e058ab639822fd4c38d77a9aa2938e79c9629574710214db3ddab5d5b48f592db694f"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/rate/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/rate.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/rate",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2013,23 +1643,15 @@
               "alg": "SHA-512",
               "content": "b7f05bd16f2ebcbe0f60a001dd8702842f839478745ade6433babf27ed2aa5511430b7bb1e4e73baf73d926d213274c53d2c7967b5aefdfcc22cde9ead52c4f1"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/resize-observer/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/resize-observer.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://react-component.github.io/resize-observer",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2063,23 +1685,15 @@
               "alg": "SHA-512",
               "content": "e49fdb274d666c39e803a3ff156f12c54bca9fe3a05124d924fcc23674c19ed1b9d2dce83fb0f274686ac69ee08195d996cee67b799cd844035da914de24d516"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/segmented/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/segmented.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://react-component.github.io/segmented",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2113,23 +1727,15 @@
               "alg": "SHA-512",
               "content": "1d0f73b98aa37d94e5704316954d4600f05a8ddd8e1c83151f28d9486553095011c247c282f5d9313127d1c76ecb72fe7a300a91a665b8e42fc68bd9a1a25a43"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/select/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/select.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/select",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2167,23 +1773,15 @@
               "alg": "SHA-512",
               "content": "2d2ce058660381e083811e2bd57954dbd81b630b3a1e92e7bc977fb8c84b796fef420c6575e47e59be2ecc70c21e26046ebd5b9c41d676390fc632511f1ba28a"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/slider/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/slider.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://react-component.github.io/slider",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2221,23 +1819,15 @@
               "alg": "SHA-512",
               "content": "ff2548674d200d860f1d263424ff8cfacdd9bee5cbbb67fdac48d0aa2503b3b11c62c518ae927fd5b2e3f5a23d47b3014777eefcd1a1e9133dbb6a867eaa7e37"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/steps/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/steps.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/steps",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2275,23 +1865,15 @@
               "alg": "SHA-512",
               "content": "2608be11b381aae8defd735da1fafbc5b25064f6093fe0653df47487e58de3316476d076116a847ef9172567a2a5f9708d68a9d3fd7bacd6f1100aacf215477f"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/switch/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/switch.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/switch",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2325,23 +1907,15 @@
               "alg": "SHA-512",
               "content": "02238d66b8175487b0142d8f937193a9ba2ffac261583659f7a41b259406352ad7fef70cce4aa814955c8a9187e0e63a126152280a706ce850b61e8357207a81"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/table/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/table.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://react-component.github.io/table",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2380,23 +1954,15 @@
               "alg": "SHA-512",
               "content": "840fddad960e55afcc3086f83367d67f7c9a4f24c6e2a56e200066821bc48727f0da70686f95531faf653020e34952a680e0e33ba9d694257e8159f7c41ae3e5"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/tabs/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/tabs.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/tabs",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2434,23 +2000,15 @@
               "alg": "SHA-512",
               "content": "f11c790c272d2252c8e2b691d08d311e35537f5685e3cfa028235e000a396e61795684796040fe03f5c4ab35eff4a2aaac90d171ddd69dda71876872ceb4ed4a"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/tooltip/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/tooltip.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/tooltip",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2485,23 +2043,15 @@
               "alg": "SHA-512",
               "content": "6ae8b8af84ea993cf068181c4311d87a9f2433c3d38d916e7e3a2439ba72df929f15e67493d02baae58566a7a04251f6e0fd78b7e174a8ed2619383395abf5ca"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/tour/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/tour.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/tour",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2540,23 +2090,15 @@
               "alg": "SHA-512",
               "content": "6c9163e3ac0492904f9d6c939b5f179a0020350ff862fa6bc4c38f3d8d9aeab9a11896312ee34a10588be507a3e1072dbbdc07266f165bebf6498b2469f13490"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/tree/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/tree.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/tree",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2595,23 +2137,15 @@
               "alg": "SHA-512",
               "content": "1214b45f4c2d52105f2b84b94e5a52637311f6774f30682e8edb753c95b7123f93a009674bfea8858511b42a170581aa6b35301e6810195503b1fa55c2158f92"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/tree-select/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/tree-select.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/tree-select",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2645,23 +2179,15 @@
               "alg": "SHA-512",
               "content": "2cdb18bf3eb49ab2c9fe446f29c1c4edba14bdc41f54c09f46a67bd71dc5a3d00e899d4a28812a933300f0336fcf657705cbe2affbf040d9fb245d4d3ce0d0ed"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/trigger/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/trigger.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/trigger",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2699,23 +2225,15 @@
               "alg": "SHA-512",
               "content": "1af61648a79a2533b1c42e69ebe9ce49a7737ef5c0d61f02fe21c53c5657faccc7dc9517aefb3e0cb896f18513060bcc87c9bade625e1eb958949cc0960fa90c"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/upload/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/upload.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/upload",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2749,23 +2267,15 @@
               "alg": "SHA-512",
               "content": "6b0565237b9bdafa9faa463138173fb90d1e7e6de3c34c1cae1b4efd858bc997f188a5dcccac0d6d5ba1967cb1cad0edec7f696db5508aaafe3ba30b013b5162"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "http://github.com/react-component/util/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/react-component/util.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/react-component/util",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2800,23 +2310,15 @@
               "alg": "SHA-512",
               "content": "89abd19b5268e060db0124307466bb8c5ca4f7746f48ea3dc47c814f840bd69805263fc575fd46fb7444ac7effec198032fc7602417ada68c66310db5ec2bd4d"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-component/virtual-list/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-component/virtual-list.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-component/virtual-list",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2855,23 +2357,15 @@
               "alg": "SHA-512",
               "content": "2a24fe47365ba7a990113f8c83e87673defef63d6c35f954c509081c8ed8bb37fa3debbe398a66927ea76c75a62cb5a3fb564e0d4245c0667b831dcbf51f443b"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/reduxjs/redux-toolkit/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/reduxjs/redux-toolkit.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://redux-toolkit.js.org",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2906,23 +2400,15 @@
               "alg": "SHA-512",
               "content": "976685cb98c02e19e21b91e0aab0fa8d72e2feb516acabea37fa89c7aca826c80a85b95577e8aaa94e110976af9bf8cf8adc83a394c2bca327a632a73ab8b2d3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/standard-schema/standard-schema/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/standard-schema/standard-schema.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://standardschema.dev",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -2957,23 +2443,15 @@
               "alg": "SHA-512",
               "content": "7bb31ec3af3aa3031a3c954d34bb39e4f52f833dfbd672a0c2c738bf1138f73b0e0e92449f1831468db2fce2abaae79abd781934c0d58f70dd1c595a480794f2"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/standard-schema/standard-schema/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/standard-schema/standard-schema.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/standard-schema/standard-schema#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3008,23 +2486,15 @@
               "alg": "SHA-512",
               "content": "847e4c2e826117b29a20677bab7c535c65efb2523e19894cd59ff7e5a4871d668225607b5ef4d21d8b95dde33bb70f9a134993ff132ba3833843dac21874f497"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/TanStack/query/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/TanStack/query.git#packages/query-core",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://tanstack.com/query",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3059,23 +2529,15 @@
               "alg": "SHA-512",
               "content": "b1e0e4afa9331b35f5a2469a4ed64fb6003af3c0833e55d4cf50bac52834112aa7d3856e73cb65ad89acd6cddd7bece706a84f5711517e901f51ffba5ef7cf5a"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/TanStack/query/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/TanStack/query.git#packages/react-query",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://tanstack.com/query",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3109,23 +2571,15 @@
               "alg": "SHA-512",
               "content": "84e2d655b9bbb91cdad01617a48216e69c5faca7b45be0f996b162004611fa96fac373764b048c6896d77547d212ff9d4f831f1c12ed9f98ecd0b01668eea8b7"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/d3-array",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-array",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3159,23 +2613,15 @@
               "alg": "SHA-512",
               "content": "88ef74b1cb61f5601b9a0bfba20a2ae7b3bd6292a61416e6a04a021c3076c4c058d3efca56ba806820f2084d7a754b2978ebc8c4515123ed2c12da83ab2d9be0"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/d3-color",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-color",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3209,23 +2655,15 @@
               "alg": "SHA-512",
               "content": "35c5752633b9a03ce82b6ea83336c82c4e875bbb955ce1cb42f1ec841516e1431d6467e263abf905e43087d6bdb42ceff8279e7d940726de524602b5e7846d88"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/d3-ease",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-ease",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3259,23 +2697,15 @@
               "alg": "SHA-512",
               "content": "9a02cf11396ba55575611248825af8133e3b83b6318e5d658fb60ab223026f6ed5247f56f0d54ce816fd77c924a46fee0104b90266c0e3cab6200a2528aa3530"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/d3-interpolate",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-interpolate",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3309,23 +2739,15 @@
               "alg": "SHA-512",
               "content": "54c64163242f6c6996c9655e6b4107b3f0702e0c5cf8c2a2d732c308e364b28cc8e1824c713b7c644b8847849bd4c31313c30c5b8f6fd08c08e7e6fb4667d696"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/d3-path",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-path",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3359,23 +2781,15 @@
               "alg": "SHA-512",
               "content": "74b9adc01f3390078efe3b8031f9d5fac22d2a396cc3694a759555cba2d1af470199e8314800622c4a4656648927c3b4f22e3eb0647aa90b5be96b6ec0976f57"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/d3-scale",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-scale",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3409,23 +2823,15 @@
               "alg": "SHA-512",
               "content": "95a7b48967dc0de47baadeeb03cf01362a9dbcf4b9a4554fa68e4e7e3125c0d693db2c9e91b3340bdbcafb2a81a84987afa9439119d83684c162502025aedae3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/d3-shape",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-shape",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3459,23 +2865,15 @@
               "alg": "SHA-512",
               "content": "caecd9ba0d6790001a0650418a42994e0cc2780fa4d6ecb8645c1600d39f2b0e73e4b46157480d03b80d90a9bb1e82be1d1374c17dc49311a4d1fa5b5a1981ee"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/d3-time",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-time",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3509,23 +2907,15 @@
               "alg": "SHA-512",
               "content": "3ecdd3f04f1d6436a6e9f5323623247a42b75d4b1a5048a4fa274ef7f6233ed7e3daaaee17cb450574bb5e1b44e2221704bc6198b8cfdd25e92e155fdb523d2f"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/d3-timer",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-timer",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3559,23 +2949,15 @@
               "alg": "SHA-512",
               "content": "5560c26eb2de55724cf5f8a162875c2e222fd24bbe02539afd34354af60e681bb2ad22a011cae8f792c9c88b09e2f4a8e815c8c4e2b188901ab74e029924fd17"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/pako",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/pako",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3610,23 +2992,15 @@
               "alg": "SHA-512",
               "content": "738600bcc79d6cf679b44cb1cd074ca0e861278443deb9e06487700b6fea0cddddec9a44841e9f88144a558d6583907b5a4fae3c18e7e5fdfd8f5ff6318d683b"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/raf",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/raf",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3661,23 +3035,15 @@
               "alg": "SHA-512",
               "content": "49c68f767d5d41cce06e5d101537933a65471542eddfde17260390368c95859eabdaf2e730b25f04f779dd2079d93ff71b7e95235fe0d8c65a5f47300ee5ec7f"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/trusted-types",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/trusted-types",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3711,23 +3077,15 @@
               "alg": "SHA-512",
               "content": "cc50c00feb65a5fdabe1ab2e1c48f45c7ea963a8b483935e0073e7fb5e70937055e8903af5e1111570b58321938439156b5cc2c8aaf98e8c75fb62db57f00c2e"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git#types/use-sync-external-store",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/use-sync-external-store",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3761,23 +3119,15 @@
               "alg": "SHA-512",
               "content": "45937035c945efe312ffc6c383bd1a9a0df6772799199c620ee42667128b025423af78c6c8bc7ee0a924e7c50eec3d90760148402a2fb92b991129dee911ba5d"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/TooTallNate/node-agent-base/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/TooTallNate/node-agent-base.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/TooTallNate/node-agent-base#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3814,23 +3164,15 @@
               "alg": "SHA-512",
               "content": "f736d573d52e91f1aea82bc8028bf4d679690d059f011366650caddb5661a8b5fb8a55e68b871d929d76c40e3c584997457c19be7a3c034dea42e184f491bc7e"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ant-design/ant-design/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ant-design/ant-design.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://ant.design",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3864,23 +3206,15 @@
               "alg": "SHA-512",
               "content": "39e8bd387e2d461d18a94dc6c615fbf5d33f9b0560bdb64969235a464f9bb21923d12e5c7c772061a92b7818eb1f06ad5ca6f3f88a087582f1aca8a6d8c8d6d1"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/alexindigo/asynckit/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/alexindigo/asynckit.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/alexindigo/asynckit#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3914,23 +3248,15 @@
               "alg": "SHA-512",
               "content": "d1b0cd9d8feeea93f01c3328174162794df9e28062d1af2b0fd15cb0bc3370659b73c292f0a3c88bbcbeb35dce95563e80c59cffdc4431480d13a426f1996561"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-dropzone/attr-accept/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-dropzone/attr-accept.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-dropzone/attr-accept#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -3968,23 +3294,15 @@
               "alg": "SHA-512",
               "content": "afc68e87c8fd7062a981002aa73ad41e748873a6b9f58dd77ff72ff2ccb50eb1c29191f340612ea2ad6d01193aa92c8376d4064838296fd90596bbb33efae0c2"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/axios/axios/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/axios/axios.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://axios-http.com",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4018,23 +3336,15 @@
               "alg": "SHA-512",
               "content": "237ca5e2bf500796516375ee25510f7dcd978593ba6307853c8f94a2f0339fef3f85bde827a967cac6857235699023df5561540efa19f249950cfed6c91b58b5"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/niklasvh/base64-arraybuffer/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/niklasvh/base64-arraybuffer.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/niklasvh/base64-arraybuffer",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4072,23 +3382,15 @@
               "alg": "SHA-512",
               "content": "4a9d5a6e52748af0e44b38dc68977112e9cde7f5ef92c149dac30115fabac74af285057fd9bfcac057b6d5c329987b4f3928a3f0af7dff049fa04b9339b9ae31"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ljharb/call-bind-apply-helpers/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ljharb/call-bind-apply-helpers.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ljharb/call-bind-apply-helpers#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4126,23 +3428,15 @@
               "alg": "SHA-512",
               "content": "e4e37eabb8c24e0329f5c8e9bb8268e976ef7d8c120763b0de4cc729f23225f68200e1cb6dd28f42a18a81f103fd1e41fb74c515f7bca5e81803e6f8db7491c8"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/canvg/canvg/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/canvg/canvg.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/canvg/canvg#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4180,23 +3474,15 @@
               "alg": "SHA-512",
               "content": "7989b441606d52b0566561b4777f3a386030d7a67df793e2395a3607b6e35926c779d1a5e5ed1959aabae6438681448d7ac1080e407d2126d383f24af5d84264"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/lukeed/clsx/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/lukeed/clsx.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/lukeed/clsx#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4234,23 +3520,15 @@
               "alg": "SHA-512",
               "content": "1503783117ee25e1dfedc05b04c2455e12920eafb690002b06599106f72f144e410751d9297b5214048385d973f73398c3187c943767be630e7bffb971da0476"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/felixge/node-combined-stream/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/felixge/node-combined-stream.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/felixge/node-combined-stream",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4288,23 +3566,15 @@
               "alg": "SHA-512",
               "content": "55186e1ce2e82983b2e146e294b6d4cdb620f775cb8efd8f9dc242e7412e4d63c0de06a36b552306c50ffc3ffdfe3b95def405afa5c11339fd282007754bce1f"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/scroll-into-view/compute-scroll-into-view/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/scroll-into-view/compute-scroll-into-view.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://scroll-into-view.dev",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4338,23 +3608,15 @@
               "alg": "SHA-512",
               "content": "7a2f00a2cee36b4c1e469173267100f541c9ffb5d09aa8256d1c277f60138dc07d5aaf3be15287f647e38e2acce94854dbf1397c561a77297284595d72a4a275"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/jshttp/cookie/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/jshttp/cookie.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/jshttp/cookie#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4393,23 +3655,15 @@
               "alg": "SHA-512",
               "content": "edb0cac7fe639b9331cec5f173dde0e99dbee19b2e4ff31d76b7d19930c9340916b1858753c115344b018881169cc00c08732645f5048e4ba8de378d04e20747"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/zloirock/core-js/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/zloirock/core-js.git#packages/core-js",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://core-js.io",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4447,23 +3701,15 @@
               "alg": "SHA-512",
               "content": "2802c3c84620a58f919686ff8ab894b6357a77912af98d7dd40e60e14a8b022f02c863fd375f857556e47354b129cdabe18018a86f09cced8a18bf808b30fbd1"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/brix/crypto-js/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/brix/crypto-js.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://github.com/brix/crypto-js",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4496,23 +3742,15 @@
               "alg": "SHA-512",
               "content": "14770a14265c0216b72f07d50610906d6da708d6e46579fb29550972c4f9fcff1899fb158dad0530f26bd01f74de3fc4ebd1d4a612a257d89002b5fc483600e3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/niklasvh/css-line-break/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/niklasvh/css-line-break.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/niklasvh/css-line-break#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4546,23 +3784,15 @@
               "alg": "SHA-512",
               "content": "cf51c629c632db103c00641fc2b9f43c0cbe3c1ed7fc64a3dd45495bda8aca7e37c566be825e675e6538aaa2cc4735952c50bc2aeb145fc4ffd240a2398a4021"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/frenic/csstype/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/frenic/csstype.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/frenic/csstype#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4596,23 +3826,15 @@
               "alg": "SHA-512",
               "content": "b5d4009b2035f22e09ef0a6ba58abc0a5731672dd20b7d5031e072c8217246dec1547751110679969ce87b998511865459efa8abc1c1be4f498e989bc8457826"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-array/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-array.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-array/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4650,23 +3872,15 @@
               "alg": "SHA-512",
               "content": "ce0fdc85b5f2781b4c4352db0ff592a16d83a42dc8d26a663dd5beca74538ffc760c0598ac863ba9e6481e2768cf0576e26e226afaf5e653702302f14663b184"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-color/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-color.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-color/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4704,23 +3918,15 @@
               "alg": "SHA-512",
               "content": "c11fd72b70f75dc2c8670a5bbd0c10e5f2bef1891db358a9ec0d93c5ed32c6771749dab52fdb24706edb95c79d90e5fe65c83118098b5f516b4466c00f0ce2d3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-ease/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-ease.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-ease/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4758,23 +3964,15 @@
               "alg": "SHA-512",
               "content": "0090dd60e767c910d5e5be80ae297308f3f07357a3907728c856abaa53ea4fbcd162385abdc4f7b92aea70cbec821d828283db2b7442c321da572c5870fd80ae"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-format/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-format.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-format/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4812,23 +4010,15 @@
               "alg": "SHA-512",
               "content": "ddb62cd6b383df7ba8f1aa897ca3f72563c089b830f199b6f8bf6f04a107276460faf89347ba39326bf999972278df854586803965f94890135fa9353d6cfbda"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-interpolate/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-interpolate.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-interpolate/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4866,23 +4056,15 @@
               "alg": "SHA-512",
               "content": "a7728fe4709ffdbbe305248ab9789de99aa28f1ef021f356f89fe668fb3e8b0477e5ab792426cb513d0bcc5d5c9e36c21d686acd04c83762697bca5179b20415"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-path/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-path.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-path/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4920,23 +4102,15 @@
               "alg": "SHA-512",
               "content": "1995b8eb8835487eda83763b8578dff11a14b80148aa494e02adcc465e0e69669b4c5258f4f37f1356249615cb87e390ddf33dc92da73a40a84be58b67a92fc5"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-scale/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-scale.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-scale/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -4974,23 +4148,15 @@
               "alg": "SHA-512",
               "content": "49a2c1bb01a6dcc395891ab600193778ba31c1910ba47eb3865dc56c0a09ed59b58287cac7a125d486f9cf6dcd504845f40b0697bcbe7732dee42c36000ac64c"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-shape/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-shape.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-shape/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5028,23 +4194,15 @@
               "alg": "SHA-512",
               "content": "56a2a3cc12de8db48c4f82206e65600e3a6462b3565182676c21a8f3be2eecc30a216b082d15fe3a95ff81393c32a8e94f503f73a1d8d9d080efb64dd25910d9"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-time/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-time.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-time/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5082,23 +4240,15 @@
               "alg": "SHA-512",
               "content": "749c4f065cc2ecdba00763c32f0a3d43c2624d1dccddee3f5c0364ade29253117cbef5caaa6d587eae10e5d97c6ee765ba745595451a0d4805b7b780f03e8d2e"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-time-format/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-time-format.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-time-format/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5136,23 +4286,15 @@
               "alg": "SHA-512",
               "content": "9dd7c9fc9c7131dde7c37d6ec8aa18da76a2bc5fabdbd57e2dcd2cbd9c5ed49bef2119a2f2152caccbdd3b0812d68eae0479a2cfdd60790d3294f3f46a3d5550"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/d3/d3-timer/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/d3/d3-timer.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://d3js.org/d3-timer/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5190,23 +4332,15 @@
               "alg": "SHA-512",
               "content": "f7c213f8739a8408ac89bcffca329bcee381c1872327b0422cfcc04721e2c84066473e1f6ad17e28f26ccc41d7b06623506db7e1a1ff70e8d6d70c136ca51994"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/iamkun/dayjs/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/iamkun/dayjs.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://day.js.org",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5240,23 +4374,15 @@
               "alg": "SHA-512",
               "content": "446c305a7c10be455f6af295b76d8518bc3ec5849dcc04709b4aeee83853540dee994e6165cdbc57790ee2cb6062bcab4e52e9baf808f468a28e5b408cd6dca8"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/debug-js/debug/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/debug-js/debug.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/debug-js/debug#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5294,23 +4420,15 @@
               "alg": "SHA-512",
               "content": "a88305a533199a7cbe30c222b4007a0fb8953c4a2b570e984115a4bdaad3913e2d05e48b2e21f37308faab4326612142895a62a8f253244608ae970fcd5108be"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/MikeMcl/decimal.js-light/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/MikeMcl/decimal.js-light.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/MikeMcl/decimal.js-light#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5344,23 +4462,15 @@
               "alg": "SHA-512",
               "content": "672483ecd7fdd5a2c1d11c4be0a1ab28705797b11db350c098475ca156b05e72c3ed20e1a4d82db88236680920edaed04b8d63c4f499d7ba7855d1a730793731"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/felixge/node-delayed-stream/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/felixge/node-delayed-stream.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/felixge/node-delayed-stream",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5396,23 +4506,15 @@
               "alg": "SHA-512",
               "content": "07fa52958547439f24a88483ff20e3b89d727f3237e26d60178940a1dd9bc1246188de0ae429771fc01fee1a81d8f9932fdd75b5d12e7679d79f9167851a33d3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/cure53/DOMPurify/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/cure53/DOMPurify.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/cure53/DOMPurify",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5446,23 +4548,15 @@
               "alg": "SHA-512",
               "content": "28837f9c3241411717c3430b561644f62407986ebca80548060f42aa65188e64088608a3f54e4c16faea9142f915bb72cb366e39e3add3375e45ee1463b72df8"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/es-shims/dunder-proto/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/es-shims/dunder-proto.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/es-shims/dunder-proto#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5499,23 +4593,15 @@
               "alg": "SHA-512",
               "content": "ab4c9a14f8200bd15476c587e1b95abd15859b176b22875b92828d02326e74023a080f6034fc47b55d917193447a9655964e32bc16243a46e4e87215a48c8764"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/apache/echarts/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/apache/echarts.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://echarts.apache.org",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5549,23 +4635,15 @@
               "alg": "SHA-512",
               "content": "e33a8b8131964b726f9100d78f3911d64d421d176977a6f2d3df3c4d6309827bc3cad7a058b6de3ff54d66631afb4549c76783ed8eb7d9b8b626ab970e088626"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/hustcc/echarts-for-react/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/hustcc/echarts-for-react.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/hustcc/echarts-for-react",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5599,23 +4677,15 @@
               "alg": "SHA-512",
               "content": "7b79d17e07d4678acd18bdb7da05205f4e90372c9ecf4e0a76316b17e2d34683979ab3a014a0e0e0109db235bc1274faf5ea9d606991a49c223d560dac2696de"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ljharb/es-define-property/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ljharb/es-define-property.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ljharb/es-define-property#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5653,23 +4723,15 @@
               "alg": "SHA-512",
               "content": "65fe47d8ac6ddb18d3bdb26f3f66562c4202c40ea3fa1026333225ca9cb8c5c060d6f2959f1f3d5b2d066d2fa47f9730095145cdd0858765d20853542d2e9cb3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ljharb/es-errors/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ljharb/es-errors.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ljharb/es-errors#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5707,23 +4769,15 @@
               "alg": "SHA-512",
               "content": "1d6701a0de8d8a57aab52c9d2b616a1db4bf2e80ddda9aab9d01cbc89cc18f890ea7f932d8c58c37af78c4e7e42bcfd29d4b16d831fb11fc9597274a0ac9b567"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ljharb/es-object-atoms/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ljharb/es-object-atoms.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ljharb/es-object-atoms#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5761,23 +4815,15 @@
               "alg": "SHA-512",
               "content": "8fabd6cdfac655fc97c607be3b4c79b21e9cbf10288346bfe1175dd8adfacc2315e5e27effeb4e0278113bc70e0cc3566d545d5659866502f6612df247c6c850"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/es-shims/es-set-tostringtag/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/es-shims/es-set-tostringtag.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/es-shims/es-set-tostringtag#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5814,23 +4860,15 @@
               "alg": "SHA-512",
               "content": "1b9899e8f73f14d458feca0a6470be4f11830fcdeb1d40d7c73696846097e38bc0bffb4cb39e9632eb279bf28c34afa5b943ec800f54dbc706af8443952ccbda"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/toss/es-toolkit/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/toss/es-toolkit.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://es-toolkit.dev",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5864,23 +4902,15 @@
               "alg": "SHA-512",
               "content": "9a5b1347219a3c18cf79d93a06fc3e6aa6ec5c3b680320339b930eec9814fb2551c8c4393bc6c3e0a71c8bb052f397fddef79e81e08f90bf11e062c29678cb17"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/primus/eventemitter3/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/primus/eventemitter3.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/primus/eventemitter3#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5914,23 +4944,15 @@
               "alg": "SHA-512",
               "content": "7f7a90f68432f63d808417bf1fd542f75c0b98a042094fe00ce9ca340606e61b303bb04b2a3d3d1dce4760dcfd70623efb19690c22200da8ad56cd3701347ce1"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/epoberezkin/fast-deep-equal/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/epoberezkin/fast-deep-equal.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/epoberezkin/fast-deep-equal#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -5964,23 +4986,15 @@
               "alg": "SHA-512",
               "content": "900a99ab54e58018d970baf999c37a34fe51bf85767f6db3d3473783cbd1af091caa37abc7b04484f6ce9d608fa9a1d49765d6401250bce4ff15085d313ed7fd"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/image-js/fast-png/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/image-js/fast-png.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/image-js/fast-png#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6014,23 +5028,15 @@
               "alg": "SHA-512",
               "content": "b5b64db89acbc06529df3b2106d772e16f8e47166e221f1ae629722044030b9ad8d5fdd4db424caf2d0b977581cd4e7c1192ac12e2455e16f9830bfc0ac3ef80"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/101arrowz/fflate/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/101arrowz/fflate.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://101arrowz.github.io/fflate",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6064,23 +5070,15 @@
               "alg": "SHA-512",
               "content": "4205e8fa65d37bc9637aa505697dd0547739a2c488b49fca9bec69a1cc74692a9618c4827faa98b3f567cd9812f3ae0f8e7e6271e31116281e015ec07d395a8a"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-dropzone/file-selector/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-dropzone/file-selector.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-dropzone/file-selector",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6118,23 +5116,15 @@
               "alg": "SHA-512",
               "content": "fe454fd94f33e7de886b483016bc3221ea3be2d6b9695992794d457c050c0267043f910fef3c9d99a83748b88deb835a44a79fde5c6cabb8bf83b96d2500c6a3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/follow-redirects/follow-redirects/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/follow-redirects/follow-redirects.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/follow-redirects/follow-redirects",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6172,23 +5162,15 @@
               "alg": "SHA-512",
               "content": "bca6ad021e129557e06eff98b66862463844309b18a6c1b5636acc42d47e49549bcadb120f5606cc321cac026674579cf3cbbff95a069b19e5fbcd202f5b5109"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/form-data/form-data/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/form-data/form-data.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/form-data/form-data#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6226,23 +5208,15 @@
               "alg": "SHA-512",
               "content": "ed71cdc47eea5fdc46e66230c6486e993a31fcc21135c3a00ebc56b0cb76a40af6dd61e9e8cad194dec50521690a9afea153b417be38894811f369c931f1b648"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/Raynos/function-bind/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/Raynos/function-bind.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/Raynos/function-bind",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6276,23 +5250,15 @@
               "alg": "SHA-512",
               "content": "f5f4a349aa2cfdf448548a7ec5226513a95fc21112ecb36d29a08121a987b23af69dad418800493e8d263a38f3f062435116ab9823c6a9a89583999f8dbf7c09"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ljharb/get-intrinsic/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ljharb/get-intrinsic.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ljharb/get-intrinsic#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6330,23 +5296,15 @@
               "alg": "SHA-512",
               "content": "b1349f063a17069f3d26f20a21e7eac3b53608279bb1cef892263a6b0886a202ada1219b823604fc6ffe97db05dcc5853cd73d21ca0e0b83837ca1dfc459a9d2"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ljharb/get-proto/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ljharb/get-proto.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ljharb/get-proto#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6384,23 +5342,15 @@
               "alg": "SHA-512",
               "content": "65429187afe4505a0089302d4d83d9277870f70371c7e04804e8a39e51bd3e7ac9b027128ecd70cb20fabc9a5a62d827cc3aca6114aa7f738ee917daf77c6c46"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ljharb/gopd/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ljharb/gopd.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ljharb/gopd#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6438,23 +5388,15 @@
               "alg": "SHA-512",
               "content": "d5c0cd77027625aa2199bdec8383a629a301c2e0b8f2c6278b91d4c360efb02f0b8c64cb2bd87e79bd57e91cae3877b8853d142c25baf22a26863528294aa53d"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ljharb/has-symbols/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/inspect-js/has-symbols.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ljharb/has-symbols#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6492,23 +5434,15 @@
               "alg": "SHA-512",
               "content": "36a00307c5633c52ccd95d15bc751ec30c2cc3465605a21d828fa2787b4ade16ac2f3e2a78246361ca9f07a010ac182044aa69285f0be76fd5a9d56c3b8ec397"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/inspect-js/has-tostringtag/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/inspect-js/has-tostringtag.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/inspect-js/has-tostringtag#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6546,23 +5480,15 @@
               "alg": "SHA-512",
               "content": "4f651b7db044177db089ea5722c3254d6f7e743602eb0321fedfef600e2db8e30aa96cff9f7bebd4d152c508b23fece4da65eca0c03f8bfeea57a2cabadd6dd4"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/inspect-js/hasOwn/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/inspect-js/hasOwn.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/inspect-js/hasOwn#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6600,23 +5526,15 @@
               "alg": "SHA-512",
               "content": "d331ec649acaed2dcad9ab9c5d62fac9ca1827f88db487051c2fe76108059253edaefe4ba4972d222482ae859959eba85efbb215dce9e8ace3250f8e4f931f17"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/i18next/html-parse-stringify/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/i18next/html-parse-stringify.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/i18next/html-parse-stringify",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6650,23 +5568,15 @@
               "alg": "SHA-512",
               "content": "7cf53a047369b32221afccb23294cb2f101b91a2bc02b20172664846204b8838637aabd7a256849831a610b16e5fd238c4371a28a70997e4ca64baabb816e658"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/niklasvh/html2canvas/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/niklasvh/html2canvas.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://html2canvas.hertzen.com",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6704,23 +5614,15 @@
               "alg": "SHA-512",
               "content": "caf349804ffccabbb651e19f9643dd8d6f18118fa70c7e57effd961b8ba2b920b06220a9f0f67c10a3624c06ba1f12753630b9d5f652204abac657790800ca05"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/eKoopmans/html2pdf.js/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/eKoopmans/html2pdf.js.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://ekoopmans.github.io/html2pdf.js/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6754,23 +5656,15 @@
               "alg": "SHA-512",
               "content": "7457008e94d0160a0b3330b657053e0bf09b4bbb912f49569b10c84e6aa6ec2fbb17439d9a3eacf65e9a95973a0042d786b9e080cd827964971c639d5f662dc0"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/TooTallNate/node-https-proxy-agent/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/TooTallNate/node-https-proxy-agent.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/TooTallNate/node-https-proxy-agent#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6808,23 +5702,15 @@
               "alg": "SHA-512",
               "content": "06ee59da701781f57233cc6f5b78e4f4429122e5f7ecfb9db2b05589384d171ec247b69a613a4fd35731341fc4e1ce145334c3880651b2d121b117cf38bffcc4"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/i18next/i18next/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/i18next/i18next.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://www.i18next.com",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6858,23 +5744,15 @@
               "alg": "SHA-512",
               "content": "ab35eec970243f248019891fb00c287433d64fc666eff528e4136de018e13211b95a55b2659e3042a9d6c1d4bc923950d42c2eea08f0dc0ebed204d0c25c98b7"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/immerjs/immer/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/immerjs/immer.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/immerjs/immer#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6908,23 +5786,15 @@
               "alg": "SHA-512",
               "content": "e4787b635c106ef639a281a03db0da2f98982c03f331352b8ccba5b241cb1fac27bff03ed6ae6b8046a2baa12307ea3119721566cd4517e47f28f37765241862"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/mbostock/internmap/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/mbostock/internmap.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/mbostock/internmap/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -6962,23 +5832,15 @@
               "alg": "SHA-512",
               "content": "0d179b396baa0efc6e9df90d24095cdc8cd620f0f9c55c7050d6c7afbc4a07c13a68b27120f7cd5f70a83098217058e9bfa45642cadc25b821b44c123e826a30"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/image-js/iobuffer/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/image-js/iobuffer.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/image-js/iobuffer#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7012,23 +5874,15 @@
               "alg": "SHA-512",
               "content": "4f3ff29ddc92bcb0045e1f9493c962142c4ec151fa62eb6e47be2eb6f39cbbb23d0e2f83c0cd26b5d3d564d695bef054336397c677bf3613acd7300eeeb8aeb1"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/juliangruber/is-mobile/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/juliangruber/is-mobile.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/juliangruber/is-mobile",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7062,23 +5916,15 @@
               "alg": "SHA-512",
               "content": "45d2547e5704ddc5332a232a420b02bb4e853eef5474824ed1b7986cf84737893a6a9809b627dca02b53f5b7313a9601b690f690233a49bce0e026aeb16fcf29"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/lydell/js-tokens/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/lydell/js-tokens.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/lydell/js-tokens#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7112,23 +5958,15 @@
               "alg": "SHA-512",
               "content": "4b3a1183bbb1e43593208f49daa92b66ba95d60b7ead36a8b9f3311335db4b6e9489dd0dc1a25dd76dc772807cd1382e6c4a69c7120674dc42c79d1f12811640"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/akiran/json2mq/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/akiran/json2mq.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/akiran/json2mq",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7161,23 +5999,15 @@
               "alg": "SHA-512",
               "content": "632017caf9e68d36d1e1b1d044bcdec770ae20d0839509c1aa8498ca32704cfdb1f630cbb8a0f3cbb68a525d21831dee85c97bc73837d9a827e6f9627ba1c895"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/parallax/jsPDF/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/parallax/jsPDF.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/parallax/jsPDF",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7211,23 +6041,15 @@
               "alg": "SHA-512",
               "content": "972bb13c6aff59f86b95e9b608bfd472751cd7372a280226043cee918ed8e45ff242235d928ebe7d12debe5c351e03324b0edfeb5d54218e34f04b71452a0add"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/zertosh/loose-envify/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/zertosh/loose-envify.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/zertosh/loose-envify",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7261,23 +6083,15 @@
               "alg": "SHA-512",
               "content": "fe67494d16e2c1c2ce43535964ad5a99917dac8672bced7c0faafd4e7804e931b5366a87805b93e1e13b5eb926f54b1731b0490f53657f01d596d083587ace4f"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/lucide-icons/lucide/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/lucide-icons/lucide.git#packages/lucide-react",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://lucide.dev",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7311,23 +6125,15 @@
               "alg": "SHA-512",
               "content": "fc85ed6f0124e474cfc84c32297ea11a4617c4cf676e3eb807e8a55499c2fd1e81d291f91b85776f4a556cbec3063e2d921040a696d05257fa17a5e5f4b1eed6"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/es-shims/math-intrinsics/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/es-shims/math-intrinsics.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/es-shims/math-intrinsics#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7364,23 +6170,15 @@
               "alg": "SHA-512",
               "content": "b0f538b95edd625bed589c70c311c3d0fba285536213b4f201b439496c43081f66518bce82ba103b061040e28f27c0886c4fb51135653a82b5502da7537818be"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/jshttp/mime-db/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/jshttp/mime-db.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/jshttp/mime-db#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7417,23 +6215,15 @@
               "alg": "SHA-512",
               "content": "64363e6cf9b9cd34c5f98a42ac053d9cad148080983d3d10b53d4d65616fe2cfbe4cd91c815693d20ebee11dae238323423cf2b07075cf1b962f9d21cda7978b"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/jshttp/mime-types/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/jshttp/mime-types.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/jshttp/mime-types#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7470,23 +6260,15 @@
               "alg": "SHA-512",
               "content": "e85973b9b4cb646dc9d9afcd542025784863ceae68c601f268253dc985ef70bb2fa1568726afece715c8ebf5d73fab73ed1f7100eb479d23bfb57b45dd645394"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/vercel/ms/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/vercel/ms.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/vercel/ms#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7520,23 +6302,15 @@
               "alg": "SHA-512",
               "content": "ac98134279149c7d6c170f324fa552537cc3dec5a6bbab19848b1e63c557f8646edcfe85ec5bbe24d0e85df9251256cb2529dcdc55101d57b8714e618fe05c52"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/sindresorhus/object-assign/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/sindresorhus/object-assign.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/sindresorhus/object-assign#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7571,23 +6345,15 @@
               "alg": "SHA-512",
               "content": "cc9aba44fff9abe4ced8ea45577147ce53e71639a46fb35cf7d6b948d8c913ebaefcf9290a1b3e3486524b36c1a03fba9238884978df61dc23d59450f35773ff"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/nodeca/pako/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/nodeca/pako.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/nodeca/pako#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7621,23 +6387,15 @@
               "alg": "SHA-512",
               "content": "4b0cd60fd825fc497060b088d275236b59852738ead83f3389285f3416bbcc21f390ea3378e183c07590fadbc2cc465c7b079c599e54ee4528a439c6f8315811"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/mholt/PapaParse/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/mholt/PapaParse.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://www.papaparse.com/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7672,23 +6430,15 @@
               "alg": "SHA-512",
               "content": "ec40079722c7239e9510874ae7bbb01dd1ca21a0066e75cf8b0d3259b6ab41938a68aa6f508816d2359154b89ab6733e5d7952c2c6a72011ff87318c26e94ca3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/braveg1rl/performance-now/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/braveg1rl/performance-now.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/braveg1rl/performance-now",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7721,23 +6471,15 @@
               "alg": "SHA-512",
               "content": "a23f3b0a064809dba5528868815011ec08e50b4df6ed4e1e9782fa780bcea827ae74c0d553435384d695f9bf437f87578123f58173139cf7617deff6a831f972"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/facebook/prop-types/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/facebook/prop-types.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://facebook.github.io/react/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7771,23 +6513,15 @@
               "alg": "SHA-512",
               "content": "709fa81d35b554011af1c26c96099466b73eb2344a8002a5dd9cac7baf8f577f2165efd5e99d784db0ae5dc6a7f45f60865cf842b16bd9cf764cd17cd949181c"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/Rob--W/proxy-from-env/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/Rob--W/proxy-from-env.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/Rob--W/proxy-from-env#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7826,23 +6560,15 @@
               "alg": "SHA-512",
               "content": "4aae025b8421c0e1c4f2e727e89df832ab5909e5853f66904a6ae5ae8620a805753e34ad221257c58b9381421f90493bcd32e39888cb994e6af9f6c3d4d9ce24"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/chrisdickinson/raf/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git://github.com/chrisdickinson/raf.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/chrisdickinson/raf#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7875,23 +6601,15 @@
               "alg": "SHA-512",
               "content": "1cd7bd5ac9536d79852bca3c726c2001e245481bedd5b3dd1c254ab5a695f96940377ea6a53e21711a706dfddf639e9aaf6a085f3b01a4e0222111c0758d0e95"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/facebook/react/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/facebook/react.git#packages/react",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://react.dev/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7928,23 +6646,15 @@
               "alg": "SHA-512",
               "content": "b74051557bdb884fe8db41dfc3aebdacb6cc0835ad6192ef9898a0cb67f4331b1717eef5a71851df13a4b299ac3bc877665373ca26c09ad09ade5e2560a93a81"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/facebook/react/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/facebook/react.git#packages/react-dom",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://react.dev/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -7978,23 +6688,15 @@
               "alg": "SHA-512",
               "content": "9468d857f128a848c458f9e6892bc7e2fe48a0803040cd96e19d42d10fcfc36c43d1e57328f4b7e7d0504d432e9bed5f6b4907da7aca8ee6af9933ce1a1a4b3e"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/react-dropzone/react-dropzone/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/react-dropzone/react-dropzone.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/react-dropzone/react-dropzone",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8032,23 +6734,15 @@
               "alg": "SHA-512",
               "content": "703b645e0c63b854d6507e95f9a427d557b9bc3894ced08d3d65b91ad4870dc72c8115ced6713a405582126735280badadbdce52ff3bc054a124be51854c0f5e"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/i18next/react-i18next/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/i18next/react-i18next.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/i18next/react-i18next",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8081,23 +6775,15 @@
               "alg": "SHA-512",
               "content": "db87baca71361fe38ab7892ab0ebcd77c901a55eb9ce8c5b038055b04381dc0455590922fc31f3694a02e4ab8e37f06271c0da0824d906e39c7d9b3bd2447c6d"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/facebook/react/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/facebook/react.git#packages/react-is",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://reactjs.org/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8130,23 +6816,15 @@
               "alg": "SHA-512",
               "content": "fcb2cc5726acd258e302da1888fa9888bf15597cd451d4e1ae6539fa7db40d9bfe6be0a54687af533c3927153e21e879fdcf3bcada13055f46d4588a7cd25d9a"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/facebook/react/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/facebook/react.git#packages/react-is",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://reactjs.org/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8180,23 +6858,15 @@
               "alg": "SHA-512",
               "content": "290a2982a168fe9fdf82602ce6acfaa7945668d033ab8d1602eedf2485e742963114f6c962db093d6bc6785dab381698fe412e57bec056c5fc4ec4332a6f80fe"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/reduxjs/react-redux/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/reduxjs/react-redux.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/reduxjs/react-redux",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8230,23 +6900,15 @@
               "alg": "SHA-512",
               "content": "69454c8c59b71803d34d92fba18af913b1138aa7d008744b1fe07ee5a7e7202bdfd2bee490ae1e47a48cbb06d24c9c3feedfb5da4853fca6a18a3e3d7ea38222"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/remix-run/react-router/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/remix-run/react-router.git#packages/react-router",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/remix-run/react-router#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8284,23 +6946,15 @@
               "alg": "SHA-512",
               "content": "008289fe38069456f711b7c25e4e46cec862c2dfa5de6a9b0ab36398458c323a90c4d277b2f05ae9b833172082d92c37440d15585d64837b907f63858716fc87"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/remix-run/react-router/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/remix-run/react-router.git#packages/react-router-dom",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/remix-run/react-router#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8338,23 +6992,15 @@
               "alg": "SHA-512",
               "content": "1b87f2f8f938e9169783058c87e373872a3f95b14056a5e8f60b5eb65c9e85ee848607bd0ac803b8e4f04030fe8b5fa595a2e4b4d06236ae1b8671a50d15c5b7"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/recharts/recharts/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/recharts/recharts.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/recharts/recharts",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8391,23 +7037,15 @@
               "alg": "SHA-512",
               "content": "33dfc42ea17a7f2f05c269299c5d12dd828ea8cca8589e3e092e447e0d9cb77a18f5d690bddfcf73bd45a4666c56c6e5dc2a5bf8821c8c10d49e7c817506eae3"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/reduxjs/redux/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/reduxjs/redux.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://redux.js.org",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8441,23 +7079,15 @@
               "alg": "SHA-512",
               "content": "356dabe53ea4b1429709a6f384bf73fa1db4e87430fcd26470b9b518f226450f08cdf5f0446aa356128919ab878ab4f40c0bb2cba863767319691a00732d0a97"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/reduxjs/redux-thunk/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/reduxjs/redux-thunk.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/reduxjs/redux-thunk",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8492,23 +7122,15 @@
               "alg": "SHA-512",
               "content": "918d40655af645afadfa9895689e20c5a15a45e6551f8d0028da3b5025fa5be744c01a3fda8649cea7ee375a8bab5a0be39a39e9c3da4d710bc2b4e1f05a6082"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/facebook/regenerator/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/facebook/regenerator.git#main",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/facebook/regenerator/tree/main#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8541,23 +7163,15 @@
               "alg": "SHA-512",
               "content": "02067750e666dd89dd7eb2783988e0ad3edb9829bfd62aa48ef11f1ffa188f387a3c3daac3842e4f78e39d722ba5db78313a4c5dc94c4f79576e6458f9745a93"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/reduxjs/reselect/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/reduxjs/reselect.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/reduxjs/reselect#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8592,23 +7206,15 @@
               "alg": "SHA-512",
               "content": "f5a64b22b851683f7bb20561b49396e9c90e121ebf1a7bd0b5d54d7dd67ab3aefedff5f02d2f6505c418cc4121615794a3037ba51ccc2ecc8684ada2ff1bd66f"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/yetzt/node-rgbcolor/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/yetzt/node-rgbcolor.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/yetzt/node-rgbcolor#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8645,23 +7251,15 @@
               "alg": "SHA-512",
               "content": "78dbfe5ab55b2aed5fdef6d8253ff1b62179b320391cf20cb5ff48818fe72a0d2c5aacc0504bea63fc66ece71973fa9a7cbc7f88ef4580e99e480a78bf9b62fd"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/facebook/react/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/facebook/react.git#packages/scheduler",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://react.dev/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8695,23 +7293,15 @@
               "alg": "SHA-512",
               "content": "e3da0da518d646f9d4f0dc8656651a606e23b5390da2715923ce8c986443a81a6110ad845d3f6074452840f661b8133cc961f10966e86e5b6a60ee4ce17ad4bd"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/scroll-into-view/scroll-into-view-if-needed/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/scroll-into-view/scroll-into-view-if-needed.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://scroll-into-view.dev",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8745,23 +7335,15 @@
               "alg": "SHA-512",
               "content": "a1e33596953f52f853c70fa0ddc21fc571f225173fba275ddf22b53f6e368331ddb34b9d401633b37cbc8f8802096f9927b69dd3272d95df1160ef9b76eae5bf"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/nfriedly/set-cookie-parser/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/nfriedly/set-cookie-parser.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/nfriedly/set-cookie-parser",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8795,23 +7377,15 @@
               "alg": "SHA-512",
               "content": "fa4f66276feb40c89199051c8e7faace7721dbad257885d8f2be05c9828ac9104efece54a1e3001c690227213547fe30ac885324e35fca5a18e794a413bbdedc"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/hustcc/size-sensor/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/hustcc/size-sensor.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://git.hust.cc/size-sensor",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8846,23 +7420,15 @@
               "alg": "SHA-512",
               "content": "c9fece10da36dc0189841ae21b1d108af63924fe98d476ebac323a58bb7a0b96ae6195e542b85ea18f210f889b7a414acf51ce7c4e3c5b0f24316327243ff371"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/flozz/StackBlur/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/flozz/StackBlur.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "http://www.quasimondo.com/StackBlurForCanvas/StackBlurDemo.html",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8899,23 +7465,15 @@
               "alg": "SHA-512",
               "content": "bbfd6d74f978c909cf0639d5ae674ba3d82db8bbc42cab00a116a97a45a081d89036fbefba6fa3605df6f5df383406baeb4290c3ba41da7dfa2ab20a5685dadc"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/akiran/string-convert/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/akiran/string-convert.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/akiran/string-convert#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -8949,23 +7507,15 @@
               "alg": "SHA-512",
               "content": "e59f59a51cdfb87ea5fd402f08f00f528dfaeb9364db02da654df1f932c7295cc8cf7dfeb1b26a6edad8a02dca0f8fee54eaf6669f8bd0bc927b33fd38757dc8"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/thysultan/stylis.js/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/thysultan/stylis.js.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/thysultan/stylis.js",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9000,23 +7550,15 @@
               "alg": "SHA-512",
               "content": "aac8de7aae588c167978c745b946b8668b0c2f182be5167e17e6353ab0e1b8e08422744c037c7be17741b60809723f6439e227cf4584f8b8023c391916505827"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/nfroidure/SVGPathData/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/nfroidure/svg-pathdata.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/nfroidure/svg-pathdata#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9053,23 +7595,15 @@
               "alg": "SHA-512",
               "content": "88e88f528fc11a767afb9e0eb16c5989d182b1d53c61b1383d2a5d3e29e9ec378cb5424d241a09fe8b944932631e48752a7b476a5b4797f803b36142e22e7e37"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/niklasvh/text-segmentation/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/niklasvh/text-segmentation.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/niklasvh/text-segmentation",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9103,23 +7637,15 @@
               "alg": "SHA-512",
               "content": "07bd7fe28ca3eb588d1f429e09a98bb84dab98ab933b96f24ce495c0408ce4503b4e2022016f94a93299f4446e782e2abe04adb5485d9aad665c2de426a197ec"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/niksy/throttle-debounce/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/niksy/throttle-debounce.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/niksy/throttle-debounce#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9157,23 +7683,15 @@
               "alg": "SHA-512",
               "content": "f856c13c4d68f50018bef89abbfa82e5213771ac36d6adf192f58a06d8dae6f82a3962071c9de2a1aab554f7e7fd2cea72dcf66d4fe861e29df7fcf904bf8f56"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/alexreardon/tiny-invariant/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/alexreardon/tiny-invariant.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/alexreardon/tiny-invariant#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9207,23 +7725,15 @@
               "alg": "SHA-512",
               "content": "37cda8a32c55366ea1d6b88b0a8c92f5eddfb89dc0306db3219b3619dd404dc4858d2036dd0d1fce38d97a1d236c9bd65436747094fcc9a34d69a5c7cee78d8e"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/Microsoft/TypeScript/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/Microsoft/tslib.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://www.typescriptlang.org/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9257,23 +7767,15 @@
               "alg": "SHA-512",
               "content": "a0916ef781d06fe29576e49440bef09e99aa9df98bb0e03f9c087a6fa107d30084a0ad3f98f79753a737c0a0d5f373243ae1cf447b525ca294f7d2016b34bfdb"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/Microsoft/TypeScript/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/Microsoft/tslib.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://www.typescriptlang.org/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9307,23 +7809,15 @@
               "alg": "SHA-512",
               "content": "37cda8a32c55366ea1d6b88b0a8c92f5eddfb89dc0306db3219b3619dd404dc4858d2036dd0d1fce38d97a1d236c9bd65436747094fcc9a34d69a5c7cee78d8e"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/Microsoft/TypeScript/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/Microsoft/tslib.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://www.typescriptlang.org/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9356,23 +7850,15 @@
               "alg": "SHA-512",
               "content": "3e9e864b018ffcdacf22bc551402243907b2c3c9457a73878a34169144eb0efac5e002eaca53f60bf28291e4bd76950cdcabd84508676b9bedec82fde7e650f7"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/facebook/react/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/facebook/react.git#packages/use-sync-external-store",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\" and \"repository.directory\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/facebook/react#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9406,23 +7892,15 @@
               "alg": "SHA-512",
               "content": "d4c2dae68b9988e990cd46e36eef559a32f39f540b5c1870a546bb91d2d440af8a439280f48d6f9395386077bf5f60a1ecf62725f5ae593f956eec5b1b096387"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/niklasvh/utrie/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+ssh://git@github.com/niklasvh/utrie.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/niklasvh/utrie",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9454,23 +7932,15 @@
               "alg": "SHA-512",
               "content": "49b3c33dd0c1629fb93091e104203223bc0a3377798af7a48a07360e4dacee981b67dc08808058195c38cc61c19a5fea4c56dec6ba1f5d6e86bb89e81b1acec1"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/FormidableLabs/victory/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/FormidableLabs/victory.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://commerce.nearform.com/open-source/victory",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9504,23 +7974,15 @@
               "alg": "SHA-512",
               "content": "a0b0eade3c3b01c2ea2961f60210a9553665f267fa5f661178ff8d7a1d12254cd5fc1759623b61f78b46e6da22301d4f3eb62dc4e09f6a850292fb6e1fedc024"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://git.sheetjs.com/SheetJS/sheetjs/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "https://git.sheetjs.com/SheetJS/sheetjs",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://sheetjs.com/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9558,23 +8020,15 @@
               "alg": "SHA-512",
               "content": "9a5fc93ce8fd7ce40af113675a88c0ebb19b6740295c0525376510725c2fd9e5604e09fb3bd820f68ee969958a329e20d07de74cbb52f4b573864a4e1482b3a2"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/eemeli/yaml/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/eemeli/yaml.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://eemeli.org/yaml/",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9611,23 +8065,15 @@
               "alg": "SHA-512",
               "content": "a0418c0c1ea938fd92e8ec114783dd56feb5d33ae39c0dc187e267486d767d826504a8ed340a046f97d252808e3883651fde88d9f537f3f03652944ab3aef161"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/ecomfe/zrender/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/ecomfe/zrender.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/ecomfe/zrender#readme",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
@@ -9661,23 +8107,15 @@
               "alg": "SHA-512",
               "content": "ffcb40b293392cc3ebdbc6f77f02d8aed763efb102a5f66f89a3fbe423139f03bc212c9a138183206ffdac30d8abf707f43d97c360364578252c89e6541401fe"
             }
-          ],
-          "comment": "as detected from npm-ls property \"resolved\" and property \"integrity\""
-        },
-        {
-          "url": "https://github.com/pmndrs/zustand/issues",
-          "type": "issue-tracker",
-          "comment": "as detected from PackageJson property \"bugs.url\""
+          ]
         },
         {
           "url": "git+https://github.com/pmndrs/zustand.git",
-          "type": "vcs",
-          "comment": "as detected from PackageJson property \"repository.url\""
+          "type": "vcs"
         },
         {
           "url": "https://github.com/pmndrs/zustand",
-          "type": "website",
-          "comment": "as detected from PackageJson property \"homepage\""
+          "type": "website"
         }
       ],
       "properties": [
