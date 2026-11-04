@@ -18,7 +18,9 @@ OpenPETs-cli.exe（主控台版，給管理員維護用）：
 
 不改動後端原始碼：前端靜態檔、SPA 路由與初次設定畫面在此檔掛到後端的 FastAPI app 上。
 """
+import base64
 import getpass
+import hashlib
 import json
 import multiprocessing
 import os
@@ -377,7 +379,62 @@ def attach_first_run_setup(app) -> None:
     def setup_page():
         if not needs_first_admin():
             return RedirectResponse("/")
-        return HTMLResponse(SETUP_PAGE_HTML, headers={"Cache-Control": "no-cache"})
+        return HTMLResponse(SETUP_PAGE_HTML, headers={"Cache-Control": "no-cache", "Content-Security-Policy": SETUP_PAGE_CSP})
+
+
+# ---------------------------------------------------------------- 安全標頭
+# ★ 2026-11-04：ZAP 掃描 exe 本機服務指出缺少安全標頭（nginx.conf 的設定在單機版不生效），內容比照 nginx.conf；
+#   服務只聽 127.0.0.1，但 exe 執行期間一般瀏覽器開的網頁仍可用 iframe 嵌入，故仍需防點擊劫持與 CSP。
+#   antd 以 <style> 注入樣式，style-src 需允許 'unsafe-inline'；pywebview 以 ExecuteScript 注入的腳本不受 CSP 限制。
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+        "font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; "
+        "form-action 'self'; frame-ancestors 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+}
+
+
+def _inline_script_hash(html: str) -> str:
+    script = html.split("<script>", 1)[1].split("</script>", 1)[0]
+    return "'sha256-" + base64.b64encode(hashlib.sha256(script.encode("utf-8")).digest()).decode("ascii") + "'"
+
+
+# 初次設定畫面是單一 HTML（行內 <script>），只放行這段腳本的雜湊
+SETUP_PAGE_CSP = SECURITY_HEADERS["Content-Security-Policy"].replace(
+    "script-src 'self'", f"script-src 'self' {_inline_script_hash(SETUP_PAGE_HTML)}"
+)
+
+
+class SecurityHeadersMiddleware:
+    """對所有 HTTP 回應補上安全標頭（回應已自訂者不覆蓋）。
+
+    用純 ASGI 中介層而非 @app.middleware("http")：後者會讓後端運算端點讀不到用戶端斷線（見後端 app/api/compute.py）。
+    """
+
+    def __init__(self, app):
+        self.app = app
+        self.headers = [(name.lower().encode("latin-1"), value.encode("latin-1")) for name, value in SECURITY_HEADERS.items()]
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                existing = {name.lower() for name, _ in message.get("headers", [])}
+                message["headers"] = list(message.get("headers", [])) + [h for h in self.headers if h[0] not in existing]
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 # ---------------------------------------------------------------- 網頁
@@ -426,6 +483,7 @@ def build_app():
 
     attach_first_run_setup(app)  # 須在前端 catch-all 路由之前註冊
     attach_frontend(app, frontend_dir())
+    app.add_middleware(SecurityHeadersMiddleware)  # 最後加入＝最外層，連 TrustedHost 擋下的回應也補上
     return app
 
 
