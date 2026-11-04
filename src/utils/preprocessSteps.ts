@@ -11,6 +11,7 @@ import CryptoJS from 'crypto-js';
 import type { PreprocessingRule } from '../store/useWorkspaceStore';
 import { sha3Hex } from './sha3';
 import { normalizePreprocessHashAlgorithm, PREPROCESS_BOOLEAN_TRUE_VALUES, PREPROCESS_BOOLEAN_FALSE_VALUES } from './preprocessConfig';
+import { getServerHashPreview, SERVER_HASH_PREVIEW_FAILED } from './serverHashPreview';
 
 const DEFAULT_PREVIEW_SYMBOL = '-';
 const HASH_PREVIEW_LENGTH = 16;
@@ -19,6 +20,8 @@ const HASH_PREVIEW_LENGTH = 16;
  *   先前以不加鹽計算的預覽與實際輸出不同，容易誤導；改為只標示處理方式（比照 K-匿名識別欄位雜湊的預覽）。
  */
 export const SERVER_SALT_HASH_PREVIEW_TEXT = '（雜湊後的代碼，依伺服器鹽值計算）';
+/** ★ 2026-11-04：伺服器鹽值改由後端預覽端點計算（見 serverHashPreview.ts），結果回來前顯示此文字；取不到時才退回上面的說明文字 */
+export const SERVER_SALT_HASH_PENDING_TEXT = '（計算中…）';
 
 /**
  * ★ 2026-10-02：「系統隨機鹽值」——本次頁面載入時以密碼學亂數產生一次（32 bytes），之後同一個值在本次操作內
@@ -184,8 +187,14 @@ export const applyPreprocessStep = (cellValueStr: string, stepItemRecord: Prepro
                 let saltKeyStr = '';
                 if (seedModeStr === 'fixed') saltKeyStr = String(actionParamsDict.seedValue || '');
                 else if (seedModeStr === 'random' || seedModeStr === 'timestamp') saltKeyStr = SESSION_RANDOM_HASH_SALT;
-                // 'none'（使用伺服器預設鹽值）：前端拿不到伺服器鹽值，不算假的雜湊值，只標示處理方式
-                else return SERVER_SALT_HASH_PREVIEW_TEXT;
+                // 'none'（使用伺服器預設鹽值）：前端拿不到伺服器鹽值，由後端預覽端點以同一把鹽計算（★ 2026-11-04）
+                else
+                {
+                    const serverHashEntry = getServerHashPreview(cellValueStr, algorithmStr);
+                    if (serverHashEntry === undefined) return SERVER_SALT_HASH_PENDING_TEXT;
+                    if (serverHashEntry === SERVER_HASH_PREVIEW_FAILED) return SERVER_SALT_HASH_PREVIEW_TEXT;
+                    return serverHashEntry.substring(0, HASH_PREVIEW_LENGTH) + '...';
+                }
 
                 let calculatedHashResult = '';
                 if (algorithmStr === 'sha3-256') calculatedHashResult = sha3Hex(cellValueStr, 256, saltKeyStr || null);

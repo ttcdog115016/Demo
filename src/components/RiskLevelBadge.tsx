@@ -65,10 +65,12 @@ export function RiskLevelLegend({ style, textColor }: { style?: CSSProperties; t
  *   左側大圖示＋等級，右側 L1｜L2｜L3 三段刻度條，只有目前等級上色、其餘灰階，刻度下標門檻。
  *   textColor／mutedColor／trackColor 由呼叫端傳入，Step4 跟深淺色主題、PDF 固定白底。
  */
-export function OverallRiskLevelPanel({ summary, title, driverText, textColor, mutedColor, trackColor }: {
+export function OverallRiskLevelPanel({ summary, title, driverText, referenceText, textColor, mutedColor, trackColor }: {
     summary: OverallRiskSummary;
     title: string;
     driverText: string;
+    /** ★ 2026-11-04：分數方法與門檻的參考說明（合規報告用） */
+    referenceText?: string;
     textColor: string;
     mutedColor: string;
     trackColor: string;
@@ -107,6 +109,7 @@ export function OverallRiskLevelPanel({ summary, title, driverText, textColor, m
                     })}
                 </div>
                 <div style={{ fontSize: scaleFontSize(12), color: textColor, marginTop: 4 }}>{driverText}</div>
+                {referenceText && <div data-testid="risk-level-reference" style={{ fontSize: scaleFontSize(11), color: mutedColor, marginTop: 4, lineHeight: 1.5 }}>{referenceText}</div>}
             </div>
         </div>
     );

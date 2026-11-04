@@ -124,10 +124,12 @@ const convertBackendActionToStep = (
 		}
 		case 'hash':
 		{
+			// ★ 2026-11-04：動作有自己的 algorithm 就用它（逐欄指定），沒有才用區塊層的
+			const algorithm = params.algorithm === undefined || params.algorithm === null || params.algorithm === '' ? hashAlgorithm : normalizePreprocessHashAlgorithm(params.algorithm);
 			const saltValue = params.salt === undefined || params.salt === null ? '' : String(params.salt);
-			if (saltValue === '') return { action: 'hash', params: { algorithm: hashAlgorithm, seedMode: 'none' } };
-			if (saltValue === PREPROCESS_TIMESTAMP_SALT_KEYWORD) return { action: 'hash', params: { algorithm: hashAlgorithm, seedMode: 'random' } };
-			return { action: 'hash', params: { algorithm: hashAlgorithm, seedMode: 'fixed', seedValue: saltValue } };
+			if (saltValue === '') return { action: 'hash', params: { algorithm, seedMode: 'none' } };
+			if (saltValue === PREPROCESS_TIMESTAMP_SALT_KEYWORD) return { action: 'hash', params: { algorithm, seedMode: 'random' } };
+			return { action: 'hash', params: { algorithm, seedMode: 'fixed', seedValue: saltValue } };
 		}
 		case 'regex_replace':
 			return { action: 'regex_replace', params: { pattern: String(params.pattern ?? ''), placeholder: params.replacement === undefined || params.replacement === null ? '' : String(params.replacement) } };

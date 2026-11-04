@@ -25,8 +25,9 @@ import { parseConfigFileText, ConfigFileParseError } from '../../utils/configFil
 import { useEnsureDatasetProfile, getColumnNumericRange } from '../../utils/datasetProfile';
 import { findHierarchyTableProblems, describeHierarchyRowProblem } from '../../utils/hierarchyTableValidation';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
+import { useServerHashPreviewStore } from '../../utils/serverHashPreview';
 import { buildBackendConfigDocumentFromWorkspace } from '../../utils/pipelineConfig';
-import { resolveImportedLtSettings, normalizeImportedQiLevel, buildQiLevelValue, extractImportedCellFillValues, normalizeKAnonymityHashAlgorithm } from '../../utils/kAnonymityConfigImport';
+import { resolveImportedLtSettings, normalizeImportedQiLevel, buildQiLevelValue, extractImportedCellFillValues } from '../../utils/kAnonymityConfigImport';
 import { TEMPORAL_GRANULARITY_UNITS, TEMPORAL_DEFAULT_GRANULARITY_LEVEL, temporalUnitOfLevel, resolveImportedTemporalLevel } from '../../utils/temporalGranularity';
 import { type CustomBin, MAX_AUTO_GENERATED_BIN_COUNT, generateEvenlyDistributedBins, generateUnitWidthBins, calculateNiceRoundingUnit, computeUnitModeStartValue, extendFirstBinLowerBoundToZero } from '../../utils/binGeneration';
 import { KANON_COLUMNS_REFERENCE } from '../../config/recommendationReferenceConfig';
@@ -104,7 +105,8 @@ const MASK_STRATEGY_ALIAS_MAP: Record<string, string> = {
     'keep': 'partial', 'keep_prefix': 'partial', 'partial': 'partial',
     'full': 'mask', 'full_mask': 'mask', 'mask': 'mask',
     'remove': 'remove', 'drop': 'remove',
-    'hash': 'hash',
+    // ★ 2026-11-04：K-匿名不再提供雜湊（與前處理的雜湊重複），舊設定的 hash 一律改為刪除欄位（匯入時另行提示）
+    'hash': 'remove',
     'clear': 'clear',
 };
 
@@ -112,15 +114,15 @@ const MASK_STRATEGY_ALIAS_MAP: Record<string, string> = {
 // ★ 2026-10-28：依後端 v2.0.0（設定檔結構與參數說明 4-3 節）——identifier 支援 remove（刪欄）／hash（假名化）／clear（清空值、保留欄位）；
 //   先前依 v1.2.0 文件只接受 remove，匯入統合版時 姓名 hash、身分證號 clear 會被改成刪除。
 const VALID_MASK_STRATEGIES_BY_ROLE: Record<string, string[]> = {
-    'Identifier': ['remove', 'hash', 'clear'],
+    'Identifier': ['remove', 'clear'], // ★ 2026-11-04：移除 hash（改在前處理設定雜湊）
     'Sensitive': ['none', 'remove'],
     // ★ 2026-10-28（TTC Wei 決議：只開放給非敏感欄位）：全遮蔽／部分遮蔽／雜湊／清空
-    'Non-sensitive': ['none', 'remove', 'mask', 'partial', 'hash', 'clear'],
+    'Non-sensitive': ['none', 'remove', 'mask', 'partial', 'clear'], // ★ 2026-11-04：移除 hash
 };
 
 // 依隱私角色分類之預設遮蔽策略 (Open-PETs API：identifier 為 remove，其餘為 none)
 const DEFAULT_MASK_STRATEGY_BY_ROLE: Record<string, string> = {
-    'Identifier': 'hash', // ★ 2026-10-28 與後端預設一致（identifier 未填 strategy 為 hash），原為 remove
+    'Identifier': 'remove', // ★ 2026-11-04：K-匿名不再提供雜湊，改回 remove（送後端時一律明確帶 strategy，不依賴後端預設的 hash）
     'Sensitive': 'none',
     'Non-sensitive': 'none',
 };
@@ -449,7 +451,7 @@ const buildInitialKAnonymityFieldForColumn = (columnNameString: string, storeCol
         name: columnNameString,
         type: mappedFieldTypeValue,
         role: initialRoleValue,
-        // 規範對照: 依 Open-PETs API 驗證標準，identifier 之預設策略為 hash，其餘角色為 none
+        // 識別欄位預設刪除（★ 2026-11-04），其餘角色為 none
         maskStrategy: DEFAULT_MASK_STRATEGY_BY_ROLE[initialRoleValue] || 'none',
         maskKeepChars: DEFAULT_MASK_KEEP_CHARS,
         maskChar: '*',
@@ -473,8 +475,8 @@ export default function KAnonymityMapping(): React.ReactElement
     const { message: messageApi } = AntdApp.useApp();
 
     const storeColumnsList = useWorkspaceStore((state) => state.columns);
+    useServerHashPreviewStore((state) => state.version); // ★ 2026-11-04：伺服器鹽值的雜湊預覽回來後重繪展開的預覽
     // ★ 2026-10-28：識別欄位「雜湊」的演算法（整份設定共用，送出為 k_anonymity.algorithm）
-    const kAnonymityHashAlgorithm = useWorkspaceStore((state) => state.kAnonymityHashAlgorithm);
     const storeColumnRolesMap = useWorkspaceStore((state) => state.columnRoles);
     const storeColumnTypesMap = useWorkspaceStore((state) => state.columnTypes);
     const datasetPreviewRowsList = useWorkspaceStore((state) => state.previewData);
@@ -995,7 +997,6 @@ export default function KAnonymityMapping(): React.ReactElement
                         ...(parsedJsonContentData.k_anonymity ? { cellFillValuesByColumn: extractImportedCellFillValues(importedKAnonymityBlock.columns) } : {}),
                         ...(importedKAnonymityBlock.limit_exceeded_action ? { limitExceededAction: importedKAnonymityBlock.limit_exceeded_action } : {}),
                         // ★ 2026-10-28：識別欄位雜湊演算法（後端格式未填時為 sha3-256）
-                        ...(parsedJsonContentData.k_anonymity ? { kAnonymityHashAlgorithm: normalizeKAnonymityHashAlgorithm(importedKAnonymityBlock.algorithm) } : {}),
                     });
                 }
 
@@ -1122,6 +1123,7 @@ export default function KAnonymityMapping(): React.ReactElement
                 const importedColumnNamesList: string[] = allImportedColumnNamesList.filter((columnNameString) => isFieldNameInDataset(columnNameString, importDatasetColumnNameSet));
                 const skippedImportedColumnNamesList: string[] = allImportedColumnNamesList.filter((columnNameString) => !isFieldNameInDataset(columnNameString, importDatasetColumnNameSet));
                 const unrecognizedStrategyColumnNamesList: string[] = [];
+                const hashConvertedColumnNamesList: string[] = [];
 
                 importedColumnNamesList.forEach((columnNameString) => {
                     const currentAttributeConfig = importedAttributesMap[columnNameString] || {};
@@ -1145,12 +1147,15 @@ export default function KAnonymityMapping(): React.ReactElement
 
                     // ★ 匯入判斷：正規化並驗證 "strategy" 欄位是否為該隱私角色可用之合法遮蔽策略
                     // ★ 2026-10-28：後端格式的識別欄位未填 strategy 時，後端預設為 hash（假名化），匯入時照後端語意帶入
+                    // ★ 2026-11-04：K-匿名不再提供雜湊，hash（含上述後端預設）改為刪除欄位並提示改在前處理設定
                     const rawStrategySourceValue = currentMaskingConfig?.strategy || currentAttributeConfig.strategy
                         || (parsedJsonContentData.k_anonymity && mappedPrivacyRoleValue === 'Identifier' ? 'hash' : undefined);
                     const { strategy: calculatedMaskingStrategyValue, isRecognized: isStrategyRecognized } = normalizeMaskStrategyValue(rawStrategySourceValue, mappedPrivacyRoleValue);
 
                     if (rawStrategySourceValue && !isStrategyRecognized) {
                         unrecognizedStrategyColumnNamesList.push(columnNameString);
+                    } else if (String(rawStrategySourceValue ?? '').toLowerCase().trim() === 'hash') {
+                        hashConvertedColumnNamesList.push(columnNameString);
                     }
 
                     let calculatedGeneralizationStrategyValue = resolveDefaultGenStrategyForType(mappedFieldTypeValue);
@@ -1323,6 +1328,17 @@ export default function KAnonymityMapping(): React.ReactElement
                         names: skippedImportedColumnNamesList.join('、'),
                         defaultValue: `已略過 ${skippedImportedColumnNamesList.length} 個資料中沒有的欄位：${skippedImportedColumnNamesList.join('、')}`
                     }), 6);
+                }
+
+                if (hashConvertedColumnNamesList.length > 0) {
+                    messageApi.warning(
+                        translate(
+                            'message.import_json_kanon_hash_removed',
+                            'K-匿名已不提供雜湊，以下欄位已改為刪除欄位；如需假名化，請在「資料預先處理」設定雜湊：{{columns}}',
+                            { columns: hashConvertedColumnNamesList.join('、') }
+                        ),
+                        8
+                    );
                 }
 
                 if (unrecognizedStrategyColumnNamesList.length > 0) {
@@ -1908,10 +1924,10 @@ export default function KAnonymityMapping(): React.ReactElement
                     // ★ 規範對照: 依 Open-PETs API 驗證標準，identifier 僅提供 remove 供使用者選擇 (hash 已自 UI 移除)，
                     //   其餘角色維持 none／remove，避免產生匯出後會被後端忽略之無效組合設定
                     // ★ 2026-10-28：識別欄位依後端 v2.0.0 提供 刪除／雜湊／清空 三種
+                    // ★ 2026-11-04：移除雜湊（與前處理的雜湊重複，改在前處理設定），只留刪除／清空
                     const maskStrategyOptionList = rowRecordItem.role === 'Identifier'
                         ? [
                             { value: 'remove', label: strategyOptionLabel(translate('step2.opt_drop'), translate('step2.opt_drop_tooltip', '把這個欄位完全刪除，不會出現在輸出資料中。')) },
-                            { value: 'hash', label: strategyOptionLabel(translate('step2.opt_identifier_hash', '雜湊（假名化）'), translate('step2.opt_identifier_hash_tooltip', '把每個值換成一串固定長度的代碼：同一個值會得到同一個代碼，可用來串接或計數，但不易看出原值。')) },
                             { value: 'clear', label: strategyOptionLabel(translate('step2.opt_identifier_clear', '清空（保留欄位）'), translate('step2.opt_identifier_clear_tooltip', '把值全部清空，但欄位本身保留。適用於下游資料表欄位固定、少一欄就無法匯入的情況。')) },
                         ]
                         : [
@@ -1924,34 +1940,12 @@ export default function KAnonymityMapping(): React.ReactElement
                                         ? [{ value: 'mask', label: strategyOptionLabel(translate('step2.opt_mask_full', '全遮蔽'), translate('step2.opt_mask_full_tooltip', '整個值換成遮蔽字元（例如 ****）。可指定固定長度，避免從長度看出原值。日期欄位不適用。')) }]
                                         : []),
                                     { value: 'partial', label: strategyOptionLabel(translate('step2.opt_mask_partial', '部分遮蔽'), translate('step2.opt_mask_partial_tooltip', '只保留開頭或結尾幾個字，其餘換成遮蔽字元（例如 091*******）。')) },
-                                    { value: 'hash', label: strategyOptionLabel(translate('step2.opt_identifier_hash', '雜湊（假名化）'), translate('step2.opt_identifier_hash_tooltip', '把每個值換成一串固定長度的代碼：同一個值會得到同一個代碼，可用來串接或計數，但不易看出原值。')) },
                                     { value: 'clear', label: strategyOptionLabel(translate('step2.opt_identifier_clear', '清空（保留欄位）'), translate('step2.opt_identifier_clear_tooltip', '把值全部清空，但欄位本身保留。適用於下游資料表欄位固定、少一欄就無法匯入的情況。')) },
                                 ]
                                 : []),
                         ];
 
                     const maskStrategySelect = <Select value={rowRecordItem.maskStrategy} onChange={(dropdownSelectedValue) => handleFieldChange(rowRecordItem.id, 'maskStrategy', dropdownSelectedValue)} style={{ width: '100%' }} options={maskStrategyOptionList} />;
-                    if (rowRecordItem.role === 'Identifier' && rowRecordItem.maskStrategy === 'hash') {
-                        return (
-                            <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                                {maskStrategySelect}
-                                <Tooltip title={translate('step2.identifier_hash_algorithm_tooltip', '所有雜湊欄位共用同一個演算法。')}>
-                                    <Select
-                                        size="small"
-                                        data-testid="kanon-hash-algorithm"
-                                        value={kAnonymityHashAlgorithm}
-                                        onChange={(algorithmValue) => useWorkspaceStore.setState({ kAnonymityHashAlgorithm: algorithmValue })}
-                                        style={{ width: '100%' }}
-                                        options={[
-                                            { value: 'sha3-256', label: 'SHA3-256' },
-                                            { value: 'sha256', label: 'SHA-256' },
-                                            { value: 'sha3-512', label: 'SHA3-512' },
-                                        ]}
-                                    />
-                                </Tooltip>
-                            </Space>
-                        );
-                    }
                     // ★ 2026-10-28：全遮蔽可指定固定長度；部分遮蔽指定保留前／後幾個字
                     if (rowRecordItem.role === 'Non-sensitive' && rowRecordItem.maskStrategy === 'mask') {
                         return (

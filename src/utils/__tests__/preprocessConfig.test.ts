@@ -21,10 +21,11 @@ describe('資料預先處理設定檔組裝', () => {
     });
 
     it('雜湊鹽值：伺服器預設不帶 salt、自訂鹽值、系統隨機改用 use_timestamp', () => {
-        expect(convertPreprocessStep({ action: 'hash', params: { seedMode: 'none' } })).toEqual({ action: 'hash', params: {} });
-        expect(convertPreprocessStep({ action: 'hash', params: { seedMode: 'fixed', seedValue: 'k' } })).toEqual({ action: 'hash', params: { salt: 'k' } });
-        expect(convertPreprocessStep({ action: 'hash', params: { seedMode: 'random' } })).toEqual({ action: 'hash', params: { salt: 'use_timestamp' } });
-        expect(convertPreprocessStep({ action: 'hash', params: { seedMode: 'timestamp' } })).toEqual({ action: 'hash', params: { salt: 'use_timestamp' } });
+        // ★ 2026-11-04：每個雜湊動作都帶自己的 algorithm（未選＝sha3-256）
+        expect(convertPreprocessStep({ action: 'hash', params: { seedMode: 'none' } })).toEqual({ action: 'hash', params: { algorithm: 'sha3-256' } });
+        expect(convertPreprocessStep({ action: 'hash', params: { seedMode: 'fixed', seedValue: 'k' } })).toEqual({ action: 'hash', params: { algorithm: 'sha3-256', salt: 'k' } });
+        expect(convertPreprocessStep({ action: 'hash', params: { seedMode: 'random' } })).toEqual({ action: 'hash', params: { algorithm: 'sha3-256', salt: 'use_timestamp' } });
+        expect(convertPreprocessStep({ action: 'hash', params: { seedMode: 'timestamp' } })).toEqual({ action: 'hash', params: { algorithm: 'sha3-256', salt: 'use_timestamp' } });
     });
 
     it('演算法名稱：舊選項 SHA256→sha256、SHA512→sha3-512', () => {
@@ -54,9 +55,21 @@ describe('資料預先處理設定檔組裝', () => {
             enabled: true,
             algorithm: 'sha3-512',
             columns: [
-                { column: '姓名', actions: [{ action: 'hash', params: {} }] },
+                { column: '姓名', actions: [{ action: 'hash', params: { algorithm: 'sha3-512' } }] },
                 { column: '地址', actions: [{ action: 'trim', params: { mode: 'edges' } }, { action: 'fill_default', params: { value: '不詳' } }] },
             ],
         });
+    });
+
+    it('多欄雜湊各自送出自己的演算法（★ 2026-11-04 後端已支援逐欄指定）', () => {
+        const block = buildPreprocessBlock(['姓名', '身分證號'], {
+            姓名: [{ action: 'hash', params: { algorithm: 'sha256', seedMode: 'none' } }],
+            身分證號: [{ action: 'hash', params: { algorithm: 'sha3-512', seedMode: 'fixed', seedValue: 'k' } }],
+        }, {});
+        expect(block?.algorithm).toBe('sha256');
+        expect(block?.columns).toEqual([
+            { column: '姓名', actions: [{ action: 'hash', params: { algorithm: 'sha256' } }] },
+            { column: '身分證號', actions: [{ action: 'hash', params: { algorithm: 'sha3-512', salt: 'k' } }] },
+        ]);
     });
 });

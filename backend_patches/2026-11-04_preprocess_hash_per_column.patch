@@ -1,0 +1,315 @@
+diff --git a/app/api/preprocess_router.py b/app/api/preprocess_router.py
+index a0ece02..1f818bd 100644
+--- a/app/api/preprocess_router.py
++++ b/app/api/preprocess_router.py
+@@ -9,21 +9,56 @@
+ """
+ from fastapi import APIRouter, File, Form, Request, UploadFile
+ from fastapi.responses import StreamingResponse
++from pydantic import BaseModel, Field
+ 
+ from app.api.processing_guard import processing_operator
+ from app.api.compute import run_compute
+ from app.api.dataset_input import resolve_dataset
+ from app.core.config import parse_bundled_config_from_bytes
++from app.core.errors import PetsError
++from app.core.settings import get_default_salt
+ from app.core.dataset_io import (
+     content_disposition_attachment,
+     dataframe_to_bytes,
+     iter_response_chunks,
+ )
++from app.engines.anonymization.strategies.masking import hash_mask, validate_hash_algorithm
+ from app.engines.preprocess import run_preprocess
++from app.engines.preprocess.actions.masking import TIMESTAMP_SALT_KEYWORD, resolve_hash_salt
+ from app.governance.audit import get_audit_logger
+ 
+ router = APIRouter(tags=["資料前處理"])
+ 
++# ★ TTC 2026-11-04：雜湊預覽一次最多幾個值、每個值最長幾個字（只供畫面預覽，不是處理資料用）
++HASH_PREVIEW_MAX_VALUES = 20
++HASH_PREVIEW_MAX_LENGTH = 256
++
++
++class HashPreviewRequest(BaseModel):
++    values: list[str] = Field(..., max_length=HASH_PREVIEW_MAX_VALUES)
++    algorithm: str = Field("sha3-256", max_length=20)
++    salt: str | None = Field(None, max_length=1024, description="未給或空字串＝伺服器預設鹽值（同 hash 動作）")
++
++
++@router.post("/preprocess/hash-preview")
++def api_preprocess_hash_preview(body: HashPreviewRequest):
++    """
++    前處理雜湊的即時預覽（★ TTC 2026-11-04）。
++
++    伺服器預設鹽值只在後端，前端算不出實際結果；此端點以與 hash 動作相同的鹽值規則
++    （resolve_hash_salt）與雜湊函式（hash_mask）計算少量值，只回雜湊結果、不回鹽值。
++    use_timestamp 的鹽要到實際處理時才取，無法預覽，一律擋下。
++    不屬於處理端點（不記 run、不寫稽核紀錄），但仍須登入。
++    """
++    if body.salt == TIMESTAMP_SALT_KEYWORD:
++        raise PetsError("ERR_PREPROCESS_PARAM_INVALID", "use_timestamp 的鹽於實際處理時才產生，無法預覽")
++    if any(len(value) > HASH_PREVIEW_MAX_LENGTH for value in body.values):
++        raise PetsError("ERR_PREPROCESS_PARAM_INVALID", f"預覽值每個最多 {HASH_PREVIEW_MAX_LENGTH} 字")
++    algorithm = validate_hash_algorithm(body.algorithm)
++    default_salt = get_default_salt()
++    salt = default_salt if body.salt is None else resolve_hash_salt(body.salt, default_salt, "")
++    return {"hashes": [hash_mask(value, salt, algorithm) if value != "" else "" for value in body.values]}
++
+ 
+ @router.post("/preprocess")
+ async def api_preprocess(
+diff --git a/app/core/config.py b/app/core/config.py
+index 75bc56c..83769f5 100644
+--- a/app/core/config.py
++++ b/app/core/config.py
+@@ -1037,9 +1037,9 @@ class PreprocessConfig(BaseModel):
+     # 與 K-匿名 ColumnConfig／DP DPColumnConfig 同一個欄位：一律寫在大包設定檔的根層，
+     # 由拆袋子時灌進這一層（其餘三種設定亦然）。
+     input_format: str | None = Field(None, description=INPUT_FORMAT_DESC)
+-    # 雜湊功能用的演算法。比照 K-匿名的同名欄位：整份清單共用一個，不逐欄指定，
+-    # 也不寫在 hash 動作的 params 裡。合法值與對照表在
+-    # app.engines.anonymization.strategies.masking，由引擎組裝動作時驗證。
++    # 雜湊功能用的演算法：整份清單的預設值。
++    # ★ TTC 2026-11-04：hash 動作的 params 可另給 algorithm 逐欄指定，沒給才用這裡的值。
++    # 合法值與對照表在 app.engines.anonymization.strategies.masking，由引擎組裝動作時驗證。
+     algorithm: str = Field(
+         "sha3-256", description="雜湊演算法 sha256／sha3-256／sha3-512（未填→sha3-256）"
+     )
+diff --git a/app/engines/preprocess/actions/masking.py b/app/engines/preprocess/actions/masking.py
+index 39fe125..b60e709 100644
+--- a/app/engines/preprocess/actions/masking.py
++++ b/app/engines/preprocess/actions/masking.py
+@@ -9,7 +9,7 @@ import re
+ from typing import Any
+ 
+ from app.core.errors import PetsError
+-from app.engines.anonymization.strategies.masking import hash_mask
++from app.engines.anonymization.strategies.masking import hash_mask, validate_hash_algorithm
+ 
+ from ..types import BuildContext
+ from .base import StringAction, reject_unknown_params, require_text
+@@ -19,11 +19,22 @@ from .base import StringAction, reject_unknown_params, require_text
+ TIMESTAMP_SALT_KEYWORD = "use_timestamp"
+ 
+ 
++def resolve_hash_salt(salt: str, default_salt: str | None, timestamp_salt: str) -> str | None:
++    """有給 salt 時實際使用的鹽：保留字 use_timestamp → 時間戳；空字串 → .env 預設鹽。
++
++    ★ TTC 2026-11-04：抽出供雜湊預覽端點共用，確保預覽與實際處理用的是同一把鹽。
++    """
++    if salt == TIMESTAMP_SALT_KEYWORD:
++        return timestamp_salt
++    return salt or default_salt
++
++
+ class Hash(StringAction):
+     """雜湊：假名化，輸出完整的十六進位字串（不截短）。
+ 
+-    演算法使用去識別化的 hash_mask，由設定檔的 algorithm 決定是 sha256、
+-    sha3-256 或 sha3-512（整份清單共用，見 BuildContext）。
++    演算法使用去識別化的 hash_mask，可為 sha256、sha3-256 或 sha3-512：
++    params 有給 algorithm 就用它（★ TTC 2026-11-04：可逐欄不同），
++    沒給則用設定檔區塊層的 algorithm（整份清單的預設，見 BuildContext）。
+ 
+     鹽是選填的，依序取三步：
+       1. salt 參數有給 → 用它；填保留字 use_timestamp 則改用系統取的時間戳
+@@ -37,16 +48,16 @@ class Hash(StringAction):
+     needs_context = True
+ 
+     def __init__(self, params: dict[str, Any], context: BuildContext) -> None:
+-        reject_unknown_params(self.name, params, ("salt",))
+-        self.algorithm = context.algorithm
++        reject_unknown_params(self.name, params, ("salt", "algorithm"))
++        if "algorithm" in params:
++            self.algorithm = validate_hash_algorithm(require_text(self.name, params, "algorithm"))
++        else:
++            self.algorithm = context.algorithm
+         if "salt" not in params:
+             self.salt = context.default_salt
+             return
+         salt = require_text(self.name, params, "salt", allow_empty=True)
+-        if salt == TIMESTAMP_SALT_KEYWORD:
+-            self.salt = context.timestamp_salt
+-        else:
+-            self.salt = salt or context.default_salt
++        self.salt = resolve_hash_salt(salt, context.default_salt, context.timestamp_salt)
+ 
+     def transform_text(self, text: str) -> str:
+         return hash_mask(text, self.salt, self.algorithm)
+diff --git a/app/engines/preprocess/types.py b/app/engines/preprocess/types.py
+index c8e5723..f69610c 100644
+--- a/app/engines/preprocess/types.py
++++ b/app/engines/preprocess/types.py
+@@ -37,7 +37,8 @@ class BuildContext:
+     default_salt：設定檔沒指定鹽時退而求其次要用的 .env 鹽值（未設定則為 None，
+     代表這次不加鹽）。同樣在開跑前讀一次，不由各動作各讀各的。
+ 
+-    algorithm：雜湊演算法名稱，整份清單共用（設定檔的區塊層參數，不逐欄）。
++    algorithm：雜湊演算法名稱，整份清單的預設（設定檔的區塊層參數）；
++    ★ TTC 2026-11-04：hash 動作的 params 有給 algorithm 時以動作的為準。
+     """
+ 
+     timestamp_salt: str
+diff --git a/tests/api/test_hash_preview.py b/tests/api/test_hash_preview.py
+new file mode 100644
+index 0000000..89e9552
+--- /dev/null
++++ b/tests/api/test_hash_preview.py
+@@ -0,0 +1,87 @@
++"""
++★ TTC 2026-11-04：前處理雜湊預覽端點 POST /api/v1/preprocess/hash-preview
++涵蓋：
++  - 結果與 /preprocess 實際處理輸出相同（伺服器預設鹽值、自訂鹽值）
++  - 須登入
++  - use_timestamp、數量與長度上限、錯誤演算法皆擋
++  - 不記 run（不算處理端點）
++"""
++import io
++import json
++
++import pandas as pd
++
++URL = "/api/v1/preprocess/hash-preview"
++
++
++def _preprocess_hash(client, values, params):
++    csv_bytes = pd.DataFrame({"編號": values}).to_csv(index=False).encode("utf-8")
++    config = {"preprocess": {"enabled": True, "columns": [{"column": "編號", "actions": [{"action": "hash", "params": params}]}]}}
++    resp = client.post(
++        "/api/v1/preprocess",
++        files={
++            "file": ("data.csv", csv_bytes, "text/csv"),
++            "config": ("config.json", json.dumps(config).encode("utf-8"), "application/json"),
++        },
++    )
++    assert resp.status_code == 200, resp.text
++    return list(pd.read_csv(io.BytesIO(resp.content), dtype=str)["編號"])
++
++
++def test_preview_matches_actual_preprocess_with_server_salt(client, monkeypatch):
++    """沒給 salt＝伺服器預設鹽值：預覽與實際處理結果相同，且確實有加鹽。"""
++    monkeypatch.setenv("OPEN_PETS_DEFAULT_SALT", "server-secret")
++    values = ["宋淑偉", "M382671122"]
++    resp = client.post(URL, json={"values": values, "algorithm": "sha3-256"})
++    assert resp.status_code == 200, resp.text
++    hashes = resp.json()["hashes"]
++    assert hashes == _preprocess_hash(client, values, {"algorithm": "sha3-256"})
++    assert "server-secret" not in resp.text
++
++    monkeypatch.setenv("OPEN_PETS_DEFAULT_SALT", "another-secret")
++    other = client.post(URL, json={"values": values, "algorithm": "sha3-256"}).json()["hashes"]
++    assert other != hashes
++
++
++def test_preview_matches_actual_preprocess_with_custom_salt_and_algorithm(client):
++    values = ["A001"]
++    resp = client.post(URL, json={"values": values, "algorithm": "sha3-512", "salt": "custom"})
++    assert resp.status_code == 200, resp.text
++    assert resp.json()["hashes"] == _preprocess_hash(client, values, {"salt": "custom", "algorithm": "sha3-512"})
++    assert len(resp.json()["hashes"][0]) == 128
++
++
++def test_preview_empty_salt_means_server_salt(client, monkeypatch):
++    monkeypatch.setenv("OPEN_PETS_DEFAULT_SALT", "server-secret")
++    empty = client.post(URL, json={"values": ["A001"], "salt": ""}).json()["hashes"]
++    omitted = client.post(URL, json={"values": ["A001"]}).json()["hashes"]
++    assert empty == omitted
++
++
++def test_preview_rejects_timestamp_salt(client):
++    resp = client.post(URL, json={"values": ["A001"], "salt": "use_timestamp"})
++    assert resp.status_code == 400
++
++
++def test_preview_rejects_unknown_algorithm(client):
++    resp = client.post(URL, json={"values": ["A001"], "algorithm": "md5"})
++    assert resp.status_code == 400
++
++
++def test_preview_limits_count_and_length(client):
++    too_many = client.post(URL, json={"values": ["x"] * 21})
++    too_long = client.post(URL, json={"values": ["x" * 257]})
++    assert too_many.status_code in (400, 422)
++    assert too_long.status_code == 400
++
++
++def test_preview_requires_login(client, api_auth, real_processing_auth, login):
++    assert client.post(URL, json={"values": ["A001"]}).status_code == 401
++    resp = client.post(URL, json={"values": ["A001"]}, headers=login())
++    assert resp.status_code == 200, resp.text
++
++
++def test_preview_is_not_logged_as_processing_run():
++    from app.api.processing_guard import PROCESSING_PATHS
++
++    assert "/preprocess/hash-preview" not in PROCESSING_PATHS
+diff --git a/tests/unit/test_preprocess_hash_algorithm.py b/tests/unit/test_preprocess_hash_algorithm.py
+new file mode 100644
+index 0000000..e66f7a3
+--- /dev/null
++++ b/tests/unit/test_preprocess_hash_algorithm.py
+@@ -0,0 +1,63 @@
++"""
++★ TTC 2026-11-04：前處理雜湊可逐欄指定演算法
++涵蓋：
++  - hash 動作的 params.algorithm 優先於區塊層 algorithm
++  - 未給時沿用區塊層（舊設定檔行為不變）
++  - 動作層寫錯演算法名稱一律擋
++"""
++import pandas as pd
++import pytest
++
++from app.core.config import PreprocessConfig
++from app.core.errors import PetsError
++from app.engines.anonymization.strategies.masking import hash_mask
++from app.engines.preprocess import run_preprocess
++
++
++def _hash_entry(column: str, **params) -> dict:
++    return {"column": column, "actions": [{"action": "hash", "params": params}]}
++
++
++def test_each_column_can_use_its_own_algorithm():
++    """兩欄各指定不同演算法：輸出長度與內容各依自己的演算法。"""
++    df = pd.DataFrame({"A": ["X001"], "B": ["X001"]})
++    config = PreprocessConfig(
++        columns=[
++            _hash_entry("A", salt="s1", algorithm="sha256"),
++            _hash_entry("B", salt="s1", algorithm="sha3-512"),
++        ],
++        algorithm="sha3-256",
++    )
++    out = run_preprocess(df, config)
++    assert out["A"][0] == hash_mask("X001", "s1", "sha256")
++    assert out["B"][0] == hash_mask("X001", "s1", "sha3-512")
++    assert len(out["A"][0]) == 64 and len(out["B"][0]) == 128
++
++
++def test_action_without_algorithm_falls_back_to_block_default():
++    """動作沒給 algorithm → 用區塊層的值。"""
++    df = pd.DataFrame({"A": ["X001"], "B": ["X001"]})
++    config = PreprocessConfig(
++        columns=[_hash_entry("A", salt="s1"), _hash_entry("B", salt="s1", algorithm="sha256")],
++        algorithm="sha3-512",
++    )
++    out = run_preprocess(df, config)
++    assert out["A"][0] == hash_mask("X001", "s1", "sha3-512")
++    assert out["B"][0] == hash_mask("X001", "s1", "sha256")
++
++
++def test_action_algorithm_is_case_insensitive():
++    """大小寫變體視為同一演算法（與區塊層一致）。"""
++    df = pd.DataFrame({"A": ["X001"]})
++    out = run_preprocess(df, PreprocessConfig(columns=[_hash_entry("A", salt="s1", algorithm="SHA256")]))
++    assert out["A"][0] == hash_mask("X001", "s1", "sha256")
++
++
++@pytest.mark.parametrize("bad", ["md5", "", 256])
++def test_unknown_action_algorithm_rejected(bad):
++    """動作層演算法寫錯、空白或不是字串一律擋，不靜默退回預設。"""
++    df = pd.DataFrame({"A": ["X001"]})
++    config = PreprocessConfig(columns=[_hash_entry("A", salt="s1", algorithm=bad)])
++    with pytest.raises(PetsError) as exc:
++        run_preprocess(df, config)
++    assert exc.value.error_code in {"ERR_INVALID_PARAM", "ERR_PREPROCESS_PARAM_INVALID"}

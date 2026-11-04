@@ -5,6 +5,12 @@
  * ============================================================================
  * ★ 2026-10-06 QA 回饋：CAP、三攻擊只有百分比，使用者看不出高低，改以等級圖示呈現。
  *   門檻為前端自訂（目前無官方標準），要調整只改 RISK_LEVEL_THRESHOLDS 即可，畫面與報告會一起變。
+ * ★ 2026-11-04 參考來源（畫面與報告的說明文字見 RISK_LEVEL_REFERENCE_TEXT）：
+ *   - 三項分數：後端 app/engines/risk/formula.py 的 (S_ori − max(S_ctrl, S_base)) / (1 − max(S_ctrl, S_base))，
+ *     即攻擊成功率扣除對照組與隨機猜測基準後的超額比例，方法同 Anonymeter（Giomi et al., 2023,
+ *     "A Unified Framework for Quantifying Privacy Risk in Synthetic Data", PoPETs 2023(2)）；CAP 另扣除隨機基準（capBaseline.ts）。
+ *   - 門檻 5%／20%：本計畫自訂。20% 與英國 NHS 強匿名化之再識別風險閾值 0.2 一致
+ *     （〈林政委個資去識別化談參〉表 3，Step3 K 值預設亦引用，見 KAnonymityRules.tsx）。
  */
 
 export type RiskLevelNumber = 1 | 2 | 3;
@@ -23,6 +29,9 @@ export interface RiskLevelInfo {
 
 /** 分級門檻（比例）：< low 為 L1；low ~ < high 為 L2；≥ high 為 L3 */
 export const RISK_LEVEL_THRESHOLDS = { low: 0.05, high: 0.2 } as const;
+
+/** 風險分數與分級門檻的參考說明（Step4 說明提示、合規報告共用；英文版為 i18n step4.risk.level_reference） */
+export const RISK_LEVEL_REFERENCE_TEXT = '三項風險皆為「處理後資料受模擬攻擊的成功率，扣除對照組與隨機猜測基準後的超額比例」，計算方法參考 Anonymeter（Giomi et al., 2023, PoPETs）。L1／L2／L3 門檻 5%／20% 為本計畫自訂（目前無官方標準），其中 20% 與英國 NHS 強匿名化之再識別風險閾值 0.2 一致（〈林政委個資去識別化談參〉表 3）。';
 
 const RISK_LEVEL_TABLE: Record<RiskLevelNumber, Omit<RiskLevelInfo, 'level'>> = {
     1: { code: 'L1', labelText: '低風險', color: '#16a34a', backgroundColor: '#dcfce7' },

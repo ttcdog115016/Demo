@@ -16,6 +16,7 @@ import { useSystemLogStore } from './useSystemLogStore';
 import { useWorkspaceStore } from './useWorkspaceStore';
 import { useUIStore } from './useUIStore';
 import { fetchUserPreferences } from '../api/systemApi';
+import { clearServerHashPreviewCache } from '../utils/serverHashPreview';
 
 /**
  * ★ 2026-10-29：不論怎麼登出（手動、閒置逾時、登入逾期），都釋放這次登入在瀏覽器裡的資料——
@@ -147,6 +148,7 @@ export const useAuthStore = create<AuthState>(
 				else void memberLogout();
 				setStoreStateAction({ isAuthenticated: false, user: null, lastLogoutReason: logoutReasonType });
 				releaseSessionData();
+				clearServerHashPreviewCache(); // ★ 2026-11-04：未登入時取不到的預覽（標為失敗）於下次登入後重新取
 			},
 
 			restoreSession: async () =>

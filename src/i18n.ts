@@ -395,7 +395,7 @@ const translationResourcesDictionary = {
 				hash_seed_none: "伺服器預設鹽值（建議）",
 				hash_seed_fixed: "自訂鹽值",
 				hash_seed_random: "執行時間鹽值（每次執行不同）",
-				hint_hash_seed_none: "效果：使用伺服器設定的預設鹽值（部署時自動產生並固定）。同一台伺服器上同一個值會得到相同結果，可跨批次比對；在鹽值未外流的前提下，外部難以查表反推。鹽值只存在伺服器上，預覽不顯示雜湊值，只標示處理方式。",
+				hint_hash_seed_none: "效果：使用伺服器設定的預設鹽值（部署時自動產生並固定）。同一台伺服器上同一個值會得到相同結果，可跨批次比對；在鹽值未外流的前提下，外部難以查表反推。鹽值只存在伺服器上，預覽由伺服器以同一把鹽算出雜湊值後顯示（不會傳回鹽值本身）。",
 				hint_hash_seed_fixed: "效果：以您輸入的鹽值一起計算雜湊，同一個鹽值下，相同的值會得到相同結果。適用情境：需要「跨批次比對」又要「降低被查表反推的風險」時使用；鹽值建議至少 16 個字元並妥善保管，一旦外流就會失去保護效果。",
 				hint_hash_seed_random: "效果：以本次執行的時間（精確到微秒）當鹽值（所有欄位共用），同一次執行內相同的值結果相同，下次執行即不同、不會保存。適用情境：只需遮蔽本批資料、不需要跨批次比對時使用。注意：鹽值是執行時間，知道大約執行時間的人可縮小猜測範圍，防查表能力不如「伺服器預設鹽值」。預覽使用的鹽值與實際執行不同，僅供參考格式。",
 				param_hash_seed_value: "鹽值",
@@ -712,7 +712,8 @@ const translationResourcesDictionary = {
 					overall_desc: "連續發布 M={{m}} 次之綜合殘餘風險",
 					singling: "指認風險:",
 					linkability: "連結風險:",
-					inference: "推斷風險:"
+					inference: "推斷風險:",
+					level_reference: "三項風險皆為「處理後資料受模擬攻擊的成功率，扣除對照組與隨機猜測基準後的超額比例」，計算方法參考 Anonymeter（Giomi et al., 2023, PoPETs）。L1／L2／L3 門檻 5%／20% 為本計畫自訂（目前無官方標準），其中 20% 與英國 NHS 強匿名化之再識別風險閾值 0.2 一致（〈林政委個資去識別化談參〉表 3）。"
 				},
 				utility: {
 					title: "資料效用與失真度評估",
@@ -1440,7 +1441,7 @@ const translationResourcesDictionary = {
 				hash_seed_none: "Server Default Salt (recommended)",
 				hash_seed_fixed: "Custom Salt",
 				hash_seed_random: "Run-time Salt (new each run)",
-				hint_hash_seed_none: "Effect: Uses the server default salt (generated and fixed at deployment). The same value gives the same result on the same server, so batches can be matched; as long as the salt is not leaked, outsiders will find it hard to reverse with lookup tables. The salt stays on the server, so the preview shows the treatment instead of a hash value.",
+				hint_hash_seed_none: "Effect: Uses the server default salt (generated and fixed at deployment). The same value gives the same result on the same server, so batches can be matched; as long as the salt is not leaked, outsiders will find it hard to reverse with lookup tables. The salt stays on the server; the preview hash is computed by the server with the same salt (the salt itself is never sent back).",
 				hint_hash_seed_fixed: "Effect: Uses the salt you enter as the key of a keyed hash (HMAC); the same value produces the same result under the same salt. Use case: when you need both \"matching across batches\" and \"reducing the risk of lookup-table attacks\" — use at least 16 characters and keep the salt secret, since it loses its protection once leaked.",
 				hint_hash_seed_random: "Effect: Uses the run time (to the microsecond) as the salt (shared by all columns); the same value gives the same result within one run but differs on the next run, and the salt is never saved. Use case: when you only need to mask this batch. Note: the salt is the run time, so anyone who roughly knows when it ran can narrow down guesses — weaker against lookup attacks than the server default salt. The preview uses a different salt and only shows the format.",
 				param_hash_seed_value: "Salt Value",
@@ -1751,7 +1752,8 @@ const translationResourcesDictionary = {
 					overall_desc: "Overall residual risk for M={{m}} consecutive releases",
 					singling: "Singling-out:",
 					linkability: "Linkability:",
-					inference: "Inference:"
+					inference: "Inference:",
+					level_reference: "Each risk is the attack success rate on the processed data in excess of the control set and a random-guess baseline, following the Anonymeter method (Giomi et al., 2023, PoPETs). The L1/L2/L3 thresholds of 5%/20% are set by this project (there is no official standard); 20% matches the UK NHS strong-anonymisation re-identification threshold of 0.2."
 				},
 				utility: {
 					title: "Data Utility Assessment",

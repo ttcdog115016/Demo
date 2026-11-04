@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type PreprocessingRule, type MissingValueRule } from '../../store/useWorkspaceStore';
 import { applyPreprocessSteps } from '../../utils/preprocessSteps';
+import { useServerHashPreviewStore } from '../../utils/serverHashPreview';
 import { normalizePreprocessHashAlgorithm, DEFAULT_PREPROCESS_HASH_ALGORITHM } from '../../utils/preprocessConfig';
 import { useEnsureDatasetProfile } from '../../utils/datasetProfile';
 import { pickPreviewSampleValue, countMissingInPreviewRows } from '../../utils/preprocessPreviewSample';
@@ -136,6 +137,7 @@ export default function Step2_Mapping(): React.ReactElement
     //   改讀完整資料的欄位統計（utils/datasetProfile.ts）取得各欄空值筆數，預覽另列一行「空值 → 處理結果」。
     useEnsureDatasetProfile();
     const datasetProfileSnapshot = useWorkspaceStore((state) => state.datasetProfile);
+    useServerHashPreviewStore((state) => state.version); // ★ 2026-11-04：伺服器鹽值的雜湊預覽回來後重繪即時預覽
 
     const preprocessingRulesMap = useWorkspaceStore(
         (state) => state.preprocessingRules
@@ -282,8 +284,8 @@ export default function Step2_Mapping(): React.ReactElement
             paramFields: [
                 {
                     key: 'algorithm', type: 'select', label: translate('step2.param_hash_algorithm', '演算法'), defaultValue: DEFAULT_PREPROCESS_HASH_ALGORITHM,
-                    // ★ 2026-10-27：改用後端 /api/v1/preprocess 支援的三種演算法（舊選項 SHA-512 後端不支援，讀入時改為 SHA3-512）；
-                    //   後端整份清單共用一個演算法，任一欄改了演算法，其他欄的雜湊步驟一併改（見 handleStepParamChange）
+                    // ★ 2026-10-27：改用後端 /api/v1/preprocess 支援的三種演算法（舊選項 SHA-512 後端不支援，讀入時改為 SHA3-512）
+                    // ★ 2026-11-04：後端已支援逐欄指定（hash 動作的 params.algorithm），各欄雜湊步驟的演算法各自獨立
                     options: [
                         { value: 'sha256', label: 'SHA-256' },
                         { value: 'sha3-256', label: 'SHA3-256' },
@@ -299,7 +301,7 @@ export default function Step2_Mapping(): React.ReactElement
                         { value: 'random', label: translate('step2.hash_seed_random', '執行時間鹽值（每次執行不同）') }
                     ],
                     optionHintMap: {
-                        none: translate('step2.hint_hash_seed_none', '效果：使用伺服器設定的預設鹽值（部署時自動產生並固定）。同一台伺服器上同一個值會得到相同結果，可跨批次比對；在鹽值未外流的前提下，外部難以查表反推。鹽值只存在伺服器上，預覽不顯示雜湊值，只標示處理方式。'),
+                        none: translate('step2.hint_hash_seed_none', '效果：使用伺服器設定的預設鹽值（部署時自動產生並固定）。同一台伺服器上同一個值會得到相同結果，可跨批次比對；在鹽值未外流的前提下，外部難以查表反推。鹽值只存在伺服器上，預覽由伺服器以同一把鹽算出雜湊值後顯示（不會傳回鹽值本身）。'),
                         fixed: translate('step2.hint_hash_seed_fixed', '效果：以您輸入的鹽值一起計算雜湊，同一個鹽值下，相同的值會得到相同結果。適用情境：需要「跨批次比對」又要「降低被查表反推的風險」時使用；鹽值建議至少 16 個字元並妥善保管，一旦外流就會失去保護效果。'),
                         random: translate('step2.hint_hash_seed_random', '效果：以本次執行的時間（精確到微秒）當鹽值，同一次執行內相同的值結果相同，下次執行即不同、不會保存。適用情境：只需遮蔽本批資料、不需要跨批次比對時使用。注意：鹽值是執行時間，知道大約執行時間的人可縮小猜測範圍，防查表能力不如「伺服器預設鹽值」。')
                     }
@@ -402,12 +404,6 @@ export default function Step2_Mapping(): React.ReactElement
         const matchedActionDef = preprocessActionDefList.find((actionDefItem) => actionDefItem.value === newActionValueStr);
         const defaultParamsDict: Record<string, string | number> = {};
         matchedActionDef?.paramFields.forEach((paramFieldDefItem) => { defaultParamsDict[paramFieldDefItem.key] = paramFieldDefItem.defaultValue; });
-        // ★ 2026-10-27：後端整份清單共用一個雜湊演算法，新加的雜湊步驟沿用其他欄位已選的演算法
-        if (newActionValueStr === 'hash')
-        {
-            const existingHashStep = Object.values(preprocessingRulesMap).flat().find((stepItemRecord) => stepItemRecord?.action === 'hash');
-            if (existingHashStep) defaultParamsDict.algorithm = normalizePreprocessHashAlgorithm(existingHashStep.params?.algorithm);
-        }
 
         const updatedStepsArray = getFieldPreprocessSteps(targetColumnNameStr).map(
             (stepItemRecord, stepIndexNumber) =>
@@ -438,21 +434,6 @@ export default function Step2_Mapping(): React.ReactElement
         const updatedStepsArray = getFieldPreprocessSteps(targetColumnNameStr).map(
             (stepItemRecord, stepIndexNumber) => stepIndexNumber === targetStepIndexNumber ? { ...stepItemRecord, params: { ...stepItemRecord.params, [paramKeyStr]: newParamValueData } } : stepItemRecord
         );
-
-        // ★ 2026-10-27：雜湊演算法為後端 preprocess 區塊的共用參數（不能逐欄不同），改一欄即同步所有欄位的雜湊步驟
-        const isHashAlgorithmChangeStatus = paramKeyStr === 'algorithm' && getFieldPreprocessSteps(targetColumnNameStr)[targetStepIndexNumber]?.action === 'hash';
-        if (isHashAlgorithmChangeStatus)
-        {
-            const syncedRulesMap: Record<string, PreprocessingRule[]> = {};
-            Object.entries(preprocessingRulesMap).forEach(([columnNameStr, stepsArray]) =>
-            {
-                syncedRulesMap[columnNameStr] = Array.isArray(stepsArray)
-                    ? stepsArray.map((stepItemRecord) => stepItemRecord.action === 'hash' ? { ...stepItemRecord, params: { ...stepItemRecord.params, algorithm: newParamValueData } } : stepItemRecord)
-                    : stepsArray;
-            });
-            setPreprocessingRulesAction({ ...syncedRulesMap, [targetColumnNameStr]: updatedStepsArray });
-            return;
-        }
 
         setPreprocessingRulesAction({ ...preprocessingRulesMap, [targetColumnNameStr]: updatedStepsArray });
     };

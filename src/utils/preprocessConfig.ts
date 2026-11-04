@@ -125,10 +125,12 @@ export const convertPreprocessStep = (stepItem: PreprocessingRule): BackendPrepr
 		}
 		case 'hash':
 		{
+			// ★ 2026-11-04：後端修補後可逐欄指定演算法，每個雜湊動作都帶自己的 algorithm
+			const algorithm = normalizePreprocessHashAlgorithm(params.algorithm);
 			const seedModeText = String(params.seedMode || 'none');
-			if (seedModeText === 'fixed') return { action: 'hash', params: { salt: String(params.seedValue ?? '') } };
-			if (seedModeText === 'random' || seedModeText === 'timestamp') return { action: 'hash', params: { salt: PREPROCESS_TIMESTAMP_SALT_KEYWORD } };
-			return { action: 'hash', params: {} };
+			if (seedModeText === 'fixed') return { action: 'hash', params: { algorithm, salt: String(params.seedValue ?? '') } };
+			if (seedModeText === 'random' || seedModeText === 'timestamp') return { action: 'hash', params: { algorithm, salt: PREPROCESS_TIMESTAMP_SALT_KEYWORD } };
+			return { action: 'hash', params: { algorithm } };
 		}
 		case 'regex_replace':
 			return {
@@ -189,6 +191,7 @@ export const buildPreprocessBlock = (
 		{
 			const convertedAction = convertPreprocessStep(stepItem);
 			if (!convertedAction) continue;
+			// 區塊層 algorithm 只是預設值（各動作已帶自己的）；取第一個雜湊步驟的，舊版後端（不認得動作層 algorithm）至少第一欄正確
 			if (convertedAction.action === 'hash' && hashAlgorithm === null) hashAlgorithm = normalizePreprocessHashAlgorithm(stepItem.params?.algorithm);
 			actionList.push(convertedAction);
 			if (stepItem.action === 'hash') break; // 雜湊為終點，與畫面預覽一致

@@ -45,7 +45,30 @@ describe('parseBackendPreprocessBlock', () => {
     it('匯入後再組回後端格式，與原設定檔相同（往返一致）', () => {
         const result = parseBackendPreprocessBlock(UNIFIED_PREPROCESS_BLOCK);
         const rebuilt = buildPreprocessBlock(result.columnNames, result.preprocessingRules, result.missingValueRules);
-        expect(rebuilt).toEqual(UNIFIED_PREPROCESS_BLOCK);
+        // ★ 2026-11-04：組回時每個雜湊動作都帶 algorithm（取自區塊層），其餘與原設定檔相同
+        const withActionAlgorithm = {
+            ...UNIFIED_PREPROCESS_BLOCK,
+            columns: UNIFIED_PREPROCESS_BLOCK.columns.map((entry) => ({
+                ...entry,
+                actions: entry.actions.map((actionItem) => actionItem.action === 'hash'
+                    ? { ...actionItem, params: { algorithm: UNIFIED_PREPROCESS_BLOCK.algorithm, ...actionItem.params } }
+                    : actionItem),
+            })),
+        };
+        expect(rebuilt).toEqual(withActionAlgorithm);
+    });
+
+    it('動作層 algorithm 優先於區塊層（逐欄指定，★ 2026-11-04）', () => {
+        const result = parseBackendPreprocessBlock({
+            enabled: true,
+            algorithm: 'sha3-256',
+            columns: [
+                { column: 'A', actions: [{ action: 'hash', params: { algorithm: 'sha256' } }] },
+                { column: 'B', actions: [{ action: 'hash', params: {} }] },
+            ],
+        });
+        expect(result.preprocessingRules.A[0].params).toEqual({ algorithm: 'sha256', seedMode: 'none' });
+        expect(result.preprocessingRules.B[0].params).toEqual({ algorithm: 'sha3-256', seedMode: 'none' });
     });
 
     it('未填 algorithm 時依後端預設 sha3-256；salt 自訂／未填分別對應自訂鹽值／伺服器預設', () => {

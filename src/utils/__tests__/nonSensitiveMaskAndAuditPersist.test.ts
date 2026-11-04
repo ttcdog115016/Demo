@@ -19,7 +19,7 @@ vi.mock('../../api/systemApi', () => ({ postHistory: postHistoryMock, fetchHisto
 const baseSettings = { kValue: 5, lValue: 2, tValue: 0.7, enableLDiversity: false, enableTCloseness: false, maxSuppression: 20, suppressionMethod: 'row_suppression', cellFillMethod: 'star' as const, limitExceededAction: 'allow_with_warning' };
 
 describe('非敏感欄位遮蔽', () => {
-    it('全遮蔽／部分遮蔽／雜湊／清空照後端欄位送出；敏感欄位與日期全遮蔽不送', () => {
+    it('全遮蔽／部分遮蔽／清空照後端欄位送出；舊狀態的雜湊改送刪除；敏感欄位與日期全遮蔽不送', () => {
         const config = buildKAnonymityConfig({
             ...baseSettings, hashAlgorithm: 'sha3-256',
             processedColumnNames: ['電話', '地址', '員編', '備註', '疾病', '到院時間'],
@@ -35,11 +35,11 @@ describe('非敏感欄位遮蔽', () => {
         }).k_anonymity as { algorithm?: string; columns: Record<string, Record<string, unknown>> };
         expect(config.columns['電話']).toEqual({ role: 'non_sensitive', type: 'string', strategy: 'partial', mask_char: '*', mask_mode: 'prefix', keep_chars: 4 });
         expect(config.columns['地址']).toEqual({ role: 'non_sensitive', type: 'string', strategy: 'mask', mask_char: '#', mask_length: 6 });
-        expect(config.columns['員編'].strategy).toBe('hash');
+        expect(config.columns['員編'].strategy).toBe('remove'); // ★ 2026-11-04：K-匿名不再雜湊
         expect(config.columns['備註'].strategy).toBe('clear');
         expect(config.columns['疾病']).not.toHaveProperty('strategy');
         expect(config.columns['到院時間']).not.toHaveProperty('strategy');
-        expect(config.algorithm).toBe('sha3-256');
+        expect(config).not.toHaveProperty('algorithm');
     });
 
     it('全遮蔽未指定長度時不送 mask_length（沿用原值長度）', () => {

@@ -142,12 +142,15 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
             //   識別欄位支援 remove（刪欄）／hash（假名化）／clear（清空值、保留欄位）；未填時後端預設為 hash。
             //   非識別欄位（敏感／非敏感）明確設 remove 亦會刪欄；先前只對識別欄位送 strategy，
             //   畫面上選「刪除」的敏感／非敏感欄位實際上沒有被刪。
-            const uiMaskStrategy = matchedField.maskStrategy === 'drop' ? 'remove' : String(matchedField.maskStrategy || '');
-            if (backendRole === 'identifier' && ['remove', 'hash', 'clear'].includes(uiMaskStrategy)) {
-                maskStrategy = uiMaskStrategy;
+            // ★ 2026-11-04：K-匿名不再提供雜湊（改在前處理設定）；舊狀態的 hash 一律當 remove。
+            //   識別欄位一律明確送 remove／clear：後端未填 strategy 時會自動雜湊（app/core/config.py 的 identifier 預設）
+            const rawUiMaskStrategy = matchedField.maskStrategy === 'drop' ? 'remove' : String(matchedField.maskStrategy || '');
+            const uiMaskStrategy = rawUiMaskStrategy === 'hash' ? 'remove' : rawUiMaskStrategy;
+            if (backendRole === 'identifier') {
+                maskStrategy = uiMaskStrategy === 'clear' ? 'clear' : 'remove';
             } else if ((backendRole === 'sensitive' || backendRole === 'non_sensitive') && uiMaskStrategy === 'remove') {
                 maskStrategy = 'remove';
-            } else if (backendRole === 'non_sensitive' && ['mask', 'partial', 'hash', 'clear'].includes(uiMaskStrategy)) {
+            } else if (backendRole === 'non_sensitive' && ['mask', 'partial', 'clear'].includes(uiMaskStrategy)) {
                 // ★ 2026-10-28：非敏感欄位遮蔽（全遮蔽 mask：mask_char＋選填 mask_length；部分遮蔽 partial：keep_chars＋mask_mode＋mask_char）
                 //   日期欄位後端不接受 mask（畫面不提供；保險起見不送）
                 if (!(uiMaskStrategy === 'mask' && colType === 'temporal')) {
@@ -374,8 +377,6 @@ export const buildKAnonymityConfig = (input: KAnonymityConfigInput): Record<stri
             // ★ cell_fill 僅在「值抑制」(cell_suppression) 模式下才有意義，未啟用時完全不送出，
             //   避免像上方 l／t 一樣把無效參數塞進設定檔造成誤解（見上方新增選單處的完整說明）。
             ...(isCellSuppressionMethod(currentSuppressionMethodStr) ? { cell_fill: currentCellFillMethodStr ?? 'star' } : {}),
-            // ★ 2026-10-28：有欄位用雜湊時才送演算法（未送時後端為 sha3-256）
-            ...(Object.values(columnsMap).some((columnSpec) => columnSpec.strategy === 'hash') ? { algorithm: input.hashAlgorithm || 'sha3-256' } : {}),
             columns: columnsMap,
             ...(Object.keys(generalizationHierarchiesMap).length > 0 && { generalization_hierarchies: generalizationHierarchiesMap }),
             ...(Object.keys(generalizationMatricesMap).length > 0 && { generalization_matrices: generalizationMatricesMap }),

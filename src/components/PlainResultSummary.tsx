@@ -13,7 +13,7 @@
 import { Fragment } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { CheckCircleFilled, ExclamationCircleFilled, CloseCircleFilled } from '@ant-design/icons';
-import { classifyRiskLevel, RISK_LEVEL_THRESHOLDS } from '../utils/riskLevel';
+import { classifyRiskLevel, RISK_LEVEL_THRESHOLDS, RISK_LEVEL_REFERENCE_TEXT } from '../utils/riskLevel';
 import type { OverallRiskSummary } from '../utils/riskLevel';
 import { formatPer100Text, COLUMN_TREATMENT_BUCKET_LABEL } from '../utils/plainResultSummary';
 import type { UtilityLevelInfo, ColumnTreatmentItem, ColumnTreatmentBucket } from '../utils/plainResultSummary';
@@ -117,7 +117,7 @@ export function RiskSummaryCard({ summary, rows, colors, helpIcon }: {
                     title={`${info.code} ${info.labelText}`}
                     verdictText={RISK_VERDICT_TEXT[info.level]}
                     helpIcon={helpIcon}
-                    helpTooltip={`依下方三項中最高的一項判定（目前最高：${summary.driver.label}）。分級：L1 低風險 < ${lowPct}｜L2 中風險 ${lowPct}～${highPct}｜L3 高風險 ≥ ${highPct}。這是對處理後資料實際模擬攻擊的結果；只要是 L1，就代表目前的設定已足夠安全，不必為了更安全而犧牲資料實用性。`}
+                    helpTooltip={`依下方三項中最高的一項判定（目前最高：${summary.driver.label}）。分級：L1 低風險 < ${lowPct}｜L2 中風險 ${lowPct}～${highPct}｜L3 高風險 ≥ ${highPct}。這是對處理後資料實際模擬攻擊的結果；只要是 L1，就代表目前的設定已足夠安全，不必為了更安全而犧牲資料實用性。${RISK_LEVEL_REFERENCE_TEXT}`}
                     colors={colors}
                 />
             )}

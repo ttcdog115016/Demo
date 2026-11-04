@@ -48,7 +48,7 @@ const baseSettings = { kValue: 5, lValue: 2, tValue: 0.7, enableLDiversity: fals
 describe('K-匿名欄位處理方式（後端 v2.0.0）', () => {
     afterEach(() => cleanup());
 
-    it('識別欄位 雜湊／清空／刪除 照送；有雜湊時帶演算法；敏感／非敏感欄位「刪除」也送出', () => {
+    it('識別欄位 清空／刪除 照送，舊狀態的雜湊改送刪除、不送演算法；敏感／非敏感欄位「刪除」也送出（★ 2026-11-04）', () => {
         const config = buildKAnonymityConfig({
             ...baseSettings, hashAlgorithm: 'sha256',
             processedColumnNames: ['姓名', '身分證號', '電話', '備註', '疾病', '收入'],
@@ -62,8 +62,8 @@ describe('K-匿名欄位處理方式（後端 v2.0.0）', () => {
             ],
             kAnonymityHierarchies: [], resolveFallbackUiRole: () => 'Non-sensitive'
         }).k_anonymity as { algorithm?: string; columns: Record<string, { strategy?: string }> };
-        expect(config.algorithm).toBe('sha256');
-        expect(config.columns['姓名'].strategy).toBe('hash');
+        expect(config).not.toHaveProperty('algorithm');
+        expect(config.columns['姓名'].strategy).toBe('remove');
         expect(config.columns['身分證號'].strategy).toBe('clear');
         expect(config.columns['電話'].strategy).toBe('remove');
         expect(config.columns['備註'].strategy).toBe('remove');
@@ -93,7 +93,7 @@ describe('K-匿名欄位處理方式（後端 v2.0.0）', () => {
         expect(Object.keys(riskColumnsMap)).toEqual(['年齡', '疾病']);
     });
 
-    it('匯入統合版：姓名＝雜湊、身分證號＝清空，送出的設定檔與統合版相同', async () => {
+    it('匯入統合版：姓名＝雜湊改為刪除並提示、身分證號＝清空（★ 2026-11-04 K-匿名不再雜湊）', async () => {
         useWorkspaceStore.setState({
             columns: SAMPLE_COLUMNS, previewData: [], fileName: '範例資料.csv', preprocessingRules: {}, missingValueRules: {},
             privacyMode: 'k-anonymity', kAnonymityFields: [], kAnonymityHierarchies: [], columnRoles: {}, columnTypes: {}, kAnonymityHashAlgorithm: 'sha256'
@@ -101,13 +101,13 @@ describe('K-匿名欄位處理方式（後端 v2.0.0）', () => {
         const { container } = render(<KAnonymityMapping />);
         fireEvent.change(container.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [new File([unifiedConfigText], 'config.json', { type: 'application/json' })] } });
         await waitFor(() => expect(messageMock.success).toHaveBeenCalled());
-        expect(screen.getByTestId('kanon-hash-algorithm')).toBeTruthy();
+        expect(screen.queryByTestId('kanon-hash-algorithm')).toBeNull();
+        expect(messageMock.warning.mock.calls.some(([text]) => String(text).includes('姓名') && String(text).includes('雜湊'))).toBe(true);
         cleanup();
         const state = useWorkspaceStore.getState();
-        expect(state.kAnonymityHashAlgorithm).toBe('sha3-256');
         const configDocument = buildBackendConfigDocumentFromWorkspace(state) as { k_anonymity: { algorithm?: string; columns: Record<string, { strategy?: string }> } };
-        expect(configDocument.k_anonymity.algorithm).toBe('sha3-256');
-        expect(configDocument.k_anonymity.columns['姓名'].strategy).toBe('hash');
+        expect(configDocument.k_anonymity).not.toHaveProperty('algorithm');
+        expect(configDocument.k_anonymity.columns['姓名'].strategy).toBe('remove');
         expect(configDocument.k_anonymity.columns['身分證號'].strategy).toBe('clear');
     });
 });

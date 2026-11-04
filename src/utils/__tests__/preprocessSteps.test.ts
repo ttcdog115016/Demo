@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { applyPreprocessSteps, applyPreprocessStep, SERVER_SALT_HASH_PREVIEW_TEXT } from '../preprocessSteps';
+import { describe, it, expect, vi } from 'vitest';
+import { applyPreprocessSteps, applyPreprocessStep, SERVER_SALT_HASH_PREVIEW_TEXT, SERVER_SALT_HASH_PENDING_TEXT } from '../preprocessSteps';
 import { sha3Hex } from '../sha3';
+
+// ★ 2026-11-04：伺服器鹽值的預覽改由後端計算（serverHashPreview.ts），測試以假資料取代 API
+const { serverHashMock, FAILED } = vi.hoisted(() => ({ serverHashMock: vi.fn(), FAILED: Symbol('failed') }));
+vi.mock('../serverHashPreview', () => ({ getServerHashPreview: serverHashMock, SERVER_HASH_PREVIEW_FAILED: FAILED }));
 
 // ★ 2026-10-27：預覽規則改為與後端 /api/v1/preprocess 相同（app/engines/preprocess/actions/*.py）
 describe('資料預先處理預覽', () => {
@@ -54,7 +58,8 @@ describe('資料預先處理預覽', () => {
     });
 
     it('雜湊加鹽：自訂鹽值以 HMAC 計算，不同鹽值結果不同；系統隨機鹽值同一次操作內結果一致', () => {
-        // ★ 2026-10-28：伺服器預設鹽值（none／未指定）只顯示說明文字
+        // ★ 2026-10-28：伺服器預設鹽值（none／未指定）取不到後端結果時只顯示說明文字
+        serverHashMock.mockReturnValue(FAILED);
         expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256', seedMode: 'none' } }])).toBe(SERVER_SALT_HASH_PREVIEW_TEXT);
         expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256' } }])).toBe(SERVER_SALT_HASH_PREVIEW_TEXT);
         const unsaltedPreview = SERVER_SALT_HASH_PREVIEW_TEXT;
@@ -67,6 +72,15 @@ describe('資料預先處理預覽', () => {
         expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256', seedMode: 'random' } }])).toBe(randomPreview);
         // 舊設定的 timestamp 視同系統隨機鹽值
         expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha256', seedMode: 'timestamp' } }])).toBe(randomPreview);
+    });
+
+    it('伺服器預設鹽值：結果回來前顯示計算中，回來後顯示後端算出的雜湊前 16 碼（★ 2026-11-04）', () => {
+        serverHashMock.mockReset();
+        serverHashMock.mockReturnValueOnce(undefined);
+        expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'SHA512', seedMode: 'none' } }])).toBe(SERVER_SALT_HASH_PENDING_TEXT);
+        expect(serverHashMock).toHaveBeenLastCalledWith('A123', 'sha3-512');
+        serverHashMock.mockReturnValueOnce('0123456789abcdef0123456789abcdef');
+        expect(applyPreprocessSteps('A123', [{ action: 'hash', params: { algorithm: 'sha3-512', seedMode: 'none' } }])).toBe('0123456789abcdef...');
     });
 
     it('正則替換：替換文字當純文字', () => {
