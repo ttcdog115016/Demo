@@ -50,8 +50,9 @@ describe('resolveReleaseDecision', () => {
     it('依保護程度與可用性給出一句話結論', () => {
         expect(resolveReleaseDecision({ riskLevel: 1, utilityLevel: 1, privacyMode: 'k-anonymity' }).headline).toBe('依本次評估可提供');
         expect(resolveReleaseDecision({ riskLevel: 1, utilityLevel: 3, privacyMode: 'k-anonymity' }).tone).toBe('warning');
-        expect(resolveReleaseDecision({ riskLevel: 2, utilityLevel: 1, privacyMode: 'k-anonymity' }).headline).toBe('建議調整後再提供');
-        expect(resolveReleaseDecision({ riskLevel: 3, utilityLevel: 1, privacyMode: 'differential-privacy' }).adviceText).toContain('ε');
+        // ★ 2026-11-04：riskLevel 1 通過、2 不通過
+        expect(resolveReleaseDecision({ riskLevel: 2, utilityLevel: 1, privacyMode: 'k-anonymity' }).headline).toBe('不建議提供');
+        expect(resolveReleaseDecision({ riskLevel: 2, utilityLevel: 1, privacyMode: 'differential-privacy' }).adviceText).toContain('ε');
         expect(resolveReleaseDecision({ riskLevel: null, utilityLevel: 1, privacyMode: 'k-anonymity' }).tone).toBe('info');
     });
 });

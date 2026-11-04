@@ -428,7 +428,7 @@ export default function Step4_Result(): React.ReactElement
 
     // ★ 2026-10-06 使用者要求：等級只給一個統一結果（三攻擊＋敏感資料猜中取最高）。
     //   CAP 改用「扣除亂猜基線」後的值（utils/capBaseline.ts）：原始 CAP 下限就是最常見敏感值的佔比，
-    //   直接比 5%／20% 門檻會永遠落在 L3。舊快取沒有扣除值時該項不納入等級。
+    //   直接比門檻幾乎永遠不通過。舊快取沒有扣除值時該項不納入判定（★ 2026-11-04 等級改為通過／不通過）。
     //   （2026-10-08：判定與取值改用 utils/complianceReport.ts，與合規報告／歷史紀錄共用）
     const isCapEvaluatedStatus = isCapEvaluated(capReportData);
     const capExcessRiskValue = resolveCapExcessRisk(capReportData);
@@ -815,7 +815,7 @@ export default function Step4_Result(): React.ReactElement
                                     <div>
                                         <div>
                                             {overallRiskSummary && (
-                                                <>{translate('step4.alert.summary_risk', '保護程度')}：<b style={{ color: overallRiskSummary.info.color }}>{overallRiskSummary.info.code} {overallRiskSummary.info.labelText}</b><span style={{ marginRight: 16 }} /></>
+                                                <>{translate('step4.alert.summary_risk', '保護程度')}：<b style={{ color: overallRiskSummary.info.color }}>{translate('step4.alert.risk_verdict', '風險評估{{verdict}}', { verdict: overallRiskSummary.info.labelText })}</b><span style={{ marginRight: 16 }} /></>
                                             )}
                                             {utilityLevelInfo && (
                                                 <>{translate('step4.alert.summary_utility', '資料實用性')}：<b style={{ color: utilityLevelInfo.color }}>{utilityLevelInfo.labelText}</b></>

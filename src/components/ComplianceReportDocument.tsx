@@ -16,7 +16,6 @@ import { useTranslation } from 'react-i18next';
 import type { AuditLogItem } from '../store/useAuditStore';
 import AuditIntegrityPanel from './AuditIntegrityPanel';
 import { OverallRiskLevelPanel } from './RiskLevelBadge';
-import { RISK_LEVEL_REFERENCE_TEXT } from '../utils/riskLevel';
 import { computeReportOverallRisk, formatEpsilonForDisplay, isCapEvaluated, resolveReportColumnTechText, type ComplianceReportEntry } from '../utils/complianceReport';
 import { scaleFontSize } from '../utils/fontScale';
 import { formatHashAlgorithmLabel } from '../utils/reportDescriptions';
@@ -255,7 +254,6 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                                         summary={overallRiskSummary}
                                         title={translate('step4.risk.overall_title', '整體風險等級')}
                                         driverText={overallRiskDriverText}
-                                        referenceText={translate('step4.risk.level_reference', RISK_LEVEL_REFERENCE_TEXT)}
                                         textColor="#333333"
                                         mutedColor="#666666"
                                         trackColor="#e5e7eb"

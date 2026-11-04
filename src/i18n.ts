@@ -712,8 +712,7 @@ const translationResourcesDictionary = {
 					overall_desc: "連續發布 M={{m}} 次之綜合殘餘風險",
 					singling: "指認風險:",
 					linkability: "連結風險:",
-					inference: "推斷風險:",
-					level_reference: "三項風險皆為「處理後資料受模擬攻擊的成功率，扣除對照組與隨機猜測基準後的超額比例」，計算方法參考 Anonymeter（Giomi et al., 2023, PoPETs）。L1／L2／L3 門檻 5%／20% 為本計畫自訂（目前無官方標準），其中 20% 與英國 NHS 強匿名化之再識別風險閾值 0.2 一致（〈林政委個資去識別化談參〉表 3）。"
+					inference: "推斷風險:"
 				},
 				utility: {
 					title: "資料效用與失真度評估",
@@ -1752,8 +1751,7 @@ const translationResourcesDictionary = {
 					overall_desc: "Overall residual risk for M={{m}} consecutive releases",
 					singling: "Singling-out:",
 					linkability: "Linkability:",
-					inference: "Inference:",
-					level_reference: "Each risk is the attack success rate on the processed data in excess of the control set and a random-guess baseline, following the Anonymeter method (Giomi et al., 2023, PoPETs). The L1/L2/L3 thresholds of 5%/20% are set by this project (there is no official standard); 20% matches the UK NHS strong-anonymisation re-identification threshold of 0.2."
+					inference: "Inference:"
 				},
 				utility: {
 					title: "Data Utility Assessment",

@@ -82,7 +82,7 @@ describe('合規報告快照', () => {
         const summary = computeReportOverallRisk(snapshot.attackRisks, snapshot.cap, labels);
         expect(summary?.driver.label).toBe('猜出');
         expect(summary?.driver.value).toBeCloseTo(0.1667);
-        expect(summary?.info.code).toBe('L2');
+        expect(summary?.info.code).toBe('FAIL'); // 0.1667 ≥ 0.09（★ 2026-11-04 改為通過／不通過）
         expect(resolveSensitiveGuessRisk(0.03, null)).toBe(0.03);
         expect(resolveSensitiveGuessRisk(undefined, null)).toBeNull();
     });
@@ -112,16 +112,16 @@ describe('Step4 報告與歷史檢測紀錄調閱內容一致', () => {
         // 新版內容確實出現：處理配置、CAP、整體等級、效用、兩位小數
         expect(historyText).toContain('隱私強化處理配置');
         expect(historyText).toContain('1.23%');
-        expect(historyText).toContain('L2');
+        expect(historyText).toContain('不通過'); // ★ 2026-11-04：等級改為通過／不通過
         expect(historyText).toContain('2.000%');
         expect(historyText).toContain('2 / 3');
         expect(within(historyDocument).getByText('直接移除')).toBeTruthy();
     });
 
-    it('列表的整體等級與報告相同（L2），不再用舊的「綜合殘餘風險 %」', () => {
+    it('列表的整體判定與報告相同（不通過），不再用舊的「綜合殘餘風險 %」', () => {
         useAuditStore.getState().addAuditLog(buildEntry());
         render(<AntdApp><AuditLogHub /></AntdApp>);
-        expect(screen.getByTestId('risk-level-badge-L2')).toBeTruthy();
+        expect(screen.getByTestId('risk-level-badge-FAIL')).toBeTruthy();
         expect(screen.queryByText('三大攻擊殘餘風險 (Singling/Link/Inf)')).toBeNull();
     });
 

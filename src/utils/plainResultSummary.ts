@@ -214,10 +214,10 @@ export interface ReleaseDecision {
 
 /**
  * ★ 2026-10-06 白話版：把保護程度與可用性合成「這份資料能不能給出去、下一步做什麼」。
- *   riskLevel：1~3（L1~L3），null＝未做風險評估；utilityLevel：1 高、2 中、3 低，null＝無法判斷。
+ *   riskLevel：1 通過、2 不通過（★ 2026-11-04 原 L1~L3），null＝未做風險評估；utilityLevel：1 高、2 中、3 低，null＝無法判斷。
  */
 export const resolveReleaseDecision = (input: {
-    riskLevel: 1 | 2 | 3 | null;
+    riskLevel: 1 | 2 | null;
     utilityLevel: UtilityLevelNumber | null;
     privacyMode: string | null | undefined;
 }): ReleaseDecision => {
@@ -225,19 +225,16 @@ export const resolveReleaseDecision = (input: {
     const strengthenAdvice = isDp
         ? '可回上一步把隱私預算 ε 調小（雜訊加多一點），再按「重新計算」。'
         : '可回上一步把年齡、地區等欄位分得更粗，或把 K 值調高，再按「重新計算」。';
-    // ★ 2026-10-12：差分隱私 ε 很小時，保護程度 L1 但可用性低，使用者以為「保護越強越好」而不知如何取捨；
-    //   明確說明 L1 已足夠、可以放寬 ε，並提醒重新計算後確認仍為 L1。
+    // ★ 2026-10-12：差分隱私 ε 很小時，保護程度已足夠但可用性低，使用者以為「保護越強越好」而不知如何取捨；
+    //   明確說明已足夠、可以放寬 ε，並提醒重新計算後確認仍通過（★ 2026-11-04 L1 改為通過）。
     const relaxAdvice = isDp
-        ? '目前保護程度已是 L1 低風險，表示這份資料不需要加這麼多雜訊。如果要拿來做分析，可回上一步改選較寬鬆的保護強度（把隱私預算 ε 調大），資料會更接近原值；重新計算後請確認保護程度仍為 L1。'
+        ? '目前風險評估已通過，表示這份資料不需要加這麼多雜訊。如果要拿來做分析，可回上一步改選較寬鬆的保護強度（把隱私預算 ε 調大），資料會更接近原值；重新計算後請確認風險評估仍為通過。'
         : '如果要拿來做分析，可回上一步把 K 值調低或把欄位分得細一點，再按「重新計算」。';
     if (input.riskLevel === null) {
         return { headline: '處理完成（未做風險評估）', adviceText: '尚未設定敏感欄位，因此無法判斷保護程度。建議回上一步設定敏感欄位後重新計算。', tone: 'info' };
     }
-    if (input.riskLevel === 3) {
-        return { headline: '不建議提供', adviceText: `被認出或被猜出敏感資料的機會偏高。${strengthenAdvice}`, tone: 'error' };
-    }
     if (input.riskLevel === 2) {
-        return { headline: '建議調整後再提供', adviceText: `仍有一定的被認出風險。${strengthenAdvice}`, tone: 'warning' };
+        return { headline: '不建議提供', adviceText: `風險評估未通過：被認出、被對上或被猜出敏感資料的風險達到門檻。${strengthenAdvice}`, tone: 'error' };
     }
     if (input.utilityLevel === 3) {
         return { headline: '依本次評估可提供，但資料可能不好用', adviceText: `依本次評估，保護程度已達設定門檻，但刪除、遮蔽或雜訊較多。${relaxAdvice}`, tone: 'warning' };

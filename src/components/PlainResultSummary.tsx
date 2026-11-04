@@ -13,7 +13,7 @@
 import { Fragment } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { CheckCircleFilled, ExclamationCircleFilled, CloseCircleFilled } from '@ant-design/icons';
-import { classifyRiskLevel, RISK_LEVEL_THRESHOLDS, RISK_LEVEL_REFERENCE_TEXT } from '../utils/riskLevel';
+import { classifyRiskLevel, formatRiskPassThreshold } from '../utils/riskLevel';
 import type { OverallRiskSummary } from '../utils/riskLevel';
 import { formatPer100Text, COLUMN_TREATMENT_BUCKET_LABEL } from '../utils/plainResultSummary';
 import type { UtilityLevelInfo, ColumnTreatmentItem, ColumnTreatmentBucket } from '../utils/plainResultSummary';
@@ -30,10 +30,10 @@ export interface PlainCardColors {
 
 type HelpIconRenderer = (tooltip: ReactNode) => ReactNode;
 
-const RISK_VERDICT_TEXT: Record<1 | 2 | 3, string> = {
-    1: '依本次評估，資料被認出、被對上或被猜出敏感資料的機會都偏低。',
-    2: '仍有一定風險，建議針對下方最高的一項調整設定後重新運算。',
-    3: '風險偏高，不建議對外提供；請針對下方最高的一項調整設定後重新運算。',
+// ★ 2026-11-04：L1／L2／L3 改為通過／不通過（依 Anonymeter 與 PETsARD，門檻見 utils/riskLevel.ts）
+const RISK_VERDICT_TEXT: Record<1 | 2, string> = {
+    1: '依本次評估，資料被認出、被對上或被猜出敏感資料的風險都低於門檻。',
+    2: '有風險達到或超過門檻，不建議對外提供；請針對下方最高的一項調整設定後重新運算。',
 };
 
 /** 上方結論區：大圖示＋標題＋一句白話（兩張卡片共用） */
@@ -104,8 +104,7 @@ export function RiskSummaryCard({ summary, rows, colors, helpIcon }: {
     colors: PlainCardColors;
     helpIcon?: HelpIconRenderer;
 }) {
-    const lowPct = `${RISK_LEVEL_THRESHOLDS.low * 100}%`;
-    const highPct = `${RISK_LEVEL_THRESHOLDS.high * 100}%`;
+    const thresholdPct = formatRiskPassThreshold();
     const info = summary?.info;
     return (
         <div data-testid="risk-summary-card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -114,10 +113,10 @@ export function RiskSummaryCard({ summary, rows, colors, helpIcon }: {
                     testId="overall-risk-level"
                     level={info.level}
                     color={info.color}
-                    title={`${info.code} ${info.labelText}`}
+                    title={`風險評估${info.labelText}`}
                     verdictText={RISK_VERDICT_TEXT[info.level]}
                     helpIcon={helpIcon}
-                    helpTooltip={`依下方三項中最高的一項判定（目前最高：${summary.driver.label}）。分級：L1 低風險 < ${lowPct}｜L2 中風險 ${lowPct}～${highPct}｜L3 高風險 ≥ ${highPct}。這是對處理後資料實際模擬攻擊的結果；只要是 L1，就代表目前的設定已足夠安全，不必為了更安全而犧牲資料實用性。${RISK_LEVEL_REFERENCE_TEXT}`}
+                    helpTooltip={`下方三項都低於 ${thresholdPct} 才算通過，任一項達到或超過就不通過（目前最高：${summary.driver.label}）。每一項是對處理後資料實際模擬攻擊、扣除亂猜也能猜中的部分後的超額風險（Anonymeter 方法）；門檻 ${thresholdPct} 參照 PETsARD 依新加坡個資保護委員會（PDPC）合成資料指引建議的 risk < 0.09。通過就代表目前的設定已足夠，不必為了更安全而犧牲資料實用性。`}
                     colors={colors}
                 />
             )}
@@ -136,7 +135,7 @@ export function RiskSummaryCard({ summary, rows, colors, helpIcon }: {
                             colors={colors}
                             answer={rowInfo && per100Text ? per100Text : (row.notEvaluatedText || '未評估')}
                             answerColor={rowInfo ? rowInfo.color : colors.muted}
-                            detail={rowInfo ? `${((row.value as number) * 100).toFixed(1)}%・${rowInfo.code} ${rowInfo.labelText}` : undefined}
+                            detail={rowInfo ? `${((row.value as number) * 100).toFixed(1)}%・${rowInfo.labelText}` : undefined}
                         />
                     );
                 })}
