@@ -2,7 +2,7 @@
 # Open-PETs 單機版執行檔建置（Windows）
 # 用法：在 Demo 資料夾雙擊 packaging\build_exe.bat，或在 PowerShell：
 #   powershell -ExecutionPolicy Bypass -File .\packaging\build_exe.ps1
-#   可選參數：-BackendSrc <後端 01_程式原始碼 路徑> -Python <python.exe 路徑> -Version 2.0.1
+#   可選參數：-BackendSrc <後端 01_程式原始碼 路徑> -Python <python.exe 路徑> -Version 2.0.2
 # 產出：packaging\dist\OpenPETs_Setup_<版本>.exe（安裝程式，發布用）與 packaging\dist\OpenPETs\（安裝內容）
 # 需要：Node.js（已裝好 node_modules）、Python 3.12（後端所附 wheel 為 CPython 3.12）、可連網安裝 PyInstaller／pywebview、
 #       Inno Setup 6（winget install JRSoftware.InnoSetup）
@@ -10,7 +10,7 @@
 param(
     [string]$BackendSrc = (Join-Path $env:USERPROFILE 'Desktop\TTC-隱私強化技術實證委託採購案-期末-20261027T012822Z-1-001\TTC-隱私強化技術實證委託採購案-期末\open-pets_3.1_完整交付套件_v2.0.0\3.1_完整交付套件\01_程式原始碼'),
     [string]$Python = '',
-    [string]$Version = '2.0.1'
+    [string]$Version = '2.0.2'
 )
 $ErrorActionPreference = 'Stop'
 $PackDir  = $PSScriptRoot

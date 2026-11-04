@@ -19,4 +19,6 @@
 | 2026-11-02 | `2026-11-02_cors_trusted_host.patch`（需先套用前面幾個） | 資安掃描 2-4／B14：移除 `allow_origins=["*"]`＋`allow_credentials=True`。新增 `OPEN_PETS_CORS_ORIGINS`（逗號分隔；未設定＝不掛 CORS，只接受同源；有設定時只允許清單內來源、不帶 credentials）與 `OPEN_PETS_ALLOWED_HOSTS`（有設定時以 TrustedHostMiddleware 擋外來 Host，防 DNS rebinding）。改由 `register_cross_origin_policy()` 在其他中介層之後加入（最外層，413 也帶 CORS 標頭）。單機版 launcher 自動設定 `OPEN_PETS_ALLOWED_HOSTS=127.0.0.1,localhost`。新增 `tests/api/test_cors_hosts.py` |
 | 2026-11-04 | `2026-11-04_preprocess_hash_per_column.patch`（需先套用前面幾個） | 前處理雜湊逐欄演算法與預覽：`hash` 動作 `params` 可帶 `algorithm`（sha256／sha3-256／sha3-512，大小寫不拘），未給沿用區塊層 `algorithm`，舊設定檔行為不變；鹽值規則抽成 `resolve_hash_salt()`。新增 `POST /api/v1/preprocess/hash-preview`（須登入；`{values ≤20 個、各 ≤256 字, algorithm, salt?}` → `{hashes}`），以與 `hash` 動作相同的鹽值規則（未給或空字串＝`OPEN_PETS_DEFAULT_SALT`）與 `hash_mask()` 計算，只回雜湊值不回鹽值；`use_timestamp` 無法預覽回 400；不列入處理端點（不記 run、不寫稽核）。交付包 `04_系統設定檔/設定檔結構與參數說明.md` 一併更新。新增 `tests/unit/test_preprocess_hash_algorithm.py`、`tests/api/test_hash_preview.py`，後端全套 820 項測試通過 |
 
+版本對照：`v2.0.1` tag 收錄 10/28～11/02 的 12 項修補；`v2.0.2` tag 再收錄 2026-11-04 的雜湊修補（逐欄演算法、預覽端點）。
+
 重新套用（於 `01_程式原始碼` 目錄）：`git apply --ignore-whitespace <patch>`（交付包為 CRLF 換行，必要時先轉換）。

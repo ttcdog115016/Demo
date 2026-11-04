@@ -4,7 +4,7 @@
 ; 資料（.env、帳號、稽核紀錄）由程式寫到 %LOCALAPPDATA%\OpenPETs，解除安裝不刪，避免鹽值與帳號遺失。
 
 #ifndef AppVersion
-  #define AppVersion "2.0.1"
+  #define AppVersion "2.0.2"
 #endif
 #ifndef SourceDir
   #define SourceDir "dist\OpenPETs"
