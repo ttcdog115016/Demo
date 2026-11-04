@@ -126,10 +126,7 @@ for (const component of components) {
         .filter((reference) => reference.type !== 'issue-tracker')
         .map(({ comment, ...reference }) => reference); // 拿掉 "as detected from …" 註解
 }
-const orderedBom = { bomFormat: bom.bomFormat, specVersion: bom.specVersion, serialNumber: `urn:uuid:${randomUUID()}`, version: bom.version, metadata: bom.metadata, components: bom.components, dependencies: bom.dependencies };
-
 mkdirSync(OUT_DIR, { recursive: true });
-writeFileSync(join(OUT_DIR, 'frontend-sbom.cdx.json'), `${JSON.stringify(orderedBom, null, 2)}\n`, 'utf-8');
 
 // ---- 授權清單與授權全文（比照後端 THIRD_PARTY_LICENSES.md、THIRD_PARTY_NOTICES.txt）
 const FALLBACK_DIR = join(OUT_DIR, 'license-fallbacks');
@@ -187,18 +184,35 @@ const SEPARATOR_THICK = '='.repeat(78);
 const SEPARATOR_THIN = '-'.repeat(78);
 const noticeLines = [];
 const licenseSources = { package: [], upstream: [], none: [] };
+const licenseTextByKey = new Map();
+const renderLicenseBlocks = (blocks) => {
+    const lines = [];
+    blocks.forEach((block, index) => {
+        if (index > 0) lines.push('');
+        if (block.label && blocks.length > 1) lines.push(`[${block.label}]`, '');
+        lines.push(block.text);
+    });
+    return lines;
+};
 for (const component of uniqueComponents) {
     const { blocks, source } = readLicenseTexts(component);
     licenseSources[source].push(`${componentFullName(component)}@${component.version}`);
-    noticeLines.push(SEPARATOR_THICK, `${componentFullName(component)} ${component.version} — ${licenseText(component)}`, urlOf(component), SEPARATOR_THIN);
-    blocks.forEach((block, index) => {
-        if (index > 0) noticeLines.push('');
-        if (block.label && blocks.length > 1) noticeLines.push(`[${block.label}]`, '');
-        noticeLines.push(block.text);
-    });
-    noticeLines.push('');
+    const bodyLines = renderLicenseBlocks(blocks);
+    licenseTextByKey.set(`${componentFullName(component)}@${component.version}`, bodyLines.join('\n'));
+    noticeLines.push(SEPARATOR_THICK, `${componentFullName(component)} ${component.version} — ${licenseText(component)}`, urlOf(component), SEPARATOR_THIN, ...bodyLines, '');
 }
 writeFileSync(join(OUT_DIR, 'FRONTEND_THIRD_PARTY_NOTICES.txt'), `${noticeLines.join('\n')}\n`, 'utf-8');
+
+// ★ 2026-11-04：授權全文直接放進 SBOM 每個元件的 licenses[].license.text（CycloneDX 1.5 的附件欄位），不必另外對照文字檔。
+//   複合授權運算式（OR／AND）無法同時帶全文，改為 license.name 放運算式原文＋ text。
+for (const component of components) {
+    const attachment = { contentType: 'text/plain', content: licenseTextByKey.get(`${componentFullName(component)}@${component.version}`) };
+    component.licenses = (component.licenses ?? []).map((entry) => (entry.license
+        ? { license: { ...entry.license, text: attachment } }
+        : { license: { name: entry.expression, text: attachment } }));
+}
+const orderedBom = { bomFormat: bom.bomFormat, specVersion: bom.specVersion, serialNumber: `urn:uuid:${randomUUID()}`, version: bom.version, metadata: bom.metadata, components: bom.components, dependencies: bom.dependencies };
+writeFileSync(join(OUT_DIR, 'frontend-sbom.cdx.json'), `${JSON.stringify(orderedBom, null, 2)}\n`, 'utf-8');
 
 const licenseNotes = [
     ['dompurify', '**dompurify（MPL-2.0 OR Apache-2.0）**：雙授權，擇一適用；本專案以 Apache-2.0 使用，未修改其原始碼。MPL-2.0 全文（`LICENSE-MPL`）一併收錄於授權全文。'],
@@ -246,7 +260,7 @@ const lines = [
     '- 範圍：正式執行相依（package.json 的 dependencies 及其傳遞相依）；建置與測試工具（devDependencies）不隨產品交付，不列入',
     `- 元件總數：${components.length}（直接相依 ${directComponents.length}、間接相依 ${components.length - directComponents.length}）`,
     '- 後端（Python）SBOM 另見交付套件「3.2_附件二_軟體物料清單SBOM.json」',
-    '- 授權清單與授權全文：`FRONTEND_THIRD_PARTY_LICENSES.md`、`FRONTEND_THIRD_PARTY_NOTICES.txt`（格式比照後端的 THIRD_PARTY_LICENSES.md、THIRD_PARTY_NOTICES.txt）',
+    '- 每個元件的授權全文已直接放在 SBOM 內（`licenses[].license.text`）；另提供 `FRONTEND_THIRD_PARTY_LICENSES.md`（授權清單）、`FRONTEND_THIRD_PARTY_NOTICES.txt`（授權全文純文字版），格式比照後端的 THIRD_PARTY_LICENSES.md、THIRD_PARTY_NOTICES.txt',
     '- 重新產生：`npm install` 後執行 `npm run sbom`',
     '',
     '## 直接相依',
