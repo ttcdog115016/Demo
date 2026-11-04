@@ -6,7 +6,7 @@
  *   sbom/frontend-sbom.cdx.json              機器可讀，版面比照後端 SBOM（backend-sbom.cdx.json）
  *   sbom/frontend-sbom.md                    中文摘要（直接相依、授權統計）
  *   sbom/FRONTEND_THIRD_PARTY_LICENSES.md    授權清單，比照後端 THIRD_PARTY_LICENSES.md（套件｜版本｜授權｜網址）
- *   sbom/FRONTEND_THIRD_PARTY_NOTICES.txt    授權全文，比照後端 THIRD_PARTY_NOTICES.txt
+ *   sbom/3.2_附件一_開源元件授權全文_前端.txt  授權全文，版面比照廠商《第三階段執行報告書》附件一（3.2_附件一_開源元件授權全文.txt）
  * ★ 2026-11-04：新增授權清單與授權全文；SBOM 版面改為比照後端（serialNumber、tools 清單、精簡的 externalReferences）。
  *   套件沒附授權檔時，改用 sbom/license-fallbacks/<套件>.txt（取自上游原始碼庫，第一行 SOURCE: 註明來源）。
  */
@@ -163,7 +163,9 @@ const readLicenseTexts = (component) => {
         const fallbackFile = join(FALLBACK_DIR, `${fullName.replace('/', '__').replace('@', '')}.txt`);
         if (existsSync(fallbackFile)) {
             const [sourceLine, ...rest] = normalizeNewlines(readFileSync(fallbackFile, 'utf-8')).split('\n');
-            blocks.unshift({ label: null, text: `（套件未附授權檔，以下授權全文取自上游原始碼庫：${sourceLine.replace(/^SOURCE:\s*/, '')}）\n\n${rest.join('\n').trim()}` });
+            const upstreamUrl = sourceLine.replace(/^SOURCE:\s*/, '');
+            const upstreamBody = rest.join('\n').trim();
+            blocks.unshift({ label: 'LICENSE', note: `取自上游原始碼庫：${upstreamUrl}`, bodyText: upstreamBody, text: `（套件未附授權檔，以下授權全文取自上游原始碼庫：${upstreamUrl}）\n\n${upstreamBody}` });
             source = 'upstream';
         } else {
             blocks.push({ label: null, text: `（套件未附授權檔，授權：${licenseText(component)}；${urlOf(component)}）` });
@@ -180,11 +182,17 @@ for (const component of components) {
     seenKeys.add(key);
     uniqueComponents.push(component);
 }
-const SEPARATOR_THICK = '='.repeat(78);
-const SEPARATOR_THIN = '-'.repeat(78);
-const noticeLines = [];
+const RULE = '='.repeat(78);
+const NOTICE_FILE_NAME = '3.2_附件一_開源元件授權全文_前端.txt';
+const LICENSE_NOTES = {
+    dompurify: '雙授權擇一適用，本專案以 Apache-2.0 使用',
+    rgbcolor: '套件宣告為 MIT，並附 FEEL-FREE.md 說明',
+    'victory-vendor': '內含 d3 等第三方套件，其授權檔一併收錄於下方',
+    xlsx: '取自 SheetJS 官方 CDN，網址 cdn.sheetjs.com/xlsx-0.20.3',
+};
 const licenseSources = { package: [], upstream: [], none: [] };
 const licenseTextByKey = new Map();
+const entries = [];
 const renderLicenseBlocks = (blocks) => {
     const lines = [];
     blocks.forEach((block, index) => {
@@ -196,12 +204,44 @@ const renderLicenseBlocks = (blocks) => {
 };
 for (const component of uniqueComponents) {
     const { blocks, source } = readLicenseTexts(component);
-    licenseSources[source].push(`${componentFullName(component)}@${component.version}`);
-    const bodyLines = renderLicenseBlocks(blocks);
-    licenseTextByKey.set(`${componentFullName(component)}@${component.version}`, bodyLines.join('\n'));
-    noticeLines.push(SEPARATOR_THICK, `${componentFullName(component)} ${component.version} — ${licenseText(component)}`, urlOf(component), SEPARATOR_THIN, ...bodyLines, '');
+    const key = `${componentFullName(component)}@${component.version}`;
+    licenseSources[source].push(key);
+    licenseTextByKey.set(key, renderLicenseBlocks(blocks).join('\n'));
+    const notes = [];
+    if (source === 'upstream') notes.push('套件未附授權檔，授權全文取自上游原始碼庫');
+    if (source === 'none') notes.push('套件及上游原始碼庫均未附授權檔，僅列授權種類');
+    if (LICENSE_NOTES[componentFullName(component)]) notes.push(LICENSE_NOTES[componentFullName(component)]);
+    entries.push({ component, blocks, noteText: notes.length ? `（${notes.join('；')}）` : '' });
 }
-writeFileSync(join(OUT_DIR, 'FRONTEND_THIRD_PARTY_NOTICES.txt'), `${noticeLines.join('\n')}\n`, 'utf-8');
+// 版面比照廠商《第三階段執行報告書》附件一：前言、元件索引、每個元件一段（標題、授權、來源、各授權檔以 --- 檔名 --- 分隔）
+const noticeLines = [
+    '資料隱私保護技術套件　前端　開源元件授權全文',
+    '',
+    '本文件為前端（隨單機版安裝檔及網頁版交付）所使用之第三方 npm 元件之授權全文，版面比照《第三階段執行報告書》',
+    '附件一。內容擷取自各元件隨套件散布之授權檔案，未經改寫；元件未附授權檔案者，改取自其上游原始碼庫，',
+    '並於該元件下註明來源。',
+    '',
+    '收錄範圍為前端之執行期元件（package.json 之 dependencies 及其傳遞相依）全部；建置與測試工具',
+    '（devDependencies）不隨產品交付，不收錄。依 package-lock.json，同名同版本但安裝於不同位置者視為同一元件，',
+    '只收錄一次。前端本身之授權見交付資料夾之 LICENSE。',
+    '',
+    `交付版本：${COMPONENT_VERSION}　　元件數：${entries.length}`,
+    '',
+    RULE,
+    '元件索引',
+    RULE,
+    ...entries.map(({ component, noteText }, index) => `${String(index + 1).padStart(3)}. ${componentFullName(component)} ${component.version}　${licenseText(component)}${noteText}`),
+    '',
+];
+entries.forEach(({ component, blocks, noteText }, index) => {
+    noticeLines.push('', RULE, `${index + 1}. ${componentFullName(component)} ${component.version}`, RULE,
+        `授權：${licenseText(component)}${noteText}`, `來源：${urlOf(component)}`, '');
+    for (const block of blocks) {
+        if (block.label) noticeLines.push(`--- ${block.label}${block.note ? `（${block.note}）` : ''} ---`);
+        noticeLines.push(block.bodyText ?? block.text, '');
+    }
+});
+writeFileSync(join(OUT_DIR, NOTICE_FILE_NAME), `${noticeLines.join('\n')}\n`, 'utf-8');
 
 // ★ 2026-11-04：授權全文直接放進 SBOM 每個元件的 licenses[].license.text（CycloneDX 1.5 的附件欄位），不必另外對照文字檔。
 //   複合授權運算式（OR／AND）無法同時帶全文，改為 license.name 放運算式原文＋ text。
@@ -216,7 +256,7 @@ writeFileSync(join(OUT_DIR, 'frontend-sbom.cdx.json'), `${JSON.stringify(ordered
 
 const licenseNotes = [
     ['dompurify', '**dompurify（MPL-2.0 OR Apache-2.0）**：雙授權，擇一適用；本專案以 Apache-2.0 使用，未修改其原始碼。MPL-2.0 全文（`LICENSE-MPL`）一併收錄於授權全文。'],
-    ['rgbcolor', '**rgbcolor（MIT OR SEE LICENSE IN FEEL-FREE.md）**：套件宣告為 MIT，並附 FEEL-FREE.md 說明；授權全文見 `FRONTEND_THIRD_PARTY_NOTICES.txt`。'],
+    ['rgbcolor', '**rgbcolor（MIT OR SEE LICENSE IN FEEL-FREE.md）**：套件宣告為 MIT，並附 FEEL-FREE.md 說明；授權全文見 `3.2_附件一_開源元件授權全文_前端.txt`。'],
     ['xlsx', '**xlsx（Apache-2.0）**：取自 SheetJS 官方 CDN（cdn.sheetjs.com/xlsx-0.20.3），npm 上的版本較舊且有已知弱點。'],
     ['victory-vendor', '**victory-vendor（MIT AND ISC）**：內含 d3 等第三方套件（ISC、BSD-3-Clause 等），各自的授權檔已一併收錄於授權全文。'],
     ['size-sensor', '**size-sensor（ISC）**：套件及上游原始碼庫都沒有附授權檔，授權全文欄位僅列授權種類與網址。'],
@@ -226,7 +266,7 @@ const licensesMarkdown = [
     `# OpenPETs ${COMPONENT_VERSION} 前端第三方元件授權清單`,
     '',
     `SBOM（CycloneDX ${bom.specVersion}）：前端 \`frontend-sbom.cdx.json\`（依 \`package-lock.json\` 產生，僅含執行期相依）。`,
-    '各 npm 套件授權全文見 `FRONTEND_THIRD_PARTY_NOTICES.txt`。',
+    '各 npm 套件授權全文見 `3.2_附件一_開源元件授權全文_前端.txt`（版面比照廠商《第三階段執行報告書》附件一）。',
     `共 ${uniqueComponents.length} 筆（SBOM 共 ${components.length} 個元件；同名同版本但安裝在不同位置的元件，授權只列一次）。`,
     '',
     '## 前端 npm 套件（執行期）',
@@ -260,7 +300,7 @@ const lines = [
     '- 範圍：正式執行相依（package.json 的 dependencies 及其傳遞相依）；建置與測試工具（devDependencies）不隨產品交付，不列入',
     `- 元件總數：${components.length}（直接相依 ${directComponents.length}、間接相依 ${components.length - directComponents.length}）`,
     '- 後端（Python）SBOM 另見交付套件「3.2_附件二_軟體物料清單SBOM.json」',
-    '- 每個元件的授權全文已直接放在 SBOM 內（`licenses[].license.text`）；另提供 `FRONTEND_THIRD_PARTY_LICENSES.md`（授權清單）、`FRONTEND_THIRD_PARTY_NOTICES.txt`（授權全文純文字版），格式比照後端的 THIRD_PARTY_LICENSES.md、THIRD_PARTY_NOTICES.txt',
+    '- 每個元件的授權全文已直接放在 SBOM 內（`licenses[].license.text`）；另提供 `FRONTEND_THIRD_PARTY_LICENSES.md`（授權清單）、`3.2_附件一_開源元件授權全文_前端.txt`（授權全文純文字版，版面比照廠商附件一），授權清單格式比照後端的 THIRD_PARTY_LICENSES.md',
     '- 重新產生：`npm install` 後執行 `npm run sbom`',
     '',
     '## 直接相依',
