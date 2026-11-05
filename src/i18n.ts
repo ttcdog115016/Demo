@@ -600,6 +600,8 @@ const translationResourcesDictionary = {
 			// ★ 新增：風險評估「對象族群限定條件 (subgroup)」設定面板文案，與 K-匿名／差分隱私模式無關，故獨立命名空間、由 Step3_Rules.tsx 共用渲染一份
 			step3_subgroup: {
 				title: "限定特定族群評估風險（選填）",
+				configured_count: "已設定 {{n}} 個條件",
+				collapsed_note: "不設定就是評估全部資料。",
 				tooltip_p1: "不設定時，風險評估會以「全部資料」計算；設定後，只針對您指定的這群人計算。",
 				tooltip_p2: "這裡的設定不會改變去識別化後的輸出資料，只是讓風險評估聚焦在您關心的族群。",
 				tooltip_p3: "數值／日期欄位：填寫最小值、最大值（可只填一邊）。類別欄位：直接從清單勾選即可。",
@@ -1644,6 +1646,8 @@ const translationResourcesDictionary = {
 			},
 			step3_subgroup: {
 				title: "Restrict Risk Assessment to a Subgroup (Optional)",
+				configured_count: "{{n}} condition(s) set",
+				collapsed_note: "If not set, the whole dataset is assessed.",
 				tooltip_p1: "If not set, risk assessment uses all records; once set, it only assesses the group you define.",
 				tooltip_p2: "This does not change the de-identified output; it only focuses the risk assessment on the group you care about.",
 				tooltip_p3: "Numeric/date columns: enter a min and/or max. Categorical columns: just pick values from the list.",

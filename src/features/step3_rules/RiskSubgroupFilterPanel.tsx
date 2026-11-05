@@ -34,10 +34,10 @@
  * ============================================================================
  */
 
-import React from 'react';
-import { Card, Select, Button, Space, Input, Tooltip, Empty, Typography, Spin, DatePicker } from 'antd';
+import React, { useState } from 'react';
+import { Card, Select, Button, Space, Input, Tooltip, Empty, Typography, Spin, DatePicker, Tag } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { PlusOutlined, DeleteOutlined, QuestionCircleOutlined, FilterOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceStore, type RiskSubgroupCondition } from '../../store/useWorkspaceStore';
@@ -45,6 +45,7 @@ import { useEnsureDatasetProfile, MAX_TOP_VALUES_PER_COLUMN } from '../../utils/
 import { resolveColumnKindForSubgroup, isColumnTemporalForSubgroup, SUBGROUP_DATE_BOUND_PATTERN } from '../../utils/riskSubgroupHelpers';
 
 import { scaleFontSize } from '../../utils/fontScale';
+import CollapsibleCardHeader from '../../components/CollapsibleCardHeader';
 const { Text } = Typography;
 
 // 完整掃描資料集時，單一欄位最多快取幾個相異值 (依出現次數由高到低排序後截斷)，避免誤把
@@ -84,6 +85,9 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
     const dpFieldsListArray = useWorkspaceStore((state) => state.dpFields);
     const riskSubgroupFiltersMapDict = useWorkspaceStore((state) => state.riskSubgroupFilters);
     const executeSetRiskSubgroupFiltersAction = useWorkspaceStore((state) => state.setRiskSubgroupFilters);
+
+    // ★ 2026-11-05：預設收合，點標題才展開；載入時已有限定條件（例如匯入設定檔）就先展開，避免設定被藏起來
+    const [isPanelOpenStatus, setIsPanelOpenStatus] = useState<boolean>(() => Object.keys(riskSubgroupFiltersMapDict).length > 0);
 
     // ★ 完整資料集（不受 Step1 預覽 1000 筆上限）各欄位的常見值快取與掃描進行中狀態。
     // ★ 2026-09-30：改由 utils/datasetProfile.ts 統一掃描一次（同一份檔案在 Step2～Step4 共用），
@@ -151,153 +155,158 @@ export default function RiskSubgroupFilterPanel(): React.ReactElement {
     };
 
     return (
-        <Card
-            size="small"
-            title={
-                <Space size={6}>
-                    <FilterOutlined />
-                    <span>{translate('step3_subgroup.title', '只想評估某一群人的風險？（選填）')}</span>
-                    <Tooltip
-                        title={
-                            <div>
-                                <div>{translate('step3_subgroup.tooltip_p1', '不設定時，風險評估會以「全部資料」計算；設定後，只針對您指定的這群人計算。')}</div>
-                                <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p2', '這裡的設定不會改變去識別化後的輸出資料，只是讓風險評估聚焦在您關心的族群。')}</div>
-                                <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p3', '數值／日期欄位：填寫最小值、最大值（可只填一邊）。類別欄位：直接從清單勾選即可。')}</div>
-                                <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p4', '同時設定多個欄位時，須「全部條件都符合」才會算入這個族群。')}</div>
-                            </div>
-                        }
-                    >
-                        <QuestionCircleOutlined style={{ color: '#999', cursor: 'help' }} />
-                    </Tooltip>
-                    {isColumnCategoricalValuesScanningStatus && (
-                        <Tooltip title={translate('step3_subgroup.scanning_hint', '正在完整掃描資料集以建立各欄位可選值清單，大型檔案可能需要一些時間...')}>
-                            <Spin size="small" />
-                        </Tooltip>
-                    )}
-                </Space>
-            }
-            extra={
-                <Button
-                    size="small"
-                    icon={<PlusOutlined />}
-                    onClick={handleAddConditionClick}
-                    disabled={availableColumnNamesListArray.length === 0}
-                >
-                    {translate('step3_subgroup.add_condition', '新增限定條件')}
-                </Button>
-            }
-            style={{ borderRadius: 8 }}
-        >
-            {/* ★ 修正：使用者反映本面板的標題與說明過於術語化，看不出「為什麼要設定這個
-                欄位」。原本的用途說明只藏在滑鼠 hover 才看得到的 "?" 提示裡，容易被忽略。
-                改為在卡片內固定顯示一行白話說明（不需 hover 就看得到），用具體情境（例如
-                「某地區的罕見疾病患者」）解釋：整體資料的風險可能很低，但其中一小群人的風險
-                可能高出很多，這裡就是用來「只看這一小群人」的風險。原本 hover 才看得到的
-                tooltip 內容則簡化用字、保留較細節的操作說明。 */}
-            <div style={{ fontSize: scaleFontSize(12), color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
-                {translate(
-                    'step3_subgroup.why_hint',
-                    '整體資料看起來風險很低，不代表其中某一小群人也一樣安全——例如某地區的罕見疾病患者，人數少、特徵少，反而更容易被認出來。想確認「這一小群人」風不風險，可以在這裡設條件，只針對他們評估。不設定就是評估「全部資料」。'
+        <Card size="small" data-testid="risk-subgroup-filter-panel" style={{ borderRadius: 8 }}>
+            <CollapsibleCardHeader
+                testId="risk-subgroup-header"
+                open={isPanelOpenStatus}
+                onToggle={() => setIsPanelOpenStatus(!isPanelOpenStatus)}
+                title={translate('step3_subgroup.title', '限定特定族群評估風險（選填）')}
+                tooltip={
+                                <div>
+                                    <div>{translate('step3_subgroup.tooltip_p1', '不設定時，風險評估會以「全部資料」計算；設定後，只針對您指定的這群人計算。')}</div>
+                                    <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p2', '這裡的設定不會改變去識別化後的輸出資料，只是讓風險評估聚焦在您關心的族群。')}</div>
+                                    <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p3', '數值／日期欄位：填寫最小值、最大值（可只填一邊）。類別欄位：直接從清單勾選即可。')}</div>
+                                    <div style={{ marginTop: 4 }}>{translate('step3_subgroup.tooltip_p4', '同時設定多個欄位時，須「全部條件都符合」才會算入這個族群。')}</div>
+                                </div>
+                }
+                tags={(
+                    <>
+                        {configuredColumnNamesListArray.length > 0 && (
+                            <Tag color="green">{translate('step3_subgroup.configured_count', '已設定 {{n}} 個條件', { n: configuredColumnNamesListArray.length })}</Tag>
+                        )}
+                        {isColumnCategoricalValuesScanningStatus && (
+                            <Tooltip title={translate('step3_subgroup.scanning_hint', '正在完整掃描資料集以建立各欄位可選值清單，大型檔案可能需要一些時間...')}>
+                                <Spin size="small" />
+                            </Tooltip>
+                        )}
+                    </>
                 )}
-            </div>
-            {configuredColumnNamesListArray.length === 0 ? (
-                <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description={translate('step3_subgroup.empty_state', '目前尚未設定，風險評估將以「全部資料」進行')}
-                    style={{ margin: '8px 0' }}
-                />
-            ) : (
-                <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                    {configuredColumnNamesListArray.map((columnNameString) => {
-                        const conditionRecord = riskSubgroupFiltersMapDict[columnNameString];
-                        const isTemporalColumnStatus = isColumnTemporalForSubgroup(columnNameString, currentPrivacyModeTypeStr, columnTypesMapDict, dpFieldsListArray);
-                        const columnSelectOptionsListArray = [columnNameString, ...availableColumnNamesListArray].map((c) => ({ value: c, label: c }));
-                        const columnCachedUniqueValuesListArray = columnCategoricalUniqueValuesMapDict[columnNameString] || [];
-                        const isUniqueValuesTruncatedStatus = columnCachedUniqueValuesListArray.length >= MAX_CACHED_UNIQUE_VALUES_PER_COLUMN;
+                note={isPanelOpenStatus ? undefined : translate('step3_subgroup.collapsed_note', '不設定就是評估全部資料。')}
+                extra={isPanelOpenStatus ? (
+                    <Button
+                        size="small"
+                        icon={<PlusOutlined />}
+                        onClick={handleAddConditionClick}
+                        disabled={availableColumnNamesListArray.length === 0}
+                    >
+                        {translate('step3_subgroup.add_condition', '新增限定條件')}
+                    </Button>
+                ) : undefined}
+            />
+            {isPanelOpenStatus && (
+                <div style={{ marginTop: 12 }}>
+                {/* ★ 修正：使用者反映本面板的標題與說明過於術語化，看不出「為什麼要設定這個
+                    欄位」。原本的用途說明只藏在滑鼠 hover 才看得到的 "?" 提示裡，容易被忽略。
+                    改為在卡片內固定顯示一行白話說明（不需 hover 就看得到），用具體情境（例如
+                    「某地區的罕見疾病患者」）解釋：整體資料的風險可能很低，但其中一小群人的風險
+                    可能高出很多，這裡就是用來「只看這一小群人」的風險。原本 hover 才看得到的
+                    tooltip 內容則簡化用字、保留較細節的操作說明。 */}
+                <div style={{ fontSize: scaleFontSize(12), color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+                    {translate(
+                        'step3_subgroup.why_hint',
+                        '整體資料看起來風險很低，不代表其中某一小群人也一樣安全——例如某地區的罕見疾病患者，人數少、特徵少，反而更容易被認出來。想確認「這一小群人」風不風險，可以在這裡設條件，只針對他們評估。不設定就是評估「全部資料」。'
+                    )}
+                </div>
+                {configuredColumnNamesListArray.length === 0 ? (
+                    <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description={translate('step3_subgroup.empty_state', '目前尚未設定，風險評估將以「全部資料」進行')}
+                        style={{ margin: '8px 0' }}
+                    />
+                ) : (
+                    <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                        {configuredColumnNamesListArray.map((columnNameString) => {
+                            const conditionRecord = riskSubgroupFiltersMapDict[columnNameString];
+                            const isTemporalColumnStatus = isColumnTemporalForSubgroup(columnNameString, currentPrivacyModeTypeStr, columnTypesMapDict, dpFieldsListArray);
+                            const columnSelectOptionsListArray = [columnNameString, ...availableColumnNamesListArray].map((c) => ({ value: c, label: c }));
+                            const columnCachedUniqueValuesListArray = columnCategoricalUniqueValuesMapDict[columnNameString] || [];
+                            const isUniqueValuesTruncatedStatus = columnCachedUniqueValuesListArray.length >= MAX_CACHED_UNIQUE_VALUES_PER_COLUMN;
 
-                        return (
-                            <div key={columnNameString} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
-                                <Select
-                                    size="small"
-                                    value={columnNameString}
-                                    style={{ width: '11.5em' }}
-                                    options={columnSelectOptionsListArray}
-                                    onChange={(newColumnNameString) => handleColumnChangeForCondition(columnNameString, newColumnNameString)}
-                                />
-                                {conditionRecord.kind === 'range' && isTemporalColumnStatus ? (
-                                    // ★ 2026-10-29：日期欄位改用日期區間選擇器（allowEmpty 讓任一側可留空），
-                                    //   Store 存 YYYY-MM-DD 字串，送後端時原樣作為日期區間邊界
-                                    <DatePicker.RangePicker
+                            return (
+                                <div key={columnNameString} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+                                    <Select
                                         size="small"
-                                        allowEmpty={[true, true]}
-                                        placeholder={[
-                                            translate('step3_subgroup.range_min_date_placeholder', '下限日期（可留空）'),
-                                            translate('step3_subgroup.range_max_date_placeholder', '上限日期（可留空）')
-                                        ]}
-                                        value={[parseDateBoundOrNull(conditionRecord.min), parseDateBoundOrNull(conditionRecord.max)]}
-                                        onChange={(pickedDatesTuple) => handleDateRangeChange(columnNameString, pickedDatesTuple)}
+                                        value={columnNameString}
+                                        style={{ width: '11.5em' }}
+                                        options={columnSelectOptionsListArray}
+                                        onChange={(newColumnNameString) => handleColumnChangeForCondition(columnNameString, newColumnNameString)}
                                     />
-                                ) : conditionRecord.kind === 'range' ? (
-                                    <Space size={4}>
-                                        <Input
+                                    {conditionRecord.kind === 'range' && isTemporalColumnStatus ? (
+                                        // ★ 2026-10-29：日期欄位改用日期區間選擇器（allowEmpty 讓任一側可留空），
+                                        //   Store 存 YYYY-MM-DD 字串，送後端時原樣作為日期區間邊界
+                                        <DatePicker.RangePicker
                                             size="small"
-                                            style={{ width: '10em' }}
-                                            placeholder={translate('step3_subgroup.range_min_placeholder', '下限（可留空）')}
-                                            value={conditionRecord.min ?? ''}
-                                            onChange={(e) => handleRangeBoundChange(columnNameString, 'min', e.target.value)}
+                                            allowEmpty={[true, true]}
+                                            placeholder={[
+                                                translate('step3_subgroup.range_min_date_placeholder', '下限日期（可留空）'),
+                                                translate('step3_subgroup.range_max_date_placeholder', '上限日期（可留空）')
+                                            ]}
+                                            value={[parseDateBoundOrNull(conditionRecord.min), parseDateBoundOrNull(conditionRecord.max)]}
+                                            onChange={(pickedDatesTuple) => handleDateRangeChange(columnNameString, pickedDatesTuple)}
                                         />
-                                        <span>~</span>
-                                        <Input
-                                            size="small"
-                                            style={{ width: '10em' }}
-                                            placeholder={translate('step3_subgroup.range_max_placeholder', '上限（可留空）')}
-                                            value={conditionRecord.max ?? ''}
-                                            onChange={(e) => handleRangeBoundChange(columnNameString, 'max', e.target.value)}
-                                        />
-                                    </Space>
-                                ) : (
-                                    <div style={{ minWidth: '17em', flex: 1 }}>
-                                        {/* ★ 修正：改用 mode="multiple"（而非原本的 "tags"）——只能勾選 options 清單內的值，
-                                            不再接受使用者自由輸入新文字，從根本避免「打的值跟資料集實際內容對不上」的問題。
-                                            清單來源為完整掃描資料集之相異值（見上方 useEffect），而非僅前 1000 筆預覽。 */}
-                                        <Select
-                                            mode="multiple"
-                                            size="small"
-                                            style={{ width: '100%' }}
-                                            placeholder={
-                                                isColumnCategoricalValuesScanningStatus
-                                                    ? translate('step3_subgroup.categorical_placeholder_scanning', '正在掃描資料集，請稍候...')
-                                                    : translate('step3_subgroup.categorical_placeholder', '從清單中勾選允許的值')
-                                            }
-                                            value={conditionRecord.values}
-                                            onChange={(newValuesListArray) => handleCategoricalValuesChange(columnNameString, newValuesListArray)}
-                                            loading={isColumnCategoricalValuesScanningStatus}
-                                            disabled={isColumnCategoricalValuesScanningStatus}
-                                            options={columnCachedUniqueValuesListArray.map((valueStr) => ({ value: valueStr, label: valueStr }))}
-                                            optionFilterProp="label"
-                                            notFoundContent={translate('step3_subgroup.categorical_no_options', '此欄位在資料集中找不到任何可用值')}
-                                        />
-                                        {isUniqueValuesTruncatedStatus && (
-                                            <div style={{ fontSize: scaleFontSize(11), color: '#999', marginTop: 2 }}>
-                                                {translate('step3_subgroup.categorical_truncated_hint', '此欄位相異值較多，僅列出最常見的前 1000 個。')}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                                <Button
-                                    size="small"
-                                    type="text"
-                                    danger
-                                    icon={<DeleteOutlined />}
-                                    onClick={() => handleRemoveConditionClick(columnNameString)}
-                                />
-                            </div>
-                        );
-                    })}
-                    <Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
-                        {translate('step3_subgroup.multi_column_hint', '同時設定多個欄位時，須「同時符合」所有欄位的條件才算入選（交集）。')}
-                    </Text>
-                </Space>
+                                    ) : conditionRecord.kind === 'range' ? (
+                                        <Space size={4}>
+                                            <Input
+                                                size="small"
+                                                style={{ width: '10em' }}
+                                                placeholder={translate('step3_subgroup.range_min_placeholder', '下限（可留空）')}
+                                                value={conditionRecord.min ?? ''}
+                                                onChange={(e) => handleRangeBoundChange(columnNameString, 'min', e.target.value)}
+                                            />
+                                            <span>~</span>
+                                            <Input
+                                                size="small"
+                                                style={{ width: '10em' }}
+                                                placeholder={translate('step3_subgroup.range_max_placeholder', '上限（可留空）')}
+                                                value={conditionRecord.max ?? ''}
+                                                onChange={(e) => handleRangeBoundChange(columnNameString, 'max', e.target.value)}
+                                            />
+                                        </Space>
+                                    ) : (
+                                        <div style={{ minWidth: '17em', flex: 1 }}>
+                                            {/* ★ 修正：改用 mode="multiple"（而非原本的 "tags"）——只能勾選 options 清單內的值，
+                                                不再接受使用者自由輸入新文字，從根本避免「打的值跟資料集實際內容對不上」的問題。
+                                                清單來源為完整掃描資料集之相異值（見上方 useEffect），而非僅前 1000 筆預覽。 */}
+                                            <Select
+                                                mode="multiple"
+                                                size="small"
+                                                style={{ width: '100%' }}
+                                                placeholder={
+                                                    isColumnCategoricalValuesScanningStatus
+                                                        ? translate('step3_subgroup.categorical_placeholder_scanning', '正在掃描資料集，請稍候...')
+                                                        : translate('step3_subgroup.categorical_placeholder', '從清單中勾選允許的值')
+                                                }
+                                                value={conditionRecord.values}
+                                                onChange={(newValuesListArray) => handleCategoricalValuesChange(columnNameString, newValuesListArray)}
+                                                loading={isColumnCategoricalValuesScanningStatus}
+                                                disabled={isColumnCategoricalValuesScanningStatus}
+                                                options={columnCachedUniqueValuesListArray.map((valueStr) => ({ value: valueStr, label: valueStr }))}
+                                                optionFilterProp="label"
+                                                notFoundContent={translate('step3_subgroup.categorical_no_options', '此欄位在資料集中找不到任何可用值')}
+                                            />
+                                            {isUniqueValuesTruncatedStatus && (
+                                                <div style={{ fontSize: scaleFontSize(11), color: '#999', marginTop: 2 }}>
+                                                    {translate('step3_subgroup.categorical_truncated_hint', '此欄位相異值較多，僅列出最常見的前 1000 個。')}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    <Button
+                                        size="small"
+                                        type="text"
+                                        danger
+                                        icon={<DeleteOutlined />}
+                                        onClick={() => handleRemoveConditionClick(columnNameString)}
+                                    />
+                                </div>
+                            );
+                        })}
+                        <Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
+                            {translate('step3_subgroup.multi_column_hint', '同時設定多個欄位時，須「同時符合」所有欄位的條件才算入選（交集）。')}
+                        </Text>
+                    </Space>
+                )}
+                </div>
             )}
         </Card>
     );
