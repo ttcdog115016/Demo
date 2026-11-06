@@ -8,8 +8,26 @@
  *   延後期間不會多佔記憶體：Blob 本身仍由呼叫端持有（例如 Step4 的 processedCsvBlob）。
  */
 
+import { registerWorkspaceReleaseHook } from '../store/useWorkspaceStore';
+
 /** 下載網址保留多久才釋放（毫秒） */
 export const BLOB_DOWNLOAD_URL_REVOKE_DELAY_MS = 10 * 60 * 1000;
+
+/** ★ 2026-11-06：尚未釋放的下載網址；重新開始／重新上傳時立即釋放，不必等 10 分鐘 */
+const pendingDownloadUrlTimers = new Map<string, number>();
+
+const revokeDownloadUrl = (blobDownloadUrl: string): void => {
+    const revokeTimer = pendingDownloadUrlTimers.get(blobDownloadUrl);
+    if (revokeTimer !== undefined) window.clearTimeout(revokeTimer);
+    pendingDownloadUrlTimers.delete(blobDownloadUrl);
+    URL.revokeObjectURL(blobDownloadUrl);
+};
+
+export const revokePendingBlobDownloadUrls = (): void => {
+    Array.from(pendingDownloadUrlTimers.keys()).forEach(revokeDownloadUrl);
+};
+
+registerWorkspaceReleaseHook(revokePendingBlobDownloadUrls);
 
 export const triggerBlobDownload = (downloadBlob: Blob, downloadFileName: string): void => {
     const blobDownloadUrl = URL.createObjectURL(downloadBlob);
@@ -19,5 +37,5 @@ export const triggerBlobDownload = (downloadBlob: Blob, downloadFileName: string
     document.body.appendChild(downloadAnchorElement);
     downloadAnchorElement.click();
     document.body.removeChild(downloadAnchorElement);
-    window.setTimeout(() => URL.revokeObjectURL(blobDownloadUrl), BLOB_DOWNLOAD_URL_REVOKE_DELAY_MS);
+    pendingDownloadUrlTimers.set(blobDownloadUrl, window.setTimeout(() => revokeDownloadUrl(blobDownloadUrl), BLOB_DOWNLOAD_URL_REVOKE_DELAY_MS));
 };

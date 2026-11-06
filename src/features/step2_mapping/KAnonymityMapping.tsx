@@ -19,7 +19,7 @@ import {
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
 
-import { useWorkspaceStore, DEFAULT_KANON_RULE_PARAMS, type PreprocessingRule } from '../../store/useWorkspaceStore';
+import { useWorkspaceStore, DEFAULT_KANON_RULE_PARAMS, registerWorkspaceReleaseHook, type PreprocessingRule } from '../../store/useWorkspaceStore';
 import ConfigFileButtons from './ConfigFileButtons';
 import { parseConfigFileText, ConfigFileParseError } from '../../utils/configFileParse';
 import { useEnsureDatasetProfile, getColumnNumericRange } from '../../utils/datasetProfile';
@@ -466,6 +466,14 @@ const buildInitialKAnonymityFieldForColumn = (columnNameString: string, storeCol
 let globalCachedKAnonymityFields: FieldDef[] | null = null;
 let globalCachedKAnonymityHierarchies: HierarchyTable[] | null = null;
 let globalCachedColumnsKeyString: string = '';
+
+// ★ 2026-11-06：重新開始／重新上傳時清掉，否則新檔欄位名稱相同會把上一份的欄位設定與階層表（含原始類別值）帶回來
+registerWorkspaceReleaseHook(() =>
+{
+    globalCachedKAnonymityFields = null;
+    globalCachedKAnonymityHierarchies = null;
+    globalCachedColumnsKeyString = '';
+});
 
 export default function KAnonymityMapping(): React.ReactElement 
 {

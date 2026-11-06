@@ -23,7 +23,7 @@
  *   - nonNumericDistinctValues：非數值的相異值（最多 MAX_NON_NUMERIC_DISTINCT_SAMPLE 個，供分級距統計）
  */
 import { useEffect } from 'react';
-import { useWorkspaceStore } from '../store/useWorkspaceStore';
+import { useWorkspaceStore, registerWorkspaceReleaseHook } from '../store/useWorkspaceStore';
 import { scanDatasetFileOnCurrentThread, buildDatasetFileKey, cleanDatasetColumnName, type DatasetProfile } from './datasetProfileScanner';
 import { findNumericMinMax } from './binGeneration';
 
@@ -90,6 +90,15 @@ let otherFileProfileCache: DatasetProfile | null = null;
 // 同一份檔案同時被多頁要求時共用同一個掃描；只保留最近一份檔案，換檔即釋放舊結果的記憶體
 let inFlightScanRecord: { fileKey: string; promise: Promise<DatasetProfile> } | null = null;
 
+// ★ 2026-11-06：重新開始／重新上傳時釋放（快取含實際數值與高頻值）；釋放後才完成的掃描結果也不再寫入快取
+let releaseGeneration = 0;
+registerWorkspaceReleaseHook(() =>
+{
+    otherFileProfileCache = null;
+    inFlightScanRecord = null;
+    releaseGeneration += 1;
+});
+
 /**
  * 取得（必要時才掃描）目前資料集的欄位統計快照，並寫入 WorkspaceStore。
  * Step4 等非 React 流程可直接 await；畫面元件請用下方 useEnsureDatasetProfile。
@@ -102,6 +111,7 @@ export const ensureDatasetProfile = (file: File): Promise<DatasetProfile> => {
     if (inFlightScanRecord && inFlightScanRecord.fileKey === fileKey) return inFlightScanRecord.promise;
 
     useWorkspaceStore.setState({ isColumnCategoricalValuesScanning: true });
+    const scanGeneration = releaseGeneration;
     const scanPromise = scanDatasetFile(file)
         .then((profile) => {
             // 掃描期間若已換成別的檔案，就不要把舊檔案的結果寫回去
@@ -116,7 +126,7 @@ export const ensureDatasetProfile = (file: File): Promise<DatasetProfile> => {
                     isColumnCategoricalValuesScanning: false
                 });
             } else {
-                otherFileProfileCache = profile;
+                if (scanGeneration === releaseGeneration) otherFileProfileCache = profile;
                 useWorkspaceStore.setState({ isColumnCategoricalValuesScanning: false });
             }
             return profile;

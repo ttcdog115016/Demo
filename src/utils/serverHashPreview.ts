@@ -10,6 +10,7 @@
  */
 import { create } from 'zustand';
 import { authorizedRequest } from '../api/authApi';
+import { registerWorkspaceReleaseHook } from '../store/useWorkspaceStore';
 
 const REQUEST_DEBOUNCE_MS = 300;
 const MAX_VALUES_PER_REQUEST = 20;   // 與後端 HASH_PREVIEW_MAX_VALUES 一致
@@ -31,25 +32,29 @@ const toCacheKey = (algorithm: string, value: string): string => `${algorithm}\u
 const pendingValuesByAlgorithm = new Map<string, Set<string>>();
 const inFlightKeys = new Set<string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let cacheGeneration = 0;   // 清除快取後，之前送出的請求回來時不再寫入
 
 const storeEntries = (newEntries: Record<string, ServerHashEntry>): void =>
 	useServerHashPreviewStore.setState((state) => ({ entries: { ...state.entries, ...newEntries }, version: state.version + 1 }));
 
 const fetchBatch = async (algorithm: string, values: string[]): Promise<void> =>
 {
+	const requestGeneration = cacheGeneration;
 	try
 	{
 		const response = await authorizedRequest<{ hashes: string[] }>({ method: 'POST', url: '/preprocess/hash-preview', data: { values, algorithm } });
 		const hashes = Array.isArray(response?.hashes) ? response.hashes : [];
+		if (requestGeneration !== cacheGeneration) return;
 		storeEntries(Object.fromEntries(values.map((value, index) => [toCacheKey(algorithm, value), typeof hashes[index] === 'string' ? hashes[index] : SERVER_HASH_PREVIEW_FAILED])));
 	}
 	catch
 	{
+		if (requestGeneration !== cacheGeneration) return;
 		storeEntries(Object.fromEntries(values.map((value) => [toCacheKey(algorithm, value), SERVER_HASH_PREVIEW_FAILED])));
 	}
 	finally
 	{
-		values.forEach((value) => inFlightKeys.delete(toCacheKey(algorithm, value)));
+		if (requestGeneration === cacheGeneration) values.forEach((value) => inFlightKeys.delete(toCacheKey(algorithm, value)));
 	}
 };
 
@@ -86,8 +91,17 @@ export const getServerHashPreview = (value: string, algorithm: string): ServerHa
 	return undefined;
 };
 
-/** 登出或換帳號時清掉快取（伺服器鹽值可能不同） */
+/**
+ * 登出或換帳號時清掉快取（伺服器鹽值可能不同）。
+ * ★ 2026-11-06：快取的鍵是原始欄位值，重新開始／重新上傳時也一併清除（含尚未送出與進行中的請求）。
+ */
 export const clearServerHashPreviewCache = (): void =>
 {
+	cacheGeneration += 1;
+	if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
+	pendingValuesByAlgorithm.clear();
+	inFlightKeys.clear();
 	useServerHashPreviewStore.setState((state) => ({ entries: {}, version: state.version + 1 }));
 };
+
+registerWorkspaceReleaseHook(clearServerHashPreviewCache);

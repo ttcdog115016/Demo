@@ -26,9 +26,8 @@ import { clearServerHashPreviewCache } from '../utils/serverHashPreview';
  */
 const releaseSessionData = (): void =>
 {
-	const sessionTimeoutValue = (useWorkspaceStore.getState() as unknown as { sessionTimeout?: number }).sessionTimeout;
-	useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true);
-	if (sessionTimeoutValue !== undefined) useWorkspaceStore.setState({ sessionTimeout: sessionTimeoutValue } as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+	// ★ 2026-11-06：改用 resetWorkspace——同樣還原初始狀態並保留 sessionTimeout，另會清掉各模組的資料快取
+	useWorkspaceStore.getState().resetWorkspace();
 	useAuditStore.getState().clearAuditLogs();
 	useSystemLogStore.setState({ logs: [], recentlyArrivedIds: [], lastSyncedAt: null, consecutivePollFailures: 0 });
 	useUIStore.getState().resetToDefaults();

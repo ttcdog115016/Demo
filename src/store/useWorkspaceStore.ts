@@ -304,10 +304,33 @@ const createInitialDPFields = (datasetColumnsListArray: string[]): DPField[] =>
     );
 };
 
+/**
+ * ★ 2026-11-06：重新開始／重新上傳時釋放資料的掛勾。
+ *   原始資料與去識別化結果除了存在本 store，也有幾個模組層級快取（Step2 欄位設定、前處理後檔案的欄位統計、
+ *   伺服器雜湊預覽、下載用 blob 網址）。那些模組都會匯入本 store，若反過來由本檔匯入會形成循環，
+ *   因此改由各模組在載入時登記清除函式，resetWorkspace／clearFileData 時一併呼叫。
+ */
+const workspaceReleaseHooks = new Set<() => void>();
+export const registerWorkspaceReleaseHook = (releaseHook: () => void): void => { workspaceReleaseHooks.add(releaseHook); };
+
 export const useWorkspaceStore = create<WorkspaceState>(
-    (setStoreStateAction) => 
-    (
+    (setStoreStateAction, _getStoreState, workspaceStoreApi) => 
+    {
+        /** 整個工作區還原初始狀態（含 K 值、DP 預算等設定），並清除各模組登記的資料快取 */
+        const releaseAllWorkspaceData = (): void =>
         {
+            // 只保留後端同步來的閒置登出時間（見 utils/systemSettingsSync.ts），否則閒置計時會退回預設
+            const sessionTimeoutValue = (workspaceStoreApi.getState() as unknown as { sessionTimeout?: number }).sessionTimeout;
+            setStoreStateAction(workspaceStoreApi.getInitialState(), true);
+            if (sessionTimeoutValue !== undefined) setStoreStateAction({ sessionTimeout: sessionTimeoutValue } as unknown as Partial<WorkspaceState>);
+            workspaceReleaseHooks.forEach((releaseHook) =>
+            {
+                try { releaseHook(); }
+                catch (releaseError) { console.error('[工作區] 釋放快取失敗：', releaseError); }
+            });
+        };
+
+        return {
             dataFile: null,                                                  
             currentStep: MIN_STEP_INDEX,
             privacyMode: null,
@@ -368,30 +391,9 @@ export const useWorkspaceStore = create<WorkspaceState>(
                 datasetColumnNumericValuesMap: {},
                 columnCategoricalUniqueValues: {}
             }),
-            clearFileData: () => setStoreStateAction({ 
-                dataFile: null,                                                      
-                columns: [],
-                previewData: [],
-                fileName: undefined,
-                lastUploadDiagnostics: null,
-                privacyMode: null,
-                preprocessingRules: {},
-                missingValueRules: {},
-                dpFields: [],
-                datasetColumnNumericValuesMap: {},
-                datasetProfile: null,
-                riskSubgroupFilters: {}, // ★ 新增：換一份資料集，原欄位名稱可能已不存在，條件一併清空
-                riskColumnOverrides: null,
-                riskLinkability: null,
-                riskAttackParams: null,
-                kAnonymityHashAlgorithm: 'sha3-256',
-                columnCategoricalUniqueValues: {}, // ★ 新增：換一份資料集，快取之相異值已不適用，一併清空觸發重新掃描
-                isColumnCategoricalValuesScanning: false,
-                // ★ 累計隱私預算追蹤與資料集綁定：換一份資料集即視為全新的追蹤起點，歸零重新累計。
-                dpAccumulatedEpsilon: 0,
-                dpAccumulatedDelta: 0,
-                lastAttemptedRunParamsHash: null
-            }),
+            // ★ 2026-11-06：重新上傳與重新開始一律釋放全部資料並還原初始設定（原本只清檔案，
+            //   Step4 去識別化結果 processedCsvBlob、Step2 階層表與 Step3 的 K 值、DP 預算等設定都會殘留）。
+            clearFileData: () => releaseAllWorkspaceData(),
             setLastUploadDiagnostics: (diagnosticsSnapshotObj) => setStoreStateAction({
                 lastUploadDiagnostics: { ...diagnosticsSnapshotObj, detectedAt: new Date().toISOString() }
             }),
@@ -401,46 +403,7 @@ export const useWorkspaceStore = create<WorkspaceState>(
             setRiskSubgroupFilters: (riskSubgroupFiltersMapDict) => setStoreStateAction({ riskSubgroupFilters: riskSubgroupFiltersMapDict }), // ★ 新增
             setColumnCategoricalUniqueValues: (columnCategoricalUniqueValuesMapDict) => setStoreStateAction({ columnCategoricalUniqueValues: columnCategoricalUniqueValuesMapDict }), // ★ 新增
             setIsColumnCategoricalValuesScanning: (isScanningStatus) => setStoreStateAction({ isColumnCategoricalValuesScanning: isScanningStatus }), // ★ 新增
-            resetWorkspace: () => setStoreStateAction({
-                dataFile: null,                                                  
-                cellFillValuesByColumn: {},
-                currentStep: MIN_STEP_INDEX,
-                privacyMode: null,
-                columns: [],
-                previewData: [],
-                preprocessingRules: {},
-                missingValueRules: {},
-                fileName: undefined,
-                lastUploadDiagnostics: null,
-                columnRoles: {},
-                columnTypes: {},
-                dpFields: [],
-                datasetColumnNumericValuesMap: {},
-                datasetProfile: null,
-                riskSubgroupFilters: {}, // ★ 新增
-                riskColumnOverrides: null,
-                riskLinkability: null,
-                riskAttackParams: null,
-                kAnonymityHashAlgorithm: 'sha3-256',
-                columnCategoricalUniqueValues: {}, // ★ 新增
-                isColumnCategoricalValuesScanning: false, // ★ 新增
-                step4Cache: null,
-                lastRunParamsHash: null,
-                lastAttemptedRunParamsHash: null,
-                isStepValid: true,
-                stepErrorMessage: null,
-                kAnonymityFields: [],
-                kAnonymityHierarchies: [],
-                fieldAttributes: {},
-                maskingRules: {},
-                generalizationRules: {},
-                generalizationHierarchies: {},
-                categoricalHierarchies: {},
-                numericBins: {},
-                temporalHierarchies: {},
-                dpAccumulatedEpsilon: 0,
-                dpAccumulatedDelta: 0
-            })
-        }
-    )
+            resetWorkspace: () => releaseAllWorkspaceData()
+        };
+    }
 );
