@@ -25,3 +25,8 @@ dist-ssr
 
 .vercel
 .env*
+
+# 文件網站（Hugo）建置產物
+doc_site/public/
+doc_site/resources/
+.hugo_build.lock

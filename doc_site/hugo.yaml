@@ -1,0 +1,90 @@
+# Open-PETs 線上版文件網站（Hugo + Hextra）
+# 本機預覽：cd doc_site; hugo server
+# 正式發佈：push 到 main 後由 .github/workflows/pages.yml 建置並發佈到 GitHub Pages
+baseURL: "https://ttcdog115016.github.io/Demo/"
+title: "Open-PETs 線上版文件"
+theme: hextra
+
+defaultContentLanguage: zh-tw
+hasCJKLanguage: true
+enableRobotsTXT: true
+enableGitInfo: true
+
+languages:
+  zh-tw:
+    label: 繁體中文
+    locale: zh-TW
+    weight: 1
+    title: "Open-PETs 線上版文件"
+
+outputs:
+  home: [html]
+  page: [html]
+  section: [html, rss]
+
+markup:
+  highlight:
+    noClasses: false
+  goldmark:
+    renderer:
+      unsafe: true
+
+menu:
+  main:
+    - identifier: docs
+      name: 文件
+      pageRef: /docs
+      weight: 1
+    - identifier: deploy
+      name: 部署教學
+      pageRef: /docs/deploy
+      weight: 2
+    - name: 搜尋
+      weight: 5
+      params:
+        type: search
+    - name: GitHub
+      weight: 6
+      url: "https://github.com/ttcdog115016/Demo"
+      params:
+        icon: github
+
+params:
+  description: Open-PETs 資料隱私保護技術套件線上版：部署、操作、API 與命令列說明。
+
+  navbar:
+    displayTitle: true
+    displayLogo: false
+    width: wide
+
+  theme:
+    default: system
+    displayToggle: true
+
+  footer:
+    enable: true
+    displayCopyright: true
+    displayPoweredBy: false
+    width: normal
+
+  displayUpdatedDate: true
+  dateFormat: "2006-01-02"
+
+  search:
+    enable: true
+    type: flexsearch
+    flexsearch:
+      index: content
+      tokenize: full
+
+  editURL:
+    enable: true
+    base: "https://github.com/ttcdog115016/Demo/edit/main/doc_site/content"
+
+  highlight:
+    copy:
+      enable: true
+      display: hover
+
+  page:
+    width: normal
