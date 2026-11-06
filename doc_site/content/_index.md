@@ -15,7 +15,7 @@ layout: hextra-home
 
 <div class="hx:mb-12">
 {{< hextra/hero-subtitle >}}
-  用瀏覽器完成資料去識別化：K-匿名化與差分隱私，&nbsp;<br class="hx:sm:block hx:hidden" />處理後模擬再識別攻擊評估風險，產出合規報告。
+  用瀏覽器完成資料去識別化：K-匿名化與差分隱私，&nbsp;<br class="hx:sm:block hx:hidden" />處理後模擬再識別攻擊評估風險，產出檢測報告。
 {{< /hextra/hero-subtitle >}}
 </div>
 
