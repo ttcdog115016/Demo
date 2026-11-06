@@ -2,7 +2,7 @@
 
 SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.json` 產生，僅含執行期相依）。
 各 npm 套件授權全文見 `3.2_附件一_開源元件授權全文_前端.txt`（版面比照廠商《第三階段執行報告書》附件一）。
-共 184 筆（SBOM 共 185 個元件；同名同版本但安裝在不同位置的元件，授權只列一次）。
+共 186 筆（SBOM 共 187 個元件；同名同版本但安裝在不同位置的元件，授權只列一次）。
 
 ## 前端 npm 套件（執行期）
 
@@ -61,6 +61,7 @@ SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.js
 | @rc-component/util | 1.11.1 | MIT | http://github.com/react-component/util |
 | @rc-component/virtual-list | 1.2.0 | MIT | https://github.com/react-component/virtual-list |
 | @reduxjs/toolkit | 2.12.0 | MIT | https://redux-toolkit.js.org |
+| @scarf/scarf | 1.4.0 | Apache-2.0 | https://github.com/scarf-sh/scarf-js |
 | @standard-schema/spec | 1.1.0 | MIT | https://standardschema.dev |
 | @standard-schema/utils | 0.3.0 | MIT | https://github.com/standard-schema/standard-schema |
 | @tanstack/query-core | 5.101.2 | MIT | https://tanstack.com/query |
@@ -180,6 +181,7 @@ SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.js
 | string-convert | 0.2.1 | MIT | https://github.com/akiran/string-convert |
 | stylis | 4.4.0 | MIT | https://github.com/thysultan/stylis.js |
 | svg-pathdata | 6.0.3 | MIT | https://github.com/nfroidure/svg-pathdata |
+| swagger-ui-dist | 5.34.0 | Apache-2.0 | https://github.com/swagger-api/swagger-ui |
 | text-segmentation | 1.0.3 | MIT | https://github.com/niklasvh/text-segmentation |
 | throttle-debounce | 5.0.2 | MIT | https://github.com/niksy/throttle-debounce |
 | tiny-invariant | 1.3.3 | MIT | https://github.com/alexreardon/tiny-invariant |

@@ -437,6 +437,67 @@ class SecurityHeadersMiddleware:
         await self.app(scope, receive, send_with_headers)
 
 
+# ---------------------------------------------------------------- API 互動文件
+# ★ 2026-11-06：FastAPI 內建的 /docs、/redoc 從 CDN 載入腳本並以行內 <script> 初始化，
+#   兩者都被上方 CSP（script-src 'self'）擋下，單機版開啟是空白頁；離線電腦也連不到 CDN。
+#   改用 build_exe.ps1 從 node_modules/swagger-ui-dist 複製到前端資料夾的 swagger-ui/，
+#   初始化程式另以 /swagger-ui/docs-init.js 提供，CSP 不必放寬。
+SWAGGER_UI_DIR = "swagger-ui"
+DOCS_INIT_JS = """window.ui = SwaggerUIBundle({
+  url: "__OPENAPI_URL__",
+  dom_id: "#swagger-ui",
+  layout: "BaseLayout",
+  deepLinking: true,
+  showExtensions: true,
+  showCommonExtensions: true,
+  presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+});
+"""
+DOCS_PAGE_HTML = """<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>__TITLE__ - API 文件</title>
+<link rel="stylesheet" href="/swagger-ui/swagger-ui.css">
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="/swagger-ui/swagger-ui-bundle.js"></script>
+<script src="/swagger-ui/docs-init.js"></script>
+</body>
+</html>
+"""
+
+
+def attach_api_docs(app, dist: Path) -> None:
+    """以本機 Swagger UI 取代 /docs；/redoc 轉到 /docs。沒有打包 swagger-ui/ 時維持 FastAPI 原樣。"""
+    from html import escape
+
+    from fastapi.responses import HTMLResponse, RedirectResponse, Response
+
+    if not (dist / SWAGGER_UI_DIR / "swagger-ui-bundle.js").is_file() or not app.openapi_url:
+        return
+
+    replaced_paths = {app.docs_url, app.redoc_url} - {None}
+    app.router.routes[:] = [route for route in app.router.routes if getattr(route, "path", None) not in replaced_paths]
+
+    no_cache = {"Cache-Control": "no-cache"}
+    page_html = DOCS_PAGE_HTML.replace("__TITLE__", escape(app.title))
+    init_js = DOCS_INIT_JS.replace("__OPENAPI_URL__", app.openapi_url)
+
+    @app.get("/docs", include_in_schema=False)
+    def api_docs():
+        return HTMLResponse(page_html, headers=no_cache)
+
+    @app.get(f"/{SWAGGER_UI_DIR}/docs-init.js", include_in_schema=False)
+    def api_docs_init():
+        return Response(init_js, media_type="text/javascript", headers=no_cache)
+
+    @app.get("/redoc", include_in_schema=False)
+    def api_redoc():
+        return RedirectResponse("/docs")
+
+
 # ---------------------------------------------------------------- 網頁
 def attach_frontend(app, dist: Path) -> None:
     """把前端 build 結果掛到後端 app：/api/* 照舊，其餘路徑回網頁（React Router 用 index.html）。"""
@@ -482,6 +543,7 @@ def build_app():
     from app.api.server import app
 
     attach_first_run_setup(app)  # 須在前端 catch-all 路由之前註冊
+    attach_api_docs(app, frontend_dir())  # 同上
     attach_frontend(app, frontend_dir())
     app.add_middleware(SecurityHeadersMiddleware)  # 最後加入＝最外層，連 TrustedHost 擋下的回應也補上
     return app

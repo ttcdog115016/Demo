@@ -44,3 +44,7 @@
   OpenPETs-cli.exe --help-cli       後端指令列工具說明（k-anonymity、dp、risk-*、create-user、verify-log、report…）
   OpenPETs-cli.exe                  以舊版方式啟動（主控台＋瀏覽器，網址 http://127.0.0.1:8765/）
   在 PowerShell 執行時，指令前要加 .\（例如 .\OpenPETs-cli.exe verify-log）。
+
+【進階：API】（Open-PETs 視窗開著時可用，只接受本機連線）
+  API 互動文件   http://127.0.0.1:8765/docs（右上角 Authorize 貼上登入取得的 access_token 即可試打）
+  API 規格檔     http://127.0.0.1:8765/openapi.json（可匯入 Postman 等工具）

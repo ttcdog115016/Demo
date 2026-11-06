@@ -34,6 +34,12 @@ try {
     npx tsc -b;                                                        if ($LASTEXITCODE) { Fail '型別檢查失敗' }
     $env:VITE_BUILD_TARGET = 'desktop'   # 同 .env.desktop（.env* 被 .gitignore 排除，這裡直接設定以免新 clone 漏掉）
     npx vite build --mode desktop --outDir $FrontOut --emptyOutDir;    if ($LASTEXITCODE) { Fail '前端建置失敗' }
+    # ★ 2026-11-06：API 互動文件（/docs）改用本機的 Swagger UI；CDN 版會被單機版的 CSP 擋下、離線也載不到（見 launcher.attach_api_docs）
+    $SwaggerSrc = Join-Path $Root 'node_modules\swagger-ui-dist'
+    $SwaggerOut = Join-Path $FrontOut 'swagger-ui'
+    if (-not (Test-Path (Join-Path $SwaggerSrc 'swagger-ui-bundle.js'))) { Fail '找不到 node_modules\swagger-ui-dist，請先執行 npm ci' }
+    New-Item -ItemType Directory -Force $SwaggerOut | Out-Null
+    foreach ($f in 'swagger-ui-bundle.js', 'swagger-ui.css', 'LICENSE', 'NOTICE') { Copy-Item (Join-Path $SwaggerSrc $f) $SwaggerOut -Force }
 } finally { Pop-Location }
 
 # ---------------------------------------------------------------- 2. Python 3.12
