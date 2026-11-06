@@ -12,6 +12,9 @@ import { fetchHistory, postHistory } from '../api/systemApi';
 import type { AuditIntegrityRecord } from '../utils/auditIntegrity';
 import type { ComplianceReportSnapshot } from '../utils/complianceReport';
 
+/** 合規結果：達標／未達合規標準／未完成風險評估 */
+export type ComplianceStatus = 'passed' | 'failed' | 'unassessed';
+
 /**
  * 歷史審計軌跡單筆紀錄資料結構介面
  * 規範對照: 符合規範 h) 資料結構宣告註記，欄位說明置於右方
@@ -34,7 +37,7 @@ export interface AuditLogItem
 	inputRowCount: number;   // 輸入資料筆數（原始上傳 CSV 實際資料列數，扣除表頭）
 	deletedRowCount: number; // 刪除資料筆數（輸入筆數 - 輸出筆數，抑制／去識別化過程中被移除之列數）
 	outputRowCount: number;  // 輸出資料筆數（後端回傳之去識別化 CSV 實際資料列數，扣除表頭）
-	status: 'passed' | 'failed'; // 審計驗證結果狀態 ('passed' | 'failed')
+	status: ComplianceStatus; // 合規結果；★ 2026-11-06 新增 'unassessed'（未完成風險評估，不算達標）。顯示請用 resolveAuditLogComplianceStatus（utils/complianceReport.ts）
 	columnsSnapshot: string[];                        // 簽發當下資料集之欄位名稱陣列快照 (不隨後續 WorkspaceStore 變動而改變)
 	columnRoleSnapshot: Record<string, string>;       // 簽發當下各欄位最終隱私角色快照 (如 Identifier/Quasi-identifier/DP Sensitive/Retained/Non-sensitive)
 	identifierMaskStrategySnapshot: Record<string, string>; // 簽發當下 Identifier 欄位實際套用之遮蔽策略快照 ('hash' | 'remove')，用以區分套用技術對照表顯示「完全遮蔽」或「直接移除」

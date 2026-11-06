@@ -6,7 +6,7 @@ import type { AttackReport, KAnonymityQualityReport, DpQualityReport } from '../
 import type { AuditLogItem } from '../../../store/useAuditStore';
 import { countCsvDataRowsInBlob } from '../../../utils/blobStreaming';
 import { isDpBudgetExceeded } from '../../../utils/pipelineConfig';
-import type { ComplianceReportSnapshot } from '../../../utils/complianceReport';
+import { resolveAuditLogComplianceStatus, type ComplianceReportSnapshot } from '../../../utils/complianceReport';
 
 export interface SimulationResult
 {
@@ -139,6 +139,7 @@ export const buildPipelineAuditLogEntry = (input: {
         : undefined;
 
     const formatRiskText = (riskValue: number): string => input.hasAttackReport ? `${(riskValue * 100).toFixed(1)}%` : '未評估';
+    const overallRiskText = input.hasAttackReport ? `${input.simulationMetrics.overallRiskPercent}%` : '未評估';
 
     return {
         certificateId: input.certificateId,
@@ -153,11 +154,12 @@ export const buildPipelineAuditLogEntry = (input: {
         singlingRisk: formatRiskText(input.simulationMetrics.singling.risk),
         linkabilityRisk: formatRiskText(input.simulationMetrics.linkability.risk),
         inferenceRisk: formatRiskText(input.simulationMetrics.inference.risk),
-        overallRisk: input.hasAttackReport ? `${input.simulationMetrics.overallRiskPercent}%` : '未評估',
+        overallRisk: overallRiskText,
         inputRowCount: input.datasetRowStats.input,
         deletedRowCount: input.datasetRowStats.deleted,
         outputRowCount: input.datasetRowStats.output,
-        status: input.isComplianceValid ? 'passed' : 'failed',
+        // ★ 2026-11-06：納入風險評估——風險不通過＝failed、未評估＝unassessed（見 utils/complianceReport.ts）
+        status: resolveAuditLogComplianceStatus({ status: input.isComplianceValid ? 'passed' : 'failed', overallRisk: overallRiskText, reportSnapshot: input.reportSnapshot }),
         columnsSnapshot: input.columnNames,
         columnRoleSnapshot: columnRoleSnapshotDict,
         identifierMaskStrategySnapshot: identifierMaskStrategySnapshotDict,

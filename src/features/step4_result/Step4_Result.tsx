@@ -32,7 +32,7 @@ import { confirmIfBackendBusy } from '../workspace/backendBusyConfirm';
 import { PipelineElapsedText } from './PipelineElapsedText';
 import BackendReportDetails from './BackendReportDetails';
 import ComplianceReportDocument, { type ComplianceReportEntry } from '../../components/ComplianceReportDocument';
-import { buildComplianceReportSnapshot, formatEpsilonForDisplay, isCapEvaluated, resolveCapExcessRisk, resolveSensitiveGuessRisk } from '../../utils/complianceReport';
+import { buildComplianceReportSnapshot, formatEpsilonForDisplay, isCapEvaluated, resolveCapExcessRisk, resolveComplianceStatus, resolveSensitiveGuessRisk } from '../../utils/complianceReport';
 import { useAuthStore } from '../../store/useAuthStore';
 import { RiskSummaryCard, UtilitySummaryCard, type RiskQuestionRow, type PlainCardColors } from '../../components/PlainResultSummary';
 import { classifyKAnonymityFidelity, resolveColumnTreatment, resolveReleaseDecision, pickExampleValue } from '../../utils/plainResultSummary';
@@ -422,9 +422,6 @@ export default function Step4_Result(): React.ReactElement
     const kReport = currentPrivacyModeTypeStr === 'k-anonymity' ? (apiReport as KAnonymityQualityReport) : null;
     const dpReport = currentPrivacyModeTypeStr === 'differential-privacy' ? (apiReport as DpQualityReport) : null;
     const isComplianceValidStatus = evaluateComplianceValidity(currentPrivacyModeTypeStr, apiReport, budgetLimitEpsilonValue);
-    // ★ 2026-10-02：已跑完但未達合規標準時，不提供下載（CSV／PDF），報告與按鈕字樣也不再稱「合規」
-    const isResultNonCompliantStatus = !pipelineFailedMessage && Boolean(apiReport) && !isComplianceValidStatus;
-    const nonCompliantDownloadBlockedText = translate('step4.btn.non_compliant_blocked', '未達合規標準，無法下載。請依上方建議調整設定後重新運算。');
 
     // ★ 2026-10-06 使用者要求：等級只給一個統一結果（三攻擊＋敏感資料猜中取最高）。
     //   CAP 改用「扣除亂猜基線」後的值（utils/capBaseline.ts）：原始 CAP 下限就是最常見敏感值的佔比，
@@ -442,6 +439,14 @@ export default function Step4_Result(): React.ReactElement
         { label: riskQuestionLinkabilityText, value: attackSimulationMetricsData?.linkability.risk },
         { label: riskQuestionSensitiveText, value: sensitiveGuessRiskValue },
     ]);
+    // ★ 2026-10-02：已跑完但未達合規標準時，不提供下載（CSV／PDF），報告與按鈕字樣也不再稱「合規」
+    // ★ 2026-11-06：合規改為一併看風險評估——風險不通過＝未達合規標準、未評估＝未完成風險評估，兩者都不提供下載
+    const resultComplianceStatus = resolveComplianceStatus(isComplianceValidStatus, overallRiskSummary);
+    const isResultUnassessedStatus = !pipelineFailedMessage && Boolean(apiReport) && resultComplianceStatus === 'unassessed';
+    const isResultNonCompliantStatus = !pipelineFailedMessage && Boolean(apiReport) && resultComplianceStatus !== 'passed';
+    const nonCompliantDownloadBlockedText = isResultUnassessedStatus
+        ? translate('step4.btn.unassessed_blocked', '未完成風險評估，無法下載。請回上一步設定風險評估欄位後重新計算。')
+        : translate('step4.btn.non_compliant_blocked', '未達合規標準，無法下載。請依上方建議調整設定後重新運算。');
     const riskSummaryRowsList: RiskQuestionRow[] = [
         {
             key: 'singling', question: riskQuestionSinglingText, value: attackSimulationMetricsData?.singling.risk,
@@ -1370,9 +1375,11 @@ export default function Step4_Result(): React.ReactElement
             </Modal>
 
             <Modal
-                title={isResultNonCompliantStatus
-                    ? translate('step4.modal.title_non_compliant', '檢測紀錄（未達合規標準）')
-                    : translate('step4.modal.title', '隱私合規與風險評估報告')}
+                title={isResultUnassessedStatus
+                    ? translate('step4.modal.title_unassessed', '檢測紀錄（未完成風險評估）')
+                    : isResultNonCompliantStatus
+                        ? translate('step4.modal.title_non_compliant', '檢測紀錄（未達合規標準）')
+                        : translate('step4.modal.title', '隱私合規與風險評估報告')}
                 open={isReportModalVisibleStatus} onCancel={() => setIsReportModalVisibleStatus(false)} width={'57em'} styles={{ body: { maxHeight: '72vh', overflowY: 'auto', paddingRight: '6px' } }}
                 footer={[
                     <Button key="close" onClick={() => setIsReportModalVisibleStatus(false)}>{translate('step4.modal.close', '關閉')}</Button>,

@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import type { AuditLogItem } from '../store/useAuditStore';
 import AuditIntegrityPanel from './AuditIntegrityPanel';
 import { OverallRiskLevelPanel } from './RiskLevelBadge';
-import { computeReportOverallRisk, formatEpsilonForDisplay, isCapEvaluated, resolveReportColumnTechText, type ComplianceReportEntry } from '../utils/complianceReport';
+import { computeReportOverallRisk, formatEpsilonForDisplay, isCapEvaluated, resolveAuditLogComplianceStatus, resolveReportColumnTechText, type ComplianceReportEntry } from '../utils/complianceReport';
 import { scaleFontSize } from '../utils/fontScale';
 import { formatHashAlgorithmLabel } from '../utils/reportDescriptions';
 
@@ -37,7 +37,10 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
     const translateText = (key: string, defaultValue: string): string => translate(key, defaultValue);
 
     const snapshot = entry.reportSnapshot;
-    const isNonCompliant = entry.status === 'failed';
+    // ★ 2026-11-06：未完成風險評估也不屬合規（見 utils/complianceReport.ts resolveAuditLogComplianceStatus）
+    const complianceStatus = resolveAuditLogComplianceStatus(entry);
+    const isNonCompliant = complianceStatus !== 'passed';
+    const isUnassessed = complianceStatus === 'unassessed';
     const isKAnonymity = entry.privacyMode === 'k-anonymity';
     const notSavedText = translate('step4.report.not_saved_legacy', '此紀錄建立於舊版，未保存此項');
     // ★ 2026-10-31：δ=0 代表純 ε-DP（數值欄位改用離散 Laplace），加註以免誤以為漏填
@@ -190,7 +193,9 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
             <div style={{ padding: '24px' }}>
                 <div className="pdf-page-break" style={{ textAlign: 'center', marginBottom: '8px', pageBreakInside: 'avoid' }}>
                     <h2 style={{ margin: '12px 0 4px', color: isNonCompliant ? '#b91c1c' : '#000000', fontSize: scaleFontSize(21) }}>
-                        {isNonCompliant
+                        {isUnassessed
+                            ? translate('step4.report.header_unassessed', '隱私風險評估檢測紀錄（未完成風險評估）')
+                            : isNonCompliant
                             ? translate('step4.report.header_non_compliant', '隱私風險評估檢測紀錄（未達合規標準）')
                             : translate('step4.report.header', '隱私合規與風險評估報告')}
                     </h2>
@@ -200,7 +205,9 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                 </div>
                 {isNonCompliant && (
                     <div style={{ margin: '12px 0 4px', padding: '10px 14px', border: '1px solid #fca5a5', background: '#fef2f2', color: '#b91c1c', borderRadius: '4px', fontSize: scaleFontSize(13) }}>
-                        {translate('step4.report.non_compliant_notice', '本次處理結果未達合規標準，此紀錄僅供檢視調整依據，不得作為合規證明，亦不提供去識別化資料與 PDF 下載。')}
+                        {isUnassessed
+                            ? translate('step4.report.unassessed_notice', '本次處理未完成風險評估，無法確認隱私保護程度，此紀錄不屬合規，不得作為合規證明，亦不提供去識別化資料與 PDF 下載。')
+                            : translate('step4.report.non_compliant_notice', '本次處理結果未達合規標準，此紀錄僅供檢視調整依據，不得作為合規證明，亦不提供去識別化資料與 PDF 下載。')}
                     </div>
                 )}
 

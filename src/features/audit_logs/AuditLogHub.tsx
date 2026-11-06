@@ -15,7 +15,7 @@ import {
 import { 
 	SearchOutlined, FileTextOutlined, 
 	 SafetyCertificateOutlined,
-	 FilterOutlined, DownloadOutlined, CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined
+	 FilterOutlined, DownloadOutlined, CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { getRoleDisplayName } from '../../utils/roleLabel';
@@ -25,7 +25,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { fetchHistory } from '../../api/systemApi';
 import ComplianceReportDocument from '../../components/ComplianceReportDocument';
 import RiskLevelBadge from '../../components/RiskLevelBadge';
-import { computeReportOverallRisk } from '../../utils/complianceReport';
+import { computeReportOverallRisk, resolveAuditLogComplianceStatus } from '../../utils/complianceReport';
 
 import { scaleFontSize } from '../../utils/fontScale';
 import { createHtml2PdfLoader, startHtml2PdfLoader } from '../../utils/html2pdfLoader';
@@ -135,6 +135,7 @@ export default function AuditLogHub(): React.ReactElement
 	};
 
 	const [selectedAuditLog, setSelectedAuditLog] = useState<AuditLogItem | null>(null); 
+	const selectedAuditLogStatus = selectedAuditLog ? resolveAuditLogComplianceStatus(selectedAuditLog) : null;
 
 	const [isReportModalVisible, setIsReportModalVisible] = useState<boolean>(false); 
 
@@ -156,7 +157,7 @@ export default function AuditLogHub(): React.ReactElement
 
 					const isPrivacyModeMatched = privacyFilterMode === 'all' || logItemRecord.privacyMode === privacyFilterMode;
 
-					const isComplianceMatched = complianceFilter === 'all' || logItemRecord.status === complianceFilter;
+					const isComplianceMatched = complianceFilter === 'all' || resolveAuditLogComplianceStatus(logItemRecord) === complianceFilter;
 
 					return isSearchKeywordMatched && isPrivacyModeMatched && isComplianceMatched;
 				}
@@ -171,15 +172,15 @@ export default function AuditLogHub(): React.ReactElement
 		{
 			const totalAuditLogsCount = auditLogsList.length;
 
-			const passedAuditLogsCount = auditLogsList.filter(
-				(logItemRecord) => logItemRecord.status === 'passed'
-			).length;
+			// ★ 2026-11-06：合規結果改依 resolveAuditLogComplianceStatus（納入風險評估），另列「未完成風險評估」
+			const statusList = auditLogsList.map((logItemRecord) => resolveAuditLogComplianceStatus(logItemRecord));
 
 			// ★ 2026-10-29：總數改稱「處理紀錄總數」（原「合規簽發」也算進未達標的紀錄），另分列達標／未達標
 			return {
 				totalCount: totalAuditLogsCount,
-				passedCount: passedAuditLogsCount,
-				failedCount: totalAuditLogsCount - passedAuditLogsCount,
+				passedCount: statusList.filter((statusValue) => statusValue === 'passed').length,
+				failedCount: statusList.filter((statusValue) => statusValue === 'failed').length,
+				unassessedCount: statusList.filter((statusValue) => statusValue === 'unassessed').length,
 			};
 		}, 
 		[auditLogsList]
@@ -213,7 +214,7 @@ export default function AuditLogHub(): React.ReactElement
 	 */
 	const handleDownloadPDF = async (): Promise<void> => 
 	{
-		if (selectedAuditLog?.status === 'failed') return; // 未達合規標準的紀錄不提供 PDF 匯出
+		if (selectedAuditLogStatus !== 'passed') return; // 未達合規標準／未完成風險評估的紀錄不提供 PDF 匯出
 		const targetPrintDomElement = document.getElementById('printable-historical-report');
 
 		if (!targetPrintDomElement) 
@@ -312,11 +313,14 @@ export default function AuditLogHub(): React.ReactElement
 		// ★ 2026-10-29：未達合規標準的紀錄原本要調閱才看得到，列表一律顯示「合規結果」，未達標以紅色標示
 		{
 			title: translate('audit.col_compliance', '合規結果'),
-			dataIndex: 'status',
 			key: 'status',
-			render: (statusValue: AuditLogItem['status']) => (statusValue === 'failed'
-				? <Tag color="error" icon={<CloseCircleOutlined />} style={{ fontWeight: 700 }} data-testid="audit-row-failed">{translate('audit.compliance_failed', '未達合規標準')}</Tag>
-				: <Tag color="success" icon={<CheckCircleOutlined />}>{translate('audit.compliance_passed', '達標')}</Tag>),
+			render: (_: unknown, auditLogRecordItem: AuditLogItem) =>
+			{
+				const statusValue = resolveAuditLogComplianceStatus(auditLogRecordItem);
+				if (statusValue === 'failed') return <Tag color="error" icon={<CloseCircleOutlined />} style={{ fontWeight: 700 }} data-testid="audit-row-failed">{translate('audit.compliance_failed', '未達合規標準')}</Tag>;
+				if (statusValue === 'unassessed') return <Tag color="warning" icon={<ExclamationCircleOutlined />} style={{ fontWeight: 700 }} data-testid="audit-row-unassessed">{translate('audit.compliance_unassessed', '未完成風險評估')}</Tag>;
+				return <Tag color="success" icon={<CheckCircleOutlined />}>{translate('audit.compliance_passed', '達標')}</Tag>;
+			},
 		},
 		{
 			title: translate('audit.col_file_name', '處置檔案名稱'),
@@ -387,7 +391,7 @@ export default function AuditLogHub(): React.ReactElement
 			
 			{/* ★ 2026-11-03：統計卡可點擊篩選列表，套用中的卡片加框標示（未達標卡片原有紅框，選中時加粗） */}
 			<Row gutter={24}>
-				<Col xs={24} md={8}>
+				<Col xs={24} md={6}>
 					<Tooltip title={statsClickHintText}>
 						<Card
 							variant="borderless"
@@ -405,7 +409,7 @@ export default function AuditLogHub(): React.ReactElement
 						</Card>
 					</Tooltip>
 				</Col>
-				<Col xs={24} md={8}>
+				<Col xs={24} md={6}>
 					<Tooltip title={statsClickHintText}>
 						<Card
 							variant="borderless"
@@ -424,7 +428,7 @@ export default function AuditLogHub(): React.ReactElement
 						</Card>
 					</Tooltip>
 				</Col>
-				<Col xs={24} md={8}>
+				<Col xs={24} md={6}>
 					<Tooltip title={statsClickHintText}>
 						<Card
 							variant="borderless"
@@ -444,6 +448,31 @@ export default function AuditLogHub(): React.ReactElement
 								value={auditDashboardStatistics.failedCount}
 								valueStyle={{ color: auditDashboardStatistics.failedCount > 0 ? '#dc2626' : undefined }}
 								prefix={<CloseCircleOutlined />}
+								suffix={translate('audit.unit_certificates', '份')}
+							/>
+						</Card>
+					</Tooltip>
+				</Col>
+				<Col xs={24} md={6}>
+					<Tooltip title={statsClickHintText}>
+						<Card
+							variant="borderless"
+							hoverable
+							onClick={() => toggleComplianceFilter('unassessed')}
+							data-testid="audit-stats-card-unassessed"
+							style={{
+								background: token.colorBgContainer,
+								cursor: 'pointer',
+								...(complianceFilter === 'unassessed'
+									? { border: '2px solid #d97706' }
+									: auditDashboardStatistics.unassessedCount > 0 ? { border: '1px solid #d97706' } : {}),
+							}}
+						>
+							<Statistic
+								title={translate('audit.stats_unassessed', '未完成風險評估')}
+								value={auditDashboardStatistics.unassessedCount}
+								valueStyle={{ color: auditDashboardStatistics.unassessedCount > 0 ? '#d97706' : undefined }}
+								prefix={<ExclamationCircleOutlined />}
 								suffix={translate('audit.unit_certificates', '份')}
 							/>
 						</Card>
@@ -487,6 +516,7 @@ export default function AuditLogHub(): React.ReactElement
 								{ value: 'all', label: translate('audit.filter_compliance_all', '全部合規結果') },
 								{ value: 'passed', label: translate('audit.stats_passed', '達合規標準') },
 								{ value: 'failed', label: translate('audit.stats_failed', '未達合規標準') },
+								{ value: 'unassessed', label: translate('audit.stats_unassessed', '未完成風險評估') },
 							]}
 						/>
 
@@ -514,7 +544,7 @@ export default function AuditLogHub(): React.ReactElement
 					columns={dataTableColumnsConfig}
 					rowKey="id"
 					loading={isAuditLogsLoading}
-					rowClassName={(auditLogRecordItem: AuditLogItem) => (auditLogRecordItem.status === 'failed' ? 'audit-row-failed' : '')}
+					rowClassName={(auditLogRecordItem: AuditLogItem) => (resolveAuditLogComplianceStatus(auditLogRecordItem) === 'failed' ? 'audit-row-failed' : '')}
 					pagination={{ pageSize: DEFAULT_PAGE_SIZE }}
 					size="middle"
 					scroll={{ x: 'max-content' }}
@@ -523,9 +553,11 @@ export default function AuditLogHub(): React.ReactElement
 
 			{/* 歷史審計憑證調閱 Modal */}
 			<Modal
-				title={selectedAuditLog?.status === 'failed' // ★ 2026-10-08：標題與 Step4 報告視窗一致
-					? translate('step4.modal.title_non_compliant', '檢測紀錄（未達合規標準）')
-					: translate('step4.modal.title', '隱私合規與風險評估報告')}
+				title={selectedAuditLogStatus === 'unassessed' // ★ 2026-10-08：標題與 Step4 報告視窗一致
+					? translate('step4.modal.title_unassessed', '檢測紀錄（未完成風險評估）')
+					: selectedAuditLogStatus === 'failed'
+						? translate('step4.modal.title_non_compliant', '檢測紀錄（未達合規標準）')
+						: translate('step4.modal.title', '隱私合規與風險評估報告')}
 				open={isReportModalVisible}
 				onCancel={() => setIsReportModalVisible(false)}
 				width={'57em'}
@@ -539,8 +571,10 @@ export default function AuditLogHub(): React.ReactElement
 				footer={[
 					<Button key="close" onClick={() => setIsReportModalVisible(false)}>{translate('audit.btn_close', '關閉')}</Button>,
 					// ★ 2026-10-02：未達合規標準的紀錄不提供 PDF 匯出
-					<Tooltip key="print" title={selectedAuditLog?.status === 'failed' ? translate('audit.export_blocked_failed', '此筆紀錄未達合規標準，不提供 PDF 匯出。') : undefined}>
-						<Button type="primary" icon={<DownloadOutlined />} loading={isPdfExporting} disabled={selectedAuditLog?.status === 'failed'} onClick={handleDownloadPDF} style={selectedAuditLog?.status === 'failed' ? undefined : { background: '#4F46E5' }}>
+					<Tooltip key="print" title={selectedAuditLogStatus === 'unassessed'
+						? translate('audit.export_blocked_unassessed', '此筆紀錄未完成風險評估，不提供 PDF 匯出。')
+						: selectedAuditLogStatus === 'failed' ? translate('audit.export_blocked_failed', '此筆紀錄未達合規標準，不提供 PDF 匯出。') : undefined}>
+						<Button type="primary" icon={<DownloadOutlined />} loading={isPdfExporting} disabled={selectedAuditLogStatus !== 'passed'} onClick={handleDownloadPDF} style={selectedAuditLogStatus !== 'passed' ? undefined : { background: '#4F46E5' }}>
 							{translate('audit.btn_export_pdf', '匯出 PDF 憑證')}
 						</Button>
 					</Tooltip>
@@ -559,4 +593,4 @@ export default function AuditLogHub(): React.ReactElement
 
 		</div>
 	);
-}
+}

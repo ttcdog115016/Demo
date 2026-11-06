@@ -14,7 +14,7 @@ import type { KAnonymityFidelityResult } from './kAnonymityFidelity';
 import type { CapReport } from '../api/apiService';
 import { computeOverallRiskLevel, type OverallRiskSummary } from './riskLevel';
 import { getKAnonymityGeneralizationTechLabel } from './kAnonymityTechLabel';
-import type { AuditLogItem } from '../store/useAuditStore';
+import type { AuditLogItem, ComplianceStatus } from '../store/useAuditStore';
 
 /** 合規報告繪製所需的稽核紀錄（Step4 尚未寫入 store 時沒有 id） */
 export type ComplianceReportEntry = Omit<AuditLogItem, 'id'> & { id?: string };
@@ -201,6 +201,35 @@ export const computeReportOverallRisk = (
     { label: labels.linkability, value: attackRisks?.linkability },
     { label: labels.sensitive, value: resolveSensitiveGuessRisk(attackRisks?.inference, resolveCapExcessRisk(cap)) },
 ]);
+
+/**
+ * ★ 2026-11-06 使用者反映：整體風險「未評估」的紀錄仍顯示「達標」，隱私保護程度無從確認。
+ *   原本合規只看去識別化本身（K-匿名 is_valid／DP 預算未超出），沒納入風險評估，連風險「不通過」也算達標。
+ *   改為三種結果：去識別化未達標或風險不通過＝failed；風險未評估＝unassessed；兩者皆通過才 passed。
+ *   Step4 存紀錄、處理紀錄列表、報告、首頁統計都用這裡判定；非 passed 一律不提供下載。
+ */
+export const resolveComplianceStatus = (isProcessingValid: boolean, overallRisk: OverallRiskSummary | null): ComplianceStatus => {
+    if (!isProcessingValid) return 'failed';
+    if (!overallRisk) return 'unassessed';
+    return overallRisk.info.level === 1 ? 'passed' : 'failed';
+};
+
+/** 舊紀錄未評估時存的整體風險文字（見 pipelineResults.ts buildPipelineAuditLogEntry） */
+const LEGACY_NOT_EVALUATED_TEXT = '未評估';
+
+/**
+ * 處理紀錄的合規結果：依紀錄內容重新判定，舊紀錄（當時未納入風險評估、存成 passed）也適用。
+ *   紀錄已由後端簽章，不改存的 status，只在顯示時判定。
+ */
+export const resolveAuditLogComplianceStatus = (entry: Pick<AuditLogItem, 'status' | 'overallRisk' | 'reportSnapshot'>): ComplianceStatus => {
+    if (entry.status === 'failed') return 'failed';
+    if (entry.reportSnapshot) {
+        return resolveComplianceStatus(true, computeReportOverallRisk(entry.reportSnapshot.attackRisks, entry.reportSnapshot.cap, { singling: '', linkability: '', sensitive: '' }));
+    }
+    // 沒有報告快照的舊紀錄只有整體風險文字
+    if (entry.status === 'unassessed' || entry.overallRisk === LEGACY_NOT_EVALUATED_TEXT) return 'unassessed';
+    return entry.status;
+};
 
 /**
  * ★ 2026-10-02：ε 由多個欄位預算相加而來，浮點數誤差會讓畫面顯示 15.879999999999999 這類數字。

@@ -6,11 +6,13 @@ import {
     ArrowRightOutlined,
     CheckCircleOutlined,
     CloseCircleOutlined,
+    ExclamationCircleOutlined,
     ClockCircleOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useAuditStore, selectAuditLogsForUser, type AuditLogItem } from '../../store/useAuditStore';
+import { resolveAuditLogComplianceStatus } from '../../utils/complianceReport';
 import { useAuthStore } from '../../store/useAuthStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
 import { probeBackendHealth, type BackendHealthState } from '../../utils/adminDashboardStats';
@@ -73,7 +75,7 @@ export const Dashboard: React.FC = () => {
     });
 
     const totalCountValue = thisMonthLogsList.length;
-    const successCountValue = thisMonthLogsList.filter((logItemRecord) => logItemRecord.status === 'passed').length;
+    const successCountValue = thisMonthLogsList.filter((logItemRecord) => resolveAuditLogComplianceStatus(logItemRecord) === 'passed').length; // ★ 2026-11-06：未完成風險評估不算成功
     const failedCountValue = totalCountValue - successCountValue;
     const successPercentValue = totalCountValue > 0 ? Math.round((successCountValue / totalCountValue) * 100) : 0;
 
@@ -96,10 +98,13 @@ export const Dashboard: React.FC = () => {
     },
     {
         title: translate('dashboard.col_status', '狀態'),
-        dataIndex: 'status',
         key: 'status',
-        render: (status: AuditLogItem['status']) => {
-            const isSuccess = status === 'passed';
+        render: (_: unknown, logItemRecord: AuditLogItem) => {
+            const complianceStatus = resolveAuditLogComplianceStatus(logItemRecord);
+            if (complianceStatus === 'unassessed') {
+                return <Tag color="warning" icon={<ExclamationCircleOutlined />}>{translate('dashboard.status_unassessed', '未評估')}</Tag>;
+            }
+            const isSuccess = complianceStatus === 'passed';
             return (
                 <Tag
                     color={isSuccess ? 'success' : 'error'}

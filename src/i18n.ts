@@ -259,7 +259,8 @@ const translationResourcesDictionary = {
 				col_process_time: "處理時間",
 				col_status: "狀態",
 				status_completed: "完成",
-				status_failed: "失敗"
+				status_failed: "失敗",
+				status_unassessed: "未評估"
 			},
 			step1: {
 				upload_title: "請上傳需要進行去識別化的資料集",
@@ -695,7 +696,8 @@ const translationResourcesDictionary = {
 					view_report: "檢視與輸出紀錄",
 					view_report_non_compliant: "檢視檢測紀錄",
 					download_csv: "下載 CSV",
-					non_compliant_blocked: "未達合規標準，無法下載。請依上方建議調整設定後重新運算。"
+					non_compliant_blocked: "未達合規標準，無法下載。請依上方建議調整設定後重新運算。",
+					unassessed_blocked: "未完成風險評估，無法下載。請回上一步設定風險評估欄位後重新計算。"
 				},
 				steps: {
 					upload: { title: "上傳資料" },
@@ -744,6 +746,7 @@ const translationResourcesDictionary = {
 				modal: {
 					title: "合規檢測報告",
 					title_non_compliant: "檢測紀錄（未達合規標準）",
+					title_unassessed: "檢測紀錄（未完成風險評估）",
 					close: "關閉",
 					export_pdf: "輸出 PDF 紀錄"
 				},
@@ -755,9 +758,11 @@ const translationResourcesDictionary = {
 					//   段落一併合併進來，讓使用者只需要看這一份、視覺風格一致的完整報告。
 					header: "隱私合規與風險評估報告",
 					header_non_compliant: "隱私風險評估檢測紀錄（未達合規標準）",
+					header_unassessed: "隱私風險評估檢測紀錄（未完成風險評估）",
 					brand_bar: "通用去識別化與隱私保護系統 - 隱私風險檢測與合規稽核報告",
 					brand_bar_non_compliant: "通用去識別化與隱私保護系統 - 安全驗證檢測紀錄",
 					non_compliant_notice: "本次處理結果未達合規標準，此紀錄僅供檢視調整依據，不得作為合規證明，亦不提供去識別化資料與 PDF 下載。",
+					unassessed_notice: "本次處理未完成風險評估，無法確認隱私保護程度，此紀錄不屬合規，不得作為合規證明，亦不提供去識別化資料與 PDF 下載。",
 					audit_time: "產出時間:",
 					cert_id: "報告編號:",
 					info_title: "專案與檢測權限資訊",
@@ -985,12 +990,14 @@ const translationResourcesDictionary = {
 				stats_total: "處理紀錄總數",
 				stats_passed: "達合規標準",
 				stats_failed: "未達合規標準",
+				stats_unassessed: "未完成風險評估",
 				stats_click_hint: "點擊卡片可篩選列表",
 				hub_note: "這裡只保存每次處理的設定與結果摘要（含伺服器簽章），不保存原始資料，也不保存去識別化後的資料。",
 				hub_note_admin: "管理員檢視：列出所有使用者的處理紀錄。",
 				col_compliance: "合規結果",
 				compliance_passed: "達標",
 				compliance_failed: "未達合規標準",
+				compliance_unassessed: "未完成風險評估",
 				load_failed: "處理紀錄載入失敗，請確認後端連線後重新載入。",
 				btn_reload: "重新載入",
 				unit_certificates: "份",
@@ -1022,6 +1029,7 @@ const translationResourcesDictionary = {
 				report_title_failed: "資料隱私技術檢測紀錄（未達合規標準）",
 				report_failed: "未達合規標準",
 				export_blocked_failed: "此筆紀錄未達合規標準，不提供 PDF 匯出。",
+				export_blocked_unassessed: "此筆紀錄未完成風險評估，不提供 PDF 匯出。",
 				report_cert_id: "紀錄編號:",
 				report_passed: "驗證合格",
 				report_track_title: "專案與執行紀錄",
@@ -1306,7 +1314,8 @@ const translationResourcesDictionary = {
 				col_process_time: "Processed At",
 				col_status: "Status",
 				status_completed: "Completed",
-				status_failed: "Failed"
+				status_failed: "Failed",
+				status_unassessed: "Not assessed"
 			},
 			step1: {
 				dataset_ready: "Dataset Ready (Local cache applied)",
@@ -1736,7 +1745,8 @@ const translationResourcesDictionary = {
 					view_report: "View & Export Certificate",
 					view_report_non_compliant: "View Assessment Record",
 					download_csv: "Download Masked CSV",
-					non_compliant_blocked: "Not compliant - downloads are disabled. Adjust the settings as suggested above and run again."
+					non_compliant_blocked: "Not compliant - downloads are disabled. Adjust the settings as suggested above and run again.",
+					unassessed_blocked: "Risk assessment not completed - downloads are disabled. Go back, set the risk assessment columns and run again."
 				},
 				steps: {
 					upload: { title: "Upload" },
@@ -1789,15 +1799,18 @@ const translationResourcesDictionary = {
 				modal: {
 					title: "Privacy Audit Certificate",
 					title_non_compliant: "Assessment Record (Not Compliant)",
+					title_unassessed: "Assessment Record (Risk Not Assessed)",
 					close: "Close",
 					export_pdf: "Export PDF Certificate"
 				},
 				report: {
 					header: "Privacy Compliance & Risk Assessment Report",
 					header_non_compliant: "Privacy Risk Assessment Record (Not Compliant)",
+					header_unassessed: "Privacy Risk Assessment Record (Risk Not Assessed)",
 					brand_bar: "Universal De-identification & Privacy Protection System - Privacy Risk Assessment & Compliance Audit Report",
 					brand_bar_non_compliant: "Universal De-identification & Privacy Protection System - Security Verification Record",
 					non_compliant_notice: "This result does not meet the compliance standard. This record is for reviewing adjustments only, is not proof of compliance, and the de-identified data and PDF cannot be downloaded.",
+					unassessed_notice: "Risk assessment was not completed, so the level of privacy protection cannot be confirmed. This record is not compliant, is not proof of compliance, and the de-identified data and PDF cannot be downloaded.",
 					audit_time: "Generated At:",
 					cert_id: "Report ID:",
 					info_title: "Project & Audit Authorization Info",
@@ -2033,12 +2046,14 @@ const translationResourcesDictionary = {
 				stats_total: "Total records",
 				stats_passed: "Compliant",
 				stats_failed: "Not compliant",
+				stats_unassessed: "Risk not assessed",
 				stats_click_hint: "Click a card to filter the list",
 				hub_note: "Only the settings and result summary of each run are kept (with a server signature). Neither the original data nor the de-identified data is stored.",
 				hub_note_admin: "Admin view: records of all users.",
 				col_compliance: "Compliance",
 				compliance_passed: "Compliant",
 				compliance_failed: "Not compliant",
+				compliance_unassessed: "Risk not assessed",
 				load_failed: "Could not load the records. Check the backend connection and reload.",
 				btn_reload: "Reload",
 				unit_certificates: "certs",
@@ -2070,6 +2085,7 @@ const translationResourcesDictionary = {
 				report_title_failed: "Data Privacy Technical Assessment Record (Not Compliant)",
 				report_failed: "Not Compliant",
 				export_blocked_failed: "This record does not meet the compliance standard; PDF export is not available.",
+				export_blocked_unassessed: "This record has no completed risk assessment; PDF export is not available.",
 				report_cert_id: "Certificate ID:",
 				report_passed: "Validation Passed",
 				report_track_title: "Project & Execution Track",

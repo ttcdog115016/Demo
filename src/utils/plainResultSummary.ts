@@ -231,10 +231,11 @@ export const resolveReleaseDecision = (input: {
         ? '目前風險評估已通過，表示這份資料不需要加這麼多雜訊。如果要拿來做分析，可回上一步改選較寬鬆的保護強度（把隱私預算 ε 調大），資料會更接近原值；重新計算後請確認風險評估仍為通過。'
         : '如果要拿來做分析，可回上一步把 K 值調低或把欄位分得細一點，再按「重新計算」。';
     if (input.riskLevel === null) {
-        return { headline: '處理完成（未做風險評估）', adviceText: '尚未設定敏感欄位，因此無法判斷保護程度。建議回上一步設定敏感欄位後重新計算。', tone: 'info' };
+        // ★ 2026-11-06：未完成風險評估不算合規，不提供下載（見 utils/complianceReport.ts resolveComplianceStatus）
+        return { headline: '處理完成，但未完成風險評估', adviceText: '未完成風險評估，無法確認隱私保護程度，因此不提供下載。請回上一步設定風險評估欄位（敏感欄位）後重新計算。', tone: 'warning' };
     }
     if (input.riskLevel === 2) {
-        return { headline: '不建議提供', adviceText: `風險評估未通過：被認出、被對上或被猜出敏感資料的風險達到門檻。${strengthenAdvice}`, tone: 'error' };
+        return { headline: '不建議提供', adviceText: `風險評估未通過：被認出、被對上或被猜出敏感資料的風險達到門檻，因此不提供下載。${strengthenAdvice}`, tone: 'error' };
     }
     if (input.utilityLevel === 3) {
         return { headline: '依本次評估可提供，但資料可能不好用', adviceText: `依本次評估，保護程度已達設定門檻，但刪除、遮蔽或雜訊較多。${relaxAdvice}`, tone: 'warning' };
