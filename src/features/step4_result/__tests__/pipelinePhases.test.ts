@@ -40,7 +40,7 @@ describe('去識別化階段', () => {
     });
 
     // ★ 2026-11-02：先前沒有報告時捏造 is_valid:true 的預設報告，畫面會顯示合規；改為視為失敗
-    it('K-匿名：後端沒回品質報告時丟出錯誤，不捏造合規報告', async () => {
+    it('K-匿名：後端沒回品質報告時丟出錯誤，不捏造檢測報告', async () => {
         apiMocks.runKAnonymity.mockResolvedValue({ success: true, blob: new Blob(['a\n1\n']) });
         await expect(runDeidentificationPhase(phaseInput('k-anonymity'))).rejects.toThrow('後端未回傳品質報告');
     });
@@ -106,7 +106,7 @@ describe('結果計算', () => {
         expect(await computeDatasetRowStats(originalCsvBlob, unreadableBlob)).toEqual({ input: 3, deleted: 0, output: 3 });
     });
 
-    it('合規判斷：K-匿名看 is_valid，差分隱私看 ε 是否超出預算', () => {
+    it('達標判定：K-匿名看 is_valid，差分隱私看 ε 是否超出預算', () => {
         expect(evaluateComplianceValidity('k-anonymity', { is_valid: false } as never, 10)).toBe(false);
         expect(evaluateComplianceValidity('differential-privacy', { consumed_epsilon: 11 } as never, 10)).toBe(false);
         expect(evaluateComplianceValidity('differential-privacy', { consumed_epsilon: 10 } as never, 10)).toBe(true);

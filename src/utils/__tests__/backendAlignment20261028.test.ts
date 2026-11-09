@@ -40,7 +40,7 @@ describe('其他預設值', () => {
         expect(buildPreprocessBlock(['姓名'], { 姓名: [{ action: 'hash', params: { seedMode: 'none' } }] }, {})?.algorithm).toBe('sha3-256');
     });
 
-    it('合規報告：缺超限行為時記為 allow_with_warning（與送出的設定檔一致）', () => {
+    it('檢測報告：缺超限行為時記為 allow_with_warning（與送出的設定檔一致）', () => {
         const snapshot = buildComplianceReportSnapshot({
             privacyMode: 'k-anonymity', kValue: 5, maxSuppressionPercent: null, limitExceededAction: null, suppressionMethod: null, cellFillMethod: null,
             dpAccumulatedEpsilon: 0, dpAccumulatedDelta: 0, dpDefaultDelta: 0, riskAttackParams: RISK_ATTACK_DEFAULT_PARAMS,

@@ -51,7 +51,7 @@ describe('非敏感欄位遮蔽', () => {
         expect(config.columns['地址']).toEqual({ role: 'non_sensitive', type: 'string', strategy: 'mask', mask_char: '*' });
     });
 
-    it('Step4 欄位處理與合規報告標示', () => {
+    it('Step4 欄位處理與檢測報告標示', () => {
         const base = { columnName: 'x', privacyMode: 'k-anonymity', isActuallyDeidentified: true, isDpNoised: false, role: 'Non-sensitive' };
         expect(resolveColumnTreatment({ ...base, maskStrategy: 'mask' }).plainText).toBe('全部遮蔽');
         expect(resolveColumnTreatment({ ...base, maskStrategy: 'partial' }).plainText).toBe('部分遮蔽');

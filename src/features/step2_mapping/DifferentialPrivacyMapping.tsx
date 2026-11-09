@@ -567,7 +567,7 @@ export default function DifferentialPrivacyMapping(): React.ReactElement
 				} 
 				else 
 				{
-					messageApi.error(translate('message.import_json_format_error', 'JSON 格式不符合規範！'));
+					messageApi.error(translate('message.import_json_format_error', 'JSON 格式不符規範！'));
 				}
 			} 
 			catch (jsonParsingErrorExecution) 

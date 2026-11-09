@@ -160,7 +160,7 @@ export default function Step3_Rules(): React.ReactElement
 			{/* 錯誤提示橫幅：當參數不合規時自動顯示 */}
 			{!isCurrentStepValidStatus && currentStepErrorMessageText && (
 				<Alert 
-					message={translate('step3.validation_failed', '參數設定不符合規範')} 
+					message={translate('step3.validation_failed', '參數設定不符規範')} 
 					description={currentStepErrorMessageText} 
 					type="error" 
 					showIcon 

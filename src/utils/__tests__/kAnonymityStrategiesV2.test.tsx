@@ -112,7 +112,7 @@ describe('K-匿名欄位處理方式（後端 v2.0.0）', () => {
     });
 });
 
-describe('合規報告補充資訊', () => {
+describe('檢測報告補充資訊', () => {
     afterEach(() => cleanup());
 
     const buildEntry = (privacyMode: 'k-anonymity' | 'differential-privacy') => buildPipelineAuditLogEntry({

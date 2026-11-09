@@ -98,7 +98,7 @@ export const validateProgression = (
 		// 檢查隱私防護模式 (K-Anonymity 或 Differential Privacy) 是否已勾選
 		if (!currentPrivacyModeTypeStr) 
 		{
-			return translateFunction('message.require_mode', '請先選擇隱私防護模式！');
+			return translateFunction('message.require_mode', '請先選擇隱私保護模式！');
 		}
 	}
 

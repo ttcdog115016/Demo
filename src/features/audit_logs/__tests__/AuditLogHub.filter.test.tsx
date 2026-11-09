@@ -26,7 +26,7 @@ const LOGS = [makeLog('p1', 'passed'), makeLog('p2', 'passed', 'differential-pri
 
 const shownCertificates = (): string[] => screen.queryAllByText(/^CERT-/).map((node) => node.textContent ?? '').sort();
 
-describe('處理紀錄：合規結果篩選', () => {
+describe('處理紀錄：檢測結果篩選', () => {
     beforeEach(() => {
         useAuthStore.setState({ user: { name: 'tester', role: 'user' } } as unknown as Parameters<typeof useAuthStore.setState>[0]);
         useAuditStore.setState({ auditLogs: LOGS, loadAuditLogs: async () => true });
@@ -49,7 +49,7 @@ describe('處理紀錄：合規結果篩選', () => {
 
     it('下拉選單與統計卡同步，且可與關鍵字搜尋並用', () => {
         fireEvent.click(screen.getByTestId('audit-stats-card-failed'));
-        expect(within(screen.getByTestId('audit-compliance-filter')).getByText('未達合規標準')).toBeTruthy();
+        expect(within(screen.getByTestId('audit-compliance-filter')).getByText('未達標')).toBeTruthy();
         fireEvent.change(screen.getByPlaceholderText('搜尋憑證編號、檔案名稱、操作者...'), { target: { value: 'f2' } });
         expect(shownCertificates()).toEqual(['CERT-f2']);
     });

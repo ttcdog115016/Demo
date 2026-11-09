@@ -49,7 +49,7 @@ export default function DatasetScaleHint({ mode, rowCount, kValue }: DatasetScal
             ? translate('step3.scale_k_small', '資料量較少：每一群佔的比例高，需要較多泛化或刪除才能湊滿，請在 Step4 確認刪除筆數；若資料只涵蓋小範圍（例如單一村里），熟悉當地的人較容易認出，可考慮提高保護強度。')
             : scaleLevel === 'large'
                 ? translate('step3.scale_k_large', '資料量很大：同一個 K 值，每群只佔全部資料極小的比例。若接收資料的一方握有其他大型資料可交叉比對（例如主管機關），被對上的機會較高，可考慮選「加強」或「嚴格」。')
-                : translate('step3.scale_k_medium', '同一個 K 值在不同規模的資料中，代表的保護程度並不相同，請一併參考 Step4 的風險評估結果。');
+                : translate('step3.scale_k_medium', '同一個 K 值在不同規模的資料中，實際的再識別風險並不相同，請一併參考 Step4 的風險評估結果。');
     }
     else
     {

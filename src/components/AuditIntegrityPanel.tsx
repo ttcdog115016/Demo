@@ -58,7 +58,7 @@ export default function AuditIntegrityPanel({ entry, style, className }: AuditIn
     return (
         <div className={className} style={style} data-testid="audit-integrity-panel">
             {/* ★ 2026-10-02：使用者看到「驗證通過」誤以為是合規判定，加註此區只檢查紀錄有無被竄改 */}
-            <div style={{ fontWeight: 600, color: '#6b7280' }}>{translate('audit.integrity.section_title', '紀錄防篡改資訊（僅檢查紀錄是否被竄改，與是否符合合規標準無關）')}</div>
+            <div style={{ fontWeight: 600, color: '#6b7280' }}>{translate('audit.integrity.section_title', '紀錄防篡改資訊（僅檢查紀錄是否被竄改，與處理結果是否達標無關）')}</div>
             {/* ★ 2026-11-02：使用者反映整串雜湊與簽章太長，預設只顯示檢查結果、簽發時間與縮短的指紋，完整值收進「技術細節」 */}
             <div style={{ color: STATUS_COLOR_MAP[statusKey], fontWeight: 600 }} data-testid="audit-integrity-status">
                 {translate('audit.integrity.verify_label', '防篡改檢查：')}{statusLabelMap[statusKey]}

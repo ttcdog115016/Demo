@@ -446,7 +446,7 @@ export default function Step4_Result(): React.ReactElement
     const isResultNonCompliantStatus = !pipelineFailedMessage && Boolean(apiReport) && resultComplianceStatus !== 'passed';
     const nonCompliantDownloadBlockedText = isResultUnassessedStatus
         ? translate('step4.btn.unassessed_blocked', '未完成風險評估，無法下載。請回上一步設定風險評估欄位後重新計算。')
-        : translate('step4.btn.non_compliant_blocked', '未達合規標準，無法下載。請依上方建議調整設定後重新運算。');
+        : translate('step4.btn.non_compliant_blocked', '未達標，無法下載。請依上方建議調整設定後重新運算。');
     const riskSummaryRowsList: RiskQuestionRow[] = [
         {
             key: 'singling', question: riskQuestionSinglingText, value: attackSimulationMetricsData?.singling.risk,
@@ -655,7 +655,7 @@ export default function Step4_Result(): React.ReactElement
     /** 按「下載處理後資料」：先開注意事項視窗，確認後才下載 */
     const handleDownloadCSV = () =>
     {
-        if (isResultNonCompliantStatus) return; // 未達合規標準不提供下載（按鈕已停用，此處再防一次）
+        if (isResultNonCompliantStatus) return; // 未達標不提供下載（按鈕已停用，此處再防一次）
         if (!processedCsvBlob)
         {
             messageApi.error(translate('step4.msg.download_failed', '無法取得脫敏檔案，請重新運算。'));
@@ -690,7 +690,7 @@ export default function Step4_Result(): React.ReactElement
 
     const handleDownloadPDF = async () =>
     {
-        if (isResultNonCompliantStatus) return; // 未達合規標準不提供 PDF 匯出
+        if (isResultNonCompliantStatus) return; // 未達標不提供 PDF 匯出
         const targetPdfPrintHtmlElement = document.getElementById('printable-audit-report');
         if (!targetPdfPrintHtmlElement) return;
         const hideGlobalLoadingMessageFunction = messageApi.loading(translate('step4.msg.pdf_compiling', '正在編譯高畫質 PDF，請稍候...'), 0);
@@ -710,7 +710,7 @@ export default function Step4_Result(): React.ReactElement
                 pagebreak:    { mode: ['avoid-all', 'css', 'legacy'], avoid: ['tr', '.pdf-page-break'] }
             };
             (window as unknown as WindowWithHtml2Pdf).html2pdf().set(pdfGenerationConfigurationOptions).from(targetPdfPrintHtmlElement).save().then(
-                () => { hideGlobalLoadingMessageFunction(); messageApi.success(translate('step4.msg.pdf_success', '合規審計憑證 PDF 已成功下載！')); }
+                () => { hideGlobalLoadingMessageFunction(); messageApi.success(translate('step4.msg.pdf_success', '檢測報告 PDF 已成功下載！')); }
             ).catch(
                 (pdfExecutionErrorPayload: unknown) => { hideGlobalLoadingMessageFunction(); messageApi.error(translate('step4.msg.pdf_failed', 'PDF 下載失敗')); console.error(pdfExecutionErrorPayload); }
             ).finally(() => setIsExportingPdfStatus(false));
@@ -820,7 +820,7 @@ export default function Step4_Result(): React.ReactElement
                                     <div>
                                         <div>
                                             {overallRiskSummary && (
-                                                <>{translate('step4.alert.summary_risk', '保護程度')}：<b style={{ color: overallRiskSummary.info.color }}>{translate('step4.alert.risk_verdict', '風險評估{{verdict}}', { verdict: overallRiskSummary.info.labelText })}</b><span style={{ marginRight: 16 }} /></>
+                                                <>{translate('step4.alert.summary_risk', '再識別風險評估')}：<b style={{ color: overallRiskSummary.info.color }}>{translate('step4.alert.risk_verdict', '{{verdict}}', { verdict: overallRiskSummary.info.labelText })}</b><span style={{ marginRight: 16 }} /></>
                                             )}
                                             {utilityLevelInfo && (
                                                 <>{translate('step4.alert.summary_utility', '資料實用性')}：<b style={{ color: utilityLevelInfo.color }}>{utilityLevelInfo.labelText}</b></>
@@ -1076,7 +1076,7 @@ export default function Step4_Result(): React.ReactElement
                                 {currentPipelinePhaseType === 'uploading' && translate('step4.loading.uploading', '正在將資料上傳至後端伺服器...')}
                                 {currentPipelinePhaseType === 'processing' && translate('step4.loading.processing', '後端正在執行去識別化矩陣與加噪演算...')}
                                 {currentPipelinePhaseType === 'auditing' && translate('step4.loading.auditing', '正在執行蒙地卡羅攻擊模擬與實用性評估...')}
-                                {currentPipelinePhaseType === 'completed' && translate('step4.loading.completed', '後端演算完畢，正在生成最終合規報告...')}
+                                {currentPipelinePhaseType === 'completed' && translate('step4.loading.completed', '後端演算完畢，正在生成最終檢測報告...')}
                             </h3>
                             <Progress percent={calculationProgressValue} status="active" style={{ maxWidth: '43em', margin: '16px auto' }} strokeColor={token.colorPrimary} />
                             {uploadProgressText && (
@@ -1121,7 +1121,7 @@ export default function Step4_Result(): React.ReactElement
                     <Row gutter={24} style={{ display: 'flex', alignItems: 'stretch' }}>
                         <Col span={16} style={{ display: 'flex' }}>
                             <Card 
-                                title={<span><SafetyCertificateOutlined style={{ marginRight: 8, color: token.colorPrimary }} />{translate('step4.risk.title_plain', '保護程度')}</span>}
+                                title={<span><SafetyCertificateOutlined style={{ marginRight: 8, color: token.colorPrimary }} />{translate('step4.risk.title_plain', '再識別風險評估（三種攻擊模擬）')}</span>}
                                 variant="borderless" style={{ background: token.colorBgContainer, width: '100%', display: 'flex', flexDirection: 'column' }} styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}
                             >
                                 {/* ★ 2026-10-06 白話版（見 components/PlainResultSummary.tsx）：結論＋三個白話問題，
@@ -1378,8 +1378,8 @@ export default function Step4_Result(): React.ReactElement
                 title={isResultUnassessedStatus
                     ? translate('step4.modal.title_unassessed', '檢測紀錄（未完成風險評估）')
                     : isResultNonCompliantStatus
-                        ? translate('step4.modal.title_non_compliant', '檢測紀錄（未達合規標準）')
-                        : translate('step4.modal.title', '隱私合規與風險評估報告')}
+                        ? translate('step4.modal.title_non_compliant', '檢測紀錄（未達標）')
+                        : translate('step4.modal.title', '隱私風險評估報告')}
                 open={isReportModalVisibleStatus} onCancel={() => setIsReportModalVisibleStatus(false)} width={'57em'} styles={{ body: { maxHeight: '72vh', overflowY: 'auto', paddingRight: '6px' } }}
                 footer={[
                     <Button key="close" onClick={() => setIsReportModalVisibleStatus(false)}>{translate('step4.modal.close', '關閉')}</Button>,

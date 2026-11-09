@@ -187,7 +187,7 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
             <div className="pdf-page-break" style={{ background: '#1f2937', color: '#ffffff', padding: '14px 24px', fontSize: scaleFontSize(12), pageBreakInside: 'avoid' }}>
                 {isNonCompliant
                     ? translate('step4.report.brand_bar_non_compliant', '通用去識別化與隱私保護系統 - 安全驗證檢測紀錄')
-                    : translate('step4.report.brand_bar', '通用去識別化與隱私保護系統 - 隱私風險檢測與合規稽核報告')}
+                    : translate('step4.report.brand_bar', '通用去識別化與隱私保護系統 - 隱私風險檢測報告')}
             </div>
 
             <div style={{ padding: '24px' }}>
@@ -196,8 +196,8 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                         {isUnassessed
                             ? translate('step4.report.header_unassessed', '隱私風險評估檢測紀錄（未完成風險評估）')
                             : isNonCompliant
-                            ? translate('step4.report.header_non_compliant', '隱私風險評估檢測紀錄（未達合規標準）')
-                            : translate('step4.report.header', '隱私合規與風險評估報告')}
+                            ? translate('step4.report.header_non_compliant', '隱私風險評估檢測紀錄（未達標）')
+                            : translate('step4.report.header', '隱私風險評估報告')}
                     </h2>
                     <div style={{ fontSize: scaleFontSize(12), color: '#555555' }}>
                         {translate('step4.report.cert_id', '報告編號:')} {entry.certificateId} ｜ {translate('step4.report.audit_time', '產出時間:')} {entry.auditTime}
@@ -206,8 +206,8 @@ export default function ComplianceReportDocument({ entry, isExportingPdf, contai
                 {isNonCompliant && (
                     <div style={{ margin: '12px 0 4px', padding: '10px 14px', border: '1px solid #fca5a5', background: '#fef2f2', color: '#b91c1c', borderRadius: '4px', fontSize: scaleFontSize(13) }}>
                         {isUnassessed
-                            ? translate('step4.report.unassessed_notice', '本次處理未完成風險評估，無法確認隱私保護程度，此紀錄不屬合規，不得作為合規證明，亦不提供去識別化資料與 PDF 下載。')
-                            : translate('step4.report.non_compliant_notice', '本次處理結果未達合規標準，此紀錄僅供檢視調整依據，不得作為合規證明，亦不提供去識別化資料與 PDF 下載。')}
+                            ? translate('step4.report.unassessed_notice', '本次處理未完成風險評估，無法確認再識別風險，此紀錄僅供檢視與調整設定參考，不提供去識別化資料與 PDF 下載。')
+                            : translate('step4.report.non_compliant_notice', '本次處理結果未達標，此紀錄僅供檢視與調整設定參考，不提供去識別化資料與 PDF 下載。')}
                     </div>
                 )}
 

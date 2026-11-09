@@ -61,7 +61,7 @@ const buildEntry = (): Omit<AuditLogItem, 'id'> => buildPipelineAuditLogEntry({
 // 防篡改區塊為非同步驗證（「驗證中…」→ 結果），比對報告本文時排除該區塊
 const normalizeText = (text: string | null | undefined): string => (text || '').split('紀錄防篡改資訊')[0].replace(/\s+/g, ' ').trim();
 
-describe('合規報告快照', () => {
+describe('檢測報告快照', () => {
     it('K-匿名只存 K-匿名參數；DP 只存 DP 參數', () => {
         const kSnapshot = buildEntry().reportSnapshot!;
         expect(kSnapshot.kAnonymityConfig?.kValue).toBe(5);

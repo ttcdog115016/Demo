@@ -760,7 +760,7 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     messageApi.warning(translate('step4.msg.audit_save_failed', '處理紀錄未能存到伺服器：本次結果仍可下載，但重新整理或換頁後這筆紀錄不會保留。請確認後端連線後再執行一次。'), 8);
                 }
 
-                appendStepLog(translate('step4.log.step_finished', '處理完成，已產生合規報告'));
+                appendStepLog(translate('step4.log.step_finished', '處理完成，已產生檢測報告'));
                 clearBackendBusy();
 
             } catch (error: unknown) {

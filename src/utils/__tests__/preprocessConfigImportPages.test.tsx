@@ -120,7 +120,7 @@ describe('差分隱私頁匯入後端 preprocess 區塊', () => {
         expect(messageMock.error).not.toHaveBeenCalled();
     });
 
-    it('純前處理設定檔：不再顯示「JSON 格式不符合規範」', async () => {
+    it('純前處理設定檔：不再顯示「JSON 格式不符規範」', async () => {
         resetStore('differential-privacy');
         await importFile(DifferentialPrivacyMapping, preprocessOnlyConfigText);
         expect(messageMock.success).toHaveBeenCalledWith('已匯入資料預先處理設定（8 個欄位）');

@@ -47,7 +47,7 @@ describe('resolveColumnTreatment', () => {
 import { resolveReleaseDecision, pickExampleValue } from '../plainResultSummary';
 
 describe('resolveReleaseDecision', () => {
-    it('依保護程度與可用性給出一句話結論', () => {
+    it('依再識別風險評估與可用性給出一句話結論', () => {
         expect(resolveReleaseDecision({ riskLevel: 1, utilityLevel: 1, privacyMode: 'k-anonymity' }).headline).toBe('依本次評估可提供');
         expect(resolveReleaseDecision({ riskLevel: 1, utilityLevel: 3, privacyMode: 'k-anonymity' }).tone).toBe('warning');
         // ★ 2026-11-04：riskLevel 1 通過、2 不通過

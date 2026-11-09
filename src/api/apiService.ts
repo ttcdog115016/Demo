@@ -56,7 +56,7 @@ export const isApiRequestTimeout = (error: unknown): boolean => {
 };
 
 /** ★ 2026-11-02：後端未回傳去識別化報告時的錯誤訊息（管線顯示失敗卡片、不寫合規紀錄） */
-export const MISSING_QUALITY_REPORT_MESSAGE = '後端未回傳品質報告，無法確認處理結果是否合規。';
+export const MISSING_QUALITY_REPORT_MESSAGE = '後端未回傳品質報告，無法確認處理結果是否達標。';
 export const MISSING_BUDGET_REPORT_MESSAGE = '後端未回傳隱私預算報告，無法確認本次消耗的隱私預算。';
 
 /** ★ 2026-11-02：解析 X-Quality-Report／X-Budget-Report 標頭；缺少、無法解析或不是物件時回傳 undefined */

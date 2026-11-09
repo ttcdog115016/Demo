@@ -28,7 +28,7 @@ describe('DP 預算上限比較容許浮點誤差（Step3 套用高隱私、9 �
         expect(isDpBudgetExceeded(15.01, 15)).toBe(true);
     });
 
-    it('Step4 合規判定：後端回報 1.0000000000000002 時仍為達標', () => {
+    it('Step4 達標判定：後端回報 1.0000000000000002 時仍為達標', () => {
         expect(evaluateComplianceValidity('differential-privacy', { consumed_epsilon: sumOfEvenSplit(1, 9) } as never, 1)).toBe(true);
         expect(evaluateComplianceValidity('differential-privacy', { consumed_epsilon: 1.2 } as never, 1)).toBe(false);
     });
