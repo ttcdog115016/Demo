@@ -14,8 +14,9 @@ export default defineConfig({
     react(),
   ],
   test: {
-    // e2e/ 是 Playwright 測試（npm run test:e2e），不由 vitest 執行
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    // e2e/ 是 Playwright 測試（npm run test:e2e），不由 vitest 執行；
+    // doc_site/ 是 Hugo 使用手冊（含佈景主題 hextra 自帶的 Playwright 測試），也不由 vitest 執行
+    exclude: [...configDefaults.exclude, 'e2e/**', 'doc_site/**'],
   },
   server: {
     host: '0.0.0.0',     // 新增：允許伺服器監聽所有網卡的 IP，讓外部網路可以連入

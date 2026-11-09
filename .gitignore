@@ -51,3 +51,8 @@ Claude outputs/*.csv
 Claude outputs/*.pdf
 Demo 展示環境建置與維運手冊*.pdf
 Claude outputs/*.json
+
+# 文件網站（Hugo）建置產物
+doc_site/public/
+doc_site/resources/
+.hugo_build.lock
