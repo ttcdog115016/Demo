@@ -3,7 +3,7 @@ title: 部署教學
 weight: 2
 ---
 
-適用版本：前端 GitHub 原始碼＋後端 **v2.0.2**　｜　部署環境：**Windows 10／11＋Docker Desktop**
+適用版本：前端 GitHub 原始碼＋後端 **v2.0.0**　｜　部署環境：**Windows 10／11＋Docker Desktop**
 
 本頁說明如何從 GitHub 取得前端原始碼，在一台 Windows 電腦上用 Docker 建置並啟動 Open-PETs 線上版，讓使用者用瀏覽器操作。
 
@@ -41,7 +41,7 @@ weight: 2
 | 元件 | 來源 | 映像檔 | 容器名稱 | 埠 |
 | --- | --- | --- | --- | --- |
 | 前端 | GitHub `ttcdog115016/Demo` | `open-pets-web` | `open-pets-web` | 8080 |
-| 後端 | 交付套件 `01_程式原始碼` | `open-pets:2.0.2` | `open-pets` | 127.0.0.1:8000 |
+| 後端 | 交付套件 `01_程式原始碼` | `open-pets:2.0.0` | `open-pets` | 127.0.0.1:8000 |
 
 ## 2. 事前準備
 
@@ -50,7 +50,7 @@ weight: 2
 | 作業系統 | Windows 10 或 11（64 位元），建議記憶體 16 GB 以上 |
 | Docker Desktop | 到 Docker 官網下載安裝，安裝時選用 WSL 2。安裝後開啟 Docker Desktop，左下角顯示 **Engine running** 才能繼續 |
 | Git for Windows | 到 git-scm.com 下載安裝，用來從 GitHub 下載前端 |
-| 後端原始碼 | 交付套件 `3.1_完整交付套件\01_程式原始碼`（v2.0.2） |
+| 後端原始碼 | 交付套件 `3.1_完整交付套件\01_程式原始碼`（v2.0.0） |
 | 網路 | 第一次建置要從網路下載基礎映像檔與套件，約需 10–20 分鐘 |
 
 以下指令都在 **PowerShell** 執行。開啟方式：開始功能表搜尋「PowerShell」。
@@ -76,7 +76,7 @@ cd C:\open-pets-web
 
 | 分支 | 內容 | 是否用於線上版 |
 | --- | --- | --- |
-| `feature/backend-v2-integration` | 對接後端 v2.0.2：登入、帳號管理、稽核等 | **是**（合併到 main 之前用這個） |
+| `feature/backend-v2-integration` | 對接後端 v2.0.0：登入、帳號管理、稽核等 | **是**（合併到 main 之前用這個） |
 | `main` | 舊版前端，沒有登入系統，nginx 聽 80 埠 | 否 |
 
 ```powershell
@@ -101,10 +101,10 @@ Select-String -Path .\Dockerfile -Pattern 'EXPOSE'
 把交付套件的 `01_程式原始碼` 資料夾複製到 `C:\open-pets-src`，然後建置：
 
 ```powershell
-docker build -t open-pets:2.0.2 C:\open-pets-src
+docker build -t open-pets:2.0.0 C:\open-pets-src
 ```
 
-第一次約需 5–10 分鐘。最後出現 `naming to docker.io/library/open-pets:2.0.2` 就是成功。
+第一次約需 5–10 分鐘。最後出現 `naming to docker.io/library/open-pets:2.0.0` 就是成功。
 
 ### 4-2 準備資料夾與設定檔
 
@@ -115,7 +115,7 @@ New-Item -ItemType Directory -Force C:\open-pets-data, C:\open-pets | Out-Null
 產生 `C:\open-pets\.env`。下面的指令會用後端映像檔產生三組隨機金鑰，並用**無 BOM 的 UTF-8** 寫入（有 BOM 的話第一個設定會讀不到）：
 
 ```powershell
-function New-Secret { (docker run --rm open-pets:2.0.2 python -c "import secrets; print(secrets.token_hex(32))").Trim() }
+function New-Secret { (docker run --rm open-pets:2.0.0 python -c "import secrets; print(secrets.token_hex(32))").Trim() }
 $content = @(
   '# 假名化與雜湊之鹽值（設定後不要再變更）'
   "OPEN_PETS_DEFAULT_SALT=$(New-Secret)"
@@ -151,7 +151,7 @@ docker run -d --name open-pets --restart unless-stopped `
   -p 127.0.0.1:8000:8000 `
   -v C:\open-pets-data:/data `
   -v C:\open-pets\.env:/srv/.env:ro `
-  open-pets:2.0.2
+  open-pets:2.0.0
 ```
 
 - `--restart unless-stopped`：電腦重開、Docker Desktop 重啟後自動啟動。
@@ -166,7 +166,7 @@ curl.exe http://127.0.0.1:8000/
 應回應：
 
 ```json
-{"status":"online","service":"Open-PETs backend system","version":"2.0.2"}
+{"status":"online","service":"Open-PETs backend system","version":"2.0.0"}
 ```
 
 ## 5. 建立第一個管理員

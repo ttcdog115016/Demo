@@ -87,7 +87,7 @@ jobs:
             -p 127.0.0.1:18081:8080 -v t-on:/data -e OPEN_PETS_MODE=online -e OPEN_PETS_ALLOWED_HOSTS=example.test "open-pets-app:$VERSION"
           wait_healthy t-off
           wait_healthy t-on
-          # /api/v1/status 的 version 是後端自己的版本號，不一定等於發行版號，所以只確認服務名稱
+          # /api/v1/status 的 version 是後端程式內的版本字串，只確認服務名稱，不比對版本（避免兩邊漏改一處就讓發版失敗）
           curl -fsS http://127.0.0.1:18080/api/v1/status | grep -q 'Open-PETs'
           curl -fsS http://127.0.0.1:18080/runtime-config.js | grep -q '"mode": "offline"'
           curl -fsS http://127.0.0.1:18081/runtime-config.js | grep -q '"mode": "online"'

@@ -45,7 +45,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="通用資料去識別化與隱私保護 API 系統",
     description="提供資料前處理、K-匿名化、差分隱私、再識別風險評估與會員帳號管理服務。",
-    version="2.0.2",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -101,5 +101,5 @@ def read_root():
     return {
         "status": "online",
         "service": "Open-PETs backend system",
-        "version": "2.0.2",
+        "version": "2.0.0",
     }
