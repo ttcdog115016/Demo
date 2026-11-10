@@ -1,0 +1,17 @@
+# 採白名單：先全部排除，再放行建置所需檔案（node_modules、dist、.git、簡報、截圖、掃描報告等一律不進建置 context）
+*
+
+# 前端
+!package.json
+!package-lock.json
+!index.html
+!tsconfig.json
+!tsconfig.app.json
+!tsconfig.node.json
+!vite.config.ts
+!public
+!src
+
+# 進入點（單機版 launcher 與容器進入點）
+!packaging/launcher.py
+!docker/openpets_server.py
