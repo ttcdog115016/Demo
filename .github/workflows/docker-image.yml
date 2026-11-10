@@ -63,7 +63,7 @@ jobs:
         run: |
           docker buildx build -f docker/Dockerfile \
             --build-arg "OPEN_PETS_VERSION=$VERSION" \
-            --build-arg "OPEN_PETS_SOURCE_URL=https://github.com/$GITHUB_REPOSITORY" \
+            --build-arg "OPEN_PETS_SOURCE_URL=https://github.com/$GITHUB_REPOSITORY"             --build-arg "OPEN_PETS_REVISION=$GITHUB_SHA" \
             -t "open-pets-app:$VERSION" --load .
 
       - name: Scan image (fail on fixable HIGH/CRITICAL)
@@ -199,5 +199,8 @@ jobs:
 
           安裝、升級、備份與模式切換請見 \`README_Docker部署.md\`；重新建置與替換第三方元件請見 \`REBUILD.md\`。
           EOF
+          # 版本含連字號（例如 2.0.2-rc1）視為預發版：Release 標示 pre-release，不會成為「最新版本」
+          pre=""; case "$VERSION" in *-*) pre="--prerelease" ;; esac
           # "$out"/* 不含以點開頭的檔案，.env.example 要另外列出
-          gh release create "$GITHUB_REF_NAME" "$out"/* "$out/.env.example" --title "Open-PETs $VERSION" --notes-file notes.md --verify-tag
+          # shellcheck disable=SC2086
+          gh release create "$GITHUB_REF_NAME" "$out"/* "$out/.env.example" --title "Open-PETs $VERSION" --notes-file notes.md --verify-tag $pre

@@ -60,11 +60,13 @@ FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb
 
 ARG OPEN_PETS_VERSION=dev
 ARG OPEN_PETS_SOURCE_URL=https://github.com/ttcdog115016/Demo
+ARG OPEN_PETS_REVISION=unknown
 LABEL org.opencontainers.image.title="Open-PETs" \
       org.opencontainers.image.description="Open-PETs 資料隱私保護工具（前端＋後端單一映像檔）" \
       org.opencontainers.image.version="${OPEN_PETS_VERSION}" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.source="${OPEN_PETS_SOURCE_URL}"
+      org.opencontainers.image.source="${OPEN_PETS_SOURCE_URL}" \
+      org.opencontainers.image.revision="${OPEN_PETS_REVISION}"
 
 COPY --from=backend-deps /opt/venv /opt/venv
 
