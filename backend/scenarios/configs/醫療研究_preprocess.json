@@ -1,0 +1,104 @@
+{
+  "version": "scenario_醫療研究",
+  "dataset": "醫療研究",
+  "input_format": "csv",
+  "preprocess": {
+    "enabled": true,
+    "columns": [
+      {
+        "column": "姓名",
+        "actions": [
+          {
+            "action": "hash",
+            "params": {
+              "salt": "scenario-test-salt"
+            }
+          }
+        ]
+      },
+      {
+        "column": "身分證號",
+        "actions": [
+          {
+            "action": "hash",
+            "params": {
+              "salt": "scenario-test-salt"
+            }
+          }
+        ]
+      },
+      {
+        "column": "就診日期",
+        "actions": [
+          {
+            "action": "anchor_truncate",
+            "params": {
+              "anchor": " ",
+              "direction": "after",
+              "keep": 0
+            }
+          }
+        ]
+      },
+      {
+        "column": "診斷碼",
+        "actions": [
+          {
+            "action": "trim",
+            "params": {
+              "mode": "all"
+            }
+          }
+        ]
+      },
+      {
+        "column": "住院天數",
+        "actions": [
+          {
+            "action": "clamp",
+            "params": {
+              "min": 0,
+              "max": 60
+            }
+          }
+        ]
+      },
+      {
+        "column": "檢驗值_血糖",
+        "actions": [
+          {
+            "action": "clamp",
+            "params": {
+              "min": 40,
+              "max": 400
+            }
+          }
+        ]
+      },
+      {
+        "column": "醫療費用",
+        "actions": [
+          {
+            "action": "clamp",
+            "params": {
+              "min": 0,
+              "max": 500000
+            }
+          }
+        ]
+      },
+      {
+        "column": "居住里",
+        "actions": [
+          {
+            "action": "regex_replace",
+            "params": {
+              "pattern": "(?<=區).*$",
+              "replacement": ""
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

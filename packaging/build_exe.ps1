@@ -2,15 +2,15 @@
 # Open-PETs 單機版執行檔建置（Windows）
 # 用法：在 Demo 資料夾雙擊 packaging\build_exe.bat，或在 PowerShell：
 #   powershell -ExecutionPolicy Bypass -File .\packaging\build_exe.ps1
-#   可選參數：-BackendSrc <後端 01_程式原始碼 路徑> -Python <python.exe 路徑> -Version 2.0.2
+#   可選參數：-BackendSrc <後端原始碼路徑，預設為本 repo 的 backend\> -Python <python.exe 路徑> -Version 2.0.0
 # 產出：packaging\dist\OpenPETs_Setup_<版本>.exe（安裝程式，發布用）與 packaging\dist\OpenPETs\（安裝內容）
 # 需要：Node.js（已裝好 node_modules）、Python 3.12（後端所附 wheel 為 CPython 3.12）、可連網安裝 PyInstaller／pywebview、
 #       Inno Setup 6（winget install JRSoftware.InnoSetup）
 # ============================================================================
 param(
-    [string]$BackendSrc = (Join-Path $env:USERPROFILE 'Desktop\TTC-隱私強化技術實證委託採購案-期末-20261027T012822Z-1-001\TTC-隱私強化技術實證委託採購案-期末\open-pets_3.1_完整交付套件_v2.0.0\3.1_完整交付套件\01_程式原始碼'),
+    [string]$BackendSrc = (Join-Path (Split-Path $PSScriptRoot -Parent) 'backend'),   # 後端已併入本 repo 的 backend/
     [string]$Python = '',
-    [string]$Version = '2.0.2'
+    [string]$Version = '2.0.0'
 )
 $ErrorActionPreference = 'Stop'
 $PackDir  = $PSScriptRoot
@@ -19,12 +19,12 @@ $BuildDir = Join-Path $PackDir 'build'
 $DistDir  = Join-Path $PackDir 'dist'
 $FrontOut = Join-Path $BuildDir 'frontend'
 $VenvDir  = Join-Path $BuildDir 'venv'
-$Wheels   = Join-Path (Split-Path $BackendSrc -Parent) '06_離線安裝\wheels\windows'
+$Wheels   = Join-Path $Root '06_離線安裝\wheels\windows'   # 選用：把期末交付包的 wheel 資料夾複製到這裡，建置就優先使用；沒有就從 PyPI 下載
 
 function Step($msg) { Write-Host ''; Write-Host "== $msg" -ForegroundColor Cyan }
 function Fail($msg) { Write-Host "[失敗] $msg" -ForegroundColor Red; exit 1 }
 
-if (-not (Test-Path (Join-Path $BackendSrc 'app\api\server.py'))) { Fail "找不到後端原始碼：$BackendSrc（以 -BackendSrc 指定 01_程式原始碼 資料夾）" }
+if (-not (Test-Path (Join-Path $BackendSrc 'app\api\server.py'))) { Fail "找不到後端原始碼：$BackendSrc（預設為 repo 的 backend\，可用 -BackendSrc 指定其他位置）" }
 
 # ---------------------------------------------------------------- 1. 前端
 Step '1/4 建置前端（單機版模式：不顯示 Demo 帳號、不送錯誤到 Google 表單）'

@@ -1,0 +1,53 @@
+{
+  "version": "manual_test_risk_k_anonymity",
+  "dataset": "sample_data",
+  "risk_attacks": {
+    "enabled": true,
+    "n_iter": 50,
+    "columns": {
+      "年齡": {
+        "role": "quasi_identifier",
+        "type": "numeric"
+      },
+      "地區": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "生日": {
+        "role": "quasi_identifier",
+        "type": "temporal"
+      },
+      "職業": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "婚姻狀況": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "疾病": {
+        "role": "sensitive",
+        "type": "categorical"
+      }
+    }
+  },
+  "k_anonymity": {
+    "enabled": true,
+    "k": 2,
+    "columns": {
+      "年齡": {
+        "role": "quasi_identifier",
+        "type": "numeric"
+      },
+      "疾病": {
+        "role": "sensitive",
+        "type": "categorical"
+      }
+    },
+    "generalization_hierarchies": {
+      "年齡": {
+        "rounding": 10
+      }
+    }
+  }
+}

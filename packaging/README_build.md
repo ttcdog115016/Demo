@@ -1,13 +1,13 @@
 # 單機版安裝程式打包（packaging/）
 
-把前端（本 repo）與後端 v2.0.2（期末交付包 `01_程式原始碼`，已含 `backend_patches/`）打包成 Windows 安裝程式 `OpenPETs_Setup_<版本>.exe`。
+把前端（本 repo）與後端 v2.0.0（本 repo 的 `backend/`，已含 `backend_patches/` 的全部修補）打包成 Windows 安裝程式 `OpenPETs_Setup_<版本>.exe`。
 安裝後從開始功能表開啟，是一個獨立的 App 視窗（WebView2，沒有網址列、沒有黑色主控台）；後端在同一個行程背景執行，只聽 `127.0.0.1:8765`，關閉視窗即停止。
 
 ## 建置
 1. 需求：Node.js（本 repo 已 `npm ci`）、**Python 3.12 64 位元**（後端所附 wheel 為 cp312）、**Inno Setup 6**、可連網（裝 PyInstaller、pywebview；其餘套件優先用交付包 `06_離線安裝/wheels/windows`）。
    - 沒有 3.12：`py install 3.12`，或 `conda create -n openpets-build python=3.12` 後加 `-Python <env>\python.exe`。
    - 沒有 Inno Setup：`winget install JRSoftware.InnoSetup --scope user`。
-2. 雙擊 `packaging\build_exe.bat`（或 PowerShell：`.\packaging\build_exe.ps1 [-BackendSrc <01_程式原始碼>] [-Python <python.exe>] [-Version 2.0.2]`）。
+2. 雙擊 `packaging\build_exe.bat`（或 PowerShell：`.\packaging\build_exe.ps1 [-BackendSrc <後端原始碼路徑，預設 backend\>] [-Python <python.exe>] [-Version 2.0.0]`）。
 3. 產出：`packaging\dist\OpenPETs_Setup_<版本>.exe`（發布用）與 `packaging\dist\OpenPETs\`（安裝內容）。
 
 ## 檔案

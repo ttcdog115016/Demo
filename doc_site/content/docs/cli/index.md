@@ -3,7 +3,7 @@ title: 命令列使用說明
 weight: 5
 ---
 
-命令列工具適合批次處理、排程作業，以及帳號維護。它和 API 用同一個後端映像檔 `open-pets:2.0.2`，直接呼叫處理引擎，不經過 API，所以不需要登入。
+命令列工具適合批次處理、排程作業，以及帳號維護。它和 API 用同一個後端映像檔 `open-pets:2.0.0`，直接呼叫處理引擎，不經過 API，所以不需要登入。
 
 以下指令都在**部署主機**的 PowerShell 執行。
 
@@ -31,7 +31,7 @@ cd C:\pets-work
 ### 基本指令
 
 ```powershell
-docker run --rm -v "${PWD}:/work" -v C:\open-pets\.env:/srv/.env:ro open-pets:2.0.2 python -m app.cli.main --help
+docker run --rm -v "${PWD}:/work" -v C:\open-pets\.env:/srv/.env:ro open-pets:2.0.0 python -m app.cli.main --help
 ```
 
 - `-v "${PWD}:/work"`：把目前的 PowerShell 資料夾掛到容器內的 `/work`。
@@ -106,7 +106,7 @@ docker run --rm -v "${PWD}:/work" -v C:\open-pets\.env:/srv/.env:ro open-pets:2.
 
 ```powershell
 cd C:\pets-work
-$img = 'run', '--rm', '-v', "${PWD}:/work", '-v', 'C:\open-pets\.env:/srv/.env:ro', 'open-pets:2.0.2'
+$img = 'run', '--rm', '-v', "${PWD}:/work", '-v', 'C:\open-pets\.env:/srv/.env:ro', 'open-pets:2.0.0'
 ```
 
 報告 JSON 要在容器內用 `sh -c '… > /work/output/xxx.json'` 存檔，不要用 PowerShell 的 `>` 或 `Out-File`：PowerShell 會改變中文的編碼，存下來的 JSON 無法給 `report` 子命令讀取。

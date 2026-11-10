@@ -9,6 +9,8 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- 執行期設定（離線／線上模式），須在主程式之前載入；module script 會延後執行，所以這支同步腳本一定先完成 -->
+    <script src="/runtime-config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,0 +1,103 @@
+{
+  "version": "scenario_金融分析",
+  "dataset": "金融分析",
+  "input_format": "csv",
+  "preprocess": {
+    "enabled": true,
+    "columns": [
+      {
+        "column": "姓名",
+        "actions": [
+          {
+            "action": "hash",
+            "params": {
+              "salt": "scenario-test-salt"
+            }
+          }
+        ]
+      },
+      {
+        "column": "身分證號",
+        "actions": [
+          {
+            "action": "hash",
+            "params": {
+              "salt": "scenario-test-salt"
+            }
+          }
+        ]
+      },
+      {
+        "column": "交易時間",
+        "actions": [
+          {
+            "action": "anchor_truncate",
+            "params": {
+              "anchor": " ",
+              "direction": "after",
+              "keep": 0
+            }
+          }
+        ]
+      },
+      {
+        "column": "職業別",
+        "actions": [
+          {
+            "action": "trim",
+            "params": {
+              "mode": "all"
+            }
+          }
+        ]
+      },
+      {
+        "column": "逾期天數",
+        "actions": [
+          {
+            "action": "fill_default",
+            "params": {
+              "value": 0
+            }
+          }
+        ]
+      },
+      {
+        "column": "信用評分",
+        "actions": [
+          {
+            "action": "clamp",
+            "params": {
+              "min": 300,
+              "max": 850
+            }
+          }
+        ]
+      },
+      {
+        "column": "年收入",
+        "actions": [
+          {
+            "action": "clamp",
+            "params": {
+              "min": 0,
+              "max": 5000000
+            }
+          }
+        ]
+      },
+      {
+        "column": "居住里",
+        "actions": [
+          {
+            "action": "regex_replace",
+            "params": {
+              "pattern": "(?<=[市縣]).*$",
+              "replacement": ""
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

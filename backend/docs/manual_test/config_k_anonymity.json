@@ -1,0 +1,55 @@
+{
+  "version": "manual_test_k_anonymity",
+  "dataset": "sample_data",
+  "k_anonymity": {
+    "enabled": true,
+    "k": 2,
+    "columns": {
+      "姓名": {
+        "role": "identifier",
+        "type": "string"
+      },
+      "身分證號": {
+        "role": "identifier",
+        "type": "string"
+      },
+      "年齡": {
+        "role": "quasi_identifier",
+        "type": "numeric"
+      },
+      "地區": {
+        "role": "non_sensitive",
+        "type": "categorical"
+      },
+      "生日": {
+        "role": "identifier",
+        "type": "temporal"
+      },
+      "疾病": {
+        "role": "sensitive",
+        "type": "categorical"
+      },
+      "薪資": {
+        "role": "non_sensitive",
+        "type": "numeric"
+      },
+      "職業": {
+        "role": "non_sensitive",
+        "type": "categorical"
+      },
+      "婚姻狀況": {
+        "role": "non_sensitive",
+        "type": "categorical"
+      },
+      "就醫次數": {
+        "role": "non_sensitive",
+        "type": "numeric"
+      }
+    },
+    "generalization_hierarchies": {
+      "年齡": {
+        "rounding": 10
+      }
+    }
+  }
+}

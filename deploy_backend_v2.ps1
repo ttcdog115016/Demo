@@ -11,7 +11,7 @@
 # ============================================================================
 $ErrorActionPreference = 'Stop'
 
-$SourceDir = Join-Path $env:USERPROFILE 'Desktop\TTC-隱私強化技術實證委託採購案-期末-20261027T012822Z-1-001\TTC-隱私強化技術實證委託採購案-期末\open-pets_3.1_完整交付套件_v2.0.0\3.1_完整交付套件\01_程式原始碼'
+$SourceDir = Join-Path $PSScriptRoot 'backend'   # 後端已併入本 repo 的 backend/
 $Image     = 'open-pets:2.0.0'
 $DataDir   = 'C:\open-pets-data'
 $EnvDir    = 'C:\open-pets'

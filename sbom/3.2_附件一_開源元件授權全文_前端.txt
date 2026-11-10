@@ -8,7 +8,7 @@
 （devDependencies）不隨產品交付，不收錄。依 package-lock.json，同名同版本但安裝於不同位置者視為同一元件，
 只收錄一次。前端本身之授權見交付資料夾之 LICENSE。
 
-交付版本：2.0.2　　元件數：186
+交付版本：2.0.0　　元件數：186
 
 ==============================================================================
 元件索引
@@ -186,7 +186,7 @@
 171. string-convert 0.2.1　MIT
 172. stylis 4.4.0　MIT
 173. svg-pathdata 6.0.3　MIT
-174. swagger-ui-dist 5.34.0　Apache-2.0
+174. swagger-ui-dist 5.34.1　Apache-2.0
 175. text-segmentation 1.0.3　MIT
 176. throttle-debounce 5.0.2　MIT
 177. tiny-invariant 1.3.3　MIT
@@ -5895,7 +5895,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-174. swagger-ui-dist 5.34.0
+174. swagger-ui-dist 5.34.1
 ==============================================================================
 授權：Apache-2.0
 來源：https://github.com/swagger-api/swagger-ui
