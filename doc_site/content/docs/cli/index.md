@@ -3,9 +3,9 @@ title: 命令列使用說明
 weight: 5
 ---
 
-命令列工具適合批次處理、排程作業，以及帳號維護。它和 API 用同一個後端映像檔 `open-pets:2.0.0`，直接呼叫處理引擎，不經過 API，所以不需要登入。
+命令列工具適合批次處理、排程作業，以及帳號維護。它和網頁、API 在同一個映像檔 `open-pets-app:<版本>` 裡，直接呼叫處理引擎，不經過 API，所以不需要登入。
 
-以下指令都在**部署主機**的 PowerShell 執行。
+以下指令都在**安裝主機**的 PowerShell 執行（Linux 的 bash 寫法見各節說明）。用 GHCR 安裝時，指令裡的映像檔 `open-pets-app:<版本>` 要換成 `ghcr.io/ttcdog115016/open-pets-app:<版本>`。
 
 ## 執行方式
 
@@ -13,8 +13,10 @@ weight: 5
 
 | 用途 | 做法 | 說明 |
 | --- | --- | --- |
-| 去識別化、風險評估、產生報告 | `docker run --rm …`（另起一個用完即刪的容器） | 把主機的工作資料夾掛到容器內的 `/work`，輸入輸出檔都放在這裡 |
-| 帳號維護、檢查稽核紀錄 | `docker exec open-pets …`（在執行中的後端容器內執行） | 直接使用線上版的帳號資料庫與稽核紀錄 |
+| 去識別化、風險評估、產生報告 | `docker run --rm …`（另起一個用完即刪的容器） | 把主機的工作資料夾掛到容器內的 `/work`，並掛上資料磁碟區 `open-pets_open-pets-data`（取得同一份雜湊鹽值） |
+| 帳號維護、檢查稽核紀錄 | `docker exec open-pets …`（在執行中的容器內執行） | 直接使用執行中系統的帳號資料庫與稽核紀錄 |
+
+所有指令都用同一個入口 `python /opt/openpets/openpets_server.py <子命令>`，它會先載入資料磁碟區裡的金鑰（雜湊鹽值等），再執行子命令。
 
 ### 準備工作資料夾
 
@@ -31,11 +33,13 @@ cd C:\pets-work
 ### 基本指令
 
 ```powershell
-docker run --rm -v "${PWD}:/work" -v C:\open-pets\.env:/srv/.env:ro open-pets:2.0.0 python -m app.cli.main --help
+docker run --rm -v "${PWD}:/work" -v open-pets_open-pets-data:/data open-pets-app:<版本> python /opt/openpets/openpets_server.py --help-cli
 ```
 
 - `-v "${PWD}:/work"`：把目前的 PowerShell 資料夾掛到容器內的 `/work`。
-- `-v C:\open-pets\.env:/srv/.env:ro`：使用線上版同一份鹽值，雜湊結果才會和網頁版一致。
+- `-v open-pets_open-pets-data:/data`：掛上系統使用中的資料磁碟區，使用同一份鹽值，雜湊結果才會和網頁版一致。磁碟區的實際名稱以 `docker volume ls` 為準。
+- **一定要掛資料磁碟區。** 沒掛的話，這個一次性容器會自己產生一組臨時金鑰，雜湊結果就和網頁版對不上，而且用完即刪。
+- Linux 的 bash 把 `${PWD}` 換成 `"$PWD"`。工作資料夾若是一般使用者建立的，容器（使用者 10001）寫不進去，先執行 `chmod -R a+rwX pets-work`。
 
 ### 全域選項
 
@@ -66,7 +70,7 @@ docker run --rm -v "${PWD}:/work" -v C:\open-pets\.env:/srv/.env:ro open-pets:2.
 
 ## 設定檔
 
-所有子命令共用**一份統合設定檔**（JSON 或 YAML），並用每個區塊的 `enabled` 決定要執行哪些處理。`k`、抑制上限、隱私預算等參數都寫在設定檔裡，不能從命令列指定。雜湊鹽值只從 `.env` 的 `OPEN_PETS_DEFAULT_SALT` 讀取。
+所有子命令共用**一份統合設定檔**（JSON 或 YAML），並用每個區塊的 `enabled` 決定要執行哪些處理。`k`、抑制上限、隱私預算等參數都寫在設定檔裡，不能從命令列指定。雜湊鹽值只從伺服器端的設定讀取（環境變數 `OPEN_PETS_DEFAULT_SALT`，沒有設定時用第一次啟動自動產生的 `/data/.secrets.env`）。
 
 | 子命令 | 需啟用的區塊 |
 | --- | --- |
@@ -106,7 +110,7 @@ docker run --rm -v "${PWD}:/work" -v C:\open-pets\.env:/srv/.env:ro open-pets:2.
 
 ```powershell
 cd C:\pets-work
-$img = 'run', '--rm', '-v', "${PWD}:/work", '-v', 'C:\open-pets\.env:/srv/.env:ro', 'open-pets:2.0.0'
+$img = 'run', '--rm', '-v', "${PWD}:/work", '-v', 'open-pets_open-pets-data:/data', 'open-pets-app:<版本>'
 ```
 
 報告 JSON 要在容器內用 `sh -c '… > /work/output/xxx.json'` 存檔，不要用 PowerShell 的 `>` 或 `Out-File`：PowerShell 會改變中文的編碼，存下來的 JSON 無法給 `report` 子命令讀取。
@@ -115,13 +119,13 @@ $img = 'run', '--rm', '-v', "${PWD}:/work", '-v', 'C:\open-pets\.env:/srv/.env:r
 
 ```powershell
 # 1. K-匿名化，報告存成 kanon.json
-docker @img sh -c 'python -m app.cli.main k-anonymity -i /work/data/範例資料.csv -c /work/config/config_範例_JSON統合版.json -o /work/output/out.csv > /work/output/kanon.json'
+docker @img sh -c 'python /opt/openpets/openpets_server.py k-anonymity -i /work/data/範例資料.csv -c /work/config/config_範例_JSON統合版.json -o /work/output/out.csv > /work/output/kanon.json'
 
 # 2. 三攻擊風險評估，報告存成 attack.json
-docker @img sh -c 'python -m app.cli.main risk-k-anonymity -i /work/data/範例資料.csv -c /work/config/config_範例_JSON統合版.json > /work/output/attack.json'
+docker @img sh -c 'python /opt/openpets/openpets_server.py risk-k-anonymity -i /work/data/範例資料.csv -c /work/config/config_範例_JSON統合版.json > /work/output/attack.json'
 
 # 3. 產生 PDF 報告
-docker @img python -m app.cli.main report --attack-report /work/output/attack.json -o /work/output/report.pdf -t demo
+docker @img python /opt/openpets/openpets_server.py report --attack-report /work/output/attack.json -o /work/output/report.pdf -t demo
 ```
 
 完成後，`C:\pets-work\output` 會有 `out.csv`、`kanon.json`、`attack.json` 與 `report.pdf`。
@@ -164,15 +168,15 @@ docker @img python -m app.cli.main report --attack-report /work/output/attack.js
 ### 差分隱私
 
 ```powershell
-docker @img sh -c 'python -m app.cli.main dp -i /work/data/範例資料.csv -c /work/config/config_範例_JSON統合版.json -o /work/output/out_dp.csv > /work/output/dp_budget.json'
+docker @img sh -c 'python /opt/openpets/openpets_server.py dp -i /work/data/範例資料.csv -c /work/config/config_範例_JSON統合版.json -o /work/output/out_dp.csv > /work/output/dp_budget.json'
 ```
 
 ### 檢查稽核紀錄
 
-稽核紀錄在執行中的後端容器裡，所以用 `docker exec`：
+稽核紀錄在執行中的容器裡，所以用 `docker exec`：
 
 ```powershell
-docker exec open-pets python -m app.cli.main verify-log
+docker exec open-pets python /opt/openpets/openpets_server.py verify-log
 ```
 
 ```text
@@ -182,12 +186,12 @@ docker exec open-pets python -m app.cli.main verify-log
 
 ## 帳號維護
 
-帳號維護一律在執行中的後端容器內執行（`docker exec open-pets`）。
+帳號維護一律在執行中的容器內執行（`docker exec open-pets`）。
 
 ### 建立帳號
 
 ```powershell
-docker exec open-pets python -m app.cli.main create-user -u admin2@example.com -p 'Abcd-1234-xyz' -r admin
+docker exec open-pets python /opt/openpets/openpets_server.py create-user -u admin2@example.com -p 'Abcd-1234-xyz' -r admin
 ```
 
 ```text
@@ -201,13 +205,13 @@ docker exec open-pets python -m app.cli.main create-user -u admin2@example.com -
 
 ### 重設密碼並解除鎖定
 
-一般使用者忘記密碼時，由管理員在網頁的「帳號與權限管理」重設即可。管理員自己忘記密碼或被鎖定時，在部署主機執行：
+一般使用者忘記密碼時，由管理員在網頁的「帳號與權限管理」重設即可。管理員自己忘記密碼或被鎖定時，在安裝主機執行（互動式，會列出現有帳號，並詢問要重設的帳號與新密碼，密碼不會留在指令歷史）：
 
 ```powershell
-docker exec open-pets python -c "from app.governance.auth import get_auth_manager as g; g().reset_password('admin@example.com', '<新密碼>')"
+docker exec -it open-pets python /opt/openpets/openpets_server.py reset-password
 ```
 
-重設後帳號會同時解除鎖定。單機版的 `reset-password` 子命令在線上版不提供。
+重設後帳號會同時解除鎖定。第一個管理員用 `create-admin` 建立（只有在系統還沒有任何帳號時可以執行），見[安裝教學第 7 節](../deploy/#7-啟動後建立管理員並確認)。
 
 ## 結束代碼
 
@@ -231,8 +235,8 @@ docker exec open-pets python -c "from app.governance.auth import get_auth_manage
 
 ## 相關設定（.env）
 
-線上版的設定檔在部署主機的 `C:\open-pets\.env`，修改後執行 `docker restart open-pets` 才會生效。各變數的說明見[部署教學 4-2](../deploy/#4-2-準備資料夾與設定檔)。
+系統的設定檔是安裝資料夾裡的 `.env`（compose 會讀它），修改後執行 `docker compose up -d`，容器會用新設定重建。各變數的說明見[安裝教學第 8 節](../deploy/#8-離線模式與線上模式)。
 
 {{< callout type="warning" >}}
-`.env` 含鹽值與金鑰，請當作機密保管，不要寄給他人。
+金鑰（鹽值、簽章金鑰）預設存在資料磁碟區的 `/data/.secrets.env`；若改成寫在 `.env`，這個檔案要當作機密保管，不要寄給他人。
 {{< /callout >}}
