@@ -4,7 +4,8 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]
+    # feature/backend-v2-integration：v2 後端整合分支（尚未併入 main），對它開的 PR 也要跑測試
+    branches: [ main, master, feature/backend-v2-integration ]
 
 jobs:
   build-and-test:
