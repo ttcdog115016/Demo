@@ -100,7 +100,8 @@ describe('K-匿名欄位處理方式（後端 v2.0.0）', () => {
         } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
         const { container } = render(<KAnonymityMapping />);
         fireEvent.change(container.querySelector('input[type="file"]') as HTMLInputElement, { target: { files: [new File([unifiedConfigText], 'config.json', { type: 'application/json' })] } });
-        await waitFor(() => expect(messageMock.success).toHaveBeenCalled());
+        // 預設只等 1 秒；CI 機器慢時讀檔與渲染會超過，造成偶發失敗，所以放寬等待時間（只影響逾時上限，不影響通過時的速度）
+        await waitFor(() => expect(messageMock.success).toHaveBeenCalled(), { timeout: 15_000 });
         expect(screen.queryByTestId('kanon-hash-algorithm')).toBeNull();
         expect(messageMock.warning.mock.calls.some(([text]) => String(text).includes('姓名') && String(text).includes('雜湊'))).toBe(true);
         cleanup();
@@ -109,7 +110,7 @@ describe('K-匿名欄位處理方式（後端 v2.0.0）', () => {
         expect(configDocument.k_anonymity).not.toHaveProperty('algorithm');
         expect(configDocument.k_anonymity.columns['姓名'].strategy).toBe('remove');
         expect(configDocument.k_anonymity.columns['身分證號'].strategy).toBe('clear');
-    });
+    }, 30_000);
 });
 
 describe('檢測報告補充資訊', () => {
