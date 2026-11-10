@@ -19,11 +19,15 @@ weight: 6
 | 狀況 | 原因與處理 |
 | --- | --- |
 | `docker` 指令出現 `error during connect` | Docker Desktop 沒有啟動。開啟 Docker Desktop，等左下角顯示 Engine running |
-| 網頁開得起來，但登入或處理時出現 502 Bad Gateway | 後端沒有啟動。執行 `docker ps` 確認 `open-pets` 是 `Up`，再執行 `curl.exe http://127.0.0.1:8000/` |
-| 登入時出現 503 | `.env` 沒有 `OPEN_PETS_JWT_SECRET`，或 `.env` 有 BOM 導致第一行讀不到。依第 4-2 節的指令重寫（保留原本的鹽值），再 `docker restart open-pets` |
-| 出現 400 Invalid host header | `OPEN_PETS_ALLOWED_HOSTS` 漏列了使用者用的主機名稱，見第 8 節 |
-| 上傳時出現 413 | 檔案超過上傳上限（預設 1 GB）。可調整 `.env` 的 `OPEN_PETS_MAX_UPLOAD_MB`，但前端 nginx 也限制 1024 MB |
-| `port is already allocated` | 8080 或 8000 已被其他程式使用。前端可改用其他埠，例如 `-p 9080:8080`，網址跟著改成 `:9080` |
-| 容器名稱已存在（`Conflict. The container name ... is already in use`） | 先 `docker rm -f <容器名稱>` 再重新 `docker run`。後端容器刪除前請確認資料都在 `C:\open-pets-data` |
-| 想看錯誤訊息 | `docker logs --tail 100 open-pets`（後端）或 `docker logs --tail 100 open-pets-web`（前端） |
-| 忘記管理員密碼或帳號被鎖定 | 在主機執行下面的指令重設密碼（同時解除鎖定）：<br>`docker exec open-pets python -c "from app.governance.auth import get_auth_manager as g; g().reset_password('admin@example.com', '<新密碼>')"` |
+| `docker compose up` 回報 `port is already allocated` | 本機的 8080 埠已被其他程式占用。在 `.env` 加一行 `OPEN_PETS_PORT=8081`（任一空的埠），再 `docker compose up -d`，網址改用該埠 |
+| 容器一直是 `starting` 或 `unhealthy`，或啟動後馬上結束 | 先看日誌：`docker logs --tail 100 open-pets`。常見原因：`OPEN_PETS_MODE` 填了 `offline`／`online` 以外的值（容器會報錯並結束）、線上模式的 `OPEN_PETS_ALLOWED_HOSTS` 設錯。剛啟動約 40 秒內顯示 `starting` 是正常的。線上模式沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 在啟動前就會報 `required variable ... is missing a value` |
+| 出現 400 Invalid host header | `OPEN_PETS_ALLOWED_HOSTS` 漏列了使用者用的主機名稱，補上後 `docker compose up -d`，見[安裝教學第 9 節](deploy/#9-開放給其他電腦) |
+| 上傳時出現 413 | 檔案超過上傳上限（預設 1 GB，`OPEN_PETS_MAX_UPLOAD_MB`）。經反向代理時，代理也有自己的上限（nginx 的 `client_max_body_size`、Caddy 的 `request_body max_size`），要一起調整 |
+| 經反向代理連線時出現 502／504 | 代理轉不到容器。確認 `docker ps` 的 `open-pets` 是 `healthy`，並在主機執行 `curl http://127.0.0.1:8080/api/v1/status`；再檢查代理設定的上游位址與逾時 |
+| 登入頁沒有帳號可用 | 還沒建立管理員。執行 `docker exec -it open-pets python /opt/openpets/openpets_server.py create-admin`，見[安裝教學第 7 節](deploy/#7-啟動後建立管理員並確認) |
+| 忘記管理員密碼或帳號被鎖定 | 在主機執行互動式指令重設（同時解除鎖定）：`docker exec -it open-pets python /opt/openpets/openpets_server.py reset-password` |
+| `sha256sum -c` 顯示 FAILED，或 `docker load` 回報檔案損毀 | 檔案下載或複製不完整，重新取得。檢查碼要與 `SHA256SUMS.txt`（另一條管道取得的）一致；檔名不能改 |
+| `docker pull` 回報 `denied` 或 `unauthorized` | 套件是私有的。用有 `read:packages` 權限的 GitHub 權杖登入：`docker login ghcr.io -u <GitHub 帳號>` |
+| 容器名稱已存在（`Conflict. The container name ... is already in use`） | 在安裝資料夾執行 `docker compose down`（資料在磁碟區，不會遺失），再 `docker compose up -d`。**不要加 `-v`**，那會連資料磁碟區一起刪除 |
+| 換版本後資料不見了 | 資料在磁碟區 `open-pets-data`，換映像檔不會影響。確認 compose 的專案名稱沒變（安裝資料夾裡的 `docker-compose.yml` 沒改 `name:`），用 `docker volume ls` 看磁碟區是否還在 |
+| 想看錯誤訊息 | `docker logs --tail 100 open-pets` |
