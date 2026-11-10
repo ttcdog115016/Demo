@@ -1,0 +1,16 @@
+# 反向代理範例：Caddy（自動申請並續期 Let's Encrypt 憑證）
+# 把 openpets.example.com 換成你的網域，並與 .env 的 OPEN_PETS_ALLOWED_HOSTS 一致。
+# 搭配：docker compose -f docker-compose.yml -f docker-compose.online.yml up -d（容器只綁 127.0.0.1:8080）
+openpets.example.com {
+	# 與應用程式的上傳上限一致（OPEN_PETS_MAX_UPLOAD_MB，預設 1024）
+	request_body {
+		max_size 1024MB
+	}
+	header Strict-Transport-Security "max-age=31536000"
+	# Caddy 預設原樣轉送 Host、不緩衝請求本文，並自動加上 X-Forwarded-For／-Proto
+	reverse_proxy 127.0.0.1:8080 {
+		transport http {
+			response_header_timeout 15m
+		}
+	}
+}

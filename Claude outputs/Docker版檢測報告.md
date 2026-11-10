@@ -289,9 +289,37 @@ Docker 單一映像檔通過 SonarQube 品質門檻，沒有屬實的程式碼�
 | 項目 | 說明 |
 |---|---|
 | 原始碼壓縮檔取自已 commit 的內容 | 建置時若有尚未 commit 的變更，腳本會警告。本次驗證時新改動尚未 commit，所以該次輸出的壓縮檔不含這些改動；正式交付前須先 commit 再建置 |
-| 線上模式的 HTTPS | 容器內仍是明文 HTTP，由反向代理終止 HTTPS；本次沒有實際架設反向代理測試 |
+| 線上模式的 HTTPS | 容器內仍是明文 HTTP，由反向代理終止 HTTPS；第十一節已用 Caddy、nginx 實測 |
 | GHCR／Releases 自動建置 | 已寫成 `.github/workflows/docker-image.yml`（後端已併入 repo 的 `backend/`），`actionlint`（含 shellcheck）無警告，打包段落與 Release 說明在本機實跑通過；**尚未在 GitHub 上實際執行**，GHCR 推送與 Release 建立未實測，首次建議先用手動執行（`workflow_dispatch`，只建置、掃描、打包，不推送、不發版）試跑 |
 | 法律意見 | `THIRD_PARTY_NOTICES.txt` 與 `REBUILD.md` 依「LGPL 與 MPL 對 MIT 授權之影響」整理，該文件為一般性說明，不是法律意見；本案為委託採購，交付前建議由法務確認合約對授權的要求 |
+
+## 十一、追加（115/11/10）：基底映像檔固定、簽章、反向代理與 HTTPS 實測
+
+### （一）加固內容
+| 項目 | 做法 |
+|---|---|
+| 基底映像檔固定 digest | `docker/Dockerfile` 的 `node:20-alpine`、`python:3.12-slim`（兩處）、`ghcr.io/astral-sh/uv:0.11.15` 都改為 `標籤@sha256:…`；workflow 的 Trivy 映像檔也固定。重建時所有層命中快取，確認固定的 digest 與先前使用的基底內容相同 |
+| 更新機制 | 新增 `.github/dependabot.yml`（`docker`、`github-actions` 每週），`REBUILD.md` 補「基底映像檔固定在 digest」的手動更新步驟；建置時仍執行 `apt-get upgrade` |
+| 映像檔簽章 | `docker-image.yml` 在 `v*` tag 發版時以 cosign 無金鑰簽章：簽 GHCR 映像檔 digest，並簽 `SHA256SUMS.txt`（bundle 放進交付包）；Release 說明與 `README_Docker部署.md` 附驗證指令。手動試跑不簽 |
+| 反向代理範例 | 新增 `docker/proxy-examples/Caddyfile`、`nginx.conf`；交付包以 `Caddyfile.example`、`nginx.conf.example` 附上 |
+
+### （二）重新掃描（固定 digest 後的映像檔）
+Trivy（0.76.2，固定 digest）：作業系統 HIGH 47、CRITICAL 0、**可修補 0**、祕密 0，與第四節相同；原始資料 `trivy/trivy-image-pinned-digest.json`。47 項仍是 Debian 尚未提供修補版，維持風險接受。
+
+### （三）反向代理＋HTTPS 實測
+環境：線上模式容器（`OPEN_PETS_MODE=online`、`OPEN_PETS_ALLOWED_HOSTS=openpets.test`，唯讀、`cap_drop ALL`）前面分別放 Caddy 2（`tls internal`）與 nginx（自簽憑證），使用 `docker/proxy-examples/` 的設定，只把上游位址換成容器網路名稱。
+
+| 項目 | 結果 |
+|---|---|
+| HTTPS 下完整流程（登入→上傳 5 萬筆→K-匿名化→下載 CSV 與 PDF） | Caddy、nginx 皆通過，無 console 錯誤；CSV 約 870 KB、PDF 約 847 KB |
+| 回應標頭 | 應用程式的 CSP、X-Frame-Options、COOP／COEP 等原樣通過；代理加上 `Strict-Transport-Security` |
+| Host 檢查 | 以錯誤 Host 直連容器得到 400（`ALLOWED_HOSTS` 生效）；經 nginx 轉送也是 400；Caddy 對不認得的 Host 自己回空的 200，不會轉到應用程式 |
+| 後端看到的來源 IP | 全部是代理的 IP（不處理 `X-Forwarded-For`）。檢查後端原始碼：沒有任何地方使用用戶端 IP（稽核紀錄以帳號為準、也沒有以 IP 限流），所以沒有功能影響，容器入口未改動 |
+| 認證方式 | Bearer token（登入回傳 JSON），不使用 cookie，無 cookie 屬性需調整 |
+
+未涵蓋：真實網域與 Let's Encrypt 憑證、Cloudflare Tunnel、接近 1 GB 的上傳經過代理（`client_max_body_size`／`request_body max_size` 只驗證設定，沒有實際傳大檔）。
+
+**測試資料的備註**：`e2e/fixtures/mock_privacy_data.csv` 只有 5 筆，預設 K=5、刪除上限 20% 時結果會被判為未達標，「下載處理後資料」按鈕因此停用，流程在這一步停住。前面各節的流程測試用的是 5 萬筆的資料（不在 repo）。這是測試資料的問題，不是代理或模式造成的（直連、離線、線上三種情形都一樣）。要在別台機器重跑 `docker_workflow.spec.ts`，需用 `E2E_CSV` 指定足夠筆數的資料。
 
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 

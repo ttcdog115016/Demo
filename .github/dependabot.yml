@@ -1,0 +1,12 @@
+# 追蹤已固定在 digest 的基底映像檔與 GitHub Actions 版本，有新版時自動提 PR。
+# 固定 digest 後基底不會自己更新；沒有這份設定，映像檔會慢慢收不到上游的安全修補。
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

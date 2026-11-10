@@ -12,6 +12,7 @@
 1. **核對完整性**：`SHA256SUMS.txt` 的檢查碼要與另一條管道取得的一致。
    - PowerShell：`Get-FileHash .\open-pets-app_2.0.2.tar -Algorithm SHA256`
    - Linux：`sha256sum -c SHA256SUMS.txt`
+   - 若交付包內有 `SHA256SUMS.txt.sigstore.json`，連網時可再驗證 `SHA256SUMS.txt` 沒被換掉：`cosign verify-blob --bundle SHA256SUMS.txt.sigstore.json --certificate-identity-regexp '^https://github.com/<擁有者>/<repo>/\.github/workflows/docker-image\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS.txt`
 2. 匯入映像檔：`docker load -i open-pets-app_2.0.2.tar`
 3. 啟動：`docker compose up -d`
 4. 建立第一個系統管理員（互動輸入，密碼不會留在指令歷史）：
@@ -35,7 +36,7 @@
 
 - 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令即可，`/data` 磁碟區不變。
 - `OPEN_PETS_MODE` 填了其他值，容器會在啟動時報錯並結束（`docker logs open-pets` 可看到原因），不會悄悄退回預設。
-- 線上模式由反向代理終止 HTTPS；代理需把 `Host` 標頭原樣轉送、允許大檔案上傳（預設上限 1024 MB）、關閉請求緩衝。範例見 `docker-compose.online.yml` 開頭的註解。
+- 線上模式由反向代理終止 HTTPS；代理需把 `Host` 標頭原樣轉送、允許大檔案上傳（預設上限 1024 MB）、關閉請求緩衝。可直接改用交付包內的 `Caddyfile.example`（自動憑證）或 `nginx.conf.example`（原始碼的 `docker/proxy-examples/`），兩份都已實測過 HTTPS 下的完整流程（登入、上傳、K-匿名化、下載 CSV 與 PDF）。後端只認 `OPEN_PETS_ALLOWED_HOSTS` 內的 Host，其他網域直接連到容器會得到 400。後端不記錄用戶端 IP（稽核紀錄以帳號為準），所以不需要設定 `X-Forwarded-For` 的信任範圍。
 
 ## 二、升級
 資料與金鑰都在 `open-pets-data` 磁碟區，換映像檔不會遺失。兩種取得新版的方式，同一個版本的映像檔內容相同。
@@ -49,6 +50,7 @@
 1. 第一次：在 `.env` 加 `OPEN_PETS_IMAGE=ghcr.io/<擁有者>/open-pets-app`（擁有者名稱一律小寫）。如果套件是私有的，先用有 `read:packages` 權限的 token 登入：`docker login ghcr.io -u <GitHub 帳號>`。
 2. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本，執行 `docker compose pull`（只會下載有變更的層，通常遠小於整個 tar），再 `docker compose up -d`。
 3. 要驗證下載的是對的版本：到 GitHub Releases 對照該版的 image digest（`docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/<擁有者>/open-pets-app:<版本>`）。
+   也可以驗證映像檔確實由本專案的 GitHub Actions 建置（cosign 簽章，指令見該版 Release 說明的「驗證來源」）。需要安裝 [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 並能連到 Sigstore；完全隔離的環境無法驗證簽章，以 SHA256 為準。簽章會記在公開的 Sigstore 透明日誌，其中包含本專案的 GitHub 帳號與 repo 名稱。
 4. 版本一律指定明確的版號，不使用 `latest`（交付包與 GHCR 都不提供 `latest`），避免無意間升級。
 
 **退回：** 把 `OPEN_PETS_VERSION` 改回舊版再 `docker compose up -d`（舊映像檔還在就不必重新取得）。

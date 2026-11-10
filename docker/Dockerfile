@@ -11,7 +11,7 @@
 # ============================================================================
 
 # ---------- 第一階段：建置前端 ----------
-FROM node:20-alpine AS frontend
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS frontend
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -33,9 +33,9 @@ RUN mkdir -p /out/swagger-ui \
     done
 
 # ---------- 第二階段：依 uv.lock 建出後端執行相依（與後端自己的 Dockerfile 相同做法）----------
-FROM python:3.12-slim AS backend-deps
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS backend-deps
 
-COPY --from=ghcr.io/astral-sh/uv:0.11.15 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.15@sha256:e590846f4776907b254ac0f44b5b380347af5d90d668138ca7938d1b0c2f98d3 /uv /usr/local/bin/uv
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -56,7 +56,7 @@ RUN mkdir -p /licenses \
  && cat /tmp/header.txt /tmp/python-licenses.txt > /licenses/THIRD_PARTY_NOTICES.txt
 
 # ---------- 第四階段：交付映像檔（不含 node、uv、建置工具）----------
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 ARG OPEN_PETS_VERSION=dev
 ARG OPEN_PETS_SOURCE_URL=https://github.com/ttcdog115016/Demo

@@ -7,6 +7,7 @@
 #         docker-compose.online.yml  線上模式（與上一個疊加使用）
 #         SHA256SUMS.txt             完整性檢查碼（交付時另以安全管道傳遞一份）
 #         README_Docker部署.md       安裝、升級、備份說明
+#         Caddyfile.example、nginx.conf.example  線上模式的反向代理範例（HTTPS）
 #         LICENSE、THIRD_PARTY_NOTICES.txt、FRONTEND_THIRD_PARTY_LICENSES.md  授權聲明（取自映像檔）
 #         REBUILD.md、open-pets-source_<版本>.zip  重新建置與替換第三方元件（含前端與 backend/）
 #         image-sbom.cdx.json        映像檔 SBOM
@@ -41,6 +42,9 @@ if ($LASTEXITCODE) { Fail 'docker save 失敗' }
 foreach ($f in 'docker-compose.yml', 'docker-compose.online.yml', 'README_Docker部署.md', 'REBUILD.md') {
     Copy-Item (Join-Path $DockerDir $f) $OutDir
 }
+# 反向代理範例（交付包內不放子資料夾，所以改成 .example 檔名）
+Copy-Item (Join-Path $DockerDir 'proxy-examples\Caddyfile') (Join-Path $OutDir 'Caddyfile.example')
+Copy-Item (Join-Path $DockerDir 'proxy-examples\nginx.conf') (Join-Path $OutDir 'nginx.conf.example')
 "OPEN_PETS_VERSION=$Version" | Set-Content (Join-Path $OutDir '.env.example') -Encoding ascii
 
 # 授權聲明：取自映像檔本身（與映像檔內 /licenses 完全一致），二進位散布時隨交付包附上
