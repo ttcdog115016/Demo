@@ -40,6 +40,14 @@ certifi 等其他套件的替換方式相同。
 3. 重新建置並做弱點掃描，確認沒有新增的可修補 HIGH／CRITICAL。
 建置時仍會執行 `apt-get upgrade`，所以系統套件的修補不必等基底更新。
 
+## 確認映像檔對應的原始碼版本
+映像檔的 label `org.opencontainers.image.revision` 是建置時的 commit，原始碼壓縮檔的註解欄位（`unzip -z open-pets-source_<版本>.zip`）也是同一個 commit：
+
+```
+docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' open-pets-app:<版本>
+```
+自行重建時可用 `--build-arg OPEN_PETS_REVISION=<commit>` 填入自己的版本資訊（沒填寫會是 `unknown`）。
+
 ## 注意
 - 重新建置的映像檔與原交付映像檔的內容雜湊不同（基底映像檔與系統套件更新、建置時間不同），這是正常的。
 - 本專案自己的程式碼為 MIT 授權（見 `LICENSE`，後端另見 `backend/LICENSE`）。

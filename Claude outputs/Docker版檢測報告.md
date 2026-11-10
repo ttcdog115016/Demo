@@ -321,6 +321,40 @@ Trivy（0.76.2，固定 digest）：作業系統 HIGH 47、CRITICAL 0、**可修
 
 **測試資料的備註**：`e2e/fixtures/mock_privacy_data.csv` 只有 5 筆，預設 K=5、刪除上限 20% 時結果會被判為未達標，「下載處理後資料」按鈕因此停用，流程在這一步停住。前面各節的流程測試用的是 5 萬筆的資料（不在 repo）。這是測試資料的問題，不是代理或模式造成的（直連、離線、線上三種情形都一樣）。要在別台機器重跑 `docker_workflow.spec.ts`，需用 `E2E_CSV` 指定足夠筆數的資料。
 
+## 十二、追加（115/11/10）：三條交付管道逐一驗證
+
+交付方式定為三種：容器映像檔（GHCR）、原始碼、離線安裝（tar）。`.exe` 不再建置（已終止建置中的流程並清除產物，`packaging/` 程式碼保留，容器仍使用其中的 `launcher.py`）。
+
+### （一）原始碼管道
+| 項目 | 做法／結果 |
+|---|---|
+| 發現的問題 | Windows 工作資料夾的文字檔被轉成 CRLF，直接用它建出的映像檔與「解開原始碼壓縮檔後重建」的結果不同：`/srv/app` 83 個檔案中 76 個雜湊不同（前端打包檔與 `/opt/openpets` 也不同），差異只有換行 |
+| 修正 | `docker/build_image.ps1` 改成先以 `git archive`（固定 `core.autocrlf=false`，輸出 repo 內的 LF）匯出原始碼，解開後從這份內容建置映像檔，再把同一個壓縮檔放進交付包 |
+| 結果 | 交付映像檔與「解開壓縮檔、不靠 git、照 `REBUILD.md` 建置」的映像檔：`/srv/app`（83 檔）、`/srv/frontend`、`/opt/openpets` 三組內容雜湊完全相同 |
+| 可追溯性 | 映像檔 label `org.opencontainers.image.revision` ＝ commit，與壓縮檔註解內的 commit 相同（實測皆為建置當下的 HEAD） |
+| 壓縮檔內容 | 508 個項目；沒有 `cloudflared`、簡報、`node_modules`、`.env`、資料庫、紀錄檔、`__pycache__`、內部報告。有 17 個前端檔案本來就以 CRLF 存在 repo 裡（index 內即是 CRLF），GitHub Actions 的輸出相同 |
+
+### （二）離線安裝（tar）管道
+在全新資料夾、移除本機映像檔與磁碟區後，只憑交付包與 `README_Docker部署.md` 操作：
+
+| 項目 | 結果 |
+|---|---|
+| `sha256sum -c SHA256SUMS.txt` | 13 個檔案（不含自身）全數 OK |
+| `docker load -i` → `.env` → `docker compose up -d` → `create-user` | 通過，`healthy` |
+| 外部請求 | 以 Playwright 攔截所有非本機請求，完整流程（登入、上傳 5 萬筆、K-匿名化、下載按鈕啟用）加上 `/docs`：**0 個外部請求** |
+| 無對外網路 | 容器放在 `docker network create --internal` 網路，`healthcheck` 為 healthy，API 與登入正常；容器內連 `1.1.1.1`、`ghcr.io` 皆失敗（確認與網路隔離相容） |
+| 升級與回退 | 以同一映像檔加標 `2.0.3`，改 `.env` 的 `OPEN_PETS_VERSION` 後 `up -d`：`.secrets.env` 雜湊不變、帳號仍可登入；改回 `2.0.2` 同樣正常 |
+| 發現並補上的說明 | 本機 8080 已被其他容器佔用時，`compose up` 會報 `port is already allocated`；說明書疑難排解新增「在 `.env` 設 `OPEN_PETS_PORT`」 |
+| 說明書補充 | 新增「三種取得方式」對照表、如何確認映像檔對應的 commit；根目錄 `README.md` 加交付方式簡介 |
+
+離線環境無法驗證 cosign 簽章（需連到 Sigstore），以 SHA256 為準，說明書已載明。
+
+### （三）容器映像檔（GHCR）管道
+| 項目 | 結果 |
+|---|---|
+| workflow 調整 | 傳入 `OPEN_PETS_REVISION=$GITHUB_SHA`；版本含連字號（如 `2.0.2-rc1`）時 Release 標為預發版；`actionlint`（含 shellcheck）無警告 |
+| 尚未驗證 | GHCR 推送、cosign 簽章與驗證、Release 建立、從 GHCR `docker pull`／`compose pull`、GHCR 映像檔與 Release 內 tar 為同一份內容。這些只有在 GitHub 上以 `v*` tag 實際執行才能驗證，建議先用 `v2.0.2-rc1` 預發版 tag 走一遍 |
+
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 
 | 位置 | 內容 |

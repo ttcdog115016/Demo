@@ -2,6 +2,19 @@
 
 一個映像檔 `open-pets-app:<版本>` 內含前端網頁與後端服務，同一個容器、同一個埠（8080）。不需要另外安裝 nginx、Python 或 Node.js。
 
+## 三種取得方式
+
+同一個版本的三種管道內容相同（映像檔由同一次建置產生），依環境選一種即可。
+
+| | 容器映像檔（GHCR） | 離線安裝（tar） | 原始碼 |
+|---|---|---|---|
+| 適用 | 可以連網、想用 `docker pull` 更新 | 無網路或內網環境 | 想自行檢視、重新建置，或替換 fpdf2、certifi 等第三方元件 |
+| 取得 | `ghcr.io/<擁有者>/open-pets-app:<版本>`（私有時需登入，見「二、升級」） | 交付包內的 `open-pets-app_<版本>.tar` | 交付包內的 `open-pets-source_<版本>.zip`，或 GitHub repo 的同一個版本 |
+| 驗證 | 映像檔 digest（Release 說明）；cosign 簽章 | `SHA256SUMS.txt` | 壓縮檔註解與映像檔 label 內的 commit |
+| 使用 | `docker compose pull` → `up -d` | `docker load -i` → `docker compose up -d` | 依 `REBUILD.md` 建置後同樣用 compose 啟動 |
+
+**確認映像檔對應哪個原始碼 commit**：`docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' open-pets-app:<版本>`；原始碼壓縮檔的 commit 可用 `unzip -z open-pets-source_<版本>.zip` 或解壓縮工具的「註解」欄位查看，兩者應相同。
+
 ## 需求
 - Docker Engine 或 Docker Desktop（含 `docker compose`）
 - 可用磁碟：映像檔約 1 GB；資料另計（上傳的處理暫存也放在資料磁碟區，大檔案請預留空間）
@@ -102,6 +115,7 @@ API 互動文件：http://localhost:8080/docs
 ## 七、疑難排解
 - `docker compose up` 後網頁打不開：`docker logs open-pets` 看啟動錯誤；`docker ps` 的 STATUS 應為 `healthy`
 - 登入頁沒有帳號可用：尚未建立管理員，見「一、安裝」第 4 步
+- `docker compose up` 回報 `port is already allocated`：本機的 8080 埠已被其他程式佔用。在 `.env` 加一行 `OPEN_PETS_PORT=8081`（任一空的埠）再 `docker compose up -d`，瀏覽器改開該埠
 - 上傳大檔失敗：預設上限 1024 MB（`OPEN_PETS_MAX_UPLOAD_MB`），前端也限制 1024 MB，要改需一起改
 
 ## 八、授權與原始碼
