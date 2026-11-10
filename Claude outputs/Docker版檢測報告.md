@@ -375,7 +375,25 @@ tag `v2.0.0-rc1`（指向合併 commit `7650e4f`）觸發 `docker-image.yml`，�
 ### 實跑發現並修正的問題
 1. **Release 檔名被 GitHub 改掉，下載後 `sha256sum -c` 有 2 個檔案找不到**：`.env.example` 被改為 `default.env.example`，`README_Docker部署.md` 被去掉中文成 `README_Docker.md`，與 `SHA256SUMS.txt` 內的檔名對不上（其餘 13 個檔案核對正常）。修正：說明書改名為 `docker/README_Docker.md`，交付包內的範例改名 `env.example`（不以點開頭）；workflow 在打包時檢查檔名，有以點開頭或含非 ASCII 的檔名就失敗。**rc1 的 Release 仍是舊檔名**，修正需要新的預發版驗證。
 2. **前端打包不是逐位元可重現**：同一份原始碼、`--no-cache` 連建兩次，`html2canvas`、`index`、`index.es`、`purify.es`、`src` 等打包檔的檔名雜湊與 `index.html` 都不同。因此自行重建的映像檔 digest 必然與官方不同；判斷官方映像檔要靠 GHCR digest、cosign 簽章或離線 tar 的 SHA256。`REBUILD.md` 已補說明。
-3. **離線 tar 較大**：CI 產出的 tar 為 597 MB，本機（Docker Desktop）為 188 MB。內容相同，只是 CI 的 `docker save` 不壓縮各層；可改成輸出 `.tar.gz`（`docker load` 支援），尚未處理。
+3. **離線 tar 較大**：CI 產出的 tar 為 597 MB，本機（Docker Desktop）為 188 MB。內容相同，只是 CI 的 `docker save` 不壓縮各層。已改成輸出 `.tar.gz`（`docker save | gzip -n`，`docker load -i` 可直接讀），rc2 驗證見下。
+
+### v2.0.0-rc2 驗證（修正後）
+tag `v2.0.0-rc2` 指向合併 commit `de1a87b`（含檔名修正與 `.tar.gz` 壓縮）。
+
+| 項目 | rc1 | rc2 |
+|---|---|---|
+| workflow 各步驟 | 全部成功 | 全部成功 |
+| Release 檔名 | `.env.example` 被改名為 `default.env.example`、`README_Docker部署.md` 被改名為 `README_Docker.md` | 15 個檔案全是 ASCII 且不以點開頭，未被改名 |
+| 下載後 `sha256sum -c SHA256SUMS.txt` | 2 個檔案找不到 | **13 個檔案全部 OK** |
+| 離線映像檔大小 | 597 MB（`.tar`） | **187 MB（`.tar.gz`）** |
+| `docker load -i` | 成功 | 直接讀 `.tar.gz` 成功（不需解壓縮） |
+| `cosign verify`（映像檔 digest）／`verify-blob`（`SHA256SUMS.txt`） | 通過 | 通過；身分 `docker-image.yml@refs/tags/v2.0.0-rc2` |
+| 匿名 `docker pull` GHCR | 成功 | 成功；digest 與 Release 說明相同 |
+| 離線 tar 與 GHCR 映像檔 | 內容相同 | 內容相同：`/srv/app`、`/srv/frontend`、`/opt/openpets`、`/licenses` 四組雜湊相同，`revision` label 皆為 `de1a87b` |
+| 離線路徑：`env.example`→`.env`＋`compose up -d`（映像檔來自 `.tar.gz`） | — | healthy，`/api/v1/status` 回傳 2.0.0 |
+| 線上路徑：`OPEN_PETS_IMAGE`＋`compose pull`＋`up -d` | healthy | healthy |
+
+**尚未做或不在範圍**：正式版 `v2.0.0` 不發（使用者決定）；rc1、rc2 的 Release、tag 與 GHCR 版本暫時保留，待使用者指示再刪（簽章已寫進公開的 Sigstore 透明日誌，無法撤回）；main 分支尚未取得這些內容。
 
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 

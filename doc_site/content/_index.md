@@ -4,7 +4,7 @@ layout: hextra-home
 ---
 
 {{< hextra/hero-badge >}}
-  <span>後端 v2.0.0・線上版</span>
+  <span>v2.0.0・單一映像檔・離線／線上</span>
 {{< /hextra/hero-badge >}}
 
 <div class="hx:mt-6 hx:mb-6">
@@ -27,9 +27,9 @@ layout: hextra-home
 
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
-    title="部署教學"
+    title="安裝教學"
     icon="server"
-    subtitle="從 GitHub 取得前端，用 Docker Desktop 建置啟動、對外開放、更新與備份。"
+    subtitle="三種取得方式（GHCR、離線 tar.gz、原始碼），啟動、對外開放、更新與備份。"
     link="docs/deploy"
   >}}
   {{< hextra/feature-card
@@ -47,13 +47,13 @@ layout: hextra-home
   {{< hextra/feature-card
     title="命令列使用說明"
     icon="terminal"
-    subtitle="在後端容器內批次執行去識別化、風險評估、產生報告與帳號維護。"
+    subtitle="在容器內批次執行去識別化、風險評估、產生報告與帳號維護。"
     link="docs/cli"
   >}}
   {{< hextra/feature-card
     title="常見問題"
     icon="question-mark-circle"
-    subtitle="502、登入 503、上傳 413、埠被占用、帳號鎖定等狀況的處理方式。"
+    subtitle="埠被占用、400、上傳 413、容器不健康、校驗碼對不上、帳號鎖定等狀況的處理方式。"
     link="docs/faq"
   >}}
   {{< hextra/feature-card
