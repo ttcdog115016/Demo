@@ -3,7 +3,7 @@
 # Open-PETs 單一映像檔（前端＋後端同一個容器、同一個行程、同一個埠 8080）
 #
 # 建置（在本 repo 根目錄；後端原始碼在 backend/，不需要任何外部路徑）：
-#   docker buildx build -f docker/Dockerfile -t open-pets-app:2.0.2 --load .
+#   docker buildx build -f docker/Dockerfile -t open-pets-app:2.0.0 --load .
 # 一鍵建置、輸出離線交付包：docker\build_image.ps1；推 tag 時由 .github/workflows/docker-image.yml 自動建置
 #
 # 後端原始碼（backend/）不為了容器版而修改：前端靜態檔、SPA 路由、安全標頭由 docker/openpets_server.py

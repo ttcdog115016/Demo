@@ -1,6 +1,8 @@
 # 資料隱私保護技術套件 Docker 單一映像檔 原始碼檢測暨弱點掃描與實測報告
 
 > **受測物**：`open-pets-app:2.0.2`，前端與後端合併的單一 Docker 映像檔（建置檔在 `docker/`）。交付包為 `docker/dist/open-pets-app_2.0.2/`，內有映像檔 tar、`docker-compose.yml`、`SHA256SUMS.txt`、部署說明。
+
+> **版號說明（115/11/10）**：交付版號已改為 **2.0.0**（映像檔 `open-pets-app:2.0.0`、交付包 `open-pets-app_2.0.0/`、GHCR 標籤與 Release 皆以 2.0.0 為準）。本報告前面各節測試時映像檔的標籤是 `2.0.2`，內容相同（版號只影響標籤、檔名與文件）；**後端自己的版本仍是 2.0.2**（`/api/v1/status` 回傳 2.0.2，來源 commit `1520899`），兩者不同是刻意的。
 > **檢測日期**：115 年 11 月 10 日。
 > **方法**：沿用前次《單機版原始碼檢測報告》的工具與判讀方式，另加 Trivy 檢查映像檔的作業系統層，並對運行中的容器做功能實測。
 > **處理方式**：屬實的高、中風險直接修補並複測（第六節）。後端為委外交付物，**原始碼未修改**。
@@ -352,7 +354,7 @@ Trivy（0.76.2，固定 digest）：作業系統 HIGH 47、CRITICAL 0、**可修
 ### （三）容器映像檔（GHCR）管道
 | 項目 | 結果 |
 |---|---|
-| workflow 調整 | 傳入 `OPEN_PETS_REVISION=$GITHUB_SHA`；版本含連字號（如 `2.0.2-rc1`）時 Release 標為預發版；`actionlint`（含 shellcheck）無警告 |
+| workflow 調整 | 傳入 `OPEN_PETS_REVISION=$GITHUB_SHA`；版本含連字號（如 `2.0.0-rc1`）時 Release 標為預發版；`actionlint`（含 shellcheck）無警告 |
 | 尚未驗證 | GHCR 推送、cosign 簽章與驗證、Release 建立、從 GHCR `docker pull`／`compose pull`、GHCR 映像檔與 Release 內 tar 為同一份內容。這些只有在 GitHub 上以 `v*` tag 實際執行才能驗證，建議先用 `v2.0.2-rc1` 預發版 tag 走一遍 |
 
 ## 附件：原始資料（`Docker版檢測原始資料/`）

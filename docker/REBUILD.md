@@ -18,10 +18,10 @@
 在解開的 `open-pets/` 資料夾執行：
 
 ```
-docker buildx build -f docker/Dockerfile --build-arg OPEN_PETS_VERSION=2.0.2 -t open-pets-app:2.0.2-custom --load .
+docker buildx build -f docker/Dockerfile --build-arg OPEN_PETS_VERSION=2.0.0 -t open-pets-app:2.0.0-custom --load .
 ```
 
-Windows 也可以用 `docker\build_image.ps1 -Version 2.0.2`，它會同時輸出離線交付包（需要在 git 工作樹內執行，因為原始碼壓縮檔以 `git archive` 產生）。
+Windows 也可以用 `docker\build_image.ps1 -Version 2.0.0`，它會同時輸出離線交付包（需要在 git 工作樹內執行，因為原始碼壓縮檔以 `git archive` 產生）。
 建好後把 `.env` 的 `OPEN_PETS_VERSION`（以及 `OPEN_PETS_IMAGE`，如果有設）改成您的標籤即可。
 
 ## 替換 Python 元件（例如 fpdf2）

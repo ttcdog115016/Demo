@@ -20,8 +20,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, 'sbom');
 const COMPONENT_NAME = 'open-pets-frontend';
-// 與後端 open-pets 同一個交付版本（★ 2026-11-04 改為 2.0.2）；package.json 的 version 仍是 Vite 範本的 0.0.0
-const COMPONENT_VERSION = '2.0.2';
+// 與後端 open-pets 同一個交付版本（★ 2026-11-10 交付版號改為 2.0.0；後端自己的版本仍是 2.0.2）；package.json 的 version 仍是 Vite 範本的 0.0.0
+const COMPONENT_VERSION = '2.0.0';
 
 const rawFile = join(tmpdir(), `open-pets-frontend-sbom-${process.pid}.json`);
 // 直接以 node 執行 CLI，不經 npx／shell（Windows 上 npx.cmd 需要 shell，參數不會跳脫）

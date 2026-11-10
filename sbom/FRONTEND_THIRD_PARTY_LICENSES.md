@@ -1,4 +1,4 @@
-# OpenPETs 2.0.2 前端第三方元件授權清單
+# OpenPETs 2.0.0 前端第三方元件授權清單
 
 SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.json` 產生，僅含執行期相依）。
 各 npm 套件授權全文見 `3.2_附件一_開源元件授權全文_前端.txt`（版面比照廠商《第三階段執行報告書》附件一）。

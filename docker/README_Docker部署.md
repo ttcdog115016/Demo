@@ -23,10 +23,10 @@
 資料夾內有 `open-pets-app_<版本>.tar`、`docker-compose.yml`、`docker-compose.online.yml`、`SHA256SUMS.txt`，另有授權聲明與重新建置說明（見「八、授權與原始碼」）。
 
 1. **核對完整性**：`SHA256SUMS.txt` 的檢查碼要與另一條管道取得的一致。
-   - PowerShell：`Get-FileHash .\open-pets-app_2.0.2.tar -Algorithm SHA256`
+   - PowerShell：`Get-FileHash .\open-pets-app_2.0.0.tar -Algorithm SHA256`
    - Linux：`sha256sum -c SHA256SUMS.txt`
    - 若交付包內有 `SHA256SUMS.txt.sigstore.json`，連網時可再驗證 `SHA256SUMS.txt` 沒被換掉：`cosign verify-blob --bundle SHA256SUMS.txt.sigstore.json --certificate-identity-regexp '^https://github.com/<擁有者>/<repo>/\.github/workflows/docker-image\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS.txt`
-2. 匯入映像檔：`docker load -i open-pets-app_2.0.2.tar`
+2. 匯入映像檔：`docker load -i open-pets-app_2.0.0.tar`
 3. 啟動：`docker compose up -d`
 4. 建立第一個系統管理員（互動輸入，密碼不會留在指令歷史）：
    ```
@@ -89,7 +89,7 @@ docker run --rm -v open-pets_open-pets-data:/data alpine chown -R 10001:10001 /d
 預設第一次啟動自動產生三把金鑰，存在 `/data/.secrets.env`（權限 600）。要把金鑰與資料分開保管，在 `.env` 填入 `OPEN_PETS_DEFAULT_SALT`、`OPEN_PETS_SYSTEM_MASTER_KEY`、`OPEN_PETS_JWT_SECRET`（各 64 字元隨機字串，環境變數優先於 `.secrets.env`）。產生方式：
 
 ```
-docker run --rm open-pets-app:2.0.2 python -c "import secrets; print(secrets.token_hex(32))"
+docker run --rm open-pets-app:2.0.0 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 ## 五、維護指令

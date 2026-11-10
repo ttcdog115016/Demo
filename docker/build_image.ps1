@@ -1,6 +1,6 @@
 ﻿# ============================================================================
 # Open-PETs 單一 Docker 映像檔建置＋離線交付包輸出
-# 用法：powershell -ExecutionPolicy Bypass -File .\docker\build_image.ps1 [-Version 2.0.2]
+# 用法：powershell -ExecutionPolicy Bypass -File .\docker\build_image.ps1 [-Version 2.0.0]
 # 產出：docker\dist\open-pets-app_<版本>\
 #         open-pets-app_<版本>.tar   映像檔（docker load 匯入）
 #         docker-compose.yml         啟動設定（離線／本機）
@@ -15,7 +15,7 @@
 #       後端原始碼在 repo 的 backend/，不需要外部路徑。
 # ============================================================================
 param(
-    [string]$Version = '2.0.2'
+    [string]$Version = '2.0.0'
 )
 $ErrorActionPreference = 'Stop'
 $DockerDir = $PSScriptRoot
