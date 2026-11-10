@@ -12,6 +12,11 @@
 !public
 !src
 
+# 授權聲明
+!LICENSE
+!sbom/FRONTEND_THIRD_PARTY_LICENSES.md
+!docker/THIRD_PARTY_NOTICES.header.txt
+
 # 進入點（單機版 launcher 與容器進入點）
 !packaging/launcher.py
 !docker/openpets_server.py

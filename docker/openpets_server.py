@@ -11,6 +11,9 @@
   reset-password    互動重設某個帳號的密碼（忘記管理員密碼時用）
   verify-log 等     其餘後端 CLI 指令原樣轉交（create-user、verify-log、k-anonymity、dp、report…）
 
+模式：OPEN_PETS_MODE=offline（預設）或 online；OPEN_PETS_SHOW_DEMO_ACCOUNTS=true 才顯示登入頁的 Demo 測試帳號。
+  同一份映像檔、同一份前端，模式由 /runtime-config.js 在執行期告訴前端（見 resolve_runtime_config）。
+
 金鑰：OPEN_PETS_DEFAULT_SALT／OPEN_PETS_SYSTEM_MASTER_KEY／OPEN_PETS_JWT_SECRET 由環境變數提供；
 沒有提供的，第一次啟動時隨機產生並存到 /data/.secrets.env（權限 600），之後沿用。
 """
@@ -68,15 +71,66 @@ def ensure_secrets() -> None:
         os.environ[key] = stored[key]
 
 
+VALID_MODES = ("offline", "online")
+TRUE_VALUES = ("1", "true", "yes", "on")
+FALSE_VALUES = ("", "0", "false", "no", "off")
+
+
+def resolve_runtime_config() -> dict:
+    """讀環境變數決定前端的執行期設定；值不合法就中止啟動，不靜默退回預設（避免設錯了卻以為生效）。
+
+    OPEN_PETS_MODE             offline（預設，本機／離線）或 online（多人使用的伺服器）；online 才顯示系統維運日誌分頁。
+    OPEN_PETS_SHOW_DEMO_ACCOUNTS  true 才在登入頁顯示 Demo 測試帳號；預設 false，只給我們自己的 Demo 站開。
+    """
+    mode = os.getenv("OPEN_PETS_MODE", "").strip().lower() or "offline"
+    if mode not in VALID_MODES:
+        raise SystemExit(f"[設定錯誤] OPEN_PETS_MODE={mode!r} 不合法，只接受 {' 或 '.join(VALID_MODES)}。")
+    demo_raw = os.getenv("OPEN_PETS_SHOW_DEMO_ACCOUNTS", "").strip().lower()
+    if demo_raw not in TRUE_VALUES + FALSE_VALUES:
+        raise SystemExit(f"[設定錯誤] OPEN_PETS_SHOW_DEMO_ACCOUNTS={demo_raw!r} 不合法，只接受 true 或 false。")
+    return {"mode": mode, "showDemoAccounts": demo_raw in TRUE_VALUES}
+
+
+def allow_loopback_hosts() -> None:
+    """有設定 OPEN_PETS_ALLOWED_HOSTS 時補上 127.0.0.1／localhost：容器的 HEALTHCHECK 與同機反向代理都用這個 Host。
+    DNS rebinding 攻擊用的是攻擊者自己的網域當 Host，不會是這兩個名稱，所以不削弱防護。"""
+    raw = os.getenv("OPEN_PETS_ALLOWED_HOSTS", "").strip()
+    if not raw:
+        return
+    hosts = [host.strip() for host in raw.split(",") if host.strip()]
+    for loopback in ("127.0.0.1", "localhost"):
+        if loopback not in hosts:
+            hosts.append(loopback)
+    os.environ["OPEN_PETS_ALLOWED_HOSTS"] = ",".join(hosts)
+
+
+def attach_runtime_config(app, config: dict) -> None:
+    """提供 /runtime-config.js（index.html 在主程式之前載入）。須在 launcher.attach_frontend 之前註冊，
+    否則會被它的 /{full_path:path} 攔截而回傳 index.html。"""
+    import json
+
+    from fastapi.responses import Response
+
+    body = f"window.__OPEN_PETS_CONFIG__ = {json.dumps(config)};\n"
+
+    @app.get("/runtime-config.js", include_in_schema=False)
+    def runtime_config_js():
+        return Response(body, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
 def build_app():
+    runtime_config = resolve_runtime_config()  # 最先檢查設定：錯了就直接中止，不產生金鑰、不載入後端
     prepare_runtime_dirs()
     ensure_secrets()
+    allow_loopback_hosts()
+    print(f"[啟動] 模式：{runtime_config['mode']}；Demo 帳號：{'顯示' if runtime_config['showDemoAccounts'] else '不顯示'}", flush=True)
     # 須在載入後端前設定好環境變數；後端設定一律以環境變數優先
     import launcher
     from app.api.server import app
 
     dist = launcher.frontend_dir()
     launcher.attach_api_docs(app, dist)
+    attach_runtime_config(app, runtime_config)
     launcher.attach_frontend(app, dist)
     app.add_middleware(launcher.SecurityHeadersMiddleware)  # 最後加入＝最外層
     return app

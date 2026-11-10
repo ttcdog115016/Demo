@@ -181,7 +181,7 @@ SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.js
 | string-convert | 0.2.1 | MIT | https://github.com/akiran/string-convert |
 | stylis | 4.4.0 | MIT | https://github.com/thysultan/stylis.js |
 | svg-pathdata | 6.0.3 | MIT | https://github.com/nfroidure/svg-pathdata |
-| swagger-ui-dist | 5.34.0 | Apache-2.0 | https://github.com/swagger-api/swagger-ui |
+| swagger-ui-dist | 5.34.1 | Apache-2.0 | https://github.com/swagger-api/swagger-ui |
 | text-segmentation | 1.0.3 | MIT | https://github.com/niklasvh/text-segmentation |
 | throttle-debounce | 5.0.2 | MIT | https://github.com/niksy/throttle-debounce |
 | tiny-invariant | 1.3.3 | MIT | https://github.com/alexreardon/tiny-invariant |

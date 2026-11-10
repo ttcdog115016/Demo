@@ -22,6 +22,10 @@ services:
       # 經反向代理以網域連入時，填該網域（逗號分隔），防 DNS rebinding；留空＝不限制
       OPEN_PETS_ALLOWED_HOSTS: ${OPEN_PETS_ALLOWED_HOSTS:-}
       OPEN_PETS_MAX_UPLOAD_MB: ${OPEN_PETS_MAX_UPLOAD_MB:-1024}
+      # 模式：offline（預設，本機／離線）或 online（多人使用的伺服器，見 docker-compose.online.yml）
+      OPEN_PETS_MODE: ${OPEN_PETS_MODE:-offline}
+      # 登入頁是否顯示 Demo 測試帳號；交付環境保持 false
+      OPEN_PETS_SHOW_DEMO_ACCOUNTS: ${OPEN_PETS_SHOW_DEMO_ACCOUNTS:-false}
     # 容器強化：根檔案系統唯讀、移除所有 Linux capabilities、禁止提權
     read_only: true
     cap_drop:

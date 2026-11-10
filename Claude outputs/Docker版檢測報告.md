@@ -236,6 +236,49 @@ Docker 單一映像檔通過 SonarQube 品質門檻，沒有屬實的程式碼�
 
 保留的風險：Debian 作業系統層 47 個尚無修補版的 HIGH（以非 root、唯讀、無 capabilities 降低可利用性，並建議定期重建）、CSP `style-src 'unsafe-inline'`（元件庫所需），以及映像檔尚無簽章。
 
+## 十、追加（115/11/10）：離線／線上模式切換與授權交付物
+
+同一份映像檔新增執行期模式（`OPEN_PETS_MODE=offline|online`、`OPEN_PETS_SHOW_DEMO_ACCOUNTS`），並在映像檔與交付包加入授權聲明。這批改動動到前端旗標（`featureFlags.ts`）、`index.html`、容器進入點與 Dockerfile，因此重新建置並重跑相關檢測與測試。
+
+### （一）新增的程式面
+
+| 項目 | 內容 |
+|---|---|
+| 執行期設定 | 容器進入點新增 `GET /runtime-config.js`，內容由環境變數產生；`index.html` 在主程式之前載入。前端旗標改為「執行期設定優先，沒有就退回建置旗標」，單機版 exe 與 nginx 版 Demo 站的行為不變 |
+| 設定驗證 | `OPEN_PETS_MODE` 或 `OPEN_PETS_SHOW_DEMO_ACCOUNTS` 填錯會在啟動時中止並印出原因，且在產生金鑰之前檢查，不會留下殘餘資料 |
+| 主機限制 | 設定 `OPEN_PETS_ALLOWED_HOSTS` 時自動補上 `127.0.0.1`、`localhost`，否則容器的 `HEALTHCHECK` 會被自己的主機限制擋下而判成 unhealthy。DNS rebinding 用的是攻擊者的網域，不受影響 |
+| 線上模式 compose | `docker-compose.online.yml`，缺 `OPEN_PETS_ALLOWED_HOSTS` 時 compose 直接拒絕啟動 |
+| 授權交付物 | 映像檔內 `/licenses/`（`LICENSE`、`THIRD_PARTY_NOTICES.txt`、`FRONTEND_THIRD_PARTY_LICENSES.md`）、OCI 標籤（`licenses=MIT`、`source`）；交付包另附 `REBUILD.md`、前端原始碼壓縮檔、映像檔 SBOM |
+| 前端 SBOM 更新 | 先前升級 swagger-ui-dist 後 `sbom/` 仍寫 5.34.0，已重新產生為 5.34.1 |
+
+### （二）驗證結果
+
+| 項目 | 方法 | 結果 |
+|---|---|---|
+| 型別檢查 | `tsc -p tsconfig.app.json` | 通過 |
+| 旗標單元測試 | 新增 `featureFlags.test.ts`（6 項）、既有 `desktopHiddenFeatures.test.tsx` | 全數通過 |
+| 全套單元測試 | `vitest run` | 全套平行執行時 623 項中 39 項逾時失敗；放寬逾時並降低平行度後只剩 1 項（`kAnonymityStrategiesV2`）。**在未含本次改動的版本上同樣間歇失敗**，換上本次的 `featureFlags.ts` 則 8 項全過，判定為既有的不穩定測試，與本次無關 |
+| 三種模式（瀏覽器） | Playwright `e2e/docker_modes.spec.ts`，三個容器 | offline：無 Demo 帳號、無維運日誌分頁；online：無 Demo 帳號、有維運日誌分頁；online＋`SHOW_DEMO_ACCOUNTS=true`：有 Demo 帳號、有維運日誌分頁。三種各 3 項測試全過，且兩個方向都有驗證 |
+| `/runtime-config.js` | 三種模式 | 內容正確，`Content-Type` 為 JavaScript，`Cache-Control: no-cache`，未被 SPA 路由攔截成 index.html |
+| 錯誤模式值 | `OPEN_PETS_MODE=foo` | 容器結束並印出「只接受 offline 或 online」，`/data` 保持空 |
+| 線上模式主機限制 | `OPEN_PETS_ALLOWED_HOSTS=demo.example.test` | 容器 healthy；合法 Host 回 200，偽造 Host 回 400 |
+| compose | 線上疊加（缺網域／有網域）、離線預設 | 缺網域時拒絕啟動；有網域時 healthy、非 root、唯讀、`cap_drop ALL`、只綁 127.0.0.1；離線預設 `offline`、不顯示 Demo 帳號 |
+| 完整流程回歸 | `e2e/docker_workflow.spec.ts` | 通過：登入→上傳 5 萬筆→K-匿名化→下載 CSV 與 PDF，無 console 錯誤 |
+| Trivy 映像檔 | 最終映像檔 | 與第四節修補後相同：作業系統 47 high／74 medium／65 low、可修補 0、Python 0、祕密 0 |
+| ZAP baseline | 最終映像檔 | 失敗 0、警告 5、通過 63，與前次相同；新增的 `/runtime-config.js` 沒有帶來新警示 |
+| 授權檔 | 進入映像檔 | `/licenses/` 三個檔案齊全；`THIRD_PARTY_NOTICES.txt` 列出 44 個 Python 套件（含 fpdf2 2.8.9、certifi 2026.10.23）；pip-licenses 及其相依未留在交付層 |
+| 替換 fpdf2 | 照 `REBUILD.md`：複製後端原始碼（不動原件）→ `pyproject.toml` 改為 `fpdf2==2.8.8` → `uv lock` → 重新建置 | 建置成功；映像檔內 fpdf2 為 2.8.8，`THIRD_PARTY_NOTICES.txt` 自動同步為 2.8.8；以該映像檔實際產生中文 PDF 報告（`/api/v1/report`）成功 |
+| 交付包 | `docker/build_image.ps1` | 11 個檔案，`sha256sum -c` 全數 OK；原始碼壓縮檔 1.1 MB，只含建置與說明所需的 300 個檔案，沒有 `cloudflared.exe`、簡報、內部報告 |
+
+### （三）限制與未涵蓋
+
+| 項目 | 說明 |
+|---|---|
+| 原始碼壓縮檔取自已 commit 的內容 | 建置時若有尚未 commit 的變更，腳本會警告。本次驗證時新改動尚未 commit，所以該次輸出的壓縮檔不含這些改動；正式交付前須先 commit 再建置 |
+| 線上模式的 HTTPS | 容器內仍是明文 HTTP，由反向代理終止 HTTPS；本次沒有實際架設反向代理測試 |
+| GHCR／Releases 自動建置 | 未實作，需先決定後端原始碼放在哪個 GitHub repo（見建議處置） |
+| 法律意見 | `THIRD_PARTY_NOTICES.txt` 與 `REBUILD.md` 依「LGPL 與 MPL 對 MIT 授權之影響」整理，該文件為一般性說明，不是法律意見；本案為委託採購，交付前建議由法務確認合約對授權的要求 |
+
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 
 | 位置 | 內容 |
@@ -245,3 +288,4 @@ Docker 單一映像檔通過 SonarQube 品質門檻，沒有屬實的程式碼�
 | `trivy/` | 映像檔掃描（修補前 `trivy-image-before-fix.json`、修補後 `trivy-image-final.json`、交付映像檔 `trivy-image-delivered.json`）、Dockerfile 設定檢查、映像檔 SBOM（CycloneDX，修補前後各一份） |
 | `zap/` | baseline（初測、最終映像檔）與 API 掃描報告（HTML、JSON、Markdown）及紀錄 |
 | `e2e/` | 瀏覽器流程各步驟截圖、Playwright 結果 JSON、下載的使用注意事項 |
+| `trivy/trivy-image-modes.json`、`zap/baseline-modes.*` | 第十節追加的最終映像檔掃描 |

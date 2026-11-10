@@ -45,13 +45,26 @@ WORKDIR /srv
 COPY --from=backend pyproject.toml uv.lock ./
 RUN uv sync --locked --no-default-groups
 
-# ---------- 第三階段：交付映像檔（不含 node、uv、建置工具）----------
+# ---------- 授權聲明：由實際安裝的 Python 套件產生（pip-licenses 只在這個階段，不進交付映像檔）----------
+FROM backend-deps AS notices
+
+RUN uv pip install --python /opt/venv/bin/python pip-licenses==5.0.0
+COPY docker/THIRD_PARTY_NOTICES.header.txt /tmp/header.txt
+RUN mkdir -p /licenses \
+ && /opt/venv/bin/pip-licenses --from=mixed --format=plain-vertical --with-urls --with-license-file --no-license-path \
+      --ignore-packages pip-licenses prettytable wcwidth > /tmp/python-licenses.txt \
+ && cat /tmp/header.txt /tmp/python-licenses.txt > /licenses/THIRD_PARTY_NOTICES.txt
+
+# ---------- 第四階段：交付映像檔（不含 node、uv、建置工具）----------
 FROM python:3.12-slim
 
 ARG OPEN_PETS_VERSION=dev
+ARG OPEN_PETS_SOURCE_URL=https://github.com/ttcdog115016/Demo
 LABEL org.opencontainers.image.title="Open-PETs" \
       org.opencontainers.image.description="Open-PETs 資料隱私保護工具（前端＋後端單一映像檔）" \
-      org.opencontainers.image.version="${OPEN_PETS_VERSION}"
+      org.opencontainers.image.version="${OPEN_PETS_VERSION}" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="${OPEN_PETS_SOURCE_URL}"
 
 COPY --from=backend-deps /opt/venv /opt/venv
 
@@ -76,6 +89,10 @@ ENV PATH="/opt/venv/bin:$PATH" \
 WORKDIR /srv
 COPY --from=backend app/ ./app/
 COPY --from=frontend /out ./frontend
+
+# 授權聲明（MIT、第三方元件）：二進位散布時隨映像檔附上，見 /licenses/THIRD_PARTY_NOTICES.txt 開頭的 LGPL／MPL 說明
+COPY --from=notices /licenses /licenses
+COPY LICENSE sbom/FRONTEND_THIRD_PARTY_LICENSES.md /licenses/
 COPY packaging/launcher.py /opt/openpets/launcher.py
 COPY docker/openpets_server.py /opt/openpets/openpets_server.py
 

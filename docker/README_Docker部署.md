@@ -7,7 +7,7 @@
 - 可用磁碟：映像檔約 1 GB；資料另計（上傳的處理暫存也放在資料磁碟區，大檔案請預留空間）
 
 ## 一、安裝（離線）
-資料夾內有 `open-pets-app_<版本>.tar`、`docker-compose.yml`、`SHA256SUMS.txt`。
+資料夾內有 `open-pets-app_<版本>.tar`、`docker-compose.yml`、`docker-compose.online.yml`、`SHA256SUMS.txt`，另有授權聲明與重新建置說明（見「八、授權與原始碼」）。
 
 1. **核對完整性**：`SHA256SUMS.txt` 的檢查碼要與另一條管道取得的一致。
    - PowerShell：`Get-FileHash .\open-pets-app_2.0.2.tar -Algorithm SHA256`
@@ -19,6 +19,23 @@
    docker exec -it open-pets python /opt/openpets/openpets_server.py create-admin
    ```
 5. 瀏覽器開啟 http://localhost:8080 ，用剛建立的帳號登入。
+
+## 選擇模式（同一份映像檔）
+離線／本機與線上共用同一份映像檔，啟動時用環境變數選模式，不需要另外建置。
+
+| | 離線模式（預設） | 線上模式 |
+|---|---|---|
+| 適用 | 一台電腦或內網單一用途、無網路環境 | 多人使用、以網域對外提供服務 |
+| 啟動指令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.online.yml up -d` |
+| 環境變數 | `OPEN_PETS_MODE=offline`（預設） | `OPEN_PETS_MODE=online` |
+| 系統設定的「系統維運日誌」分頁 | 隱藏 | 顯示（管理員查看全站登入與 API 紀錄） |
+| 登入頁 Demo 測試帳號 | 不顯示 | 不顯示（要顯示須另設 `OPEN_PETS_SHOW_DEMO_ACCOUNTS=true`，僅限展示站） |
+| 對外埠 | 只綁 `127.0.0.1` | 仍只綁 `127.0.0.1`，前面放反向代理並啟用 HTTPS |
+| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=你的網域`（沒設定會拒絕啟動） |
+
+- 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令即可，`/data` 磁碟區不變。
+- `OPEN_PETS_MODE` 填了其他值，容器會在啟動時報錯並結束（`docker logs open-pets` 可看到原因），不會悄悄退回預設。
+- 線上模式由反向代理終止 HTTPS；代理需把 `Host` 標頭原樣轉送、允許大檔案上傳（預設上限 1024 MB）、關閉請求緩衝。範例見 `docker-compose.online.yml` 開頭的註解。
 
 ## 二、升級
 資料與金鑰都在 `open-pets-data` 磁碟區，換映像檔不會遺失。
@@ -76,3 +93,10 @@ API 互動文件：http://localhost:8080/docs
 - `docker compose up` 後網頁打不開：`docker logs open-pets` 看啟動錯誤；`docker ps` 的 STATUS 應為 `healthy`
 - 登入頁沒有帳號可用：尚未建立管理員，見「一、安裝」第 4 步
 - 上傳大檔失敗：預設上限 1024 MB（`OPEN_PETS_MAX_UPLOAD_MB`），前端也限制 1024 MB，要改需一起改
+
+## 八、授權與原始碼
+- 本軟體（前端與後端程式碼）為 MIT 授權，全文見 `LICENSE`。
+- 映像檔含開源第三方元件，其授權與取得原始碼的方式見 `THIRD_PARTY_NOTICES.txt`（Python 套件）與 `FRONTEND_THIRD_PARTY_LICENSES.md`（前端套件）。同樣的檔案也在映像檔內：`docker exec open-pets ls /licenses`。
+- 其中 fpdf2（LGPL-3.0）以原始碼檔形式存在映像檔內，certifi（MPL-2.0）未經修改。要替換這些元件或自行重新建置，請依 `REBUILD.md`，原始碼在 `open-pets-frontend-source_<版本>.zip` 與期末交付套件的 `01_程式原始碼`。
+- `image-sbom.cdx.json` 是映像檔的軟體物料清單（CycloneDX），可匯入弱點管理工具。
+

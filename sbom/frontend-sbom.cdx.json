@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:a06d2426-22bd-4342-88e7-1e6483e8c5d7",
+  "serialNumber": "urn:uuid:3c06ebb6-3e9a-4841-9491-a1669f6cc4a2",
   "version": 1,
   "metadata": {
     "tools": [
@@ -45,7 +45,7 @@
         "value": "npm run sbom（scripts/gen-sbom.mjs，@cyclonedx/cyclonedx-npm）"
       }
     ],
-    "timestamp": "2026-11-06T00:42:04Z"
+    "timestamp": "2026-11-10T02:56:41Z"
   },
   "components": [
     {
@@ -8314,8 +8314,8 @@
     {
       "type": "library",
       "name": "swagger-ui-dist",
-      "version": "5.34.0",
-      "bom-ref": "open-pets-frontend@2.0.2|swagger-ui-dist@5.34.0",
+      "version": "5.34.1",
+      "bom-ref": "open-pets-frontend@2.0.2|swagger-ui-dist@5.34.1",
       "licenses": [
         {
           "license": {
@@ -8327,15 +8327,15 @@
           }
         }
       ],
-      "purl": "pkg:npm/swagger-ui-dist@5.34.0",
+      "purl": "pkg:npm/swagger-ui-dist@5.34.1",
       "externalReferences": [
         {
-          "url": "https://registry.npmjs.org/swagger-ui-dist/-/swagger-ui-dist-5.34.0.tgz",
+          "url": "https://registry.npmjs.org/swagger-ui-dist/-/swagger-ui-dist-5.34.1.tgz",
           "type": "distribution",
           "hashes": [
             {
               "alg": "SHA-512",
-              "content": "1fab40223af75ea137d4f6e4665d0e1726b5ce244b0df4f087727a38776e98fb4f08b7e34e7c8b79a825ff9e6414d65c4cecfd6bd408f563f415795dc221896a"
+              "content": "552afc7d77c8f77a1b61a42270b25b2d42864710e88e3fd27d12430cb0a2a064d4063e012bf363e1e13d8c278202727154b8bb892fb4f0f6e264bcab40a06425"
             }
           ]
         },
@@ -8988,7 +8988,7 @@
         "open-pets-frontend@2.0.2|react-router-dom@7.18.2",
         "open-pets-frontend@2.0.2|react@19.2.7",
         "open-pets-frontend@2.0.2|recharts@3.9.2",
-        "open-pets-frontend@2.0.2|swagger-ui-dist@5.34.0",
+        "open-pets-frontend@2.0.2|swagger-ui-dist@5.34.1",
         "open-pets-frontend@2.0.2|xlsx@0.20.3",
         "open-pets-frontend@2.0.2|yaml@2.8.4",
         "open-pets-frontend@2.0.2|zustand@5.0.14"
@@ -10139,7 +10139,7 @@
       "ref": "open-pets-frontend@2.0.2|svg-pathdata@6.0.3"
     },
     {
-      "ref": "open-pets-frontend@2.0.2|swagger-ui-dist@5.34.0",
+      "ref": "open-pets-frontend@2.0.2|swagger-ui-dist@5.34.1",
       "dependsOn": [
         "open-pets-frontend@2.0.2|@scarf/scarf@1.4.0"
       ]
