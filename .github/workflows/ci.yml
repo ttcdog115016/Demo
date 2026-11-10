@@ -28,3 +28,30 @@ jobs:
 
       - name: Run Unit Tests
         run: npx vitest run --passWithNoTests
+
+  # 後端已併入 repo 的 backend/（2026-11-10）。uv 版本與 docker/Dockerfile 一致，
+  # --locked：uv.lock 與 pyproject.toml 不同步就直接失敗，與映像檔建置的行為相同
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv==0.11.15
+
+      - name: Install Dependencies
+        # 測試相依（pytest、pytest-mock、httpx）在 test 群組，不在預設群組
+        run: uv sync --locked --group test
+
+      - name: Run Backend Tests
+        run: uv run pytest -q

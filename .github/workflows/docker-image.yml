@@ -1,0 +1,171 @@
+name: Docker Image (GHCR + Release)
+
+# 推送 v* tag（例如 v2.0.3）時：建置單一映像檔 → 弱點掃描 → 推到 GHCR → 匯出離線 tar 交付包 → 建立 GitHub Release。
+# 手動執行（workflow_dispatch）只做建置、掃描與打包，不推 GHCR、不建 Release，交付包以 artifact 提供，方便先試跑。
+#
+# - 只使用內建的 GITHUB_TOKEN，不需要額外的 secret。
+# - 推到 GHCR 的映像檔與離線 tar 是「同一次建置」的結果（先 --load 到本機，掃描、docker save、docker push 都用它），
+#   所以兩條更新管道拿到的內容完全相同。
+# - 不推 latest：使用者一律指定明確版號。
+# - 交付包的檔案清單要與 docker/build_image.ps1 保持一致（那份在 Windows 本機用，這份在 GitHub 的 Linux runner 用）。
+# - 第三方 action 目前固定到主版本；正式使用前建議改為固定 commit SHA。
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本號（不含 v，例如 2.0.3）。手動執行不會推 GHCR、也不會建 Release'
+        required: true
+
+concurrency:
+  group: docker-image-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # 建立 Release
+  packages: write   # 推送到 GHCR
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.76.2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="$INPUT_VERSION"; fi
+          # 版本會進入檔名與指令，只允許數字、英文字母、點與連字號
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' || { echo "版本格式不合法：$v"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/open-pets-app" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          docker buildx build -f docker/Dockerfile \
+            --build-arg "OPEN_PETS_VERSION=$VERSION" \
+            --build-arg "OPEN_PETS_SOURCE_URL=https://github.com/$GITHUB_REPOSITORY" \
+            -t "open-pets-app:$VERSION" --load .
+
+      - name: Scan image (fail on fixable HIGH/CRITICAL)
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          # --ignore-unfixed：Debian 尚未提供修補版的項目無法處理，不擋發版（已在檢測報告列為風險接受）；有修補版就必須升級
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache \
+            "$TRIVY_IMAGE" image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln,secret \
+            "open-pets-app:$VERSION"
+
+      - name: Smoke test (health + both modes)
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -e
+          wait_healthy() { for _ in $(seq 1 40); do [ "$(docker inspect --format '{{.State.Health.Status}}' "$1")" = healthy ] && return 0; sleep 2; done; docker logs "$1"; return 1; }
+          docker run -d --name t-off --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+            -p 127.0.0.1:18080:8080 -v t-off:/data "open-pets-app:$VERSION"
+          docker run -d --name t-on --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+            -p 127.0.0.1:18081:8080 -v t-on:/data -e OPEN_PETS_MODE=online -e OPEN_PETS_ALLOWED_HOSTS=example.test "open-pets-app:$VERSION"
+          wait_healthy t-off
+          wait_healthy t-on
+          # /api/v1/status 的 version 是後端自己的版本號，不一定等於發行版號，所以只確認服務名稱
+          curl -fsS http://127.0.0.1:18080/api/v1/status | grep -q 'Open-PETs'
+          curl -fsS http://127.0.0.1:18080/runtime-config.js | grep -q '"mode": "offline"'
+          curl -fsS http://127.0.0.1:18081/runtime-config.js | grep -q '"mode": "online"'
+          docker rm -f t-off t-on >/dev/null
+
+      - name: Log in to GHCR
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        id: push
+        if: github.ref_type == 'tag'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          IMAGE: ${{ steps.v.outputs.image }}
+        run: |
+          docker tag "open-pets-app:$VERSION" "$IMAGE:$VERSION"
+          docker push "$IMAGE:$VERSION"
+          echo "digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$VERSION")" >> "$GITHUB_OUTPUT"
+
+      - name: Build delivery package
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -e
+          out="dist/open-pets-app_$VERSION"
+          mkdir -p "$out"
+          docker save -o "$out/open-pets-app_$VERSION.tar" "open-pets-app:$VERSION"
+          cp docker/docker-compose.yml docker/docker-compose.online.yml docker/README_Docker部署.md docker/REBUILD.md "$out/"
+          echo "OPEN_PETS_VERSION=$VERSION" > "$out/.env.example"
+          # 授權聲明取自映像檔本身，與映像檔內 /licenses 完全一致
+          cid=$(docker create "open-pets-app:$VERSION")
+          for f in LICENSE THIRD_PARTY_NOTICES.txt FRONTEND_THIRD_PARTY_LICENSES.md; do docker cp "$cid:/licenses/$f" "$out/$f"; done
+          docker rm "$cid" >/dev/null
+          # 原始碼（前端＋backend/），供依 REBUILD.md 重新建置、替換第三方元件
+          git archive --format=zip --prefix=open-pets/ -o "$out/open-pets-source_$VERSION.zip" HEAD -- \
+            backend src public e2e docker packaging sbom scripts api-docs index.html package.json package-lock.json \
+            tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts eslint.config.js playwright.config.ts LICENSE README.md
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache -v "$PWD/$out:/out" \
+            "$TRIVY_IMAGE" image -q --format cyclonedx -o /out/image-sbom.cdx.json "open-pets-app:$VERSION"
+          # SHA256SUMS 以 LF 換行；cd 進資料夾，檔名才不會帶路徑
+          (cd "$out" && find . -maxdepth 1 -type f -printf '%f\n' | sort | xargs -d '\n' sha256sum > ../SHA256SUMS.tmp && mv ../SHA256SUMS.tmp SHA256SUMS.txt)
+          ls -la "$out"
+
+      - name: Upload delivery package (dry run)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-pets-app_${{ steps.v.outputs.version }}
+          path: dist/open-pets-app_${{ steps.v.outputs.version }}
+          retention-days: 7
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.v.outputs.version }}
+          IMAGE: ${{ steps.v.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -e
+          out="dist/open-pets-app_$VERSION"
+          tar_sha=$(sha256sum "$out/open-pets-app_$VERSION.tar" | cut -d' ' -f1)
+          cat > notes.md <<EOF
+          ## Open-PETs $VERSION
+
+          單一 Docker 映像檔（前端＋後端）。同一個版本的 GHCR 映像檔與離線 tar 是同一次建置，內容相同。
+
+          **有網路（GHCR）**
+          \`\`\`
+          docker pull $IMAGE:$VERSION
+          \`\`\`
+          映像檔 digest：\`$DIGEST\`
+
+          **離線**：下載下方的 \`open-pets-app_$VERSION.tar\`，核對 \`SHA256SUMS.txt\` 後 \`docker load -i\`。
+          tar 的 SHA256：\`$tar_sha\`
+
+          安裝、升級、備份與模式切換請見 \`README_Docker部署.md\`；重新建置與替換第三方元件請見 \`REBUILD.md\`。
+          EOF
+          # "$out"/* 不含以點開頭的檔案，.env.example 要另外列出
+          gh release create "$GITHUB_REF_NAME" "$out"/* "$out/.env.example" --title "Open-PETs $VERSION" --notes-file notes.md --verify-tag

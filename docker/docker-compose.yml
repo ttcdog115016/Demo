@@ -1,11 +1,12 @@
 # Open-PETs（前端＋後端單一映像檔）啟動設定
 #   docker compose up -d
-# 版本與對外埠可在同資料夾的 .env 調整：OPEN_PETS_VERSION=2.0.2、OPEN_PETS_PORT=8080
+# 版本、映像檔名稱與對外埠可在同資料夾的 .env 調整：OPEN_PETS_VERSION=2.0.2、OPEN_PETS_IMAGE=open-pets-app、OPEN_PETS_PORT=8080
 name: open-pets
 
 services:
   open-pets:
-    image: open-pets-app:${OPEN_PETS_VERSION:-2.0.2}
+    # 離線 tar 匯入後的本機映像檔名稱是 open-pets-app；有網路時改成 ghcr.io/<擁有者>/open-pets-app 即可用 docker compose pull 更新（見說明文件「二、升級」）
+    image: ${OPEN_PETS_IMAGE:-open-pets-app}:${OPEN_PETS_VERSION:-2.0.2}
     container_name: open-pets
     restart: unless-stopped
     ports:

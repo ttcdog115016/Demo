@@ -38,12 +38,20 @@
 - 線上模式由反向代理終止 HTTPS；代理需把 `Host` 標頭原樣轉送、允許大檔案上傳（預設上限 1024 MB）、關閉請求緩衝。範例見 `docker-compose.online.yml` 開頭的註解。
 
 ## 二、升級
-資料與金鑰都在 `open-pets-data` 磁碟區，換映像檔不會遺失。
+資料與金鑰都在 `open-pets-data` 磁碟區，換映像檔不會遺失。兩種取得新版的方式，同一個版本的映像檔內容相同。
 
+**離線：用 tar**
 1. 核對新版 tar 的 SHA256，`docker load -i open-pets-app_<新版本>.tar`
 2. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本（沒有 `.env` 就複製 `.env.example`）
 3. `docker compose up -d`（自動以新映像檔重建容器）
-4. 要退回：把 `OPEN_PETS_VERSION` 改回舊版再 `docker compose up -d`（舊映像檔還在就不必重新匯入）
+
+**有網路：用 GitHub Container Registry（GHCR）**
+1. 第一次：在 `.env` 加 `OPEN_PETS_IMAGE=ghcr.io/<擁有者>/open-pets-app`（擁有者名稱一律小寫）。如果套件是私有的，先用有 `read:packages` 權限的 token 登入：`docker login ghcr.io -u <GitHub 帳號>`。
+2. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本，執行 `docker compose pull`（只會下載有變更的層，通常遠小於整個 tar），再 `docker compose up -d`。
+3. 要驗證下載的是對的版本：到 GitHub Releases 對照該版的 image digest（`docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/<擁有者>/open-pets-app:<版本>`）。
+4. 版本一律指定明確的版號，不使用 `latest`（交付包與 GHCR 都不提供 `latest`），避免無意間升級。
+
+**退回：** 把 `OPEN_PETS_VERSION` 改回舊版再 `docker compose up -d`（舊映像檔還在就不必重新取得）。
 
 ## 三、備份與還原
 備份 `open-pets-data`（帳號、稽核日誌、金鑰）。**金鑰與稽核紀錄是一組的**：
@@ -97,6 +105,6 @@ API 互動文件：http://localhost:8080/docs
 ## 八、授權與原始碼
 - 本軟體（前端與後端程式碼）為 MIT 授權，全文見 `LICENSE`。
 - 映像檔含開源第三方元件，其授權與取得原始碼的方式見 `THIRD_PARTY_NOTICES.txt`（Python 套件）與 `FRONTEND_THIRD_PARTY_LICENSES.md`（前端套件）。同樣的檔案也在映像檔內：`docker exec open-pets ls /licenses`。
-- 其中 fpdf2（LGPL-3.0）以原始碼檔形式存在映像檔內，certifi（MPL-2.0）未經修改。要替換這些元件或自行重新建置，請依 `REBUILD.md`，原始碼在 `open-pets-frontend-source_<版本>.zip` 與期末交付套件的 `01_程式原始碼`。
+- 其中 fpdf2（LGPL-3.0）以原始碼檔形式存在映像檔內，certifi（MPL-2.0）未經修改。要替換這些元件或自行重新建置，請依 `REBUILD.md`，全部原始碼（前端與 `backend/`）都在 `open-pets-source_<版本>.zip`。
 - `image-sbom.cdx.json` 是映像檔的軟體物料清單（CycloneDX），可匯入弱點管理工具。
 

@@ -2,11 +2,11 @@
 # ============================================================================
 # Open-PETs 單一映像檔（前端＋後端同一個容器、同一個行程、同一個埠 8080）
 #
-# 建置（在本 repo 根目錄，後端原始碼以具名 context「backend」傳入）：
-#   docker buildx build -f docker/Dockerfile --build-context backend="<01_程式原始碼 路徑>" -t open-pets-app:2.0.2 --load .
-# 一鍵建置、輸出離線交付包：docker\build_image.ps1
+# 建置（在本 repo 根目錄；後端原始碼在 backend/，不需要任何外部路徑）：
+#   docker buildx build -f docker/Dockerfile -t open-pets-app:2.0.2 --load .
+# 一鍵建置、輸出離線交付包：docker\build_image.ps1；推 tag 時由 .github/workflows/docker-image.yml 自動建置
 #
-# 後端原始碼一行都不改：前端靜態檔、SPA 路由、安全標頭由 docker/openpets_server.py
+# 後端原始碼（backend/）不為了容器版而修改：前端靜態檔、SPA 路由、安全標頭由 docker/openpets_server.py
 # （沿用 packaging/launcher.py，與單機版 exe 同一份程式）掛到後端的 FastAPI app 上。
 # ============================================================================
 
@@ -42,7 +42,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 
 WORKDIR /srv
-COPY --from=backend pyproject.toml uv.lock ./
+COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --locked --no-default-groups
 
 # ---------- 授權聲明：由實際安裝的 Python 套件產生（pip-licenses 只在這個階段，不進交付映像檔）----------
@@ -87,7 +87,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
     TMPDIR=/data/tmp
 
 WORKDIR /srv
-COPY --from=backend app/ ./app/
+COPY backend/app/ ./app/
 COPY --from=frontend /out ./frontend
 
 # 授權聲明（MIT、第三方元件）：二進位散布時隨映像檔附上，見 /licenses/THIRD_PARTY_NOTICES.txt 開頭的 LGPL／MPL 說明

@@ -2,7 +2,7 @@
 # PyInstaller 設定：Open-PETs 單機版（資料夾版 onedir）
 # 同一份程式產出兩個 exe：OpenPETs.exe（App 視窗、無主控台）與 OpenPETs-cli.exe（主控台，維護用）
 # 由 build_exe.ps1 呼叫；兩個路徑以環境變數傳入：
-#   OPEN_PETS_BACKEND_SRC   後端原始碼（含 app/ 的 01_程式原始碼 資料夾）
+#   OPEN_PETS_BACKEND_SRC   後端原始碼（含 app/ 的資料夾，預設為 repo 的 backend/）
 #   OPEN_PETS_FRONTEND_DIST 前端 vite build --mode desktop 的輸出資料夾
 import os
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
