@@ -16,9 +16,6 @@ name: Docker Image (GHCR + Release)
 on:
   push:
     tags: ['v*']
-    # 暫時：推到這個分支就做一次試跑（只建置、掃描、打包，不推 GHCR、不簽章、不建 Release）。workflow_dispatch 要 workflow 在 main 才能手動觸發，
-    # 這個分支的 workflow 還沒進 main，所以先用這個條件試跑；試跑通過後移除（TEMP-DRYRUN）。
-    branches: ['claude/docker-image-frontend-backend-c131d5']   # TEMP-DRYRUN
   workflow_dispatch:
     inputs:
       version:
@@ -51,7 +48,7 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="${INPUT_VERSION:-2.0.2}"; fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="$INPUT_VERSION"; fi
           # 版本會進入檔名與指令，只允許數字、英文字母、點與連字號
           echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' || { echo "版本格式不合法：$v"; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
