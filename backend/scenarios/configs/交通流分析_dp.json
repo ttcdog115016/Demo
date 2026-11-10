@@ -1,0 +1,64 @@
+{
+  "version": "scenario_交通流分析",
+  "dataset": "交通流分析",
+  "differential_privacy": {
+    "enabled": true,
+    "accumulated_epsilon": 0.0,
+    "accumulated_delta": 0.0,
+    "column_budgets": {
+      "行駛距離公里": {
+        "type": "continuous",
+        "epsilon_budget": 1.0,
+        "delta_budget": 0.0,
+        "sensitivity": 20.0,
+        "minimum_unit": 0.1,
+        "clipping_bounds": [
+          0,
+          200
+        ],
+        "out_of_bounds_strategy": "clamp"
+      },
+      "平均速率": {
+        "type": "continuous",
+        "epsilon_budget": 0.5,
+        "delta_budget": 0.0,
+        "sensitivity": 30.0,
+        "minimum_unit": 1,
+        "clipping_bounds": [
+          5,
+          110
+        ],
+        "out_of_bounds_strategy": "clamp"
+      },
+      "行程費用": {
+        "type": "continuous",
+        "epsilon_budget": 0.5,
+        "delta_budget": 0.0,
+        "sensitivity": 500.0,
+        "minimum_unit": 10,
+        "clipping_bounds": [
+          0,
+          10000
+        ],
+        "out_of_bounds_strategy": "clamp"
+      },
+      "抵達時間": {
+        "type": "datetime",
+        "epsilon_budget": 0.5,
+        "delta_budget": 0.0,
+        "sensitivity": 30.0,
+        "noise_unit": "day",
+        "noise_step": 1,
+        "time_clipping_bounds": [
+          "2025-01-01",
+          "2026-01-02"
+        ],
+        "time_out_of_bounds_strategy": "clamp"
+      },
+      "迄點區域": {
+        "type": "categorical",
+        "epsilon_budget": 1.0
+      }
+    }
+  }
+}

@@ -59,3 +59,6 @@ doc_site/resources/
 
 # Docker 版實測輸出（docker/playwright.docker.config.ts）
 test-results-docker/
+
+# 後端併入 repo：.env.example 是範本，不是祕密
+!backend/.env.example

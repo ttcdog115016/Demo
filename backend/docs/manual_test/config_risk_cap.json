@@ -1,0 +1,33 @@
+{
+  "version": "manual_test_risk_cap",
+  "dataset": "sample_data",
+  "risk_cap": {
+    "enabled": true,
+    "columns": {
+      "年齡": {
+        "role": "quasi_identifier",
+        "type": "numeric"
+      },
+      "地區": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "生日": {
+        "role": "quasi_identifier",
+        "type": "temporal"
+      },
+      "職業": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "婚姻狀況": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "疾病": {
+        "role": "sensitive",
+        "type": "categorical"
+      }
+    }
+  }
+}

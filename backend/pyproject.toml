@@ -1,0 +1,79 @@
+[project]
+name = "open-pets"
+version = "2.0.2"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # === 核心 (Core) ===
+    # 網頁框架與非同步
+    "fastapi==0.136.3",
+    "uvicorn==0.48.0",
+    "starlette==1.3.1",  # ★ TTC 2026-11-02：資安掃描 2-3（form 上限遭忽略 DoS）
+    
+    # 資料處理與科學運算
+    "pandas==3.0.3",
+    "numpy==2.4.6",
+    "scikit-learn==1.8.0",
+    "scipy==1.17.1",
+    
+    # 隱私模型與演算法
+    "diffprivlib==0.6.6",
+    
+    # 驗證與資料結構
+    "pydantic==2.13.4",
+
+    # 身分驗證（存取權杖的簽發與驗章）
+    # 純 Python、無 C 擴充、無傳遞相依，地端離線安裝與容器建置皆不需額外編譯環境。
+    "pyjwt==2.15.1",  # ★ TTC 2026-11-02：資安掃描 2-3
+    
+    # 資料庫
+    "sqlalchemy==2.0.50",
+    
+    # CLI 工具
+    "typer==0.25.1",
+    "click==8.4.1",
+    "rich==15.0.0",
+    
+    # 報表產生與解析
+    "fpdf2==2.8.9",  # ★ TTC 2026-11-02：資安掃描 2-3
+    
+    # 其他常用核心庫
+    "requests==2.34.2",
+    "pyyaml==6.0.3",
+    "python-dotenv==1.2.2",
+    "python-multipart==0.0.33",  # ★ TTC 2026-11-02：資安掃描 2-3（multipart 解析 DoS）
+    "openpyxl==3.1.5",
+]
+
+[dependency-groups]
+# === 開發用 (Development) ===
+dev = [
+    "ruff==0.15.18",
+    "pylint==4.0.5",
+    "isort==8.0.1",
+]
+
+# === 測試用 (Testing) ===
+test = [
+    "pytest==9.0.3",
+    "pytest-mock==3.15.1",  # mocker fixture（抑制率超限等錯誤路徑測試使用）
+    "httpx==0.28.1",  # FastAPI TestClient 使用
+]
+
+# === 跑特定獨立腳本使用的 (Scripts) ===
+scripts = [
+    "psutil==7.2.2",     # 效能與資源監控腳本
+]
+
+[tool.ruff.lint]
+# 在 ruff 預設規則（E4/E7/E9/F）之外加上 pyupgrade：
+# 專案要求 Python 3.12，型別註解一律用內建泛型（tuple/list/dict）與 X | None，
+# 不再從 typing 匯入 Tuple/List/Dict/Optional。加上這條規則後，寫回舊式寫法會被靜態檢查擋下。
+# 註：typing.Any 沒有內建替代品，續留 from typing import Any，本規則不會誤報。
+# 目標版本由 project.requires-python 推得，不另行指定。
+#
+# B904：在 except 內拋新例外時必須寫 from，否則原始錯誤會從追蹤記錄消失，
+# 只剩我們自己寫的訊息，除錯時看不到真正的失敗點。只取這一條而非整組 B：
+# B008 會把 FastAPI 的 File()/Form() 參數預設值當成問題，那是該框架的標準寫法。
+extend-select = ["UP", "B904"]

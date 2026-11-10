@@ -1,0 +1,40 @@
+{
+  "version": "manual_test_preprocess",
+  "dataset": "sample_data",
+  "input_format": "csv",
+  "preprocess": {
+    "enabled": true,
+    "columns": [
+      {
+        "column": "姓名",
+        "actions": [
+          { "action": "hash", "params": { "salt": "manual-test-salt" } }
+        ]
+      },
+      {
+        "column": "身分證號",
+        "actions": [
+          { "action": "slice", "params": { "side": "right", "count": 6 } }
+        ]
+      },
+      {
+        "column": "生日",
+        "actions": [
+          { "action": "anchor_truncate", "params": { "anchor": "-", "direction": "after", "keep": 0 } }
+        ]
+      },
+      {
+        "column": "薪資",
+        "actions": [
+          { "action": "clamp", "params": { "max": 90000 } }
+        ]
+      },
+      {
+        "column": "就醫次數",
+        "actions": [
+          { "action": "cast", "params": { "type": "float" } }
+        ]
+      }
+    ]
+  }
+}

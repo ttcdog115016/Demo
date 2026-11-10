@@ -1,0 +1,56 @@
+{
+  "version": "scenario_交通流分析",
+  "dataset": "交通流分析",
+  "k_anonymity": {
+    "enabled": true,
+    "k": 5,
+    "l": 2,
+    "suppression_method": "row_suppression",
+    "suppression_limit_percent": 20,
+    "limit_exceeded_action": "allow_with_warning",
+    "columns": {
+      "行程編號": {
+        "role": "identifier",
+        "type": "string"
+      },
+      "車牌號碼": {
+        "role": "identifier",
+        "type": "string"
+      },
+      "駕駛證號": {
+        "role": "identifier",
+        "type": "string"
+      },
+      "出發時間": {
+        "role": "quasi_identifier",
+        "type": "temporal"
+      },
+      "起點路口": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "車種": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "迄點區域": {
+        "role": "sensitive",
+        "type": "categorical"
+      }
+    },
+    "generalization_hierarchies": {
+      "出發時間": {
+        "levels": [
+          "day",
+          "month",
+          "year"
+        ]
+      }
+    },
+    "qi_generalization_levels": {
+      "出發時間": 2,
+      "起點路口": 0,
+      "車種": 0
+    }
+  }
+}

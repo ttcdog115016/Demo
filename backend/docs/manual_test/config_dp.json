@@ -1,0 +1,34 @@
+{
+  "version": "manual_test_dp",
+  "dataset": "sample_data",
+  "differential_privacy": {
+    "enabled": true,
+    "accumulated_epsilon": 0.0,
+    "accumulated_delta": 0.0,
+    "column_budgets": {
+      "年齡": {
+        "type": "continuous",
+        "epsilon_budget": 1.0,
+        "delta_budget": 0.0,
+        "sensitivity": 30.0,
+        "minimum_unit": 5,
+        "clipping_bounds": [0, 120],
+        "out_of_bounds_strategy": "clamp"
+      },
+      "生日": {
+        "type": "datetime",
+        "epsilon_budget": 1.0,
+        "delta_budget": 0.0,
+        "sensitivity": 365.0,
+        "noise_unit": "day",
+        "noise_step": 30,
+        "time_clipping_bounds": ["1930-01-01", "2026-12-31"],
+        "time_out_of_bounds_strategy": "clamp"
+      },
+      "地區": {
+        "type": "categorical",
+        "epsilon_budget": 1.0
+      }
+    }
+  }
+}

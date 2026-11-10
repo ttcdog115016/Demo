@@ -1,0 +1,22 @@
+__pycache__
+.venv
+security_report.pdf
+*.csv
+*.db
+*.pdf
+*.json
+*.jsonl
+scratch/*.yaml
+# 部署秘密（範本見 .env.example）
+.env
+
+# 例外：功能測試說明書範例檔須進版控（供交付方 clone 後照 docs/manual_test/README.md 執行）
+!docs/manual_test/*.csv
+!docs/manual_test/*.json
+
+# 例外：壓力測試的設定檔須進版控（腳本一律讀它，且隨測試腳本交付）
+!benchmarks/*.json
+
+# 例外：實務應用情境測試的設定檔須進版控（腳本一律讀它，且隨測試腳本交付）
+# 資料集與執行結果不進版控：以 scenarios/generate_scenarios.py 之固定亂數種子重生
+!scenarios/configs/*.json

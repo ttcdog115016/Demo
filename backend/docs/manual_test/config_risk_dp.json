@@ -1,0 +1,51 @@
+{
+  "version": "manual_test_risk_dp",
+  "dataset": "sample_data",
+  "risk_attacks": {
+    "enabled": true,
+    "n_iter": 50,
+    "columns": {
+      "年齡": {
+        "role": "quasi_identifier",
+        "type": "numeric"
+      },
+      "地區": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "生日": {
+        "role": "quasi_identifier",
+        "type": "temporal"
+      },
+      "職業": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "婚姻狀況": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "疾病": {
+        "role": "sensitive",
+        "type": "categorical"
+      }
+    }
+  },
+  "differential_privacy": {
+    "enabled": true,
+    "accumulated_epsilon": 0.0,
+    "accumulated_delta": 0.0,
+    "column_budgets": {
+      "年齡": {
+        "type": "continuous",
+        "epsilon_budget": 1.0,
+        "delta_budget": 0.0,
+        "sensitivity": 30.0
+      },
+      "地區": {
+        "type": "categorical",
+        "epsilon_budget": 1.0
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "version": "benchmark_kanon_5m",
+  "dataset": "test_data_5000k",
+  "k_anonymity": {
+    "enabled": true,
+    "k": 5,
+    "l": 2,
+    "t": 0.15,
+    "columns": {
+      "姓名": { "role": "identifier", "type": "string" },
+      "身分證號": { "role": "identifier", "type": "string" },
+      "年齡": { "role": "quasi_identifier", "type": "numeric" },
+      "地區": { "role": "quasi_identifier", "type": "categorical" },
+      "生日": { "role": "quasi_identifier", "type": "temporal" },
+      "疾病": { "role": "sensitive", "type": "categorical" },
+      "薪資": { "role": "non_sensitive", "type": "numeric" },
+      "職業": { "role": "quasi_identifier", "type": "categorical" },
+      "婚姻狀況": { "role": "quasi_identifier", "type": "categorical" },
+      "就醫次數": { "role": "non_sensitive", "type": "numeric" }
+    },
+    "generalization_hierarchies": {
+      "年齡": { "rounding": 10 },
+      "生日": { "levels": ["day", "month", "year"] }
+    },
+    "qi_generalization_levels": {
+      "生日": 3
+    }
+  },
+  "risk_attacks": {
+    "enabled": true,
+    "columns": {
+      "年齡": { "role": "quasi_identifier", "type": "numeric" },
+      "地區": { "role": "quasi_identifier", "type": "categorical" },
+      "生日": { "role": "quasi_identifier", "type": "temporal" },
+      "職業": { "role": "quasi_identifier", "type": "categorical" },
+      "婚姻狀況": { "role": "quasi_identifier", "type": "categorical" },
+      "疾病": { "role": "sensitive", "type": "categorical" }
+    }
+  }
+}

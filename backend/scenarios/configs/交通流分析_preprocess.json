@@ -1,0 +1,103 @@
+{
+  "version": "scenario_交通流分析",
+  "dataset": "交通流分析",
+  "input_format": "csv",
+  "preprocess": {
+    "enabled": true,
+    "columns": [
+      {
+        "column": "車牌號碼",
+        "actions": [
+          {
+            "action": "hash",
+            "params": {
+              "salt": "scenario-test-salt"
+            }
+          }
+        ]
+      },
+      {
+        "column": "駕駛證號",
+        "actions": [
+          {
+            "action": "hash",
+            "params": {
+              "salt": "scenario-test-salt"
+            }
+          }
+        ]
+      },
+      {
+        "column": "抵達時間",
+        "actions": [
+          {
+            "action": "anchor_truncate",
+            "params": {
+              "anchor": " ",
+              "direction": "after",
+              "keep": 0
+            }
+          }
+        ]
+      },
+      {
+        "column": "路段代碼",
+        "actions": [
+          {
+            "action": "normalize",
+            "params": {
+              "case": "upper"
+            }
+          }
+        ]
+      },
+      {
+        "column": "平均速率",
+        "actions": [
+          {
+            "action": "clamp",
+            "params": {
+              "min": 5,
+              "max": 110
+            }
+          }
+        ]
+      },
+      {
+        "column": "行程費用",
+        "actions": [
+          {
+            "action": "clamp",
+            "params": {
+              "min": 0,
+              "max": 10000
+            }
+          }
+        ]
+      },
+      {
+        "column": "乘客人數",
+        "actions": [
+          {
+            "action": "cast",
+            "params": {
+              "type": "int"
+            }
+          }
+        ]
+      },
+      {
+        "column": "起點路口",
+        "actions": [
+          {
+            "action": "regex_replace",
+            "params": {
+              "pattern": "(?<=區).*$",
+              "replacement": ""
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

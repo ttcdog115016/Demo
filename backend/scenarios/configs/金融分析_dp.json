@@ -1,0 +1,64 @@
+{
+  "version": "scenario_金融分析",
+  "dataset": "金融分析",
+  "differential_privacy": {
+    "enabled": true,
+    "accumulated_epsilon": 0.0,
+    "accumulated_delta": 0.0,
+    "column_budgets": {
+      "年收入": {
+        "type": "continuous",
+        "epsilon_budget": 1.0,
+        "delta_budget": 0.0,
+        "sensitivity": 100000.0,
+        "minimum_unit": 1000,
+        "clipping_bounds": [
+          0,
+          5000000
+        ],
+        "out_of_bounds_strategy": "clamp"
+      },
+      "信用評分": {
+        "type": "continuous",
+        "epsilon_budget": 0.5,
+        "delta_budget": 0.0,
+        "sensitivity": 100.0,
+        "minimum_unit": 1,
+        "clipping_bounds": [
+          300,
+          850
+        ],
+        "out_of_bounds_strategy": "clamp"
+      },
+      "交易金額": {
+        "type": "continuous",
+        "epsilon_budget": 0.5,
+        "delta_budget": 0.0,
+        "sensitivity": 20000.0,
+        "minimum_unit": 100,
+        "clipping_bounds": [
+          0,
+          1000000
+        ],
+        "out_of_bounds_strategy": "clamp"
+      },
+      "交易時間": {
+        "type": "datetime",
+        "epsilon_budget": 0.5,
+        "delta_budget": 0.0,
+        "sensitivity": 30.0,
+        "noise_unit": "day",
+        "noise_step": 1,
+        "time_clipping_bounds": [
+          "2025-01-01",
+          "2025-12-31"
+        ],
+        "time_out_of_bounds_strategy": "clamp"
+      },
+      "產品類別": {
+        "type": "categorical",
+        "epsilon_budget": 1.0
+      }
+    }
+  }
+}
