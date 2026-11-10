@@ -130,10 +130,10 @@ jobs:
           out="dist/open-pets-app_$VERSION"
           mkdir -p "$out"
           docker save -o "$out/open-pets-app_$VERSION.tar" "open-pets-app:$VERSION"
-          cp docker/docker-compose.yml docker/docker-compose.online.yml docker/README_Docker部署.md docker/REBUILD.md "$out/"
+          cp docker/docker-compose.yml docker/docker-compose.online.yml docker/README_Docker.md docker/REBUILD.md "$out/"
           cp docker/proxy-examples/Caddyfile "$out/Caddyfile.example"
           cp docker/proxy-examples/nginx.conf "$out/nginx.conf.example"
-          echo "OPEN_PETS_VERSION=$VERSION" > "$out/.env.example"
+          echo "OPEN_PETS_VERSION=$VERSION" > "$out/env.example"
           # 授權聲明取自映像檔本身，與映像檔內 /licenses 完全一致
           cid=$(docker create "open-pets-app:$VERSION")
           for f in LICENSE THIRD_PARTY_NOTICES.txt FRONTEND_THIRD_PARTY_LICENSES.md; do docker cp "$cid:/licenses/$f" "$out/$f"; done
@@ -147,6 +147,9 @@ jobs:
           # SHA256SUMS 以 LF 換行；cd 進資料夾，檔名才不會帶路徑
           (cd "$out" && find . -maxdepth 1 -type f -printf '%f\n' | sort | xargs -d '\n' sha256sum > ../SHA256SUMS.tmp && mv ../SHA256SUMS.tmp SHA256SUMS.txt)
           ls -la "$out"
+          # GitHub Release 會改掉以點開頭或含非 ASCII 的檔名，SHA256SUMS.txt 就會對不上；有這種檔名就在這裡擋下
+          # 用 find 列檔名（不用 ls，避免 shellcheck SC2010）
+          if find "$out" -maxdepth 1 -type f -printf '%f\n' | grep -qP '^\.|[^\x00-\x7F]'; then echo "交付包有不適合上傳 Release 的檔名（以點開頭或含非 ASCII）"; exit 1; fi
 
       - name: Sign SHA256SUMS (keyless)
         if: github.ref_type == 'tag'
@@ -195,12 +198,12 @@ jobs:
 
           **離線**：下載下方的 \`open-pets-app_$VERSION.tar\`，核對 \`SHA256SUMS.txt\` 後 \`docker load -i\`。
           tar 的 SHA256：\`$tar_sha\`
-          \`SHA256SUMS.txt.sigstore.json\` 是 \`SHA256SUMS.txt\` 的 cosign 簽章，驗證方式見 \`README_Docker部署.md\`。
+          \`SHA256SUMS.txt.sigstore.json\` 是 \`SHA256SUMS.txt\` 的 cosign 簽章，驗證方式見 \`README_Docker.md\`。
 
-          安裝、升級、備份與模式切換請見 \`README_Docker部署.md\`；重新建置與替換第三方元件請見 \`REBUILD.md\`。
+          安裝、升級、備份與模式切換請見 \`README_Docker.md\`；重新建置與替換第三方元件請見 \`REBUILD.md\`。
           EOF
           # 版本含連字號（例如 2.0.0-rc1）視為預發版：Release 標示 pre-release，不會成為「最新版本」
           pre=""; case "$VERSION" in *-*) pre="--prerelease" ;; esac
-          # "$out"/* 不含以點開頭的檔案，.env.example 要另外列出
+          # 檔名一律用 ASCII 且不以點開頭：GitHub 會把上傳的 .env.example 改名為 default.env.example、把中文檔名拿掉，SHA256SUMS.txt 就對不上
           # shellcheck disable=SC2086
-          gh release create "$GITHUB_REF_NAME" "$out"/* "$out/.env.example" --title "Open-PETs $VERSION" --notes-file notes.md --verify-tag $pre
+          gh release create "$GITHUB_REF_NAME" "$out"/* --title "Open-PETs $VERSION" --notes-file notes.md --verify-tag $pre

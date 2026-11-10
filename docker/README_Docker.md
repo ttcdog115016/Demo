@@ -56,7 +56,7 @@
 
 **離線：用 tar**
 1. 核對新版 tar 的 SHA256，`docker load -i open-pets-app_<新版本>.tar`
-2. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本（沒有 `.env` 就複製 `.env.example`）
+2. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本（沒有 `.env` 就把 `env.example` 複製成 `.env`）
 3. `docker compose up -d`（自動以新映像檔重建容器）
 
 **有網路：用 GitHub Container Registry（GHCR）**
