@@ -101,4 +101,4 @@ $lines | ForEach-Object { Write-Host "   $_" }
 
 Write-Host ''
 Write-Host "完成：$OutDir" -ForegroundColor Green
-Write-Host ("   映像檔大小：{0:N0} MB" -f ((Get-Item $Tar).Length / 1MB))
+Write-Host ("   映像檔（tar.gz）大小：{0:N0} MB" -f ((Get-Item $TarGz).Length / 1MB))
