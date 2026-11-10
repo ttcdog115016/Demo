@@ -302,7 +302,7 @@ Docker 單一映像檔通過 SonarQube 品質門檻，沒有屬實的程式碼�
 |---|---|
 | 基底映像檔固定 digest | `docker/Dockerfile` 的 `node:20-alpine`、`python:3.12-slim`（兩處）、`ghcr.io/astral-sh/uv:0.11.15` 都改為 `標籤@sha256:…`；workflow 的 Trivy 映像檔也固定。重建時所有層命中快取，確認固定的 digest 與先前使用的基底內容相同 |
 | 更新機制 | 新增 `.github/dependabot.yml`（`docker`、`github-actions` 每週），`REBUILD.md` 補「基底映像檔固定在 digest」的手動更新步驟；建置時仍執行 `apt-get upgrade` |
-| 映像檔簽章 | `docker-image.yml` 在 `v*` tag 發版時以 cosign 無金鑰簽章：簽 GHCR 映像檔 digest，並簽 `SHA256SUMS.txt`（bundle 放進交付包）；Release 說明與 `README_Docker部署.md` 附驗證指令。手動試跑不簽 |
+| 映像檔簽章 | `docker-image.yml` 在 `v*` tag 發版時以 cosign 無金鑰簽章：簽 GHCR 映像檔 digest，並簽 `SHA256SUMS.txt`（bundle 放進交付包）；Release 說明與 `README_Docker.md` 附驗證指令。手動試跑不簽 |
 | 反向代理範例 | 新增 `docker/proxy-examples/Caddyfile`、`nginx.conf`；交付包以 `Caddyfile.example`、`nginx.conf.example` 附上 |
 
 ### （二）重新掃描（固定 digest 後的映像檔）
@@ -332,12 +332,12 @@ Trivy（0.76.2，固定 digest）：作業系統 HIGH 47、CRITICAL 0、**可修
 |---|---|
 | 發現的問題 | Windows 工作資料夾的文字檔被轉成 CRLF，直接用它建出的映像檔與「解開原始碼壓縮檔後重建」的結果不同：`/srv/app` 83 個檔案中 76 個雜湊不同（前端打包檔與 `/opt/openpets` 也不同），差異只有換行 |
 | 修正 | `docker/build_image.ps1` 改成先以 `git archive`（固定 `core.autocrlf=false`，輸出 repo 內的 LF）匯出原始碼，解開後從這份內容建置映像檔，再把同一個壓縮檔放進交付包 |
-| 結果 | 交付映像檔與「解開壓縮檔、不靠 git、照 `REBUILD.md` 建置」的映像檔：`/srv/app`（83 檔）、`/srv/frontend`、`/opt/openpets` 三組內容雜湊完全相同 |
+| 結果（**後來更正**） | 交付映像檔與「解開壓縮檔、不靠 git、照 `REBUILD.md` 建置」的映像檔：`/srv/app`（83 檔）與 `/opt/openpets` 逐檔位元組相同。當時 `/srv/frontend` 也比對為相同，但那是 Docker 層快取命中的結果，不是獨立重建；第十三節實測同一份原始碼以 `--no-cache` 連建兩次，前端打包檔的檔名雜湊與位元組就不同（打包工具輸出不具決定性），所以前端**不是逐位元可重現**，功能相同 |
 | 可追溯性 | 映像檔 label `org.opencontainers.image.revision` ＝ commit，與壓縮檔註解內的 commit 相同（實測皆為建置當下的 HEAD） |
 | 壓縮檔內容 | 508 個項目；沒有 `cloudflared`、簡報、`node_modules`、`.env`、資料庫、紀錄檔、`__pycache__`、內部報告。有 17 個前端檔案本來就以 CRLF 存在 repo 裡（index 內即是 CRLF），GitHub Actions 的輸出相同 |
 
 ### （二）離線安裝（tar）管道
-在全新資料夾、移除本機映像檔與磁碟區後，只憑交付包與 `README_Docker部署.md` 操作：
+在全新資料夾、移除本機映像檔與磁碟區後，只憑交付包與 `README_Docker.md` 操作：
 
 | 項目 | 結果 |
 |---|---|
@@ -356,6 +356,26 @@ Trivy（0.76.2，固定 digest）：作業系統 HIGH 47、CRITICAL 0、**可修
 |---|---|
 | workflow 調整 | 傳入 `OPEN_PETS_REVISION=$GITHUB_SHA`；版本含連字號（如 `2.0.0-rc1`）時 Release 標為預發版；`actionlint`（含 shellcheck）無警告 |
 | 尚未驗證 | GHCR 推送、cosign 簽章與驗證、Release 建立、從 GHCR `docker pull`／`compose pull`、GHCR 映像檔與 Release 內 tar 為同一份內容。這些只有在 GitHub 上以 `v*` tag 實際執行才能驗證，建議先用 `v2.0.2-rc1` 預發版 tag 走一遍 |
+
+## 十三、追加（115/11/10）：v2.0.0-rc1 預發版實跑結果
+
+tag `v2.0.0-rc1`（指向合併 commit `7650e4f`）觸發 `docker-image.yml`，是 GHCR 推送、cosign 簽章與 Release 的第一次實跑。
+
+| 項目 | 結果 |
+|---|---|
+| workflow 各步驟 | 建置、Trivy 掃描、冒煙測試（兩種模式）、登入並推送 GHCR、cosign 簽章映像檔、打包、簽章 `SHA256SUMS.txt`、建立 Release：全部成功（約 8 分鐘） |
+| Release | 建立為 **pre-release**，附 15 個檔案；說明內含映像檔 digest、驗證指令、tar 的 SHA256 |
+| 匿名 `docker pull ghcr.io/ttcdog115016/open-pets-app:2.0.0-rc1` | 成功（套件可公開拉取） |
+| `cosign verify`（映像檔 digest） | 通過：身分為 `.../docker-image.yml@refs/tags/v2.0.0-rc1`，憑證簽發者 GitHub Actions OIDC，記錄在 Sigstore 透明日誌，commit `7650e4f` |
+| `cosign verify-blob`（`SHA256SUMS.txt` 的 bundle） | Verified OK |
+| 離線 tar 與 GHCR 映像檔是否同一份 | 是：`docker load` 後兩者 label（version、revision）相同，`/srv/app`、`/srv/frontend`、`/opt/openpets` 內容雜湊完全相同 |
+| 從 Release 的 compose 以 GHCR 映像檔啟動 | `docker compose pull`、`up -d`、healthy，`/api/v1/status` 回傳 2.0.0 |
+| CI 與本機建置比對 | `/srv/app`、`/opt/openpets` 逐檔相同；`/srv/frontend` 的 3 個打包檔與 `index.html` 不同（見下，打包工具輸出不具決定性） |
+
+### 實跑發現並修正的問題
+1. **Release 檔名被 GitHub 改掉，下載後 `sha256sum -c` 有 2 個檔案找不到**：`.env.example` 被改為 `default.env.example`，`README_Docker部署.md` 被去掉中文成 `README_Docker.md`，與 `SHA256SUMS.txt` 內的檔名對不上（其餘 13 個檔案核對正常）。修正：說明書改名為 `docker/README_Docker.md`，交付包內的範例改名 `env.example`（不以點開頭）；workflow 在打包時檢查檔名，有以點開頭或含非 ASCII 的檔名就失敗。**rc1 的 Release 仍是舊檔名**，修正需要新的預發版驗證。
+2. **前端打包不是逐位元可重現**：同一份原始碼、`--no-cache` 連建兩次，`html2canvas`、`index`、`index.es`、`purify.es`、`src` 等打包檔的檔名雜湊與 `index.html` 都不同。因此自行重建的映像檔 digest 必然與官方不同；判斷官方映像檔要靠 GHCR digest、cosign 簽章或離線 tar 的 SHA256。`REBUILD.md` 已補說明。
+3. **離線 tar 較大**：CI 產出的 tar 為 597 MB，本機（Docker Desktop）為 188 MB。內容相同，只是 CI 的 `docker save` 不壓縮各層；可改成輸出 `.tar.gz`（`docker load` 支援），尚未處理。
 
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 

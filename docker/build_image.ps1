@@ -2,11 +2,11 @@
 # Open-PETs 單一 Docker 映像檔建置＋離線交付包輸出
 # 用法：powershell -ExecutionPolicy Bypass -File .\docker\build_image.ps1 [-Version 2.0.0]
 # 產出：docker\dist\open-pets-app_<版本>\
-#         open-pets-app_<版本>.tar   映像檔（docker load 匯入）
+#         open-pets-app_<版本>.tar.gz  映像檔（docker load -i 直接匯入，不必先解壓縮）
 #         docker-compose.yml         啟動設定（離線／本機）
 #         docker-compose.online.yml  線上模式（與上一個疊加使用）
 #         SHA256SUMS.txt             完整性檢查碼（交付時另以安全管道傳遞一份）
-#         README_Docker部署.md       安裝、升級、備份說明
+#         README_Docker.md       安裝、升級、備份說明
 #         Caddyfile.example、nginx.conf.example  線上模式的反向代理範例（HTTPS）
 #         LICENSE、THIRD_PARTY_NOTICES.txt、FRONTEND_THIRD_PARTY_LICENSES.md  授權聲明（取自映像檔）
 #         REBUILD.md、open-pets-source_<版本>.zip  重新建置與替換第三方元件（含前端與 backend/）
@@ -53,16 +53,23 @@ if ($LASTEXITCODE) { Fail '映像檔建置失敗' }
 Step '2/3 輸出離線交付包'
 if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 New-Item -ItemType Directory -Force $OutDir | Out-Null
-$Tar = Join-Path $OutDir "open-pets-app_$Version.tar"
-docker save -o $Tar $Image
+$TarGz  = Join-Path $OutDir "open-pets-app_$Version.tar.gz"
+$TmpTar = Join-Path $Work "open-pets-app_$Version.tar"
+docker save -o $TmpTar $Image
 if ($LASTEXITCODE) { Fail 'docker save 失敗' }
-foreach ($f in 'docker-compose.yml', 'docker-compose.online.yml', 'README_Docker部署.md', 'REBUILD.md') {
+# 壓縮成 .tar.gz（與 GitHub Actions 的產出格式一致；docker load 可直接讀，不必先解壓縮）。以串流處理，不把整個檔案讀進記憶體
+$in  = [System.IO.File]::OpenRead($TmpTar)
+$raw = [System.IO.File]::Create($TarGz)
+$gz  = New-Object System.IO.Compression.GZipStream($raw, [System.IO.Compression.CompressionLevel]::Optimal)
+try { $in.CopyTo($gz) } finally { $gz.Dispose(); $raw.Dispose(); $in.Dispose() }
+Remove-Item $TmpTar -Force
+foreach ($f in 'docker-compose.yml', 'docker-compose.online.yml', 'README_Docker.md', 'REBUILD.md') {
     Copy-Item (Join-Path $DockerDir $f) $OutDir
 }
 # 反向代理範例（交付包內不放子資料夾，所以改成 .example 檔名）
 Copy-Item (Join-Path $DockerDir 'proxy-examples\Caddyfile') (Join-Path $OutDir 'Caddyfile.example')
 Copy-Item (Join-Path $DockerDir 'proxy-examples\nginx.conf') (Join-Path $OutDir 'nginx.conf.example')
-"OPEN_PETS_VERSION=$Version" | Set-Content (Join-Path $OutDir '.env.example') -Encoding ascii
+"OPEN_PETS_VERSION=$Version" | Set-Content (Join-Path $OutDir 'env.example') -Encoding ascii
 
 # 授權聲明：取自映像檔本身（與映像檔內 /licenses 完全一致），二進位散布時隨交付包附上
 $tmpContainer = "open-pets-licenses-$PID"
@@ -94,4 +101,4 @@ $lines | ForEach-Object { Write-Host "   $_" }
 
 Write-Host ''
 Write-Host "完成：$OutDir" -ForegroundColor Green
-Write-Host ("   映像檔大小：{0:N0} MB" -f ((Get-Item $Tar).Length / 1MB))
+Write-Host ("   映像檔（tar.gz）大小：{0:N0} MB" -f ((Get-Item $TarGz).Length / 1MB))

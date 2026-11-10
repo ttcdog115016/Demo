@@ -48,6 +48,10 @@ docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.
 ```
 自行重建時可用 `--build-arg OPEN_PETS_REVISION=<commit>` 填入自己的版本資訊（沒填寫會是 `unknown`）。
 
+## 重建結果與官方映像檔的差異
+- **後端與啟動程式**（`/srv/app`、`/opt/openpets`）：從同一份原始碼重建，逐檔位元組相同。
+- **前端打包檔**（`/srv/frontend/assets/*.js`、`index.html`）：每次重建的檔名雜湊與位元組可能不同（打包工具的輸出不具決定性：同一份原始碼、`--no-cache` 連建兩次也不相同），功能相同。所以重建的映像檔 digest 一定與官方的不同，這是正常的；要確認取得的映像檔是官方版本，請用 GHCR 的 digest／cosign 簽章，或離線 tar 的 SHA256，而不是比對重建結果。
+
 ## 注意
 - 重新建置的映像檔與原交付映像檔的內容雜湊不同（基底映像檔與系統套件更新、建置時間不同），這是正常的。
 - 本專案自己的程式碼為 MIT 授權（見 `LICENSE`，後端另見 `backend/LICENSE`）。

@@ -5,10 +5,10 @@
 | 交付方式 | 說明 |
 |---|---|
 | 容器映像檔 | `ghcr.io/<擁有者>/open-pets-app:<版本>`，有網路時用 `docker compose pull` 更新 |
-| 離線安裝 | 交付包的 `open-pets-app_<版本>.tar`，`docker load -i` 後以 compose 啟動 |
+| 離線安裝 | 交付包的 `open-pets-app_<版本>.tar.gz`，`docker load -i` 後以 compose 啟動 |
 | 原始碼 | 本 repo 或交付包的 `open-pets-source_<版本>.zip`，依 [`docker/REBUILD.md`](docker/REBUILD.md) 重新建置 |
 
-安裝、升級、備份、模式切換與驗證方式見 [`docker/README_Docker部署.md`](docker/README_Docker部署.md)。授權：本專案 MIT（`LICENSE`、`backend/LICENSE`）；第三方元件的授權與取得原始碼方式見映像檔內 `/licenses`。
+安裝、升級、備份、模式切換與驗證方式見 [`docker/README_Docker.md`](docker/README_Docker.md)。授權：本專案 MIT（`LICENSE`、`backend/LICENSE`）；第三方元件的授權與取得原始碼方式見映像檔內 `/licenses`。
 
 ---
 
