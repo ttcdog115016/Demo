@@ -9,7 +9,7 @@
 | | 容器映像檔（GHCR） | 離線安裝（tar） | 原始碼 |
 |---|---|---|---|
 | 適用 | 可以連網、想用 `docker pull` 更新 | 無網路或內網環境 | 想自行檢視、重新建置，或替換 fpdf2、certifi 等第三方元件 |
-| 取得 | `ghcr.io/<擁有者>/open-pets-app:<版本>`（私有時需登入，見「二、升級」） | 交付包內的 `open-pets-app_<版本>.tar` | 交付包內的 `open-pets-source_<版本>.zip`，或 GitHub repo 的同一個版本 |
+| 取得 | `ghcr.io/<擁有者>/open-pets-app:<版本>`（私有時需登入，見「二、升級」） | 交付包內的 `open-pets-app_<版本>.tar.gz` | 交付包內的 `open-pets-source_<版本>.zip`，或 GitHub repo 的同一個版本 |
 | 驗證 | 映像檔 digest（Release 說明）；cosign 簽章 | `SHA256SUMS.txt` | 壓縮檔註解與映像檔 label 內的 commit |
 | 使用 | `docker compose pull` → `up -d` | `docker load -i` → `docker compose up -d` | 依 `REBUILD.md` 建置後同樣用 compose 啟動 |
 
@@ -20,13 +20,13 @@
 - 可用磁碟：映像檔約 1 GB；資料另計（上傳的處理暫存也放在資料磁碟區，大檔案請預留空間）
 
 ## 一、安裝（離線）
-資料夾內有 `open-pets-app_<版本>.tar`、`docker-compose.yml`、`docker-compose.online.yml`、`SHA256SUMS.txt`，另有授權聲明與重新建置說明（見「八、授權與原始碼」）。
+資料夾內有 `open-pets-app_<版本>.tar.gz`、`docker-compose.yml`、`docker-compose.online.yml`、`SHA256SUMS.txt`，另有授權聲明與重新建置說明（見「八、授權與原始碼」）。
 
 1. **核對完整性**：`SHA256SUMS.txt` 的檢查碼要與另一條管道取得的一致。
-   - PowerShell：`Get-FileHash .\open-pets-app_2.0.0.tar -Algorithm SHA256`
+   - PowerShell：`Get-FileHash .\open-pets-app_2.0.0.tar.gz -Algorithm SHA256`
    - Linux：`sha256sum -c SHA256SUMS.txt`
    - 若交付包內有 `SHA256SUMS.txt.sigstore.json`，連網時可再驗證 `SHA256SUMS.txt` 沒被換掉：`cosign verify-blob --bundle SHA256SUMS.txt.sigstore.json --certificate-identity-regexp '^https://github.com/<擁有者>/<repo>/\.github/workflows/docker-image\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS.txt`
-2. 匯入映像檔：`docker load -i open-pets-app_2.0.0.tar`
+2. 匯入映像檔：`docker load -i open-pets-app_2.0.0.tar.gz`
 3. 啟動：`docker compose up -d`
 4. 建立第一個系統管理員（互動輸入，密碼不會留在指令歷史）：
    ```
@@ -55,7 +55,7 @@
 資料與金鑰都在 `open-pets-data` 磁碟區，換映像檔不會遺失。兩種取得新版的方式，同一個版本的映像檔內容相同。
 
 **離線：用 tar**
-1. 核對新版 tar 的 SHA256，`docker load -i open-pets-app_<新版本>.tar`
+1. 核對新版 tar.gz 的 SHA256，`docker load -i open-pets-app_<新版本>.tar.gz`
 2. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本（沒有 `.env` 就把 `env.example` 複製成 `.env`）
 3. `docker compose up -d`（自動以新映像檔重建容器）
 
