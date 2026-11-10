@@ -270,13 +270,27 @@ Docker 單一映像檔通過 SonarQube 品質門檻，沒有屬實的程式碼�
 | 替換 fpdf2 | 照 `REBUILD.md`：複製後端原始碼（不動原件）→ `pyproject.toml` 改為 `fpdf2==2.8.8` → `uv lock` → 重新建置 | 建置成功；映像檔內 fpdf2 為 2.8.8，`THIRD_PARTY_NOTICES.txt` 自動同步為 2.8.8；以該映像檔實際產生中文 PDF 報告（`/api/v1/report`）成功 |
 | 交付包 | `docker/build_image.ps1` | 11 個檔案，`sha256sum -c` 全數 OK；原始碼壓縮檔 1.1 MB，只含建置與說明所需的 300 個檔案，沒有 `cloudflared.exe`、簡報、內部報告 |
 
-### （三）限制與未涵蓋
+### （三）後端併入 repo 後的驗證（115/11/10 追加）
+
+後端 `01_程式原始碼`（commit `1520899`，v2.0.2）以單一快照匯入 repo 的 `backend/`（174 個檔案，blob id 與來源逐檔相同），建置與 CI 改用它。
+
+| 項目 | 方法 | 結果 |
+|---|---|---|
+| 只靠 repo 建置 | `docker buildx build -f docker/Dockerfile .`（不帶任何 `--build-context`） | 成功 |
+| 後端內容未被改動 | 與搬位置之前（外部後端）的映像檔比對 | `/srv/app` 83 個檔案的雜湊逐檔相同；已安裝 Python 套件數相同（45） |
+| 從原始碼壓縮檔建置 | 解開 `open-pets-source_<版本>.zip`，照 `REBUILD.md` 建置 | 成功；`/srv/app` 與正式映像檔相同。前端與授權檔的雜湊不同：前端是 Vite 把建置時間寫進程式，授權檔只差換行字元（`git archive` 在 Windows 依 `autocrlf` 轉成 CRLF，repo 內是 LF），內容相同 |
+| 後端單元測試 | 乾淨容器：`uv sync --locked --group test` ＋ `uv run pytest -q` | **820 項全數通過**（80 秒）。測試相依在 `test` 群組，不在預設群組，只跑 `uv sync --locked` 會找不到 pytest |
+| 三種模式、完整流程 | `docker_modes.spec.ts`（3 組）、`docker_workflow.spec.ts` | 全數通過；下載 CSV 與 PDF 正常，無 console 錯誤 |
+| 交付包 | `dockeruild_image.ps1`（不再需要 `-BackendSrc`） | 12 個檔案，`sha256sum -c` 全數 OK；原始碼壓縮檔 6 MB，含 `backend/` 174 個檔案，無 `cloudflared.exe`、簡報、內部報告 |
+| CI 與 Release 流程 | `actionlint`；workflow 內的打包 bash 與 Release 說明段落在本機實跑 | 無警告；打包產出與 `build_image.ps1` 相同的 12 個檔案；Release 說明內容正確 |
+
+### （四）限制與未涵蓋
 
 | 項目 | 說明 |
 |---|---|
 | 原始碼壓縮檔取自已 commit 的內容 | 建置時若有尚未 commit 的變更，腳本會警告。本次驗證時新改動尚未 commit，所以該次輸出的壓縮檔不含這些改動；正式交付前須先 commit 再建置 |
 | 線上模式的 HTTPS | 容器內仍是明文 HTTP，由反向代理終止 HTTPS；本次沒有實際架設反向代理測試 |
-| GHCR／Releases 自動建置 | 未實作，需先決定後端原始碼放在哪個 GitHub repo（見建議處置） |
+| GHCR／Releases 自動建置 | 已寫成 `.github/workflows/docker-image.yml`（後端已併入 repo 的 `backend/`），`actionlint`（含 shellcheck）無警告，打包段落與 Release 說明在本機實跑通過；**尚未在 GitHub 上實際執行**，GHCR 推送與 Release 建立未實測，首次建議先用手動執行（`workflow_dispatch`，只建置、掃描、打包，不推送、不發版）試跑 |
 | 法律意見 | `THIRD_PARTY_NOTICES.txt` 與 `REBUILD.md` 依「LGPL 與 MPL 對 MIT 授權之影響」整理，該文件為一般性說明，不是法律意見；本案為委託採購，交付前建議由法務確認合約對授權的要求 |
 
 ## 附件：原始資料（`Docker版檢測原始資料/`）
