@@ -8,8 +8,21 @@ weight: 2
 本頁說明如何在一台電腦或主機上安裝 Open-PETs，讓使用者用瀏覽器操作。映像檔有三種取得方式（有網路、離線、原始碼），內容是同一個版本，裝好之後的操作完全一樣。
 
 {{< callout type="warning" >}}
-**目前 GitHub Releases 只有預發版（`2.0.0-rc2`），正式版 `2.0.0` 尚未發佈。** 下文的 `<版本>` 請換成 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)上你要安裝的版本；正式版發佈前，要先試用就填 `2.0.0-rc2`。
+**目前 GitHub Releases 只有預發版（`2.0.0-rc2`），正式版 `2.0.0` 尚未發佈。** 現在要安裝，版本請填 **`2.0.0-rc2`**；填 `2.0.0` 會拉不到映像檔。
 {{< /callout >}}
+
+### 版本號怎麼填
+
+文中的 `<版本>` 要換成**實際存在的版本號**。到 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)，看你要安裝的那一筆：
+
+| Releases 頁上看到的 | 要填的版本號 |
+| --- | --- |
+| 標題 `Open-PETs 2.0.0-rc2`（標籤 `v2.0.0-rc2`，有 Pre-release 標示） | `2.0.0-rc2`（**不含開頭的 v**） |
+| 之後正式發佈時，標題 `Open-PETs 2.0.0`（標籤 `v2.0.0`） | `2.0.0` |
+
+- 每次安裝或更新都要寫明確的版本，系統不提供 `latest`。
+- 帶 `-rc` 的是預發版，只用來試用與驗證；正式環境等正式版發佈後再安裝。
+- 離線交付包的檔名也帶同一個版本，例如 `open-pets-app_2.0.0-rc2.tar.gz`。
 
 ## 1. 架構
 
@@ -72,31 +85,68 @@ docker compose version
 {{< /tab >}}
 {{< /tabs >}}
 
-先建立一個安裝資料夾，之後的 `docker-compose.yml`、`.env` 都放在這裡：
+先建立一個**全新的**安裝資料夾，之後的 `docker-compose.yml`、`.env` 都放在這裡：
+
+{{< callout type="warning" >}}
+**不要用已經在使用的資料夾。** 舊版（兩容器）的線上版把 `C:\open-pets\.env`（鹽值與金鑰）放在 `C:\open-pets`；如果在同一個資料夾放新的 `.env`，會**覆蓋掉舊的鹽值與金鑰**，之後的雜湊結果就對不上以前的資料。下面一律用新名稱 `open-pets-app`。
+{{< /callout >}}
 
 {{< tabs >}}
 {{< tab name="Windows（PowerShell）" >}}
 ```powershell
-New-Item -ItemType Directory -Force C:\open-pets | Out-Null
-cd C:\open-pets
+New-Item -ItemType Directory -Force C:\open-pets-app | Out-Null
+cd C:\open-pets-app
 ```
 {{< /tab >}}
 {{< tab name="Linux（bash）" >}}
 ```bash
-mkdir -p ~/open-pets && cd ~/open-pets
+mkdir -p ~/open-pets-app && cd ~/open-pets-app
 ```
 {{< /tab >}}
 {{< /tabs >}}
 
 ## 4. 方式一：容器映像檔（GHCR）
 
-1. 到 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)，把該版本的 `docker-compose.yml` 與 `env.example` 下載到安裝資料夾，並把 `env.example` 複製成 `.env`。
-2. 用文字編輯器開啟 `.env`，內容改成（`<版本>` 換成要安裝的版本）：
+{{< callout type="info" >}}
+**下面的指令都在終端機（PowerShell 或 bash）貼上執行，並且要先 `cd` 進安裝資料夾**（[第 3 節](#3-事前準備)建立的 `C:\open-pets-app`）。`OPEN_PETS_IMAGE=...` 這種 `名稱=值` 的內容是寫在 `.env` **檔案裡**的，不是直接在終端機輸入的指令，直接輸入會出現「無法辨識」的錯誤。
+{{< /callout >}}
 
-    ```text
-    OPEN_PETS_IMAGE=ghcr.io/ttcdog115016/open-pets-app
-    OPEN_PETS_VERSION=<版本>
+1. 下載這個版本的 `docker-compose.yml`。下面的 `2.0.0-rc2` 換成你要安裝的版本（見上面的「版本號怎麼填」）：
+
+    {{< tabs >}}
+    {{< tab name="Windows（PowerShell）" >}}
+    ```powershell
+    $v = '2.0.0-rc2'
+    Invoke-WebRequest -UseBasicParsing "https://github.com/ttcdog115016/Demo/releases/download/v$v/docker-compose.yml" -OutFile docker-compose.yml
     ```
+    {{< /tab >}}
+    {{< tab name="Linux（bash）" >}}
+    ```bash
+    v=2.0.0-rc2
+    curl -fsSLO "https://github.com/ttcdog115016/Demo/releases/download/v$v/docker-compose.yml"
+    ```
+    {{< /tab >}}
+    {{< /tabs >}}
+
+2. 建立 `.env` 檔，內容是兩行：映像檔位置與版本。直接用指令建立，不需要開編輯器（用記事本另存時容易變成 `.env.txt` 或帶 BOM，compose 會讀不到）：
+
+    {{< tabs >}}
+    {{< tab name="Windows（PowerShell）" >}}
+    ```powershell
+    @"
+    OPEN_PETS_IMAGE=ghcr.io/ttcdog115016/open-pets-app
+    OPEN_PETS_VERSION=$v
+    "@ | Set-Content -Encoding ascii .env
+    ```
+    {{< /tab >}}
+    {{< tab name="Linux（bash）" >}}
+    ```bash
+    printf 'OPEN_PETS_IMAGE=ghcr.io/ttcdog115016/open-pets-app\nOPEN_PETS_VERSION=%s\n' "$v" > .env
+    ```
+    {{< /tab >}}
+    {{< /tabs >}}
+
+    確認內容正確（應該看到兩行）：`Get-Content .env`（Windows）或 `cat .env`（Linux）。
 
 3. 如果套件是私有的，先用有 `read:packages` 權限的 GitHub 權杖登入。公開的套件不需要這一步：
 
@@ -186,7 +236,22 @@ mkdir -p ~/open-pets && cd ~/open-pets
     docker buildx build -f docker/Dockerfile --build-arg OPEN_PETS_VERSION=<版本> -t open-pets-app:<版本> --load .
     ```
 
-3. 把 `docker/docker-compose.yml` 複製到安裝資料夾，新增 `.env`，內容 `OPEN_PETS_VERSION=<版本>`，然後 `docker compose up -d`。
+3. 把 `docker/docker-compose.yml` 複製到安裝資料夾，在那裡建立 `.env`（內容一行，`<版本>` 換成你建置時用的版本），然後啟動：
+
+    {{< tabs >}}
+    {{< tab name="Windows（PowerShell）" >}}
+    ```powershell
+    "OPEN_PETS_VERSION=<版本>" | Set-Content -Encoding ascii .env
+    docker compose up -d
+    ```
+    {{< /tab >}}
+    {{< tab name="Linux（bash）" >}}
+    ```bash
+    echo "OPEN_PETS_VERSION=<版本>" > .env
+    docker compose up -d
+    ```
+    {{< /tab >}}
+    {{< /tabs >}}
 
 {{< callout type="info" >}}
 自己重建的映像檔，digest 一定與官方不同：前端打包工具每次輸出的檔名雜湊都可能不一樣，功能相同。要確認取得的是官方版本，請用方式一的 digest 與簽章，或方式二的 SHA256，不要拿重建的結果去比對。
