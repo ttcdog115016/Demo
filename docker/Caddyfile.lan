@@ -1,14 +1,14 @@
-# 內網 HTTPS 的反向代理設定（搭配 docker-compose.https.yml，由 compose 掛載，一般不需要修改）
+# 內網模式的 HTTPS 反向代理設定（搭配 docker-compose.lan.yml，由 compose 掛載，一般不需要修改）
 #
 # - 憑證由 Caddy 內建的私有 CA 簽發（tls internal）：不需要對外網路，也不申請 Let's Encrypt。
-#   各台使用者電腦要「信任這個私有 CA 的根憑證」，瀏覽器才不會顯示憑證警告（作法見說明文件「內網 HTTPS」）。
+#   各台使用者電腦要「信任這個私有 CA 的根憑證」，瀏覽器才不會顯示憑證警告（作法見說明文件「內網」一節）。
 # - 站台位址取自 .env 的 OPEN_PETS_ALLOWED_HOSTS（內網 IP 或主機名稱，逗號分隔），與應用程式的主機名稱檢查同一份清單；
-#   docker-compose.https.yml 啟動時會把逗號換成空格（Caddy 的位址清單用空格分隔），放進 OPEN_PETS_SITE_ADDRESSES。
+#   docker-compose.lan.yml 啟動時會把逗號換成空格（Caddy 的位址清單用空格分隔），放進 OPEN_PETS_SITE_ADDRESSES。
 {
 	local_certs
 	# 不要把根憑證裝進容器自己的信任庫（容器是唯讀的，只會產生錯誤訊息）；使用者電腦要信任的是匯出的根憑證
 	skip_install_trust
-	# 網址是 IP 時瀏覽器不送 SNI，要指定沒有 SNI 時使用哪一張憑證（docker-compose.https.yml 啟動時挑第一個 IP）
+	# 網址是 IP 時瀏覽器不送 SNI，要指定沒有 SNI 時使用哪一張憑證（docker-compose.lan.yml 啟動時挑第一個 IP）
 	default_sni {$OPEN_PETS_DEFAULT_SNI}
 }
 

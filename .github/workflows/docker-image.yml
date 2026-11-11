@@ -131,7 +131,7 @@ jobs:
           mkdir -p "$out"
           # 以 gzip 壓縮（-n：不寫檔名與時間戳）。CI 的 docker save 不壓縮各層，未壓縮約 600 MB；docker load 可以直接讀 .tar.gz
           docker save "open-pets-app:$VERSION" | gzip -n > "$out/open-pets-app_$VERSION.tar.gz"
-          cp docker/docker-compose.yml docker/docker-compose.online.yml docker/docker-compose.https.yml docker/Caddyfile.lan docker/README_Docker.md docker/REBUILD.md "$out/"
+          cp docker/docker-compose.yml docker/docker-compose.online.yml docker/docker-compose.lan.yml docker/Caddyfile.lan docker/README_Docker.md docker/REBUILD.md "$out/"
           cp docker/proxy-examples/Caddyfile "$out/Caddyfile.example"
           cp docker/proxy-examples/nginx.conf "$out/nginx.conf.example"
           echo "OPEN_PETS_VERSION=$VERSION" > "$out/env.example"

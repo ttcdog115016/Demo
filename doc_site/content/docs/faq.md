@@ -20,8 +20,8 @@ weight: 6
 | --- | --- |
 | `docker` 指令出現 `error during connect`，或 `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`（較新版的 Docker 訊息） | Docker Desktop 沒有啟動，或剛啟動還沒就緒。開啟 Docker Desktop，等左下角顯示 Engine running，再執行 `docker version` 確認 Server 有版本資訊後重試 |
 | `docker compose up` 回報 `port is already allocated` | 本機的 8080 埠已被其他程式占用。在 `.env` 加一行 `OPEN_PETS_PORT=8081`（任一空的埠），再 `docker compose up -d`，網址改用該埠 |
-| 容器一直是 `starting` 或 `unhealthy`，或啟動後馬上結束 | 先看日誌：`docker logs --tail 100 open-pets`。常見原因：`OPEN_PETS_MODE` 填了 `offline`／`online` 以外的值（容器會報錯並結束）、線上模式的 `OPEN_PETS_ALLOWED_HOSTS` 設錯。剛啟動約 40 秒內顯示 `starting` 是正常的。線上模式沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 在啟動前就會報 `required variable ... is missing a value` |
-| 出現 400 Invalid host header | `OPEN_PETS_ALLOWED_HOSTS` 漏列了使用者輸入的網址（IP、主機名稱或網域），補上後 `docker compose up -d`，見[安裝教學第 9 節](deploy/#9-開放給其他電腦內網) |
+| 容器一直是 `starting` 或 `unhealthy`，或啟動後馬上結束 | 先看日誌：`docker logs --tail 100 open-pets`。常見原因：`OPEN_PETS_MODE` 填了 `local`、`offline`（等同 `local`）、`online`、`lan` 以外的值（容器會報錯並結束；新值 `local`、`lan` 要 2.0.0-rc2 之後的映像檔才認得）、線上或內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 設錯。剛啟動約 40 秒內顯示 `starting` 是正常的。線上或內網模式沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 在啟動前就會報 `required variable ... is missing a value` |
+| 出現 400 Invalid host header | `OPEN_PETS_ALLOWED_HOSTS` 漏列了使用者輸入的網址（IP、主機名稱或網域），補上後 `docker compose up -d`，見[安裝教學第 9 節](deploy/#9-開放給其他電腦內網與線上) |
 | 內網其他電腦的瀏覽器顯示「您的連線不是私人連線」（`ERR_CERT_AUTHORITY_INVALID`） | 這台電腦還沒信任內網 HTTPS 的根憑證。從主機匯出 `open-pets-ca.crt`，在這台電腦安裝成「受信任的根憑證授權單位」，重開瀏覽器，見[安裝教學 9-4](deploy/#9-4-讓使用者電腦信任根憑證) |
 | 內網其他電腦連不上（逾時）或 `ERR_CONNECTION_REFUSED` | 主機防火牆沒開 443（或你設的 `OPEN_PETS_HTTPS_PORT`）；或 `open-pets-proxy-1` 沒有在運行（`docker ps` 確認）；或網址的 IP 不對。在使用者電腦用 `Test-NetConnection <主機IP> -Port 443` 測試埠通不通 |
 | 以 IP 連線時瀏覽器顯示 `ERR_SSL_PROTOCOL_ERROR` 或連線被重設 | 網址裡的 IP 沒有列在 `.env` 的 `OPEN_PETS_ALLOWED_HOSTS`，或有多個 IP 時用的不是清單裡的第一個 IP（沒送主機名稱的連線只會拿到第一個 IP 的憑證）。把使用者實際用的 IP 放在清單最前面，`docker compose up -d` |

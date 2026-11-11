@@ -10,7 +10,7 @@ services:
     container_name: open-pets
     restart: unless-stopped
     ports:
-      # 預設只綁本機。內網多人使用請疊加 docker-compose.online.yml 與 docker-compose.https.yml（內網 HTTPS，見說明文件），
+      # 預設只綁本機。同一個內網的多台電腦使用請疊加 docker-compose.lan.yml（內網模式，內建 HTTPS，見說明文件），
       # 應用程式的 8080 仍只綁本機，由 HTTPS 代理對內網開放。
       # OPEN_PETS_BIND 只在「不用 HTTPS、直接以 HTTP 開放內網」時才改（例如 0.0.0.0）：帳號密碼與資料會以明文在內網傳輸，不建議
       - "${OPEN_PETS_BIND:-127.0.0.1}:${OPEN_PETS_PORT:-8080}:8080"
@@ -25,8 +25,9 @@ services:
       # 經反向代理以網域連入時，填該網域（逗號分隔），防 DNS rebinding；留空＝不限制
       OPEN_PETS_ALLOWED_HOSTS: ${OPEN_PETS_ALLOWED_HOSTS:-}
       OPEN_PETS_MAX_UPLOAD_MB: ${OPEN_PETS_MAX_UPLOAD_MB:-1024}
-      # 模式：offline（預設，本機／離線）或 online（多人使用的伺服器，見 docker-compose.online.yml）
-      OPEN_PETS_MODE: ${OPEN_PETS_MODE:-offline}
+      # 模式：local（預設，本地：一台電腦）、lan（內網，見 docker-compose.lan.yml）、online（線上，對外網域，見 docker-compose.online.yml）
+      # 舊值 offline 仍接受，視為 local
+      OPEN_PETS_MODE: ${OPEN_PETS_MODE:-local}
       # 登入頁是否顯示 Demo 測試帳號；交付環境保持 false
       OPEN_PETS_SHOW_DEMO_ACCOUNTS: ${OPEN_PETS_SHOW_DEMO_ACCOUNTS:-false}
     # 容器強化：根檔案系統唯讀、移除所有 Linux capabilities、禁止提權

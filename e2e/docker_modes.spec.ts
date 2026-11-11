@@ -1,5 +1,5 @@
 // Docker 單一映像檔的模式切換驗證（OPEN_PETS_MODE／OPEN_PETS_SHOW_DEMO_ACCOUNTS）
-// 需要：E2E_BASE_URL、E2E_ADMIN_USERNAME、E2E_ADMIN_PASSWORD、EXPECT_MODE（offline|online）、EXPECT_DEMO（true|false）
+// 需要：E2E_BASE_URL、E2E_ADMIN_USERNAME、E2E_ADMIN_PASSWORD、EXPECT_MODE（local|online|lan）、EXPECT_DEMO（true|false）
 // 見 docker/playwright.docker.config.ts。
 import { test, expect } from '@playwright/test';
 
@@ -39,7 +39,7 @@ test.describe(`模式：${expectedMode}，Demo 帳號：${expectDemo}`, () => {
     await page.goto('/settings/preferences');
     await expect(page.getByText('帳號與權限管理').first()).toBeVisible({ timeout: 15_000 });
     const logTab = page.getByRole('tab', { name: /系統維運日誌/ });
-    if (expectedMode === 'online') await expect(logTab).toBeVisible();
+    if (expectedMode === 'online' || expectedMode === 'lan') await expect(logTab).toBeVisible();
     else await expect(logTab).toHaveCount(0);
   });
 });

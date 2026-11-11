@@ -1,16 +1,22 @@
-# 內網 HTTPS：與 docker-compose.yml、docker-compose.online.yml 疊加使用，同一份映像檔
-#   docker compose -f docker-compose.yml -f docker-compose.online.yml -f docker-compose.https.yml up -d
+# 內網模式（lan）：同一個內網的多台電腦用瀏覽器連線。與 docker-compose.yml 疊加使用，同一份映像檔
+#   docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d
 # 必填：同資料夾的 .env 設 OPEN_PETS_ALLOWED_HOSTS=內網IP,主機名稱（例如 192.168.1.20,pets-server），
-#       使用者在瀏覽器輸入的網址要與清單一致。
+#       使用者在瀏覽器輸入的網址要與清單一致；這份清單同時是應用程式的主機名稱檢查，也是憑證要簽發的名稱。
 #
-# 做法：多開一個 Caddy 容器終止 HTTPS（憑證用內建私有 CA 簽發，不需要對外網路），再轉給 open-pets:8080；
+# 做法：多開一個 Caddy 容器終止 HTTPS（憑證用內建私有 CA 簽發，不需要對外網路或網域），再轉給 open-pets:8080；
 #       應用程式的 8080 仍只綁本機，內網其他電腦只能走 https://<內網IP或主機名稱>:443。
 # 注意：
-#   - 使用者電腦要信任 Caddy 的根憑證，否則瀏覽器會顯示憑證警告（匯出與安裝步驟見說明文件）。
+#   - 使用者電腦要信任 Caddy 的根憑證，否則瀏覽器會顯示憑證警告（匯出與安裝步驟見說明文件「內網」一節）。
 #   - 離線環境要先在有網路的電腦取得 Caddy 映像檔：docker pull caddy:2.11.9，再 docker save／docker load 帶過去。
 #   - 本機的 443 已被占用時，在 .env 加 OPEN_PETS_HTTPS_PORT=8443，網址要跟著加上 :8443。
 #   - 防火牆要開放這個埠（說明文件有指令）。
 services:
+  open-pets:
+    environment:
+      OPEN_PETS_MODE: lan
+      # 用 :? 讓沒設定時直接報錯，不會在沒有主機限制的情況下開放給內網
+      OPEN_PETS_ALLOWED_HOSTS: ${OPEN_PETS_ALLOWED_HOSTS:?內網模式必須在 .env 設定 OPEN_PETS_ALLOWED_HOSTS（內網 IP 或主機名稱，逗號分隔，例如 192.168.1.20,pets-server）}
+
   proxy:
     image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
     restart: unless-stopped
@@ -20,7 +26,7 @@ services:
       # OPEN_PETS_HTTPS_BIND 預設 0.0.0.0（內網所有網卡）；只想開放給某張網卡時填該網卡的 IP
       - "${OPEN_PETS_HTTPS_BIND:-0.0.0.0}:${OPEN_PETS_HTTPS_PORT:-443}:443"
     environment:
-      OPEN_PETS_ALLOWED_HOSTS: ${OPEN_PETS_ALLOWED_HOSTS:?內網 HTTPS 必須在 .env 設定 OPEN_PETS_ALLOWED_HOSTS（內網 IP 或主機名稱，逗號分隔）}
+      OPEN_PETS_ALLOWED_HOSTS: ${OPEN_PETS_ALLOWED_HOSTS:?內網模式必須在 .env 設定 OPEN_PETS_ALLOWED_HOSTS（內網 IP 或主機名稱，逗號分隔，例如 192.168.1.20,pets-server）}
     # 啟動時先處理兩件事（compose 裡兩個錢字號是跳脫，容器內看到的是一個）：
     #  1. Caddy 的站台位址要用空格分隔，.env 的清單是逗號分隔，轉換成 OPEN_PETS_SITE_ADDRESSES。
     #  2. 用「IP 位址」當網址時，瀏覽器不會送 SNI（網址是 IP 時協定本來就不送），Caddy 不知道該用哪張憑證，

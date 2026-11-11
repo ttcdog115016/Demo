@@ -1,6 +1,6 @@
 # Open-PETs（隱私強化工具包）
 
-前端（React＋TypeScript＋Vite）與後端（FastAPI，`backend/`）。以單一 Docker 映像檔交付，同一份映像檔以環境變數 `OPEN_PETS_MODE` 切換離線或線上模式。
+前端（React＋TypeScript＋Vite）與後端（FastAPI，`backend/`）。以單一 Docker 映像檔交付，同一份映像檔以環境變數 `OPEN_PETS_MODE` 切換三種模式：本地（`local`）、內網（`lan`，內建 HTTPS）、線上（`online`，對外網域）。
 
 | 交付方式 | 說明 |
 |---|---|
