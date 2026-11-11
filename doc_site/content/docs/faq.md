@@ -18,7 +18,7 @@ weight: 6
 
 | 狀況 | 原因與處理 |
 | --- | --- |
-| `docker` 指令出現 `error during connect` | Docker Desktop 沒有啟動。開啟 Docker Desktop，等左下角顯示 Engine running |
+| `docker` 指令出現 `error during connect`，或 `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`（較新版的 Docker 訊息） | Docker Desktop 沒有啟動，或剛啟動還沒就緒。開啟 Docker Desktop，等左下角顯示 Engine running，再執行 `docker version` 確認 Server 有版本資訊後重試 |
 | `docker compose up` 回報 `port is already allocated` | 本機的 8080 埠已被其他程式占用。在 `.env` 加一行 `OPEN_PETS_PORT=8081`（任一空的埠），再 `docker compose up -d`，網址改用該埠 |
 | 容器一直是 `starting` 或 `unhealthy`，或啟動後馬上結束 | 先看日誌：`docker logs --tail 100 open-pets`。常見原因：`OPEN_PETS_MODE` 填了 `offline`／`online` 以外的值（容器會報錯並結束）、線上模式的 `OPEN_PETS_ALLOWED_HOSTS` 設錯。剛啟動約 40 秒內顯示 `starting` 是正常的。線上模式沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 在啟動前就會報 `required variable ... is missing a value` |
 | 出現 400 Invalid host header | `OPEN_PETS_ALLOWED_HOSTS` 漏列了使用者用的主機名稱，補上後 `docker compose up -d`，見[安裝教學第 9 節](deploy/#9-開放給其他電腦) |
