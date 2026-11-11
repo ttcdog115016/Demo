@@ -1,0 +1,124 @@
+{
+  "version": "2026-10-01T01:24:53.448Z",
+  "dataset": "input_test.csv",
+  "privacy_mode": "differential-privacy",
+  "columns": [
+    "姓名",
+    "身分證號",
+    "年齡",
+    "地區",
+    "生日",
+    "疾病",
+    "薪資",
+    "職業",
+    "婚姻狀況",
+    "就醫次數"
+  ],
+  "column_roles": {},
+  "column_types": {},
+  "field_attributes": {},
+  "masking_rules": {},
+  "generalization_rules": {},
+  "generalization_hierarchies": {},
+  "categorical_hierarchies": {},
+  "numeric_bins": {},
+  "temporal_hierarchies": {},
+  "privacy_targets": {
+    "k_anonymity": {
+      "enabled": false
+    },
+    "differential_privacy": {
+      "enabled": true,
+      "global_target_delta": 0.0001,
+      "simulate_query_count": 1,
+      "budget_limit": 20,
+      "out_of_bounds_strategy": "clip"
+    }
+  },
+  "differential_privacy_rules": [
+    {
+      "id": "import_budget_0_3ih5of3",
+      "fieldName": "年齡",
+      "fieldType": "Numeric",
+      "enabled": true,
+      "epsilon": 5,
+      "delta": 0,
+      "mode": "epsilon",
+      "equivalentEpsilon": 5,
+      "sensitivity": 1,
+      "lowerBound": 0,
+      "upperBound": 120,
+      "allowedCategories": ""
+    },
+    {
+      "id": "import_budget_1_h4grij6",
+      "fieldName": "薪資",
+      "fieldType": "Numeric",
+      "enabled": true,
+      "epsilon": 5,
+      "delta": 0.00001,
+      "mode": "epsilon-delta",
+      "equivalentEpsilon": 5,
+      "sensitivity": 1,
+      "lowerBound": 0,
+      "upperBound": 300000,
+      "allowedCategories": ""
+    },
+    {
+      "id": "import_budget_2_ej2usmn",
+      "fieldName": "就醫次數",
+      "fieldType": "Numeric",
+      "enabled": true,
+      "epsilon": 4,
+      "delta": 0.0001,
+      "mode": "epsilon",
+      "equivalentEpsilon": 4,
+      "sensitivity": 1,
+      "lowerBound": 0,
+      "upperBound": 20,
+      "allowedCategories": ""
+    },
+    {
+      "id": "import_budget_3_xz9h4ty",
+      "fieldName": "地區",
+      "fieldType": "Categorical",
+      "enabled": true,
+      "epsilon": 1,
+      "delta": 0.0001,
+      "mode": "epsilon",
+      "equivalentEpsilon": 1,
+      "sensitivity": 1,
+      "lowerBound": 0,
+      "upperBound": 1,
+      "allowedCategories": "auto_extracted"
+    },
+    {
+      "id": "import_budget_4_f80xx5e",
+      "fieldName": "職業",
+      "fieldType": "Categorical",
+      "enabled": true,
+      "epsilon": 1,
+      "delta": 0.0001,
+      "mode": "epsilon",
+      "equivalentEpsilon": 1,
+      "sensitivity": 1,
+      "lowerBound": 0,
+      "upperBound": 1,
+      "allowedCategories": "auto_extracted"
+    },
+    {
+      "id": "import_budget_5_p84g9lv",
+      "fieldName": "生日",
+      "fieldType": "Numeric",
+      "enabled": true,
+      "epsilon": 1,
+      "delta": 0,
+      "mode": "epsilon",
+      "equivalentEpsilon": 1,
+      "sensitivity": 1,
+      "lowerBound": "1930-01-01",
+      "upperBound": "2026-12-31",
+      "allowedCategories": ""
+    }
+  ]
+}

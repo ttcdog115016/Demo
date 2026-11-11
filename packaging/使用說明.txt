@@ -1,0 +1,50 @@
+﻿Open-PETs 資料隱私保護工具（單機版）使用說明
+================================================
+
+【安裝】
+1. 執行 OpenPETs_Setup_<版本>.exe，依畫面按「Next」完成安裝（不需要系統管理員權限，只裝給目前登入的 Windows 帳號）。
+2. 安裝完成後可勾選「立即開啟 Open-PETs」，或從「開始」功能表 → Open-PETs 開啟；安裝時可選擇建立桌面捷徑。
+
+【第一次使用】
+1. 開啟後會出現 Open-PETs 視窗，先顯示「建立系統管理員」畫面：輸入帳號（建議用 Email）與密碼（至少 12 個字元）。
+2. 建立後自動進入登入頁，用剛建立的帳號登入。管理員可在「系統設定 → 帳號管理」新增一般使用者（User）來做去識別化作業。
+
+【停止】
+直接關閉 Open-PETs 視窗即可，服務會一起停止。
+
+【資料放在哪裡】
+- 本工具只在這台電腦上運作（只接受本機 127.0.0.1 連線），上傳的資料不會傳到網路上。
+- 下載的去識別化結果、設定檔、檢測報告存到「下載」資料夾。
+- 設定與資料在 %LOCALAPPDATA%\OpenPETs（開始功能表 → Open-PETs → 資料與設定資料夾）：
+  .env                設定檔（第一次執行時自動產生，含鹽值與金鑰）
+  data\users.db       帳號資料庫
+  data\system.db      處理紀錄、系統維運日誌、系統設定、介面偏好
+  data\audit.jsonl    稽核紀錄（具簽章，可驗證是否被竄改）
+  data\logs\          系統日誌（launcher.log 為啟動紀錄，開不起來時看這裡）
+  webview\            視窗的瀏覽器資料
+- 解除安裝不會刪除這個資料夾；重新安裝或升級新版會沿用原本的帳號、鹽值與稽核紀錄。
+
+【請務必備份 .env】
+- .env 內的 OPEN_PETS_DEFAULT_SALT 是雜湊用的鹽值。遺失或變更後，新的雜湊結果會和以前的對不起來。
+- .env 請當作機密保管，不要寄給他人。
+- 換電腦時：把 %LOCALAPPDATA%\OpenPETs 整個資料夾複製到新電腦的相同位置，再安裝 Open-PETs。
+
+【常見問題】
+- 忘記管理員密碼：開始功能表 → Open-PETs → 重設帳號密碼，依提示選帳號並輸入新密碼（輸入時畫面不會顯示）。
+- 顯示「埠號 8765 已被其他程式使用」：用記事本開啟 %LOCALAPPDATA%\OpenPETs\.env，把 OPEN_PETS_PORT 改成其他數字（例如 8766），再重新開啟。
+- 顯示「Open-PETs 已經在執行中」：已經開了一個視窗，請從工作列切換過去。
+- 顯示「無法開啟 Open-PETs 視窗」：這台電腦缺少 Microsoft Edge WebView2 Runtime（Windows 10／11 通常已內建），
+  請至 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下載安裝。
+- 防毒軟體攔截：本程式未經數位簽章，部分防毒可能誤判，請將安裝資料夾（%LOCALAPPDATA%\Programs\OpenPETs）加入例外。
+- 單次上傳上限 1 GB。
+
+【進階：指令列】（在安裝資料夾 %LOCALAPPDATA%\Programs\OpenPETs 開命令提示字元）
+  OpenPETs-cli.exe verify-log       驗證稽核紀錄是否被竄改
+  OpenPETs-cli.exe reset-password   重設帳號密碼
+  OpenPETs-cli.exe --help-cli       後端指令列工具說明（k-anonymity、dp、risk-*、create-user、verify-log、report…）
+  OpenPETs-cli.exe                  以舊版方式啟動（主控台＋瀏覽器，網址 http://127.0.0.1:8765/）
+  在 PowerShell 執行時，指令前要加 .\（例如 .\OpenPETs-cli.exe verify-log）。
+
+【進階：API】（Open-PETs 視窗開著時可用，只接受本機連線）
+  API 互動文件   http://127.0.0.1:8765/docs（右上角 Authorize 貼上登入取得的 access_token 即可試打）
+  API 規格檔     http://127.0.0.1:8765/openapi.json（可匯入 Postman 等工具）

@@ -1,0 +1,37 @@
+==============================================================================
+Open-PETs 資料隱私保護工具 — 第三方元件授權聲明（Docker 映像檔）
+==============================================================================
+
+本軟體（前端與後端程式碼）以 MIT 授權散布，授權全文見同目錄的 LICENSE。
+映像檔另含下列開源元件，各依其自身授權散布，授權全文列於本檔後段（Python 套件）、
+FRONTEND_THIRD_PARTY_LICENSES.md（前端 npm 套件），以及映像檔作業系統層的 /usr/share/doc/*/copyright（Debian 套件）。
+
+------------------------------------------------------------------------------
+需要特別說明的授權
+------------------------------------------------------------------------------
+
+1. fpdf2（LGPL-3.0）— 產生合規 PDF 報告
+   fpdf2 以 LGPL-3.0 授權。映像檔內的 fpdf2 以原始碼檔（.py）存在，位置：
+     /opt/venv/lib/python3.12/site-packages/fpdf/
+   未經修改、未與其他程式碼混合。您可以依 LGPL 以相容版本的 fpdf2 取代它，並重新建置映像檔：
+   見交付包的 REBUILD.md，或自行修改 uv.lock 中 fpdf2 的版本後以 docker/Dockerfile 重建。
+   fpdf2 原始碼：https://github.com/py-pdf/fpdf2（版本見本檔後段清單），亦可向本軟體提供者索取。
+   LGPL-3.0 以 GPL-3.0 為基礎，GPL-3.0 全文：https://www.gnu.org/licenses/gpl-3.0.txt
+
+2. certifi（MPL-2.0）— 根憑證套件
+   certifi 以 MPL-2.0 授權，映像檔內未修改其任何檔案。MPL-2.0 全文與原始碼取得方式：
+   https://www.mozilla.org/MPL/2.0/ 、https://github.com/certifi/python-certifi
+
+3. Noto Sans TC 字型（SIL Open Font License 1.1）— PDF 報告中文字型
+   位置：/srv/app/governance/fonts/，授權全文為同目錄的 OFL.txt。
+
+4. Debian 作業系統套件與 Python 執行環境
+   基底映像檔 python:3.12-slim（Debian 13）內含的套件各有自己的授權，
+   授權文字見 /usr/share/doc/<套件名稱>/copyright；Python 本身為 PSF-2.0。
+
+5. swagger-ui-dist（Apache-2.0）— /docs 的 API 互動文件，隨前端靜態檔散布。
+
+------------------------------------------------------------------------------
+Python 套件清單與授權全文（由映像檔實際安裝的套件自動產生）
+------------------------------------------------------------------------------
+

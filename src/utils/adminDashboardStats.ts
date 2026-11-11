@@ -1,0 +1,127 @@
+/**
+ * 檔案名稱 (File): adminDashboardStats.ts
+ * 模組功能 (Description): Admin「系統管理大廳」三張狀態卡片的統計計算（純函式，方便測試）。
+ * 資料來源：系統維運日誌 (useSystemLogStore；★ 2026-10-29 改存後端，為全站紀錄)
+ * 與後端帳號清單 (★ 2026-10-27 改為 GET /api/v1/users)。
+ */
+import type { SystemLogEntry } from '../store/useSystemLogStore';
+import type { MemberAccount } from '../api/authApi';
+
+/** 統計只用到的帳號欄位（後端帳號清單 MemberAccount 即符合） */
+type AccountForStats = Pick<MemberAccount, 'isActive' | 'lockedUntil'>;
+
+export const STATS_WINDOW_MS = 24 * 60 * 60 * 1000; // 統計區間：過去 24 小時
+
+/** 後端 API 呼叫統計（依系統維運日誌中 source 為「METHOD /api/...」的紀錄） */
+export interface ApiCallStats
+{
+	successCount: number;
+	failureCount: number;
+	lastFailureAt: number | null;
+}
+
+/** 登入失敗統計 */
+export interface FailedLoginStats
+{
+	count: number;              // 過去 24 小時登入失敗次數（含鎖定、停用、帳號不存在）
+	distinctSources: string[];  // 涉及的帳號（登入時輸入的帳號），依最近發生排序
+	lockedAccountCount: number; // 目前仍在鎖定中的帳號數（★ 2026-10-29 後端 GET /users 回傳 login_locked_until）
+}
+
+/** 登入使用者統計 */
+export interface ActiveUserStats
+{
+	recentLoginCount: number;   // 過去 24 小時內登入過的帳號數
+	totalAccountCount: number;  // 全部帳號數
+	disabledAccountCount: number;
+	recentLoginNames: string[]; // 最近登入的使用者名稱（由新到舊）
+}
+
+const API_SOURCE_PATTERN = /^[A-Z]+ \/api\//;
+
+/** ★ 2026-10-29：統計只採後端自行記錄的事件（origin=server）；前端回報的可被假造 */
+const onlyServerLogs = (logs: SystemLogEntry[]): SystemLogEntry[] => logs.filter((logEntry) => logEntry.origin === 'server');
+
+export const computeApiCallStats = (allLogs: SystemLogEntry[], nowMs: number = Date.now()): ApiCallStats =>
+{
+	const logs = onlyServerLogs(allLogs);
+	const recentApiLogs = logs.filter(logEntry => nowMs - logEntry.timestamp <= STATS_WINDOW_MS && API_SOURCE_PATTERN.test(logEntry.source));
+	const failureLogs = recentApiLogs.filter(logEntry => logEntry.level !== 'INFO');
+	return {
+		successCount: recentApiLogs.filter(logEntry => logEntry.level === 'INFO' && logEntry.event.startsWith('後端 API 呼叫成功')).length,
+		failureCount: failureLogs.length,
+		lastFailureAt: failureLogs.length > 0 ? Math.max(...failureLogs.map(logEntry => logEntry.timestamp)) : null,
+	};
+};
+
+export const computeFailedLoginStats = (allLogs: SystemLogEntry[], accounts: AccountForStats[], nowMs: number = Date.now()): FailedLoginStats =>
+{
+	const logs = onlyServerLogs(allLogs);
+	const failedLoginLogs = logs
+		.filter(logEntry => nowMs - logEntry.timestamp <= STATS_WINDOW_MS && logEntry.event.startsWith('登入失敗'))
+		.sort((leftEntry, rightEntry) => rightEntry.timestamp - leftEntry.timestamp);
+	return {
+		count: failedLoginLogs.length,
+		distinctSources: Array.from(new Set(failedLoginLogs.map(logEntry => logEntry.source))),
+		lockedAccountCount: accounts.filter(account => account.lockedUntil !== null && account.lockedUntil > nowMs).length,
+	};
+};
+
+// ★ 2026-10-16：移除帳號「最後登入時間」（同步後端，後端無此欄位）→ 最近登入改由維運日誌（2026-10-29 起存後端）的「使用者登入成功」紀錄統計
+export const computeActiveUserStats = (allLogs: SystemLogEntry[], accounts: AccountForStats[], nowMs: number = Date.now()): ActiveUserStats =>
+{
+	const logs = onlyServerLogs(allLogs);
+	const recentLoginNames = Array.from(new Set(logs
+		.filter(logEntry => nowMs - logEntry.timestamp <= STATS_WINDOW_MS && logEntry.event.startsWith('使用者登入成功'))
+		.sort((leftEntry, rightEntry) => rightEntry.timestamp - leftEntry.timestamp)
+		.map(logEntry => logEntry.source)));
+	return {
+		recentLoginCount: recentLoginNames.length,
+		totalAccountCount: accounts.length,
+		disabledAccountCount: accounts.filter(account => !account.isActive).length,
+		recentLoginNames,
+	};
+};
+
+/** 後端連線檢查結果 */
+export type BackendHealthState =
+	| { status: 'checking' }
+	| { status: 'ok'; responseMs: number; checkedAt: number }
+	| { status: 'down'; reason: string; checkedAt: number };
+
+// ★ 2026-10-29：原本打不存在的 /api/v1/health（404 也當正常、還在後端留下 404 紀錄）；改打免登入的 GET /settings
+export const BACKEND_HEALTH_PROBE_URL = '/api/v1/settings';
+const BACKEND_HEALTH_TIMEOUT_MS = 5000;
+
+/**
+ * 函數名稱: probeBackendHealth
+ * 函數功能: 以 fetch（不經 axios，避免寫入 API 錯誤診斷紀錄）向後端發一個輕量請求。
+ *           GET /settings 回 200 且為 JSON 才算連線正常；代理（Vite／nginx）找不到後端時回的是
+ *           非 JSON 的 500／502／503／504，連同逾時、網路錯誤都視為無法連線。
+ */
+export const probeBackendHealth = async (): Promise<BackendHealthState> =>
+{
+	const startedAtMs = performance.now();
+	const abortController = new AbortController();
+	const timeoutId = window.setTimeout(() => abortController.abort(), BACKEND_HEALTH_TIMEOUT_MS);
+	try
+	{
+		const response = await fetch(BACKEND_HEALTH_PROBE_URL, { method: 'GET', cache: 'no-store', signal: abortController.signal });
+		const responseMs = Math.round(performance.now() - startedAtMs);
+		const isBackendJsonResponse = (response.headers.get('content-type') || '').includes('application/json');
+		if (!isBackendJsonResponse || !response.ok)
+		{
+			return { status: 'down', reason: `HTTP ${response.status}`, checkedAt: Date.now() };
+		}
+		return { status: 'ok', responseMs, checkedAt: Date.now() };
+	}
+	catch (probeErrorObj)
+	{
+		const isTimeout = probeErrorObj instanceof DOMException && probeErrorObj.name === 'AbortError';
+		return { status: 'down', reason: isTimeout ? 'timeout' : 'network', checkedAt: Date.now() };
+	}
+	finally
+	{
+		window.clearTimeout(timeoutId);
+	}
+};

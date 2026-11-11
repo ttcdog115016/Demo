@@ -1,0 +1,21 @@
+# 前端映像只需要原始碼與建置設定；以下不進入 docker build 環境
+.git
+node_modules
+dist
+doc_site
+Claude outputs
+packaging
+backend_patches
+e2e
+sbom
+stress-test
+test-results
+_claude_tmp
+_to_delete
+*.pdf
+*.docx
+*.pptx
+*.xlsx
+*.exe
+*.log
+.env*

@@ -1,0 +1,1093 @@
+{
+  "opts": {
+    "base": "https://maps-reload-writing-indicating.trycloudflare.com",
+    "users": "dp,dp",
+    "rows": 5000,
+    "csv": "stress-test\\data\\input_test.csv",
+    "stagger": 0,
+    "repeat": 1,
+    "baseline": true,
+    "report": true,
+    "pageLoad": true,
+    "timeoutSec": 900,
+    "maxSec": 300,
+    "docker": true,
+    "out": "C:\\Users\\TTCWEI\\Desktop\\Demo\\stress-test\\results"
+  },
+  "meta": {
+    "startedAt": "2026/10/2 16:45:08",
+    "csvName": "input_test.csv",
+    "rows": 69773,
+    "cols": 10,
+    "bytes": 5526633
+  },
+  "baselineRuns": [
+    {
+      "userId": 0,
+      "mode": "dp",
+      "phase": "baseline",
+      "ok": true,
+      "error": null,
+      "totalMs": 144657,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 99,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 4634,
+          "bytes": 3540499,
+          "ok": true,
+          "detail": "3458 KB"
+        },
+        {
+          "name": "POST /dp",
+          "status": 200,
+          "ms": 39402,
+          "bytes": 5877964,
+          "ok": true,
+          "detail": "輸出 69773 筆、消耗 ε=17"
+        },
+        {
+          "name": "POST /risk/dp #1 (地區)",
+          "status": 200,
+          "ms": 23919,
+          "bytes": 518,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/dp #2 (職業)",
+          "status": 200,
+          "ms": 22122,
+          "bytes": 521,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.1%"
+        },
+        {
+          "name": "POST /risk/cap #1 (地區)",
+          "status": 200,
+          "ms": 28456,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /risk/cap #2 (職業)",
+          "status": 200,
+          "ms": 25504,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /report (PDF)",
+          "status": 200,
+          "ms": 480,
+          "bytes": 39918,
+          "ok": true,
+          "detail": "39 KB"
+        }
+      ],
+      "attackReport": {
+        "singling_out_risk": 0,
+        "linkability_risk": 0,
+        "inference_risk": 0.0015,
+        "sample_size": 69773,
+        "linkability_evaluated": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0,
+        "processing_config": {
+          "method": "dp",
+          "deid_params": {
+            "accumulated_epsilon": 17,
+            "accumulated_delta": 0.00002,
+            "default_delta": 0.00001
+          },
+          "risk_params": {
+            "n_iter": 50,
+            "ctrl_ratio": 0.2,
+            "seed": 42,
+            "n_subset": 500,
+            "n_repeats": 1,
+            "overlap_ratio": 0
+          }
+        },
+        "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.00, 連結性風險: 0.00, 推斷性風險: 0.00。"
+      },
+      "capReport": {
+        "cap_before": 1,
+        "cap_after": 1,
+        "n_original": 69773,
+        "n_processed": 69773,
+        "message": "CAP 前後對比完成。原始: 1.00, 處理後: 1.00。"
+      }
+    }
+  ],
+  "concurrentRuns": [
+    {
+      "userId": 1,
+      "mode": "dp",
+      "phase": "R1",
+      "ok": false,
+      "error": "POST /risk/cap #1 (地區): HTTP 502（通道或代理收到後端斷線） trycloudflare.com | 502: Bad gateway",
+      "totalMs": 142991,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 363,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 8951,
+          "bytes": 3540499,
+          "ok": true,
+          "detail": "3458 KB"
+        },
+        {
+          "name": "POST /dp",
+          "status": 200,
+          "ms": 41529,
+          "bytes": 5878242,
+          "ok": true,
+          "detail": "輸出 69773 筆、消耗 ε=17"
+        },
+        {
+          "name": "POST /risk/dp #1 (地區)",
+          "status": 200,
+          "ms": 25940,
+          "bytes": 518,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/dp #2 (職業)",
+          "status": 200,
+          "ms": 27710,
+          "bytes": 523,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.2% / 推斷 0.2%"
+        },
+        {
+          "name": "POST /risk/cap #1 (地區)",
+          "status": 502,
+          "ms": 38463,
+          "bytes": 6577,
+          "ok": false,
+          "detail": "HTTP 502（通道或代理收到後端斷線） trycloudflare.com | 502: Bad gateway"
+        }
+      ],
+      "attackReport": {
+        "singling_out_risk": 0,
+        "linkability_risk": 0.002,
+        "inference_risk": 0.0018,
+        "sample_size": 69773,
+        "linkability_evaluated": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0,
+        "processing_config": {
+          "method": "dp",
+          "deid_params": {
+            "accumulated_epsilon": 17,
+            "accumulated_delta": 0.00002,
+            "default_delta": 0.00001
+          },
+          "risk_params": {
+            "n_iter": 50,
+            "ctrl_ratio": 0.2,
+            "seed": 42,
+            "n_subset": 500,
+            "n_repeats": 1,
+            "overlap_ratio": 0
+          }
+        },
+        "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.00, 連結性風險: 0.00, 推斷性風險: 0.00。"
+      },
+      "capReport": null
+    },
+    {
+      "userId": 2,
+      "mode": "dp",
+      "phase": "R1",
+      "ok": false,
+      "error": "POST /risk/cap #1 (地區): HTTP 502（通道或代理收到後端斷線） error code: 502",
+      "totalMs": 156168,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 360,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 12767,
+          "bytes": 3540499,
+          "ok": true,
+          "detail": "3458 KB"
+        },
+        {
+          "name": "POST /dp",
+          "status": 200,
+          "ms": 57450,
+          "bytes": 5878196,
+          "ok": true,
+          "detail": "輸出 69773 筆、消耗 ε=17"
+        },
+        {
+          "name": "POST /risk/dp #1 (地區)",
+          "status": 200,
+          "ms": 24819,
+          "bytes": 518,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/dp #2 (職業)",
+          "status": 200,
+          "ms": 42492,
+          "bytes": 518,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/cap #1 (地區)",
+          "status": 502,
+          "ms": 18257,
+          "bytes": 16,
+          "ok": false,
+          "detail": "HTTP 502（通道或代理收到後端斷線） error code: 502"
+        }
+      ],
+      "attackReport": {
+        "singling_out_risk": 0,
+        "linkability_risk": 0,
+        "inference_risk": 0,
+        "sample_size": 69773,
+        "linkability_evaluated": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0,
+        "processing_config": {
+          "method": "dp",
+          "deid_params": {
+            "accumulated_epsilon": 17,
+            "accumulated_delta": 0.00002,
+            "default_delta": 0.00001
+          },
+          "risk_params": {
+            "n_iter": 50,
+            "ctrl_ratio": 0.2,
+            "seed": 42,
+            "n_subset": 500,
+            "n_repeats": 1,
+            "overlap_ratio": 0
+          }
+        },
+        "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.00, 連結性風險: 0.00, 推斷性風險: 0.00。"
+      },
+      "capReport": null
+    }
+  ],
+  "dockerSamples": [
+    {
+      "t": 1790930710759,
+      "name": "modest_pascal",
+      "cpu": 0.11,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930712844,
+      "name": "modest_pascal",
+      "cpu": 0.27,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930714921,
+      "name": "modest_pascal",
+      "cpu": 0.32,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930717004,
+      "name": "modest_pascal",
+      "cpu": 0.24,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930720018,
+      "name": "modest_pascal",
+      "cpu": 0.21,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930722112,
+      "name": "modest_pascal",
+      "cpu": 0.3,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930724196,
+      "name": "modest_pascal",
+      "cpu": 0.29,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930726283,
+      "name": "modest_pascal",
+      "cpu": 0.26,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930728378,
+      "name": "modest_pascal",
+      "cpu": 0.24,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930731378,
+      "name": "modest_pascal",
+      "cpu": 27.82,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930733453,
+      "name": "modest_pascal",
+      "cpu": 99.74,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930735516,
+      "name": "modest_pascal",
+      "cpu": 100.11,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930737592,
+      "name": "modest_pascal",
+      "cpu": 99.81,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930740609,
+      "name": "modest_pascal",
+      "cpu": 0.2,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930742693,
+      "name": "modest_pascal",
+      "cpu": 0.32,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930744777,
+      "name": "modest_pascal",
+      "cpu": 0.34,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930746859,
+      "name": "modest_pascal",
+      "cpu": 0.31,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930749881,
+      "name": "modest_pascal",
+      "cpu": 0.32,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930751969,
+      "name": "modest_pascal",
+      "cpu": 0.33,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930754064,
+      "name": "modest_pascal",
+      "cpu": 0.28,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930756152,
+      "name": "modest_pascal",
+      "cpu": 0.25,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930758243,
+      "name": "modest_pascal",
+      "cpu": 0.28,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930761253,
+      "name": "modest_pascal",
+      "cpu": 0.21,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930763354,
+      "name": "modest_pascal",
+      "cpu": 0.3,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930765444,
+      "name": "modest_pascal",
+      "cpu": 0.3,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930767516,
+      "name": "modest_pascal",
+      "cpu": 14.48,
+      "memMB": 1659.904
+    },
+    {
+      "t": 1790930770527,
+      "name": "modest_pascal",
+      "cpu": 24.75,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930772591,
+      "name": "modest_pascal",
+      "cpu": 99.43,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930774653,
+      "name": "modest_pascal",
+      "cpu": 99.96,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930776725,
+      "name": "modest_pascal",
+      "cpu": 99.86,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930779807,
+      "name": "modest_pascal",
+      "cpu": 0.31,
+      "memMB": 1659.904
+    },
+    {
+      "t": 1790930781907,
+      "name": "modest_pascal",
+      "cpu": 0.32,
+      "memMB": 1659.904
+    },
+    {
+      "t": 1790930783993,
+      "name": "modest_pascal",
+      "cpu": 0.32,
+      "memMB": 1659.904
+    },
+    {
+      "t": 1790930786073,
+      "name": "modest_pascal",
+      "cpu": 0.34,
+      "memMB": 1659.904
+    },
+    {
+      "t": 1790930788160,
+      "name": "modest_pascal",
+      "cpu": 0.24,
+      "memMB": 1659.904
+    },
+    {
+      "t": 1790930791167,
+      "name": "modest_pascal",
+      "cpu": 17.91,
+      "memMB": 1659.904
+    },
+    {
+      "t": 1790930793233,
+      "name": "modest_pascal",
+      "cpu": 61.55,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930795310,
+      "name": "modest_pascal",
+      "cpu": 100.08,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930797380,
+      "name": "modest_pascal",
+      "cpu": 99.86,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930800395,
+      "name": "modest_pascal",
+      "cpu": 0.23,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930802490,
+      "name": "modest_pascal",
+      "cpu": 0.25,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930804560,
+      "name": "modest_pascal",
+      "cpu": 0.23,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930806656,
+      "name": "modest_pascal",
+      "cpu": 0.32,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930808743,
+      "name": "modest_pascal",
+      "cpu": 0.19,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930811759,
+      "name": "modest_pascal",
+      "cpu": 0.28,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930813860,
+      "name": "modest_pascal",
+      "cpu": 0.23,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930815953,
+      "name": "modest_pascal",
+      "cpu": 0.21,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930818050,
+      "name": "modest_pascal",
+      "cpu": 0.21,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930821060,
+      "name": "modest_pascal",
+      "cpu": 0.25,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930823150,
+      "name": "modest_pascal",
+      "cpu": 9.67,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930825227,
+      "name": "modest_pascal",
+      "cpu": 18.5,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930827333,
+      "name": "modest_pascal",
+      "cpu": 32.04,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930830336,
+      "name": "modest_pascal",
+      "cpu": 0.27,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930832442,
+      "name": "modest_pascal",
+      "cpu": 0.24,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930834533,
+      "name": "modest_pascal",
+      "cpu": 0.26,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930836622,
+      "name": "modest_pascal",
+      "cpu": 0.3,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930838725,
+      "name": "modest_pascal",
+      "cpu": 0.21,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930841743,
+      "name": "modest_pascal",
+      "cpu": 0.25,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930843842,
+      "name": "modest_pascal",
+      "cpu": 0.23,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930845930,
+      "name": "modest_pascal",
+      "cpu": 0.22,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930848014,
+      "name": "modest_pascal",
+      "cpu": 4.38,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930851019,
+      "name": "modest_pascal",
+      "cpu": 20.56,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930853094,
+      "name": "modest_pascal",
+      "cpu": 31.7,
+      "memMB": 1660.928
+    },
+    {
+      "t": 1790930855185,
+      "name": "modest_pascal",
+      "cpu": 0.24,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930857273,
+      "name": "modest_pascal",
+      "cpu": 0.27,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930860288,
+      "name": "modest_pascal",
+      "cpu": 0.26,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930862373,
+      "name": "modest_pascal",
+      "cpu": 0.37,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930864457,
+      "name": "modest_pascal",
+      "cpu": 0.3,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930866551,
+      "name": "modest_pascal",
+      "cpu": 0.32,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930868641,
+      "name": "modest_pascal",
+      "cpu": 0.2,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930871650,
+      "name": "modest_pascal",
+      "cpu": 0.3,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930873724,
+      "name": "modest_pascal",
+      "cpu": 4.63,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930875809,
+      "name": "modest_pascal",
+      "cpu": 7.22,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930877889,
+      "name": "modest_pascal",
+      "cpu": 3.07,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930880897,
+      "name": "modest_pascal",
+      "cpu": 1.08,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930882974,
+      "name": "modest_pascal",
+      "cpu": 2.04,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930885078,
+      "name": "modest_pascal",
+      "cpu": 0.27,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930887164,
+      "name": "modest_pascal",
+      "cpu": 35.79,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930890171,
+      "name": "modest_pascal",
+      "cpu": 99.93,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930892244,
+      "name": "modest_pascal",
+      "cpu": 99.85,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930894314,
+      "name": "modest_pascal",
+      "cpu": 100.26,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930896395,
+      "name": "modest_pascal",
+      "cpu": 30.57,
+      "memMB": 1669.12
+    },
+    {
+      "t": 1790930898474,
+      "name": "modest_pascal",
+      "cpu": 41.37,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930901478,
+      "name": "modest_pascal",
+      "cpu": 99.84,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930903553,
+      "name": "modest_pascal",
+      "cpu": 99.84,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930905643,
+      "name": "modest_pascal",
+      "cpu": 65.71,
+      "memMB": 1670.144
+    },
+    {
+      "t": 1790930907714,
+      "name": "modest_pascal",
+      "cpu": 0.12,
+      "memMB": 1670.144
+    },
+    {
+      "t": 1790930910722,
+      "name": "modest_pascal",
+      "cpu": 1.74,
+      "memMB": 1670.144
+    },
+    {
+      "t": 1790930912805,
+      "name": "modest_pascal",
+      "cpu": 2.66,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930914892,
+      "name": "modest_pascal",
+      "cpu": 2.49,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930916968,
+      "name": "modest_pascal",
+      "cpu": 9.35,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930919986,
+      "name": "modest_pascal",
+      "cpu": 9.23,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930922069,
+      "name": "modest_pascal",
+      "cpu": 14.33,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930924134,
+      "name": "modest_pascal",
+      "cpu": 99.74,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930926210,
+      "name": "modest_pascal",
+      "cpu": 99.8,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930928283,
+      "name": "modest_pascal",
+      "cpu": 99.55,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930931288,
+      "name": "modest_pascal",
+      "cpu": 1.84,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930933379,
+      "name": "modest_pascal",
+      "cpu": 2.23,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930935470,
+      "name": "modest_pascal",
+      "cpu": 0.98,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930937566,
+      "name": "modest_pascal",
+      "cpu": 29.41,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930940569,
+      "name": "modest_pascal",
+      "cpu": 27.78,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930942643,
+      "name": "modest_pascal",
+      "cpu": 30.29,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930944717,
+      "name": "modest_pascal",
+      "cpu": 100.08,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930946782,
+      "name": "modest_pascal",
+      "cpu": 100.2,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930948904,
+      "name": "modest_pascal",
+      "cpu": 101.43,
+      "memMB": 1669.12
+    },
+    {
+      "t": 1790930951863,
+      "name": "modest_pascal",
+      "cpu": 99.8,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930953931,
+      "name": "modest_pascal",
+      "cpu": 100.08,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930956004,
+      "name": "modest_pascal",
+      "cpu": 270.75,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930958094,
+      "name": "modest_pascal",
+      "cpu": 0.22,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930961113,
+      "name": "modest_pascal",
+      "cpu": 1.86,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930963197,
+      "name": "modest_pascal",
+      "cpu": 1.26,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930965283,
+      "name": "modest_pascal",
+      "cpu": 1.68,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930967351,
+      "name": "modest_pascal",
+      "cpu": 2.26,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930970360,
+      "name": "modest_pascal",
+      "cpu": 1.15,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930972433,
+      "name": "modest_pascal",
+      "cpu": 2.01,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930974523,
+      "name": "modest_pascal",
+      "cpu": 0.35,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930976609,
+      "name": "modest_pascal",
+      "cpu": 1.29,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930978697,
+      "name": "modest_pascal",
+      "cpu": 2.5,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930981711,
+      "name": "modest_pascal",
+      "cpu": 21.87,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930983805,
+      "name": "modest_pascal",
+      "cpu": 41.1,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930985878,
+      "name": "modest_pascal",
+      "cpu": 80.79,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930987939,
+      "name": "modest_pascal",
+      "cpu": 100.01,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930990959,
+      "name": "modest_pascal",
+      "cpu": 98.64,
+      "memMB": 1668.096
+    },
+    {
+      "t": 1790930993033,
+      "name": "modest_pascal",
+      "cpu": 0.23,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930995111,
+      "name": "modest_pascal",
+      "cpu": 0.18,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790930997196,
+      "name": "modest_pascal",
+      "cpu": 0.29,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790931000212,
+      "name": "modest_pascal",
+      "cpu": 0.2,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790931002309,
+      "name": "modest_pascal",
+      "cpu": 0.28,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790931004383,
+      "name": "modest_pascal",
+      "cpu": 0.26,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790931006472,
+      "name": "modest_pascal",
+      "cpu": 0.27,
+      "memMB": 1667.072
+    },
+    {
+      "t": 1790931008552,
+      "name": "modest_pascal",
+      "cpu": 0.21,
+      "memMB": 1667.072
+    }
+  ]
+}

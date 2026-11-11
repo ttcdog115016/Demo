@@ -1,0 +1,1531 @@
+diff --git a/app/api/auth_router.py b/app/api/auth_router.py
+index a80d71d..38589f2 100644
+--- a/app/api/auth_router.py
++++ b/app/api/auth_router.py
+@@ -47,20 +47,29 @@ def _system_log(level: str, event: str, source: str, username: str | None = None
+ 
+ 
+ 
++# ★ TTC 2026-11-02：欄位長度上限。原本不設限，未登入者可送數百 MB 的帳號或密碼，
++#   拖住事件迴圈解析、整串寫進稽核日誌，並讓 scrypt 對巨量密碼運算。
++MAX_USERNAME_LENGTH = 150
++MAX_PASSWORD_LENGTH = 1024
++MAX_TOKEN_LENGTH = 256
++
++
+ class LoginRequest(BaseModel):
+-    username: str
+-    password: str
++    username: str = Field(..., max_length=MAX_USERNAME_LENGTH)
++    password: str = Field(..., max_length=MAX_PASSWORD_LENGTH)
+ 
+ 
+ class RefreshRequest(BaseModel):
+-    refresh_token: str = Field(..., description="登入或上次換發時取得的 refresh token")
++    refresh_token: str = Field(
++        ..., max_length=MAX_TOKEN_LENGTH, description="登入或上次換發時取得的 refresh token"
++    )
+ 
+ 
+ class ChangePasswordRequest(BaseModel):
+-    current_password: str = Field(..., min_length=1)
+-    new_password: str = Field(..., min_length=1)
++    current_password: str = Field(..., min_length=1, max_length=MAX_PASSWORD_LENGTH)
++    new_password: str = Field(..., min_length=1, max_length=MAX_PASSWORD_LENGTH)
+     # ★ TTC 2026-10-30：目前這次登入的 refresh token；改密碼後其餘登入一律撤銷，只保留這一張
+-    refresh_token: str | None = None
++    refresh_token: str | None = Field(None, max_length=MAX_TOKEN_LENGTH)
+ 
+ 
+ def get_current_user(
+@@ -158,7 +167,8 @@ def login(req: LoginRequest, _: None = Depends(ensure_auth_enabled)):
+ def refresh(req: RefreshRequest, _: None = Depends(ensure_auth_enabled)):
+     """以 refresh token 換發新的 access token；舊的 refresh token 於此作廢，改發一張新的。"""
+     tokens = get_token_manager()
+-    username = tokens.resolve(req.refresh_token)
++    # ★ TTC 2026-11-02：查驗與作廢合併為一個原子操作，同一張 token 只能換發一次（見 TokenManager.consume）
++    username = tokens.consume(req.refresh_token)
+     if username is None:
+         raise PetsError("ERR_UNAUTHORIZED", "refresh token 無效或已過期，請重新登入。")
+ 
+@@ -166,7 +176,7 @@ def refresh(req: RefreshRequest, _: None = Depends(ensure_auth_enabled)):
+     if user is None or not user["is_active"]:
+         raise PetsError("ERR_UNAUTHORIZED", "帳號不存在或已停用。")
+ 
+-    new_refresh = tokens.rotate(req.refresh_token, username)
++    new_refresh = tokens.issue(username)
+     return {
+         "access_token": create_access_token(username, user["role"]),
+         "refresh_token": new_refresh,
+diff --git a/app/api/compute.py b/app/api/compute.py
+index 95628cf..26422e5 100644
+--- a/app/api/compute.py
++++ b/app/api/compute.py
+@@ -16,6 +16,7 @@
+ 排隊中就被取消的請求，輪到時不開算。
+ """
+ import asyncio
++import logging
+ import re
+ import threading
+ from collections.abc import Callable
+@@ -28,6 +29,7 @@ from app.core.cancellation import CANCELLED_MESSAGE, run_with_cancel_event
+ from app.core.errors import PetsError
+ 
+ T = TypeVar("T")
++logger = logging.getLogger(__name__)
+ 
+ CLIENT_RUN_ID_HEADER = "X-Client-Run-Id"
+ _HANDLE_PATTERN = re.compile(r"^[0-9a-fA-F-]{32,36}$")
+@@ -51,13 +53,40 @@ async def _watch_disconnect(request: Request, event: threading.Event) -> None:
+         await asyncio.sleep(0)
+ 
+ 
++def _register_run(handle: str, username: str | None, event: threading.Event) -> bool:
++    """登記可經取消端點取消的運算；handle 已被其他帳號使用時不登記（★ TTC 2026-11-02）。
++
++    原本直接覆寫：他人送出同一個 handle 即可搶走登記，原主的取消請求反被以 403 拒絕。
++    同一帳號重送同一個 handle 則以新的運算取代（前端每輪會產生新 handle，重複僅見於重試）。
++    """
++    existing = _active_runs.get(handle)
++    if existing is not None and existing[0] != username:
++        return False
++    _active_runs[handle] = (username, event)
++    return True
++
++
++def _unregister_run(handle: str, event: threading.Event) -> None:
++    """只移除自己的登記：同一 handle 已被後來的運算取代時保留對方的登記。"""
++    existing = _active_runs.get(handle)
++    if existing is not None and existing[1] is event:
++        del _active_runs[handle]
++
++
++def _log_watcher_failure(task: asyncio.Task) -> None:
++    if not task.cancelled() and task.exception() is not None:
++        logger.warning("斷線偵測意外結束，此次運算僅能經取消端點取消：%r", task.exception())
++
++
+ async def run_compute(request: Request, fn: Callable[..., T], *args, **kwargs) -> T:
+     """在執行緒池執行 fn；用戶端離線或呼叫取消端點時，引擎於下一個斷點停下。"""
+     event = threading.Event()
+     handle = _client_handle(request)
+-    if handle:
+-        _active_runs[handle] = (getattr(request.state, "processing_user", None), event)
++    registered = bool(handle) and _register_run(
++        handle, getattr(request.state, "processing_user", None), event
++    )
+     watcher = asyncio.create_task(_watch_disconnect(request, event))
++    watcher.add_done_callback(_log_watcher_failure)
+     try:
+         async with _compute_slot:
+             if event.is_set():
+@@ -65,8 +94,8 @@ async def run_compute(request: Request, fn: Callable[..., T], *args, **kwargs) -
+             return await run_in_threadpool(run_with_cancel_event, event, fn, *args, **kwargs)
+     finally:
+         watcher.cancel()
+-        if handle:
+-            _active_runs.pop(handle, None)
++        if registered:
++            _unregister_run(handle, event)
+ 
+ 
+ def cancel_run(handle: str, username: str) -> bool:
+diff --git a/app/api/deid_router.py b/app/api/deid_router.py
+index d934b31..bbb1d62 100644
+--- a/app/api/deid_router.py
++++ b/app/api/deid_router.py
+@@ -10,6 +10,7 @@ import json
+ from fastapi import APIRouter, File, Form, Request, UploadFile
+ from fastapi.responses import StreamingResponse
+ 
++from app.api.processing_guard import processing_operator
+ from app.api.compute import run_compute
+ from app.api.dataset_input import resolve_dataset
+ from app.core.config import parse_bundled_config_from_bytes
+@@ -125,6 +126,7 @@ async def api_k_anonymity(
+                 "suppression_rate_percent": report.suppression_rate_percent,
+                 **cfgs.audit_fields(),
+             },
++            user=processing_operator(request),
+         )
+ 
+         # 品質報告放入回應標頭；HTTP 標頭只收 latin-1，ensure_ascii=True 把中文跳脫成 \uXXXX
+@@ -211,6 +213,7 @@ async def api_dp(
+                 "consumed_epsilon": report.consumed_epsilon,
+                 **cfgs.audit_fields(),
+             },
++            user=processing_operator(request),
+         )
+ 
+         headers = {
+diff --git a/app/api/preprocess_router.py b/app/api/preprocess_router.py
+index 6da7d3a..a0ece02 100644
+--- a/app/api/preprocess_router.py
++++ b/app/api/preprocess_router.py
+@@ -10,6 +10,7 @@
+ from fastapi import APIRouter, File, Form, Request, UploadFile
+ from fastapi.responses import StreamingResponse
+ 
++from app.api.processing_guard import processing_operator
+ from app.api.compute import run_compute
+ from app.api.dataset_input import resolve_dataset
+ from app.core.config import parse_bundled_config_from_bytes
+@@ -93,6 +94,7 @@ async def api_preprocess(
+                 "actions": sum(len(entry.actions) for entry in pp_config.columns),
+                 **cfgs.audit_fields(),
+             },
++            user=processing_operator(request),
+         )
+ 
+         return StreamingResponse(
+diff --git a/app/api/processing_guard.py b/app/api/processing_guard.py
+index 602bb60..375e2c6 100644
+--- a/app/api/processing_guard.py
++++ b/app/api/processing_guard.py
+@@ -29,6 +29,11 @@ def require_processing_user(request: Request, user: dict = Depends(get_current_u
+     return user
+ 
+ 
++def processing_operator(request: Request) -> str | None:
++    """處理端點的登入帳號（★ TTC 2026-11-02：寫入稽核紀錄的操作者；原本處理端點的稽核紀錄沒有操作者）。"""
++    return getattr(request.state, "processing_user", None)
++
++
+ def register_processing_logging(app: FastAPI) -> None:
+     @app.middleware("http")
+     async def _log_processing_call(request: Request, call_next):
+diff --git a/app/api/risk_router.py b/app/api/risk_router.py
+index 737c00b..b5a46d7 100644
+--- a/app/api/risk_router.py
++++ b/app/api/risk_router.py
+@@ -8,8 +8,10 @@ import time
+ 
+ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+ from fastapi.responses import StreamingResponse
++from starlette.concurrency import run_in_threadpool
+ from pydantic import BaseModel
+ 
++from app.api.processing_guard import processing_operator
+ from app.api.compute import run_compute
+ from app.api.dataset_input import resolve_dataset
+ from app.core.config import parse_bundled_config_from_bytes
+@@ -173,6 +175,7 @@ async def api_risk_k_anonymity(
+                 "inference_risk": report.inference_risk,
+                 **cfgs.audit_fields(),
+             },
++            user=processing_operator(request),
+         )
+         report.elapsed_seconds = round(time.time() - start_time, 2)
+         return report.model_dump()
+@@ -277,6 +280,7 @@ async def api_risk_dp(
+                 "inference_risk": report.inference_risk,
+                 **cfgs.audit_fields(),
+             },
++            user=processing_operator(request),
+         )
+         report.elapsed_seconds = round(time.time() - start_time, 2)
+         return report.model_dump()
+@@ -386,6 +390,7 @@ async def api_risk_cap(
+                 "cap_after": report.cap_after,
+                 **cfgs.audit_fields(),
+             },
++            user=processing_operator(request),
+         )
+         report.elapsed_seconds = round(time.time() - start_time, 2)
+         return report.model_dump()
+@@ -394,6 +399,7 @@ async def api_risk_cap(
+ @router.post("/report")
+ async def api_report(
+     req: ReportRequest,
++    request: Request,
+ ):
+     """彙整再識別風險量測結果、產出並下載 PDF 報告（規格 §3(4)）。
+ 
+@@ -407,7 +413,10 @@ async def api_report(
+         )
+     with get_audit_logger().failures("export_report"):
+         try:
+-            pdf_bytes = generate_pdf_bytes(
++            # ★ TTC 2026-11-02：排版 PDF 是同步運算，原本直接在事件迴圈上跑，期間整台服務（含換發 token、
++            #   取消運算）都停擺；改丟執行緒池。
++            pdf_bytes = await run_in_threadpool(
++                generate_pdf_bytes,
+                 task_id=req.task_id,
+                 attack_report=(
+                     req.attack_report.model_dump() if req.attack_report else None
+@@ -422,7 +431,8 @@ async def api_report(
+             raise HTTPException(status_code=500, detail=f"PDF 產出失敗：{str(e)}") from e
+ 
+         get_audit_logger().log_operation(
+-            "export_report", "success", {"task_id": req.task_id}
++            "export_report", "success", {"task_id": req.task_id},
++            user=processing_operator(request),
+         )
+         return StreamingResponse(
+             iter_response_chunks(pdf_bytes),
+diff --git a/app/api/system_router.py b/app/api/system_router.py
+index f4f345f..2bcfb2e 100644
+--- a/app/api/system_router.py
++++ b/app/api/system_router.py
+@@ -14,10 +14,11 @@ processing_guard）；前端只回報後端看不到的事件（閒置登出、
+ 處理紀錄寫入時由伺服器簽章（見 governance/history_signing），GET /history/{id}/verify 重算比對。
+ """
+ 
++import json
+ import uuid
+ from typing import Literal
+ 
+-from fastapi import APIRouter, Depends
++from fastapi import APIRouter, Depends, Query
+ from pydantic import BaseModel, Field
+ 
+ from app.api.auth_router import get_current_user, require_role
+@@ -39,6 +40,24 @@ def list_history(all: bool = False, user: dict = Depends(get_current_user)):
+     return {"records": records, "total": len(records)}
+ 
+ 
++# ★ TTC 2026-11-02：處理紀錄上限（實際紀錄約數 KB；上限防止單一帳號灌入巨量資料拖慢列表）
++MAX_HISTORY_RECORD_BYTES = 256 * 1024
++
++
++def _require_storable_record(record: dict) -> None:
++    """存檔前檢查：不可含 NaN／Infinity、不可過大。須在消耗 runId 之前，驗證失敗才能修正後重送。
++
++    請求主體以 json.loads 解析，會接受 NaN；存進去之後回應時 JSONResponse 不允許 NaN，
++    該帳號（與 admin 的全部列表）從此每次讀取都失敗。
++    """
++    try:
++        encoded = json.dumps(record, allow_nan=False, ensure_ascii=False)
++    except (ValueError, TypeError) as exc:
++        raise PetsError("ERR_INVALID_PARAM", "處理紀錄含有無法保存的數值（NaN 或 Infinity）。") from exc
++    if len(encoded.encode("utf-8")) > MAX_HISTORY_RECORD_BYTES:
++        raise PetsError("ERR_INVALID_PARAM", f"處理紀錄過大（上限 {MAX_HISTORY_RECORD_BYTES // 1024} KB）。")
++
++
+ @router.post("/history", status_code=201)
+ def add_history(record: dict, user: dict = Depends(get_current_user)):
+     """新增一筆自己的處理紀錄（內容由前端組好，整筆保存）。操作者一律以登入帳號為準，並由伺服器簽章。
+@@ -49,6 +68,7 @@ def add_history(record: dict, user: dict = Depends(get_current_user)):
+     證明這筆紀錄對應一次真的處理；同一 id 不得重送（409），簽過的紀錄不能被改寫重簽。
+     """
+     store = get_system_store()
++    _require_storable_record(record)
+     run_id = record.get("runId")
+     if not isinstance(run_id, str) or not store.consume_run(run_id, user["username"]):
+         raise PetsError("ERR_RUN_INVALID", "找不到對應的處理執行紀錄（runId 不存在、不是本帳號、已過期或已被使用），無法存檔。")
+@@ -102,7 +122,8 @@ def add_system_logs(batch: LogBatch, user: dict = Depends(get_current_user)):
+ 
+ @router.get("/system-logs")
+ def list_system_logs(
+-    since: int | None = None,
++    # ★ TTC 2026-11-02：限制範圍，超出 SQLite 整數範圍時原本回 500
++    since: int | None = Query(None, ge=0, le=10**13),
+     limit: int = 1000,
+     _: dict = Depends(require_role("admin")),
+ ):
+diff --git a/app/api/users_router.py b/app/api/users_router.py
+index 0a6737e..8e92ed5 100644
+--- a/app/api/users_router.py
++++ b/app/api/users_router.py
+@@ -11,7 +11,7 @@ CLI 不要求：能在機器上敲指令的人已經站在資料與設定檔前
+ from fastapi import APIRouter, Depends, status
+ from pydantic import BaseModel, Field
+ 
+-from app.api.auth_router import require_role
++from app.api.auth_router import MAX_PASSWORD_LENGTH, MAX_USERNAME_LENGTH, require_role
+ from app.core.errors import PetsError
+ from app.governance.audit import get_audit_logger
+ from app.governance.auth import ROLES, get_auth_manager
+@@ -23,8 +23,9 @@ _ROLE_HELP = f"角色，必須為 {' 或 '.join(ROLES)}"
+ 
+ 
+ class CreateUserRequest(BaseModel):
+-    username: str = Field(..., min_length=1)
+-    password: str = Field(..., min_length=1)
++    # ★ TTC 2026-11-02：長度上限與登入端點一致
++    username: str = Field(..., min_length=1, max_length=MAX_USERNAME_LENGTH)
++    password: str = Field(..., min_length=1, max_length=MAX_PASSWORD_LENGTH)
+     role: str = Field(..., description=_ROLE_HELP)
+ 
+ 
+@@ -33,7 +34,7 @@ class ChangeRoleRequest(BaseModel):
+ 
+ 
+ class ResetPasswordRequest(BaseModel):
+-    new_password: str = Field(..., min_length=1)
++    new_password: str = Field(..., min_length=1, max_length=MAX_PASSWORD_LENGTH)
+ 
+ 
+ class SetActiveRequest(BaseModel):
+diff --git a/app/core/config.py b/app/core/config.py
+index b3fcaee..75bc56c 100644
+--- a/app/core/config.py
++++ b/app/core/config.py
+@@ -665,9 +665,37 @@ class DPColumnConfig(BaseModel):
+         皆不需比對實際資料 → 於解析設定檔時即可擋（在進入引擎前），符合「擋的檢查前置」原則。
+         引擎入口（BudgetValidator._self_check）亦會再呼叫一次，確保直接呼叫引擎者不繞過。
+         """
++        # ★ TTC 2026-11-02：數值一律須為有限值。NaN 與任何數比較皆為假，原本 NaN ε 會通過「> 0」檢查，
++        #   進到 k-RR 後整欄翻轉；inf 讓 exp(ε) 溢位。累計值為 NaN 會汙染整份預算帳。
++        for name, value in (
++            ("accumulated_epsilon", self.accumulated_epsilon),
++            ("accumulated_delta", self.accumulated_delta),
++        ):
++            if not (math.isfinite(value) and value >= 0):
++                raise PetsError(
++                    "ERR_DP_INVALID_BUDGET", f"{name} 必須為大於或等於 0 的有限數值（收到 {value}）。"
++                )
+         for col, budget in self.column_budgets.items():
++            for name, value in (
++                ("sensitivity", budget.sensitivity),
++                ("minimum_unit", budget.minimum_unit),
++                *(
++                    (f"clipping_bounds[{i}]", bound)
++                    for i, bound in enumerate(budget.clipping_bounds or ())
++                ),
++            ):
++                if value is not None and not math.isfinite(value):
++                    raise PetsError(
++                        "ERR_DP_INVALID_BUDGET", f"欄位 '{col}' 的 {name} 必須為有限數值（收到 {value}）。"
++                    )
++            # ★ TTC 2026-11-02：sensitivity 為 0 或負值原本被悄悄改成 1 個最小單位，並標示為使用者申報
++            if budget.sensitivity is not None and budget.sensitivity <= 0:
++                raise PetsError(
++                    "ERR_DP_INVALID_BUDGET",
++                    f"欄位 '{col}' 的 sensitivity 必須 > 0（收到 {budget.sensitivity}）。",
++                )
+             # ε 必須為正（ε≤0 在 DP 無意義）
+-            if budget.epsilon_budget <= 0:
++            if not (math.isfinite(budget.epsilon_budget) and budget.epsilon_budget > 0):
+                 raise PetsError(
+                     "ERR_DP_INVALID_BUDGET",
+                     f"欄位 '{col}' 的 epsilon_budget 必須 > 0（收到 {budget.epsilon_budget}）。",
+diff --git a/app/core/dataset_io.py b/app/core/dataset_io.py
+index b425b3f..b47f178 100644
+--- a/app/core/dataset_io.py
++++ b/app/core/dataset_io.py
+@@ -202,6 +202,7 @@ def _read_csv(source: str | io.BytesIO) -> pd.DataFrame:
+ 
+ 
+ def _read_json(source: str | io.BytesIO, head: bytes) -> tuple[pd.DataFrame, JsonOrient, bool]:
++    # ★ TTC 2026-11-02：關閉依欄名猜日期（*_at、timestamp、date…），不把整數代碼誤讀成時間戳
+     """讀 JSON，並回報原本的寫法（orient 與是否為每行一筆）供輸出時還原。
+ 
+     dtype=False：JSON 本身帶型別（"09007" 是字串、41 是數字），照檔案讀、不再推斷；
+@@ -210,13 +211,13 @@ def _read_json(source: str | io.BytesIO, head: bytes) -> tuple[pd.DataFrame, Jso
+     try:
+         if isinstance(source, io.BytesIO):
+             source.seek(0)
+-        return pd.read_json(source, dtype=False), _peek_json_orient(head), False
++        return pd.read_json(source, dtype=False, convert_dates=False, keep_default_dates=False), _peek_json_orient(head), False
+     except ValueError:
+         # 標準 JSON 解析失敗即視為 JSON Lines；此寫法只有「每行一筆」一種長相
+         if isinstance(source, io.BytesIO):
+             source.seek(0)
+         try:
+-            return pd.read_json(source, lines=True, dtype=False), "records", True
++            return pd.read_json(source, lines=True, dtype=False, convert_dates=False, keep_default_dates=False), "records", True
+         except ValueError as exc:
+             raise _unreadable("內容不是合法的 JSON，也不是每行一筆的 JSON Lines。") from exc
+ 
+diff --git a/app/core/settings.py b/app/core/settings.py
+index 41b39b2..b0cbebf 100644
+--- a/app/core/settings.py
++++ b/app/core/settings.py
+@@ -5,6 +5,7 @@
+ 這裡是部署者設定一次的東西，不是使用者每次請求帶的東西。
+ """
+ import logging
++import math
+ import os
+ import warnings
+ 
+@@ -122,7 +123,11 @@ def get_max_upload_bytes() -> int:
+         mb = DEFAULT_MAX_UPLOAD_MB
+     else:
+         try:
+-            mb = int(float(raw))
++            value = float(raw)
++            if not math.isfinite(value):
++                raise ValueError(raw)
++            # ★ TTC 2026-11-02：小數無條件進位（原本 0.5 取整成 0＝不設限）；inf／nan 原本讓每個請求 500
++            mb = math.ceil(value) if value > 0 else 0
+         except ValueError:
+             mb = DEFAULT_MAX_UPLOAD_MB
+             # 報告透明：部署者以為自己設了上限，實際被系統換成預設值，不告知會查不出來。
+diff --git a/app/core/values.py b/app/core/values.py
+new file mode 100644
+index 0000000..34819ee
+--- /dev/null
++++ b/app/core/values.py
+@@ -0,0 +1,15 @@
++"""值的正規化（★ TTC 2026-11-02）。
++
++CSV 讀入時，整數欄位只要有一格空值就會變成 float（100 → 100.0）。直接 str(val) 會得到 "100.0"，
++與泛化矩陣的鍵 "100" 對不上、雜湊結果也與同一個人在沒有空值的檔案中不同。
++比對或雜湊前先把「整數值的浮點數」寫回整數字串。
++"""
++import math
++from typing import Any
++
++
++def canonical_text(val: Any) -> str:
++    """整數值的浮點數（100.0）寫成 "100"；其餘照 str()。"""
++    if isinstance(val, float) and math.isfinite(val) and val.is_integer():
++        return str(int(val))
++    return str(val)
+diff --git a/app/engines/anonymization/pipeline.py b/app/engines/anonymization/pipeline.py
+index 11a00e4..7a638fd 100644
+--- a/app/engines/anonymization/pipeline.py
++++ b/app/engines/anonymization/pipeline.py
+@@ -4,6 +4,7 @@ Anonymizer 串起前置驗證與 Step1~5，每一步委派給對應的策略 / 
+ 本模組只負責串接流程與彙整品質報告，各步驟的演算法都不寫在這裡。
+ """
+ 
++import math
+ import pandas as pd
+ 
+ from app.core.config import (
+@@ -21,6 +22,16 @@ from .strategies.masking import HashMask
+ from .metrics import KAnonymity, LDiversity, TCloseness, wildcard_group_sizes
+ 
+ 
++def _validate_k_l_t(k, l, t) -> None:  # noqa: E741
++    """★ TTC 2026-11-02：k／l／t 原本未驗證：k≤0 會跳過抑制卻回報成功，t 為 NaN 時每個比較皆為假而全數通過。"""
++    if isinstance(k, bool) or not isinstance(k, int) or k < 1:
++        raise PetsError("ERR_INVALID_PARAM", f"k 必須是大於或等於 1 的整數（收到 {k!r}）。")
++    if l is not None and (isinstance(l, bool) or not isinstance(l, int) or l < 1):
++        raise PetsError("ERR_INVALID_PARAM", f"l 必須是大於或等於 1 的整數（收到 {l!r}）。")
++    if t is not None and not (isinstance(t, (int, float)) and math.isfinite(t) and 0 <= t <= 1):
++        raise PetsError("ERR_INVALID_PARAM", f"t 必須介於 0 與 1 之間（收到 {t!r}）。")
++
++
+ class Anonymizer:
+     """
+     K-匿名化處理器。
+@@ -68,6 +79,7 @@ class Anonymizer:
+         l_metric: LDiversity,        # LDiversity 檢測器
+         t_metric: TCloseness,        # TCloseness 檢測器
+     ):
++        _validate_k_l_t(k, l, t)
+         self.config = config
+         self.k = k
+         self.l = l
+@@ -394,6 +406,19 @@ class Anonymizer:
+             # 與 KAnonymity.check 同一種計數（空值視為萬用字元）
+             counts = wildcard_group_sizes(df_out[k_qi_cols])
+             violation_mask = counts < k
++            if suppression_method == "row_suppression":
++                # ★ TTC 2026-11-02：空值當萬用字元時，等價類大小不具單調性——完整列可能靠含空值的列
++                #   湊滿 k，反之亦然；刪掉一批違規列後，原本靠它們撐住的列會落到 k 以下。
++                #   原本只刪一次就釋出（k_passed=False 仍照樣輸出），改為重算到沒有違規列為止。
++                for _ in range(len(df_out)):
++                    remaining = df_out.loc[~violation_mask, k_qi_cols]
++                    if remaining.empty:
++                        break
++                    newly = wildcard_group_sizes(remaining) < k
++                    if not newly.any():
++                        break
++                    check_cancelled()
++                    violation_mask = violation_mask | newly.reindex(violation_mask.index, fill_value=False)
+             violation_row_count = int(violation_mask.sum())
+ 
+             # 建構時已驗證過合法值，這裡直接取——若注入的自訂表漏了對應鍵，寧可在測試炸出也不靜默代換
+@@ -432,7 +457,8 @@ class Anonymizer:
+             if l is not None or t is not None:
+                 masked_sensitive_lt = [
+                     c for c in present_sensitive
+-                    if config.columns[c].get_effective_strategy() in ("mask", "hash")
++                    # ★ TTC 2026-11-02：partial（部分遮蔽）、clear（清空）同樣已非原始敏感值
++                    if config.columns[c].get_effective_strategy() in ("mask", "hash", "partial", "clear")
+                 ]
+             valid_lt_cols = [c for c in present_sensitive if c not in masked_sensitive_lt]
+ 
+diff --git a/app/engines/anonymization/strategies/generalize.py b/app/engines/anonymization/strategies/generalize.py
+index 63b8afe..b0a9c8d 100644
+--- a/app/engines/anonymization/strategies/generalize.py
++++ b/app/engines/anonymization/strategies/generalize.py
+@@ -23,6 +23,8 @@ from app.core.config import (
+     parse_temporal_levels,
+     parse_time_periods,
+ )
++from app.core.values import canonical_text
++
+ from .masking import apply_masking
+ 
+ # 區間之間的空隙用的哨兵標籤：落入空隙者與落在所有區間之外者同樣視為未涵蓋。
+@@ -39,7 +41,7 @@ def categorical_mapping_generalize(val: Any, mapping: dict[str, list[str]], leve
+     # 注意：這裡只保留「原本就空」的情況；「有值但不在階層裡」仍回 "*"（見下方 return）。
+     if val is None or pd.isna(val):
+         return val
+-    ladder = mapping.get(str(val).strip())
++    ladder = mapping.get(canonical_text(val).strip())  # ★ TTC 2026-11-02：100.0 與 "100" 視為同值
+     if ladder is None:
+         return "*"
+     return ladder[min(level, len(ladder) - 1)]
+diff --git a/app/engines/anonymization/strategies/masking.py b/app/engines/anonymization/strategies/masking.py
+index e580fe7..6105ead 100644
+--- a/app/engines/anonymization/strategies/masking.py
++++ b/app/engines/anonymization/strategies/masking.py
+@@ -10,6 +10,8 @@ from typing import Any
+ 
+ import pandas as pd
+ 
++from app.core.values import canonical_text
++
+ from ..validation import validate_choice_param
+ 
+ # 演算法名稱 → hashlib 的雜湊建構函式。三者皆在 Python 標準庫內，不新增任何相依。
+@@ -45,7 +47,7 @@ def hash_mask(
+     if digestmod is None:
+         # 大小寫變體（"SHA3-256"）由驗證函式正規化後取回；真的寫錯才拋錯
+         digestmod = HASH_ALGORITHMS[validate_hash_algorithm(algorithm)]
+-    val_bytes = str(val).encode("utf-8")
++    val_bytes = canonical_text(val).encode("utf-8")  # ★ TTC 2026-11-02：同一識別碼不因欄位有無空值而雜湊不同
+     if salt:
+         return hmac.new(salt.encode("utf-8"), val_bytes, digestmod).hexdigest()
+     return digestmod(val_bytes).hexdigest()
+diff --git a/app/engines/dp/mechanisms/categorical.py b/app/engines/dp/mechanisms/categorical.py
+index d72868a..6f56380 100644
+--- a/app/engines/dp/mechanisms/categorical.py
++++ b/app/engines/dp/mechanisms/categorical.py
+@@ -25,7 +25,9 @@ class KRandomizedResponse:
+             return series.copy()
+ 
+         n = len(series)
+-        p = np.exp(epsilon) / (np.exp(epsilon) + k - 1)
++        # ★ TTC 2026-11-02：改寫成不會溢位的等價式。原式 e^ε/(e^ε+k−1) 在 ε≳710 時成 inf/inf＝NaN，
++        #   保留機率比較全為假、每格都被換掉，二元欄位等於整欄反轉（直接還原原值）。
++        p = 1.0 / (1.0 + (k - 1) * np.exp(-epsilon))
+         rng = np.random.default_rng()
+ 
+         keep = rng.random(n) < p
+diff --git a/app/engines/dp/mechanisms/temporal.py b/app/engines/dp/mechanisms/temporal.py
+index 63fea37..815c3c6 100644
+--- a/app/engines/dp/mechanisms/temporal.py
++++ b/app/engines/dp/mechanisms/temporal.py
+@@ -52,6 +52,18 @@ _ISO_DATE = "%Y-%m-%d"
+ _DIGITS = re.compile(r"\d+")
+ 
+ 
++
++def _naive_utc(value):
++    """★ TTC 2026-11-02：帶時區的日期（如 2024-03-15T10:00:00Z）先換算成 UTC 並去掉時區。
++
++    運算基準點 _EPOCH 不帶時區，帶時區的值直接相減會 TypeError（API 回 500）。
++    """
++    if isinstance(value, pd.Series):
++        return value.dt.tz_convert(None) if getattr(value.dt, "tz", None) is not None else value
++    if getattr(value, "tzinfo", None) is not None:
++        return value.tz_convert(None)
++    return value
++
+ class _Unit(NamedTuple):
+     """一個 noise_unit 在各處要用的對應值（集中一處，免得四個地方各寫一份對照）。"""
+ 
+@@ -182,7 +194,7 @@ class DatetimeNoiser:
+         step = noise_step or DEFAULT_NOISE_STEP
+ 
+         # ① 寬鬆解析（可解析性已由 BudgetValidator 前置把關；此處 coerce 僅兜底）
+-        parsed = pd.to_datetime(series, errors="coerce")
++        parsed = _naive_utc(pd.to_datetime(series, errors="coerce"))
+ 
+         # ② 取該欄第一筆解析成功的值，推出輸出格式（原值與解析結果同一列）
+         valid = parsed.notna()
+@@ -230,7 +242,7 @@ class DatetimeNoiser:
+         """日期字串的上下界 → 該 noise_unit 的序數（可解析性已由設定檔驗證時把關）。"""
+         if bounds is None:
+             return None
+-        low, high = (pd.to_datetime(raw) for raw in bounds)
++        low, high = (_naive_utc(pd.to_datetime(raw)) for raw in bounds)
+         return (
+             (low - _EPOCH) / unit.span,
+             (high - _EPOCH) / unit.span,
+diff --git a/app/engines/dp/pipeline.py b/app/engines/dp/pipeline.py
+index 42730cb..1f4c680 100644
+--- a/app/engines/dp/pipeline.py
++++ b/app/engines/dp/pipeline.py
+@@ -15,6 +15,8 @@ DPProcessor 串起「記帳 → 逐欄加噪 → 產出預算報告」，每一
+     Step 3 → 產出 BudgetReport（本次消耗＋累計＋逐欄明細＝使用者下次自帶的收據）
+ """
+ 
++import math
++
+ import pandas as pd
+ 
+ from app.core.cancellation import check_cancelled
+@@ -118,6 +120,14 @@ class DPProcessor:
+                 # 離散型 DP：換算成整數個最小單位 → 加噪 → 乘回原單位 → 後處理超界值。
+                 minimum_unit = budget.minimum_unit or DEFAULT_MINIMUM_UNIT
+                 units = to_units(df_out[col], minimum_unit)
++                # ★ TTC 2026-11-02：加噪前先夾到 clipping_bounds 內。原本只在加噪後才處理超界，
++                #   遠超出範圍的極端值（如 980 萬）加完 ±sensitivity 的雜訊仍明顯超界，事後被夾到上界，
++                #   等於確定性地洩漏「這筆是極端值」，ε 的保證不成立。
++                if budget.clipping_bounds is not None:
++                    low, high = budget.clipping_bounds
++                    units = units.clip(
++                        lower=math.ceil(low / minimum_unit), upper=math.floor(high / minimum_unit)
++                    )
+                 # 刻度粗到整欄只剩一個值（資料 1、2、3 而刻度填 10）→ 加噪結果無意義，提醒。
+                 if units.dropna().nunique() <= 1 < df_out[col].dropna().nunique():
+                     coarse_unit.append(col)
+diff --git a/app/engines/preprocess/actions/casting.py b/app/engines/preprocess/actions/casting.py
+index 4736e20..79ed0b1 100644
+--- a/app/engines/preprocess/actions/casting.py
++++ b/app/engines/preprocess/actions/casting.py
+@@ -90,7 +90,16 @@ class Cast(ValueAction):
+         if isinstance(value, int | float) and not isinstance(value, bool):
+             # 本來就是數字的不繞字串：str(1e20) 會變成 "1e+20"，濾字元反而拿到錯的數。
+             return float(value)
+-        digits = "".join(char for char in str(value) if char in _NUMBER_CHARS)
++        # ★ TTC 2026-11-02：本身就是合法數字字串（含科學記號 1e5、1.5e3）先直接解析；
++        #   原本一律只留數字字元，"1e5" 被濾成 "15"、"1.5e3" 變 1.53。
++        text = str(value).strip()
++        try:
++            number = float(text)
++            if math.isfinite(number):
++                return number
++        except ValueError:
++            pass
++        digits = "".join(char for char in text if char in _NUMBER_CHARS)
+         try:
+             return float(digits)
+         except ValueError:
+diff --git a/app/engines/preprocess/actions/masking.py b/app/engines/preprocess/actions/masking.py
+index 34c1049..39fe125 100644
+--- a/app/engines/preprocess/actions/masking.py
++++ b/app/engines/preprocess/actions/masking.py
+@@ -77,6 +77,15 @@ class RegexReplace(StringAction):
+                 "ERR_PREPROCESS_PARAM_INVALID",
+                 f"功能 '{self.name}' 的 pattern 不是合法的正則式：{exc}",
+             ) from exc
++        # ★ TTC 2026-11-02：replacement 也在開跑前檢查（引用不存在的群組、不完整的跳脫）。
++        #   對空字串套用即會解析替換字串；原本要等命中第一格才 re.error，前面步驟已跑過、API 回 500。
++        try:
++            self.pattern.sub(self.replacement, "")
++        except (re.error, IndexError) as exc:
++            raise PetsError(
++                "ERR_PREPROCESS_PARAM_INVALID",
++                f"功能 '{self.name}' 的 replacement 不是合法的替換字串：{exc}",
++            ) from exc
+ 
+     def transform_text(self, text: str) -> str:
+         return self.pattern.sub(self.replacement, text)
+diff --git a/app/engines/risk/subset.py b/app/engines/risk/subset.py
+index 8e95288..4364646 100644
+--- a/app/engines/risk/subset.py
++++ b/app/engines/risk/subset.py
+@@ -237,6 +237,9 @@ def _date_range_mask(
+         if val is None:
+             continue
+         bound = pd.Timestamp(val.strip())
++        if bound.tzinfo is not None:
++            # ★ TTC 2026-11-02：欄位已去掉時區（保留當地時刻），邊界比照處理；原本帶時區的邊界直接比較會 TypeError
++            bound = bound.tz_localize(None)
+         cells = dates.dt.normalize() if _DATE_ONLY_RE.match(val) else dates
+         mask &= keep(cells, bound)
+     return mask
+diff --git a/app/governance/audit.py b/app/governance/audit.py
+index 0352c91..c624bda 100644
+--- a/app/governance/audit.py
++++ b/app/governance/audit.py
+@@ -3,6 +3,7 @@ import json
+ import hmac
+ import hashlib
+ import logging
++import threading
+ import warnings
+ from contextlib import contextmanager
+ from datetime import datetime, UTC
+@@ -17,6 +18,9 @@ from app.core.settings import get_data_dir, get_system_master_key
+ # 不經過 logging——稽核不可遺失、不可被日誌等級或外部設定關掉。
+ logger = logging.getLogger(__name__)
+ 
++# ★ TTC 2026-11-02：同一行程內所有 AuditLogger 共用一把鎖（各端點各自建立實例，鎖不能掛在實例上）
++_WRITE_LOCK = threading.Lock()
++
+ 
+ class AuditVerification(NamedTuple):
+     """審計日誌的校驗結果。
+@@ -65,29 +69,46 @@ class AuditLogger:
+         parent_dir = os.path.dirname(os.path.abspath(self.log_path))
+         os.makedirs(parent_dir, exist_ok=True)
+ 
++    def _read_last_line(self) -> str:
++        """★ TTC 2026-11-02：由檔尾往前讀到最後一行為止，不再每寫一筆就把整個日誌讀進記憶體。"""
++        with open(self.log_path, "rb") as f:
++            f.seek(0, os.SEEK_END)
++            pos = f.tell()
++            block = 8192
++            data = b""
++            while pos > 0:
++                step = min(block, pos)
++                pos -= step
++                f.seek(pos)
++                data = f.read(step) + data
++                stripped = data.rstrip(b"\r\n")
++                if b"\n" in stripped:
++                    return stripped.rsplit(b"\n", 1)[1].decode("utf-8")
++                block *= 2
++            return data.rstrip(b"\r\n").decode("utf-8")
++
+     def _get_last_hash(self) -> str:
+         """讀取最後一行日誌的雜湊值，若無則回傳初始雜湊值"""
+         if not os.path.exists(self.log_path) or os.path.getsize(self.log_path) == 0:
+             return "0" * 64
+ 
+-        with open(self.log_path, encoding="utf-8") as f:
+-            lines = f.readlines()
+-            if not lines:
+-                return "0" * 64
+-            try:
+-                last_line = json.loads(lines[-1].strip())
+-                return last_line.get("hash", "0" * 64)
+-            except json.JSONDecodeError as exc:
+-                # 末行讀不出來就無鏈可接，只能由零重新起鏈（比照未簽章行的處理）。
+-                # 不中斷寫入——稽核日誌壞一行不該讓整個系統停擺——但必須告知：
+-                # 靜靜重新起鏈的話，這段斷裂要等有人主動跑 verify-log 才會被發現。
+-                message = (
+-                    f"審計日誌 {self.log_path} 的最後一行無法解析（{exc}），"
+-                    "雜湊鏈將由零重新起算，該處會在校驗時被報為鏈結斷裂。"
+-                )
+-                logger.warning(message)
+-                warnings.warn(message, stacklevel=2)
+-                return "0" * 64
++        last_text = self._read_last_line().strip()
++        if not last_text:
++            return "0" * 64
++        try:
++            last_line = json.loads(last_text)
++            return last_line.get("hash", "0" * 64)
++        except json.JSONDecodeError as exc:
++            # 末行讀不出來就無鏈可接，只能由零重新起鏈（比照未簽章行的處理）。
++            # 不中斷寫入——稽核日誌壞一行不該讓整個系統停擺——但必須告知：
++            # 靜靜重新起鏈的話，這段斷裂要等有人主動跑 verify-log 才會被發現。
++            message = (
++                f"審計日誌 {self.log_path} 的最後一行無法解析（{exc}），"
++                "雜湊鏈將由零重新起算，該處會在校驗時被報為鏈結斷裂。"
++            )
++            logger.warning(message)
++            warnings.warn(message, stacklevel=2)
++            return "0" * 64
+ 
+     def _calculate_hash(self, content_str: str, last_hash: str, key: str) -> str:
+         """計算 HMAC-SHA256 鏈式雜湊"""
+@@ -127,20 +148,23 @@ class AuditLogger:
+         if key is None:
+             # 未設定金鑰：照常留痕，但不寫入簽章欄位——沒有金鑰就沒有防篡改，
+             # 不以任何寫死字串頂替、不產生「看似驗得過」的假保護。
+-            with open(self.log_path, "a", encoding="utf-8") as f:
++            with _WRITE_LOCK, open(self.log_path, "a", encoding="utf-8") as f:
+                 f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+             return ""
+ 
+         content_str = json.dumps(log_entry, sort_keys=True, ensure_ascii=False)
+-        last_hash = self._get_last_hash()
+-        current_hash = self._calculate_hash(content_str, last_hash, key)
++        # ★ TTC 2026-11-02：「讀上一筆雜湊→計算→追加」須整段互斥。登入、帳號管理等同步端點在
++        #   執行緒池並行，兩筆同時讀到同一個上一筆雜湊會寫出兩行同父的紀錄，校驗時被報為鏈結斷裂。
++        with _WRITE_LOCK:
++            last_hash = self._get_last_hash()
++            current_hash = self._calculate_hash(content_str, last_hash, key)
+ 
+-        # 將雜湊值與前一行雜湊一併記入
+-        log_entry["last_hash"] = last_hash
+-        log_entry["hash"] = current_hash
++            # 將雜湊值與前一行雜湊一併記入
++            log_entry["last_hash"] = last_hash
++            log_entry["hash"] = current_hash
+ 
+-        with open(self.log_path, "a", encoding="utf-8") as f:
+-            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
++            with open(self.log_path, "a", encoding="utf-8") as f:
++                f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+ 
+         return current_hash
+ 
+diff --git a/app/governance/auth.py b/app/governance/auth.py
+index 64ac919..658349b 100644
+--- a/app/governance/auth.py
++++ b/app/governance/auth.py
+@@ -357,21 +357,50 @@ class AuthManager:
+             )
+ 
+         if not self._verify_password(password, stored_hash):
+-            self._record_login_failure(username, fail_count, _from_text(first_failed_at))
++            self._record_login_failure(username)
+             return AuthResult(username, reason="invalid")
+ 
+-        self._reset_login_failures(username)
++        # ★ TTC 2026-11-02：密碼驗證期間（scrypt 約數十毫秒）其他並發請求可能已觸發鎖定，
++        #   清零前於同一交易內再確認一次，鎖定中即使密碼正確也不放行。
++        retry_after = self._reset_login_failures_unless_locked(username)
++        if retry_after is not None:
++            return AuthResult(username, reason="locked", retry_after=retry_after)
+         return AuthResult(username, role=role)
+ 
+-    def _record_login_failure(
+-        self, username: str, fail_count: int, first_failed_at: datetime | None
+-    ) -> None:
++    def _record_login_failure(self, username: str) -> None:
+         """記錄一次登入失敗；於時間窗內累積達門檻即上鎖。
+ 
+         計數採「固定時間窗」（自該輪第一次失敗起算，逾時即重新計數）而非累計總數：
+         偶爾打錯一次不該永遠留在計數裡，否則一個用了很久的帳號終究會被自己的歷史紀錄鎖住。
++
++        ★ TTC 2026-11-02：「讀計數→加一→寫回」改在 BEGIN IMMEDIATE 交易內完成。原本沿用驗證前
++        讀到的舊計數，並發的錯誤密碼請求都讀到同一個值、各寫回同一個 +1，鎖定門檻形同虛設。
+         """
+         now = _now()
++        with sqlite3.connect(self.db_path, timeout=30) as conn:
++            conn.execute("BEGIN IMMEDIATE")
++            row = conn.execute(
++                "SELECT failed_login_count, login_first_failed_at FROM users WHERE username = ?",
++                (username,),
++            ).fetchone()
++            if row is None:
++                conn.rollback()
++                return
++            fail_count, first_failed_at = int(row[0] or 0), _from_text(row[1])
++            count, window_start, locked_until = self._next_failure_state(
++                now, fail_count, first_failed_at
++            )
++            conn.execute(
++                "UPDATE users SET failed_login_count = ?, login_first_failed_at = ?, "
++                "login_locked_until = COALESCE(?, login_locked_until) WHERE username = ?",
++                (count, _to_text(window_start), _to_text(locked_until), username),
++            )
++            conn.commit()
++
++    @staticmethod
++    def _next_failure_state(
++        now: datetime, fail_count: int, first_failed_at: datetime | None
++    ) -> tuple[int, datetime, datetime | None]:
+         if (
+             first_failed_at is None
+             or (now - first_failed_at).total_seconds() > LOGIN_ATTEMPT_WINDOW_SECONDS
+@@ -386,23 +415,39 @@ class AuthManager:
+             if count >= LOGIN_MAX_ATTEMPTS
+             else None
+         )
+-        with sqlite3.connect(self.db_path) as conn:
+-            conn.execute(
+-                "UPDATE users SET failed_login_count = ?, login_first_failed_at = ?, "
+-                "login_locked_until = ? WHERE username = ?",
+-                (count, _to_text(window_start), _to_text(locked_until), username),
+-            )
+-            conn.commit()
++        return count, window_start, locked_until
+ 
+-    def _reset_login_failures(self, username: str) -> None:
+-        """驗證成功（或管理者重設密碼）後清零失敗計數與鎖定狀態。"""
+-        with sqlite3.connect(self.db_path) as conn:
++    def _reset_login_failures_unless_locked(self, username: str) -> int | None:
++        """驗證成功後清零失敗計數；若此刻已被鎖定則不清零，回傳剩餘秒數。"""
++        with sqlite3.connect(self.db_path, timeout=30) as conn:
++            conn.execute("BEGIN IMMEDIATE")
++            row = conn.execute(
++                "SELECT login_locked_until FROM users WHERE username = ?", (username,)
++            ).fetchone()
++            locked_until = _from_text(row[0]) if row else None
++            now = _now()
++            if locked_until and locked_until > now:
++                conn.rollback()
++                return math.ceil((locked_until - now).total_seconds())
+             conn.execute(
+                 "UPDATE users SET failed_login_count = 0, login_first_failed_at = NULL, "
+                 "login_locked_until = NULL WHERE username = ?",
+                 (username,),
+             )
+             conn.commit()
++        return None
++
++    def is_locked(self, username: str) -> int | None:
++        """帳號鎖定中回傳剩餘秒數，否則回傳 None（★ TTC 2026-11-02：供改密碼端點使用）。"""
++        with sqlite3.connect(self.db_path) as conn:
++            row = conn.execute(
++                "SELECT login_locked_until FROM users WHERE username = ?", (username,)
++            ).fetchone()
++        locked_until = _from_text(row[0]) if row else None
++        now = _now()
++        if locked_until and locked_until > now:
++            return math.ceil((locked_until - now).total_seconds())
++        return None
+ 
+     # ── 帳號的維護 ────────────────────────────────────────────────────────
+     def _require_user(self, conn: sqlite3.Connection, username: str) -> None:
+@@ -423,11 +468,20 @@ class AuthManager:
+         _require_password_length(new_password)
+         if new_password == current_password:
+             raise PetsError("ERR_INVALID_PARAM", "新密碼不可與目前密碼相同。")
++        # ★ TTC 2026-11-02：拿到 token 的人可在此無限猜目前密碼；鎖定中一律拒絕，猜錯計入鎖定
++        retry_after = self.is_locked(username)
++        if retry_after is not None:
++            raise PetsError(
++                "ERR_ACCOUNT_LOCKED",
++                f"帳號因連續驗證失敗已暫時鎖定，請於 {retry_after} 秒後再試。",
++            )
+         with sqlite3.connect(self.db_path) as conn:
+             row = conn.execute(
+                 "SELECT password_hash FROM users WHERE username = ?", (username,)
+             ).fetchone()
+             if row is None or not self._verify_password(current_password, row[0]):
++                if row is not None:
++                    self._record_login_failure(username)
+                 return False
+             conn.execute(
+                 "UPDATE users SET password_hash = ? WHERE username = ?",
+diff --git a/app/governance/token.py b/app/governance/token.py
+index 6a5d97c..8e98e84 100644
+--- a/app/governance/token.py
++++ b/app/governance/token.py
+@@ -125,6 +125,10 @@ def hash_refresh_token(token: str) -> str:
+     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+ 
+ 
++# refresh_tokens.revoked：0 有效；1 作廢（登出、改密碼、停用）；2 已換發（再出現即視為外流）
++_ROTATED = 2
++
++
+ class TokenManager:
+     """refresh token 的存放與生命週期（建立／輪替／撤銷／查驗）。"""
+ 
+@@ -176,6 +180,54 @@ class TokenManager:
+             expires = expires.replace(tzinfo=UTC)
+         return username if expires > datetime.now(UTC) else None
+ 
++    def consume(self, token_id: str) -> str | None:
++        """換發用：原子地作廢一張有效的 refresh token，回傳其帳號；無效回傳 None。
++
++        ★ TTC 2026-11-02：原本「查驗→作廢→發新」分三步，並發兩個請求拿同一張 token 都會成功、
++        各拿到一張新 token（外流的 token 能與本人並存）。改為只有 UPDATE 真正改到一列的那個請求成功。
++        出示一張「已被換發過」的 token 代表它已外流（本人輪替後舊的不會再用），該帳號全部 token 一併作廢。
++        以 revoked=2 標記換發過的 token，與登出、改密碼、停用帳號造成的作廢（revoked=1）區分——
++        後者被拿出來只是舊分頁還留著，不是外流，不連帶登出目前的登入。
++        """
++        digest = hash_refresh_token(token_id)
++        now = datetime.now(UTC)
++        with sqlite3.connect(self.db_path, timeout=30) as conn:
++            conn.execute("BEGIN IMMEDIATE")
++            row = conn.execute(
++                "SELECT username, expires_at, revoked FROM refresh_tokens WHERE token_id = ?",
++                (digest,),
++            ).fetchone()
++            if row is None:
++                conn.rollback()
++                return None
++            username, expires_at, revoked = row
++            if revoked == _ROTATED:
++                conn.execute(
++                    "UPDATE refresh_tokens SET revoked = 1 WHERE username = ? AND revoked = 0",
++                    (username,),
++                )
++                conn.commit()
++                logger.warning("偵測到已換發的 refresh token 被重複使用，帳號 [%s] 的登入全部作廢。", username)
++                return None
++            if revoked:
++                conn.rollback()
++                return None
++            try:
++                expires = datetime.fromisoformat(expires_at)
++            except ValueError:
++                conn.rollback()
++                return None
++            if expires.tzinfo is None:
++                expires = expires.replace(tzinfo=UTC)
++            if expires <= now:
++                conn.rollback()
++                return None
++            conn.execute(
++                "UPDATE refresh_tokens SET revoked = ? WHERE token_id = ?", (_ROTATED, digest)
++            )
++            conn.commit()
++        return username
++
+     def rotate(self, token_id: str, username: str) -> str:
+         """換發：舊的立刻作廢、發一張新的。
+ 
+diff --git a/tests/api/test_review_api.py b/tests/api/test_review_api.py
+new file mode 100644
+index 0000000..5073645
+--- /dev/null
++++ b/tests/api/test_review_api.py
+@@ -0,0 +1,263 @@
++"""★ TTC 2026-11-02：程式碼審查發現的 API／帳號安全問題（併發、無效輸入）
++每項對應審查報告編號（B1…B17），修正前應失敗。
++"""
++import json
++import threading
++import uuid
++from concurrent.futures import ThreadPoolExecutor
++
++import pytest
++
++from app.api import compute
++from app.governance.audit import AuditLogger
++from app.governance.auth import LOGIN_MAX_ATTEMPTS, AuthManager
++from app.governance.token import TokenManager
++
++BASE = "/api/v1"
++
++
++# ── B1：並發錯誤密碼不可繞過鎖定 ────────────────────────────────────────
++
++
++def test_b1_concurrent_wrong_passwords_are_all_counted(tmp_path):
++    manager = AuthManager(db_path=str(tmp_path / "users.db"))
++    manager.create_user("victim", "right-pass", "user")
++    attempts = LOGIN_MAX_ATTEMPTS - 1
++    barrier = threading.Barrier(attempts)
++
++    def wrong(i):
++        barrier.wait()
++        return manager.authenticate("victim", f"wrong-{i}")
++
++    with ThreadPoolExecutor(attempts) as pool:
++        list(pool.map(wrong, range(attempts)))
++    counts = {u["username"]: u["failed_login_count"] for u in manager.list_users()}
++    assert counts["victim"] == attempts
++
++
++def test_b1_concurrent_burst_ends_locked(tmp_path):
++    manager = AuthManager(db_path=str(tmp_path / "users.db"))
++    manager.create_user("victim", "right-pass", "user")
++    burst = 20
++    barrier = threading.Barrier(burst)
++
++    def wrong(i):
++        barrier.wait()
++        return manager.authenticate("victim", f"wrong-{i}")
++
++    with ThreadPoolExecutor(burst) as pool:
++        list(pool.map(wrong, range(burst)))
++    assert manager.authenticate("victim", "right-pass").reason == "locked"
++
++
++# ── B2：同一 refresh token 並發只能換發一次；重複使用撤銷全部 ─────────────
++
++
++def test_b2_concurrent_refresh_only_one_succeeds(tmp_path):
++    AuthManager(db_path=str(tmp_path / "users.db"))  # 建表
++    tokens = TokenManager(str(tmp_path / "users.db"))
++    old = tokens.issue("admin")
++    barrier = threading.Barrier(8)
++
++    def consume(_):
++        barrier.wait()
++        return tokens.consume(old)
++
++    with ThreadPoolExecutor(8) as pool:
++        results = list(pool.map(consume, range(8)))
++    assert results.count("admin") == 1
++    assert results.count(None) == 7
++
++
++def test_b2_reused_token_revokes_whole_session_family(tmp_path):
++    AuthManager(db_path=str(tmp_path / "users.db"))
++    tokens = TokenManager(str(tmp_path / "users.db"))
++    old = tokens.issue("admin")
++    assert tokens.consume(old) == "admin"
++    newer = tokens.issue("admin")
++    # 舊 token 再次出現＝已外流：該帳號全部 token 作廢
++    assert tokens.consume(old) is None
++    assert tokens.resolve(newer) is None
++
++
++def test_b2_refresh_endpoint_rejects_second_use(client, api_auth):
++    issued = client.post(
++        f"{BASE}/auth/login", json={"username": "user", "password": "user123"}
++    ).json()["refresh_token"]
++    first = client.post(f"{BASE}/auth/refresh", json={"refresh_token": issued})
++    second = client.post(f"{BASE}/auth/refresh", json={"refresh_token": issued})
++    assert first.status_code == 200
++    assert second.status_code == 401
++    # 重複使用後，第一次換發得到的新 token 也一併失效
++    again = client.post(f"{BASE}/auth/refresh", json={"refresh_token": first.json()["refresh_token"]})
++    assert again.status_code == 401
++
++
++# ── B3：並發寫稽核日誌不可斷鏈 ──────────────────────────────────────────
++
++
++def test_b3_concurrent_audit_writes_keep_chain_valid(tmp_path, monkeypatch):
++    monkeypatch.setenv("OPEN_PETS_SYSTEM_MASTER_KEY", "audit-test-key")
++    log_path = str(tmp_path / "audit.jsonl")
++    audit = AuditLogger(log_path=log_path)
++    writers = 16
++    barrier = threading.Barrier(writers)
++
++    def write(i):
++        barrier.wait()
++        for j in range(10):
++            audit.log_operation("op", "success", {"i": i, "j": j})
++
++    with ThreadPoolExecutor(writers) as pool:
++        list(pool.map(write, range(writers)))
++    result = audit.verify_audit_log()
++    assert result.is_valid, result
++
++
++def test_b3_last_hash_read_from_tail_of_large_log(tmp_path, monkeypatch):
++    monkeypatch.setenv("OPEN_PETS_SYSTEM_MASTER_KEY", "audit-test-key")
++    log_path = str(tmp_path / "audit.jsonl")
++    audit = AuditLogger(log_path=log_path)
++    audit.log_operation("big", "success", {"blob": "x" * 200_000})  # 單行超過讀尾的區塊大小
++    last = audit.log_operation("after", "success", {})
++    assert audit.verify_audit_log().is_valid
++    assert audit._get_last_hash() == last
++
++
++# ── B12：取消 handle 衝突 ─────────────────────────────────────────────
++
++
++def test_b12_handle_owned_by_other_user_is_not_overwritten():
++    handle = str(uuid.uuid4())
++    owner_event = threading.Event()
++    compute._active_runs[handle] = ("alice", owner_event)
++    try:
++        assert compute._register_run(handle, "mallory", threading.Event()) is False
++        assert compute._active_runs[handle] == ("alice", owner_event)
++    finally:
++        compute._active_runs.pop(handle, None)
++
++
++def test_b12_finally_only_removes_own_registration():
++    handle = str(uuid.uuid4())
++    first, second = threading.Event(), threading.Event()
++    assert compute._register_run(handle, "alice", first)
++    compute._active_runs[handle] = ("alice", second)  # 同一帳號重試，以新的運算取代
++    compute._unregister_run(handle, first)
++    assert compute._active_runs.get(handle) == ("alice", second)
++    compute._unregister_run(handle, second)
++    assert handle not in compute._active_runs
++
++
++# ── B15：改密碼猜舊密碼也要計入鎖定 ──────────────────────────────────
++
++
++def test_b15_wrong_current_password_counts_toward_lockout(client, api_auth, login):
++    headers = login("user", "user123")
++    for _ in range(LOGIN_MAX_ATTEMPTS):
++        client.patch(
++            f"{BASE}/auth/password",
++            json={"current_password": "guess", "new_password": "whatever-new"},
++            headers=headers,
++        )
++    resp = client.patch(
++        f"{BASE}/auth/password",
++        json={"current_password": "user123", "new_password": "whatever-new"},
++        headers=headers,
++    )
++    assert resp.status_code == 423
++
++
++# ── B6：歷史紀錄不可存入 NaN；過大拒收 ─────────────────────────────────
++
++
++def _run_id_for(username):
++    from app.governance.system_store import get_system_store
++
++    run_id = uuid.uuid4().hex
++    get_system_store().add_run(run_id, username, "POST /k-anonymity", 200)
++    return run_id
++
++
++def test_b6_history_with_nan_rejected_and_listing_still_works(client, api_auth, login):
++    headers = login("user", "user123")
++    run_id = _run_id_for("user")
++    body = '{"runId": "%s", "id": "r1", "x": NaN}' % run_id
++    resp = client.post(
++        f"{BASE}/history", content=body, headers={**headers, "Content-Type": "application/json"}
++    )
++    assert resp.status_code == 400
++    assert client.get(f"{BASE}/history", headers=headers).status_code == 200
++    # 驗證失敗不得消耗 run：修正內容後可用同一個 runId 重送
++    ok = client.post(f"{BASE}/history", json={"runId": run_id, "id": "r1", "x": 1}, headers=headers)
++    assert ok.status_code == 201, ok.text
++
++
++def test_b6_oversized_history_rejected(client, api_auth, login):
++    headers = login("user", "user123")
++    resp = client.post(
++        f"{BASE}/history",
++        json={"runId": _run_id_for("user"), "id": "big", "blob": "x" * 400_000},
++        headers=headers,
++    )
++    assert resp.status_code in (400, 413, 422)
++
++
++# ── B7：登入欄位長度上限 ───────────────────────────────────────────────
++
++
++def test_b7_login_rejects_oversized_fields(client, api_auth):
++    resp = client.post(
++        f"{BASE}/auth/login", json={"username": "u" * 10_000, "password": "p"}
++    )
++    assert resp.status_code == 422
++    resp = client.post(
++        f"{BASE}/auth/login", json={"username": "user", "password": "p" * 100_000}
++    )
++    assert resp.status_code == 422
++
++
++# ── B16：上傳上限環境變數 ──────────────────────────────────────────────
++
++
++@pytest.mark.parametrize(
++    "raw, expected_mb",
++    [("0.5", 1), ("1.2", 2), ("inf", 1024), ("nan", 1024), ("-inf", 1024), ("0", 0)],
++)
++def test_b16_max_upload_parsing(monkeypatch, raw, expected_mb):
++    from app.core.settings import get_max_upload_bytes
++
++    monkeypatch.setenv("OPEN_PETS_MAX_UPLOAD_MB", raw)
++    assert get_max_upload_bytes() == expected_mb * 1024 * 1024
++
++
++# ── B17：since 參數界限 ────────────────────────────────────────────────
++
++
++def test_b17_system_logs_since_out_of_range_is_422_not_500(client, api_auth, login):
++    resp = client.get(f"{BASE}/system-logs", params={"since": 10**20}, headers=login())
++    assert resp.status_code == 422
++
++
++# ── B13：處理端點稽核紀錄帶操作者 ──────────────────────────────────────
++
++
++def test_b13_processing_audit_records_operator(client, sample_csv_bytes, kanon_bundle, monkeypatch):
++    captured = []
++    from app.governance import audit as audit_module
++
++    real = audit_module.AuditLogger.log_operation
++
++    def spy(self, operation, status, params, user=None):
++        captured.append((operation, user))
++        return real(self, operation, status, params, user=user)
++
++    monkeypatch.setattr(audit_module.AuditLogger, "log_operation", spy)
++    monkeypatch.setenv("OPEN_PETS_DEFAULT_SALT", "test_salt")
++    resp = client.post(
++        f"{BASE}/k-anonymity",
++        files={"file": ("d.csv", sample_csv_bytes, "text/csv"),
++               "config": ("c.json", kanon_bundle, "application/json")},
++    )
++    assert resp.status_code == 200, resp.text
++    assert ("k_anonymity", "test-processing-user") in captured
+diff --git a/tests/unit/test_review_engines.py b/tests/unit/test_review_engines.py
+new file mode 100644
+index 0000000..4fdedb4
+--- /dev/null
++++ b/tests/unit/test_review_engines.py
+@@ -0,0 +1,208 @@
++"""★ TTC 2026-11-02：程式碼審查發現的運算引擎問題（邊界條件、數學正確性、無效輸入）
++每項對應審查報告編號（E1…E20），修正前應失敗。
++"""
++import math
++
++import numpy as np
++import pandas as pd
++import pytest
++
++from app.core.config import ColumnConfig, ColumnInfo, DPColumnConfig, PreprocessConfig
++from app.core.dataset_io import load_dataframe_with_format
++from app.core.errors import PetsError
++from app.engines.anonymization import run_k_anonymity
++from app.engines.anonymization.strategies.generalize import categorical_mapping_generalize
++from app.engines.anonymization.strategies.masking import hash_mask
++from app.engines.dp import run_dp
++from app.engines.dp.mechanisms import numeric as numeric_module
++from app.engines.preprocess import run_preprocess
++from app.engines.risk.subset import select_subgroup
++
++
++# ── E1：DP 加噪前須先裁切到上下界 ────────────────────────────────────────
++
++
++def test_e1_values_clipped_to_bounds_before_noise(monkeypatch):
++    seen = {}
++    real_apply = numeric_module.NumericNoiser.apply
++
++    def spy(self, units, epsilon, delta, sensitivity):
++        seen["max"] = units.max()
++        return real_apply(self, units, epsilon, delta, sensitivity)
++
++    monkeypatch.setattr(numeric_module.NumericNoiser, "apply", spy)
++    df = pd.DataFrame({"薪資": [30000, 45000, 9_800_000]})
++    config = DPColumnConfig(
++        column_budgets={
++            "薪資": {
++                "type": "continuous", "epsilon_budget": 1.0, "sensitivity": 5000,
++                "minimum_unit": 1, "clipping_bounds": [0, 200000],
++            }
++        }
++    )
++    run_dp(df, config)
++    assert seen["max"] <= 200000  # 極端值須先夾到上界，雜訊才掩蓋得住
++
++
++# ── E3：列抑制須重複到沒有違規列 ────────────────────────────────────────
++
++
++def test_e3_row_suppression_repeats_until_k_holds():
++    # X 靠 Y、Z 撐到 k；Y、Z 被刪後 X 落單，原本照樣釋出
++    df = pd.DataFrame({"郵遞區號": ["1", "1", "1"], "年齡": [np.nan, 30, 40]})
++    config = ColumnConfig(
++        columns={
++            "郵遞區號": ColumnInfo(role="quasi_identifier", type="categorical"),
++            "年齡": ColumnInfo(role="quasi_identifier", type="numeric"),
++        }
++    )
++    df_out, report = run_k_anonymity(
++        df, config, k=3, suppression_limit_percent=100, limit_exceeded_action="allow_with_warning"
++    )
++    assert report.k_passed is True
++    assert len(df_out) == 0
++    assert report.suppressed_count == 3
++
++
++# ── E4：時區日期不可崩潰 ────────────────────────────────────────────────
++
++
++def test_e4_dp_datetime_with_timezone():
++    df = pd.DataFrame({"時間": ["2024-03-15T10:00:00Z", "2024-03-16T10:00:00Z", "2024-04-01T00:00:00Z"]})
++    config = DPColumnConfig(column_budgets={"時間": {"type": "datetime", "epsilon_budget": 1.0}})
++    df_out, _ = run_dp(df, config)
++    assert pd.to_datetime(df_out["時間"]).notna().all()
++
++
++def test_e4_subgroup_date_bound_with_timezone():
++    df = pd.DataFrame({"就診日": ["2024-01-01", "2024-03-15", "2024-07-01"]})
++    res = select_subgroup(df, {"就診日": {"min": "2024-01-01T00:00:00+08:00", "max": "2024-06-30"}})
++    assert "2024-03-15" in res.df["就診日"].tolist()
++    assert "2024-07-01" not in res.df["就診日"].tolist()
++
++
++# ── E5：k-RR 大 ε 不可溢位翻轉；非有限 ε 須拒絕 ───────────────────────
++
++
++def test_e5_krr_huge_epsilon_keeps_values():
++    df = pd.DataFrame({"性別": ["男", "女"] * 50})
++    config = DPColumnConfig(column_budgets={"性別": {"type": "categorical", "epsilon_budget": 1000.0}})
++    df_out, _ = run_dp(df, config)
++    assert (df_out["性別"] == df["性別"]).all()
++
++
++@pytest.mark.parametrize("bad", [math.nan, math.inf])
++def test_e5_non_finite_epsilon_rejected(bad):
++    df = pd.DataFrame({"性別": ["男", "女"]})
++    config = DPColumnConfig(column_budgets={"性別": {"type": "categorical", "epsilon_budget": bad}})
++    with pytest.raises(PetsError):
++        run_dp(df, config)
++
++
++def test_e5_non_finite_accumulated_rejected():
++    df = pd.DataFrame({"年齡": [20, 30]})
++    config = DPColumnConfig(
++        column_budgets={"年齡": {"type": "continuous", "epsilon_budget": 1.0}},
++        accumulated_epsilon=math.nan,
++    )
++    with pytest.raises(PetsError):
++        run_dp(df, config)
++
++
++# ── E19：sensitivity 須為有限正數 ──────────────────────────────────────
++
++
++@pytest.mark.parametrize("bad", [0, -100, math.nan, math.inf])
++def test_e19_invalid_sensitivity_rejected(bad):
++    df = pd.DataFrame({"年齡": [20, 30, 40]})
++    config = DPColumnConfig(
++        column_budgets={"年齡": {"type": "continuous", "epsilon_budget": 1.0, "sensitivity": bad}}
++    )
++    with pytest.raises(PetsError):
++        run_dp(df, config)
++
++
++# ── E11：k／l／t 須驗證 ────────────────────────────────────────────────
++
++
++def _two_qi_config():
++    return ColumnConfig(
++        columns={
++            "地區": ColumnInfo(role="quasi_identifier", type="categorical"),
++            "疾病": ColumnInfo(role="sensitive", type="categorical"),
++        }
++    )
++
++
++@pytest.mark.parametrize(
++    "kwargs",
++    [{"k": 0}, {"k": -3}, {"k": 2, "l": 0}, {"k": 2, "t": -0.1}, {"k": 2, "t": 1.5}, {"k": 2, "t": math.nan}],
++)
++def test_e11_invalid_k_l_t_rejected(kwargs):
++    df = pd.DataFrame({"地區": ["A", "A"], "疾病": ["x", "y"]})
++    with pytest.raises(PetsError):
++        run_k_anonymity(df, _two_qi_config(), suppression_limit_percent=100, **kwargs)
++
++
++# ── E10：partial／clear 的敏感欄不做 l／t 假檢測 ────────────────────────
++
++
++@pytest.mark.parametrize("strategy", ["partial", "clear"])
++def test_e10_partially_masked_sensitive_skips_lt(strategy):
++    df = pd.DataFrame({"地區": ["A", "A", "B", "B"], "身分": ["A123", "A999", "B111", "B222"]})
++    config = ColumnConfig(
++        columns={
++            "地區": ColumnInfo(role="quasi_identifier", type="categorical"),
++            "身分": ColumnInfo(role="sensitive", type="categorical", strategy=strategy),
++        }
++    )
++    _, report = run_k_anonymity(df, config, k=2, suppression_limit_percent=100, l=2, salt_key="s")
++    assert report.l_passed is False
++    assert any("已套用遮蔽/雜湊" in rec for rec in report.recommendations)
++
++
++# ── E12／E20：整數浮點（欄位含空值時 100 變 100.0）須與整數一致 ─────────
++
++
++def test_e12_categorical_mapping_matches_integral_float():
++    mapping = {"100": ["100", "北區"]}
++    assert categorical_mapping_generalize(100.0, mapping, 1) == "北區"
++
++
++def test_e20_hash_of_integral_float_equals_int():
++    assert hash_mask(12345.0, salt="s") == hash_mask(12345, salt="s")
++
++
++# ── E17：JSON 欄名像日期時不可把整數轉成日期 ──────────────────────────
++
++
++def test_e17_json_date_like_column_names_not_converted():
++    content = b'[{"created_at": 1700000000, "timestamp": 99999999}]'
++    df, _ = load_dataframe_with_format(content, "d.json", None)
++    assert df["created_at"].tolist() == [1700000000]
++    assert df["timestamp"].tolist() == [99999999]
++
++
++# ── E20：型別轉換保留科學記號；正則替換字串建置時即驗證 ──────────────
++
++
++def test_e20_cast_scientific_notation():
++    df = pd.DataFrame({"值": ["1e5", "1.5e3"]})
++    out = run_preprocess(
++        df,
++        PreprocessConfig(columns=[{"column": "值", "actions": [{"action": "cast", "params": {"type": "float"}}]}]),
++    )
++    assert list(out["值"]) == [100000.0, 1500.0]
++
++
++def test_e20_invalid_regex_replacement_rejected_up_front():
++    df = pd.DataFrame({"備註": ["abc"]})
++    config = PreprocessConfig(
++        columns=[{
++            "column": "備註",
++            "actions": [{"action": "regex_replace", "params": {"pattern": "b", "replacement": "\\9"}}],
++        }]
++    )
++    with pytest.raises(PetsError) as exc_info:
++        run_preprocess(df, config)
++    assert exc_info.value.error_code.startswith("ERR_PREPROCESS")

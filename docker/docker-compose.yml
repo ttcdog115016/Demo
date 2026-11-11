@@ -1,0 +1,38 @@
+# Open-PETs（前端＋後端單一映像檔）啟動設定
+#   docker compose up -d
+# 版本、映像檔名稱與對外埠可在同資料夾的 .env 調整：OPEN_PETS_VERSION=2.0.0、OPEN_PETS_IMAGE=open-pets-app、OPEN_PETS_PORT=8080
+name: open-pets
+
+services:
+  open-pets:
+    # 離線 tar 匯入後的本機映像檔名稱是 open-pets-app；有網路時改成 ghcr.io/<擁有者>/open-pets-app 即可用 docker compose pull 更新（見說明文件「二、升級」）
+    image: ${OPEN_PETS_IMAGE:-open-pets-app}:${OPEN_PETS_VERSION:-2.0.0}
+    container_name: open-pets
+    restart: unless-stopped
+    ports:
+      # 只綁本機。要讓區網其他電腦連入，請前面加反向代理並啟用 HTTPS，不要直接把 8080 以明文 HTTP 開放
+      - "127.0.0.1:${OPEN_PETS_PORT:-8080}:8080"
+    volumes:
+      # 帳號資料庫、稽核日誌、系統日誌、自動產生的金鑰（.secrets.env）都在這裡，升級映像檔不會遺失
+      - open-pets-data:/data
+    # 金鑰預設第一次啟動自動產生並存在 /data；要與資料分開保管時，在 .env 填入下列值（環境變數優先）
+    environment:
+      OPEN_PETS_DEFAULT_SALT: ${OPEN_PETS_DEFAULT_SALT:-}
+      OPEN_PETS_SYSTEM_MASTER_KEY: ${OPEN_PETS_SYSTEM_MASTER_KEY:-}
+      OPEN_PETS_JWT_SECRET: ${OPEN_PETS_JWT_SECRET:-}
+      # 經反向代理以網域連入時，填該網域（逗號分隔），防 DNS rebinding；留空＝不限制
+      OPEN_PETS_ALLOWED_HOSTS: ${OPEN_PETS_ALLOWED_HOSTS:-}
+      OPEN_PETS_MAX_UPLOAD_MB: ${OPEN_PETS_MAX_UPLOAD_MB:-1024}
+      # 模式：offline（預設，本機／離線）或 online（多人使用的伺服器，見 docker-compose.online.yml）
+      OPEN_PETS_MODE: ${OPEN_PETS_MODE:-offline}
+      # 登入頁是否顯示 Demo 測試帳號；交付環境保持 false
+      OPEN_PETS_SHOW_DEMO_ACCOUNTS: ${OPEN_PETS_SHOW_DEMO_ACCOUNTS:-false}
+    # 容器強化：根檔案系統唯讀、移除所有 Linux capabilities、禁止提權
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  open-pets-data:

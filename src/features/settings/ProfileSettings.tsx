@@ -8,30 +8,24 @@
  */
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, Form, Input, Button, Typography, Space, Divider, Tag, theme, App as AntdApp, Progress, Alert } from 'antd';
+import { Card, Form, Input, Button, Typography, Space, Divider, Tag, theme, App as AntdApp, Progress } from 'antd';
 import { UserOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
+import { changeOwnPassword, toMemberApiError } from '../../api/authApi';
+import { logSystemEvent } from '../../store/useSystemLogStore';
+import { getRoleDisplayName } from '../../utils/roleLabel';
 import { useUIStore } from '../../store/useUIStore';
 
+import { scaleFontSize } from '../../utils/fontScale';
+import { calculatePasswordStrength, toStrengthBarPercent, PASSWORD_STRENGTH_WEAK_MAX, PASSWORD_STRENGTH_MEDIUM_MAX } from '../../utils/passwordStrength';
+import { getPasswordMinLength } from '../../utils/systemSettingsSync';
 const { Title, Text } = Typography;
 
 /**
- * 密碼強度評估與長度常數宣告
- * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
- */
-const MIN_PASSWORD_LENGTH_LIMIT = 12;
-const BASE_PASSWORD_LENGTH_THRESHOLD = 8;
-const HIGH_MEMORABILITY_LENGTH_THRESHOLD = 16;
-const WEAK_STRENGTH_SCORE_THRESHOLD = 40;
-const MEDIUM_STRENGTH_SCORE_THRESHOLD = 80;
-const PASSWORD_UPDATE_SIMULATION_DELAY_MS = 1000;
-
-/**
  * 函數名稱: ProfileSettings
- * 函數功能: 渲染個人資料與安全設定視圖，包含帳號資訊卡片、密碼過期警告 Banner、動態密碼強度計算器與密碼變更表單。
+ * 函數功能: 渲染個人資料與安全設定視圖，包含帳號資訊卡片、動態密碼強度計算器與密碼變更表單。
  * 
  * 輸入參數 (Input): 無 (React 無參數 Functional Component)
  * 輸出參數 (Output): 無
@@ -51,36 +45,11 @@ export default function ProfileSettings(): React.ReactElement
 
 	const { message: messageApi } = AntdApp.useApp();
 
-	const navigate = useNavigate();
-	
-	// 從 AuthStore 取得使用者資訊與密碼過期控制 (符合規範 g, i)
+	// 從 AuthStore 取得使用者資訊 (符合規範 g, i)
 	const currentUserSession = useAuthStore(
 		(state) => state.user
 	);
 	
-	// 擴充型別讀取與切換密碼過期狀態之輔助 Action (符合規範 g)
-	const isPasswordExpiredStatus = (currentUserSession as unknown as { isPasswordExpired?: boolean })?.isPasswordExpired || false; // 當前密碼是否已過期
-
-	/**
-	 * 函數名稱: setPasswordExpired
-	 * 函數功能: 更新 AuthStore 中使用者密碼過期之狀態標記。
-	 * 
-	 * 輸入參數 (Input):
-	 *   - isExpired (boolean): 是否設定為過期 (true/false)
-	 * 返回值 (Return): void
-	 */
-	const setPasswordExpired = (isExpired: boolean): void => 
-	{
-		useAuthStore.setState(
-			(currentStoreState) => 
-			(
-				{
-					user: currentStoreState.user ? { ...currentStoreState.user, isPasswordExpired: isExpired } as typeof currentStoreState.user : null
-				}
-			)
-		);
-	};
-
 	// 從 UIStore 讀取全域主題狀態 (符合規範 g, i)
 	const isDarkModeActive = useUIStore(
 		(state) => state.isDarkMode
@@ -94,88 +63,10 @@ export default function ProfileSettings(): React.ReactElement
 	// 即時監聽新密碼輸入框數值變化 (符合規範 g)
 	const newPasswordInputValueString = Form.useWatch('newPassword', passwordFormInstance);
 
-	/**
-	 * 函數名稱: calculateStrength
-	 * 函數功能: 依據密碼長度、字元複雜度 (大小寫/數字/符號)、記憶性及扣分懲罰規則，計算即時密碼強度分數。
-	 * 
-	 * 輸入參數 (Input):
-	 *   - passwordString (string | undefined): 當前新密碼輸入框之字串數值
-	 * 輸出參數 (Output): 無
-	 * 返回值 (Return): 
-	 *   - calculatedScore (number): 0 ~ 100 之密碼強度分數
-	 */
-	const calculateStrength = (passwordString?: string): number => 
-	{
-		if (!passwordString) 
-		{
-			return 0;
-		}
-
-		let calculatedScore = 0;
-
-		// 1. 長度計分 (Length Score)
-		if (passwordString.length >= BASE_PASSWORD_LENGTH_THRESHOLD) 
-		{
-			calculatedScore += 20 + Math.min(40, (passwordString.length - BASE_PASSWORD_LENGTH_THRESHOLD) * 5); 
-		}
-
-		// 2. 複雜度計分 (Complexity Score)
-		let characterComplexityCount = 0; // 字元種類計數 (小寫/大寫/數字/符號)
-
-		if (/[a-z]/.test(passwordString)) 
-		{
-			characterComplexityCount++;
-		}
-
-		if (/[A-Z]/.test(passwordString)) 
-		{
-			characterComplexityCount++;
-		}
-
-		if (/\d/.test(passwordString)) 
-		{
-			characterComplexityCount++;
-		}
-
-		if (/[@$!%*?&#\-_+=]/.test(passwordString)) 
-		{
-			characterComplexityCount++;
-		}
-		
-		calculatedScore += characterComplexityCount * 10; 
-
-		// 3. 易記性獎勵 (Memorability Bonus)
-		if (passwordString.length >= HIGH_MEMORABILITY_LENGTH_THRESHOLD) 
-		{
-			calculatedScore += 15;
-		}
-
-		// 4. 常見弱密碼與連續字元扣分防護 (Penalty)
-		if (/(p[a@4][s$5]{2}w[o0]rd|admin|qwerty|12345)/i.test(passwordString)) 
-		{
-			calculatedScore -= 50; 
-		}
-
-		if (/(0123|1234|2345|3456|4567|5678|6789|9876|8765|7654|6543|5432|4321|3210)/.test(passwordString)) 
-		{
-			calculatedScore -= 30;
-		}
-
-		if (/(qwer|asdf|zxcv|1q2w|qaz)/i.test(passwordString)) 
-		{
-			calculatedScore -= 30;
-		}
-
-		if (/(.)\1{2,}/.test(passwordString)) 
-		{
-			calculatedScore -= 20;
-		}
-
-		return Math.max(0, Math.min(100, calculatedScore));
-	};
-
 	// 即時計算當前密碼強度得分 (符合規範 g)
-	const currentPasswordStrengthScore = calculateStrength(newPasswordInputValueString);
+	// ★ 2026-10-29：評分移至 utils/passwordStrength.ts（修正連續數字重複扣分到 0 分、強度條整條空白）
+	const currentPasswordStrengthResult = calculatePasswordStrength(newPasswordInputValueString);
+	const currentPasswordStrengthScore = currentPasswordStrengthResult.score;
 
 	/**
 	 * 函數名稱: getStrengthColor
@@ -189,12 +80,12 @@ export default function ProfileSettings(): React.ReactElement
 	 */
 	const getStrengthColor = (scoreValue: number): string => 
 	{
-		if (scoreValue <= WEAK_STRENGTH_SCORE_THRESHOLD) 
+		if (scoreValue <= PASSWORD_STRENGTH_WEAK_MAX) 
 		{
 			return '#ff4d4f'; // 紅色 (弱)
 		}
 
-		if (scoreValue <= MEDIUM_STRENGTH_SCORE_THRESHOLD) 
+		if (scoreValue <= PASSWORD_STRENGTH_MEDIUM_MAX) 
 		{
 			return '#faad14'; // 橘色 (中)
 		}
@@ -219,12 +110,12 @@ export default function ProfileSettings(): React.ReactElement
 			return '';
 		}
 
-		if (scoreValue <= WEAK_STRENGTH_SCORE_THRESHOLD) 
+		if (scoreValue <= PASSWORD_STRENGTH_WEAK_MAX) 
 		{
 			return translate('profile.strength_weak', '弱 (Weak)');
 		}
 
-		if (scoreValue <= MEDIUM_STRENGTH_SCORE_THRESHOLD) 
+		if (scoreValue <= PASSWORD_STRENGTH_MEDIUM_MAX) 
 		{
 			return translate('profile.strength_medium', '中 (Medium)');
 		}
@@ -234,45 +125,63 @@ export default function ProfileSettings(): React.ReactElement
 
 	/**
 	 * 函數名稱: handleUpdatePassword
-	 * 函數功能: 處理變更密碼表單提交，模擬異步 API 更新流程，成功後重置表單並於密碼過期狀態下引導回首頁。
+	 * 函數功能: 處理變更密碼表單提交，呼叫後端變更密碼，成功後重置表單。
 	 * 
 	 * 輸入參數 (Input): 無
 	 * 輸出參數 (Output): 無
-	 * 返回值 (Return): void
+	 * 返回值 (Return): Promise<void>
 	 */
-	const handleUpdatePassword = (): void => 
+	const handleUpdatePassword = async (): Promise<void> => 
 	{
+		// ★ 2026-10-27：改呼叫後端 PATCH /api/v1/auth/password（須帶目前密碼）；後端以 401 表示目前密碼不正確
+		const passwordFormValuesObj = passwordFormInstance.getFieldsValue() as { oldPassword?: string; newPassword?: string };
+		const operatorNameString = currentUserSession?.name || 'System';
+		if ((passwordFormValuesObj.oldPassword || '') === (passwordFormValuesObj.newPassword || ''))
+		{
+			passwordFormInstance.setFields([{ name: 'newPassword', errors: [translate('profile.same_password', '新密碼不可與目前密碼相同')] }]);
+			return;
+		}
 		setIsSubmitting(true);
-		
-		setTimeout(
-			() => 
+		try
+		{
+			await changeOwnPassword(passwordFormValuesObj.oldPassword || '', passwordFormValuesObj.newPassword || '');
+		}
+		catch (changeErrorValue)
+		{
+			const memberErrorObj = toMemberApiError(changeErrorValue);
+			if (memberErrorObj.status === 401 && memberErrorObj.errorCode === 'ERR_UNAUTHORIZED')
 			{
-				setIsSubmitting(false);
+				passwordFormInstance.setFields([{ name: 'oldPassword', errors: [translate('profile.wrong_current_password', '目前密碼不正確')] }]);
+				logSystemEvent('WARN', '變更密碼失敗（目前密碼錯誤）', operatorNameString);
+			}
+			else
+			{
+				messageApi.error(memberErrorObj.message);
+				logSystemEvent('ERROR', `變更密碼失敗：${memberErrorObj.message}`, operatorNameString);
+			}
+			return;
+		}
+		finally
+		{
+			setIsSubmitting(false);
+		}
 
-				messageApi.success(
-					translate('profile.password_changed', '密碼已成功變更！請妥善保管新密碼。')
-				);
+		logSystemEvent('INFO', '使用者自行變更密碼', operatorNameString);
 
-				passwordFormInstance.resetFields();
-
-				if (isPasswordExpiredStatus) 
-				{
-					setPasswordExpired(false);
-
-					navigate('/', { replace: true });
-				}
-			}, 
-			PASSWORD_UPDATE_SIMULATION_DELAY_MS
+		messageApi.success(
+			translate('profile.password_changed', '密碼已成功變更！請妥善保管新密碼。')
 		);
+
+		passwordFormInstance.resetFields();
 	};
 
 	return (
-		<div style={{ maxWidth: '600px', margin: '40px auto', padding: '0 24px' }}>
+		<div style={{ maxWidth: '43em', margin: '40px auto', padding: '0 24px' }}>
 			<Card
 				title={
 					<Space>
 						<UserOutlined style={{ color: token.colorPrimary }} />
-						<span style={{ fontSize: '18px', fontWeight: 'bold' }}>
+						<span style={{ fontSize: scaleFontSize(18), fontWeight: 'bold' }}>
 							{translate('profile.title', '個人資料與安全設定')}
 						</span>
 					</Space>
@@ -287,17 +196,6 @@ export default function ProfileSettings(): React.ReactElement
 					}
 				}
 			>
-				{/* 密碼過期強制提示 Banner */}
-				{isPasswordExpiredStatus && (
-					<Alert
-						type="error"
-						showIcon
-						message={translate('profile.password_expired_title', '密碼已過期')}
-						description={translate('profile.password_expired_banner', '您必須設定一組符合安全規範的新密碼，才能繼續使用 Privacy Toolkit 專案空間。')}
-						style={{ marginBottom: '24px', border: '1px solid #ffa39e' }}
-					/>
-				)}
-
 				{/* 基本資料區塊 */}
 				<div style={{ marginBottom: '24px' }}>
 					<Title level={5} style={{ marginBottom: '16px', color: token.colorText }}>
@@ -305,20 +203,16 @@ export default function ProfileSettings(): React.ReactElement
 					</Title>
 
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+						{/* ★ 2026-10-27：後端只有帳號（帳號即 Email），不另顯示使用者名稱 */}
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<Text type="secondary" style={{ width: '80px' }}>{translate('profile.name', '使用者名稱')}:</Text>
-							<Text strong>{currentUserSession?.name}</Text>
+							<Text type="secondary" style={{ width: '5.5em' }}>{translate('profile.account', '帳號')}:</Text>
+							<Text strong>{currentUserSession?.email}</Text>
 						</div>
 
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<Text type="secondary" style={{ width: '80px' }}>{translate('profile.email', 'Email')}:</Text>
-							<Text>{currentUserSession?.email}</Text>
-						</div>
-
-						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-							<Text type="secondary" style={{ width: '80px' }}>{translate('profile.role', '系統角色')}:</Text>
+							<Text type="secondary" style={{ width: '5.5em' }}>{translate('profile.role', '系統角色')}:</Text>
 							<Tag color={currentUserSession?.role === 'admin' ? 'purple' : 'blue'} style={{ margin: 0 }}>
-								{currentUserSession?.role === 'admin' ? 'Admin (系統管理員)' : 'Data Owner (資料擁有者)'}
+								{getRoleDisplayName(currentUserSession?.role)}
 							</Tag>
 						</div>
 					</div>
@@ -359,7 +253,7 @@ export default function ProfileSettings(): React.ReactElement
 									{newPasswordInputValueString && (
 										<div style={{ marginBottom: 8 }}>
 											<Progress 
-												percent={currentPasswordStrengthScore} 
+												percent={toStrengthBarPercent(currentPasswordStrengthResult)} 
 												showInfo={false} 
 												strokeColor={getStrengthColor(currentPasswordStrengthScore)} 
 												size="small" 
@@ -367,24 +261,42 @@ export default function ProfileSettings(): React.ReactElement
 											/>
 
 											<div style={{ display: 'flex', justifyContent: 'space-between' }}>
-												<Text type="secondary" style={{ fontSize: '12px' }}>{translate('profile.password_strength', '密碼強度')}</Text>
-												<Text style={{ fontSize: '12px', fontWeight: 'bold', color: getStrengthColor(currentPasswordStrengthScore) }}>
+												<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>{translate('profile.password_strength', '密碼強度')}</Text>
+												<Text style={{ fontSize: scaleFontSize(12), fontWeight: 'bold', color: getStrengthColor(currentPasswordStrengthScore) }}>
 													{getStrengthLabel(currentPasswordStrengthScore)}
 												</Text>
 											</div>
+
+											{/* ★ 2026-10-29：未達「強」時列出原因，讓使用者知道怎麼改 */}
+											{currentPasswordStrengthResult.level !== 'strong' && currentPasswordStrengthResult.issues.length > 0 && (
+												<div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+													{currentPasswordStrengthResult.issues.map((issueCode) => (
+														<Text key={issueCode} style={{ fontSize: scaleFontSize(12), color: getStrengthColor(currentPasswordStrengthScore) }}>
+															{'• ' + translate(`profile.strength_issue_${issueCode}`, {
+																too_short: '長度未達 12 個字元',
+																missing_types: '未同時包含大寫、小寫、數字與符號',
+																common_word: '含常見弱密碼字詞（如 password、admin、qwerty）',
+																sequential_digits: '含連續數字（如 1234、9876）',
+																keyboard_sequence: '含鍵盤連續按鍵（如 qwer、asdf）',
+																repeated_chars: '含連續 3 個以上相同字元（如 aaa、111）',
+															}[issueCode])}
+														</Text>
+													))}
+												</div>
+											)}
 										</div>
 									)}
 
-									<div style={{ fontSize: '12px', color: token.colorTextSecondary, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-										<Text type="secondary" style={{ fontSize: '12px' }}>
+									<div style={{ fontSize: scaleFontSize(12), color: token.colorTextSecondary, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
 											{translate('profile.password_hint_1', '• 長度與複雜度：目標至少 12 個字元，並交織大小寫、數字及符號。')}
 										</Text>
 
-										<Text type="secondary" style={{ fontSize: '12px' }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
 											{translate('profile.password_hint_2', '• 易記性：建議使用對您有意義的「長句助記詞」(如生動的單字組合)。')}
 										</Text>
 
-										<Text type="secondary" style={{ fontSize: '12px' }}>
+										<Text type="secondary" style={{ fontSize: scaleFontSize(12) }}>
 											{translate('profile.password_hint_3', '• 獨特性：請確保此密碼為本系統專屬，勿與其他平台共用。')}
 										</Text>
 									</div>
@@ -393,9 +305,9 @@ export default function ProfileSettings(): React.ReactElement
 							rules={
 								[
 									{ required: true, message: translate('profile.require_new_password', '請輸入新密碼') },
-									{ min: MIN_PASSWORD_LENGTH_LIMIT, message: translate('profile.password_min_length', '密碼長度至少需要 12 個字元') }, 
+									{ min: getPasswordMinLength(), message: translate('profile.password_min_length', '密碼長度至少需要 {{min}} 個字元', { min: getPasswordMinLength() }) }, 
 									{
-										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#\-_+=])[A-Za-z\d@$!%*?&#\-_+=]{12,}$/, 
+										pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, // ★ 2026-10-29：不再限定可用字元（空白、句點等也可當特殊符號）；★ 2026-10-30：後端同一規則
 										message: translate('profile.password_complexity', '密碼強度不足：需包含大小寫字母、數字及特殊符號 (如 @$!%*?&#)')
 									},
 									({ getFieldValue }) => (
@@ -417,7 +329,7 @@ export default function ProfileSettings(): React.ReactElement
 							}
 							hasFeedback
 						>
-							<Input.Password placeholder={translate('profile.ph_new_password', '至少 12 個字元')} size="large" />
+							<Input.Password placeholder={translate('profile.ph_new_password', '至少 {{min}} 個字元', { min: getPasswordMinLength() })} size="large" />
 						</Form.Item>
 
 						{/* 確認新密碼 */}

@@ -1,0 +1,25 @@
+{
+  "version": "scenario_交通流分析",
+  "dataset": "交通流分析",
+  "risk_cap": {
+    "enabled": true,
+    "columns": {
+      "出發時間": {
+        "role": "quasi_identifier",
+        "type": "temporal"
+      },
+      "起點路口": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "車種": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "迄點區域": {
+        "role": "sensitive",
+        "type": "categorical"
+      }
+    }
+  }
+}

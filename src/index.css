@@ -38,12 +38,13 @@
        規範對照: 消除像素 (px) 等魔術數字，集中管理以利後續 RWD 維護
        ============================================================================ */
     --font-size-base: 18px;
-    --font-size-base-mobile: 16px;
-    --font-size-h1: 56px;
-    --font-size-h1-mobile: 36px;
-    --font-size-h2: 24px;
-    --font-size-h2-mobile: 20px;
-    --font-size-code: 15px;
+    --font-scale: 1; /* 由 App 依「字體大小」偏好設定覆寫（中＝1） */
+    --font-size-base-mobile: calc(var(--font-size-base) - 2px);
+    --font-size-h1: calc(56px * var(--font-scale));
+    --font-size-h1-mobile: calc(36px * var(--font-scale));
+    --font-size-h2: calc(24px * var(--font-scale));
+    --font-size-h2-mobile: calc(20px * var(--font-scale));
+    --font-size-code: calc(15px * var(--font-scale));
     
     --spacing-margin-h1: 32px 0;
     --spacing-margin-h1-mobile: 20px 0;
@@ -117,7 +118,14 @@
     width: 100%;
     max-width: 100%;
     margin: 0 auto;
-    text-align: center;
+    /* ★ 修正：原為 text-align: center (Vite 範本殘留設定，App.css 內對應的 .hero／#next-steps／
+       #docs／.ticks／#spacer 等範本樣式在目前程式碼庫中已無任何 .tsx 檔案引用，證實為死碼)。
+       此設定會被整個 App 內所有「沒有自行指定 text-align」的文字元素繼承，曾實際造成至少兩起
+       版面錯誤：Step2 JSON 即時預覽的程式碼呈現置中、Step3 K-匿名頁面的警示訊息文字置中——
+       這類「置中」都不是刻意設計，而是繼承此設定所致。改為 left 從根本修正，避免同類問題持續
+       在未來新增的元件上重演；App 內真正需要置中的元素 (登入頁、Step1 上傳提示等) 皆已各自
+       明確指定 textAlign: 'center'，不依賴此處繼承，故此處改動不影響既有版面。 */
+    text-align: left;
     border-inline: 1px solid var(--border-primary-color);
     min-height: 100svh; /* 確保至少撐滿整個動態可視高度 (包含手機瀏覽器網址列縮放) */
     display: flex;
@@ -250,4 +258,91 @@ code
 .ant-layout-sider-dark ::-webkit-scrollbar-thumb:hover 
 {
     background: rgba(255, 255, 255, 0.4);
+}
+
+
+/* ★ 帳號與權限管理：齒輪「管理」下拉選單的捲動展開動畫（選單由上往下捲開，項目依序滑入） */
+.user-manage-dropdown .ant-dropdown-menu
+{
+    animation: userManageMenuRollDown 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.user-manage-dropdown .ant-dropdown-menu > li
+{
+    animation: userManageItemSlideIn 0.28s ease-out both;
+}
+
+.user-manage-dropdown .ant-dropdown-menu > li:nth-child(1) { animation-delay: 0.04s; }
+.user-manage-dropdown .ant-dropdown-menu > li:nth-child(2) { animation-delay: 0.09s; }
+.user-manage-dropdown .ant-dropdown-menu > li:nth-child(3) { animation-delay: 0.14s; }
+.user-manage-dropdown .ant-dropdown-menu > li:nth-child(4) { animation-delay: 0.19s; }
+.user-manage-dropdown .ant-dropdown-menu > li:nth-child(5) { animation-delay: 0.24s; }
+
+@keyframes userManageMenuRollDown
+{
+    from { clip-path: inset(0 0 100% 0 round 8px); }
+    to   { clip-path: inset(0 0 0 0 round 8px); }
+}
+
+@keyframes userManageItemSlideIn
+{
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce)
+{
+    .user-manage-dropdown .ant-dropdown-menu,
+    .user-manage-dropdown .ant-dropdown-menu > li
+    {
+        animation: none;
+    }
+}
+
+/* ★ 系統公告列（鈴鐺面板／首頁橫幅／Admin 列表共用）：可點擊時滑過加底色 */
+.announcement-list-item[role="button"]
+{
+    transition: background-color 0.15s ease;
+}
+
+.announcement-list-item[role="button"]:hover,
+.announcement-list-item[role="button"]:focus-visible
+{
+    background-color: rgba(127, 127, 127, 0.12);
+    outline: none;
+}
+
+/* ★ 分頁標籤自動換行（系統設定頁）：字體調大、寬度不夠時換到下一行，而不是收進「…」選單被截斷。
+   換行後原本的滑動底線位置會錯，改用目前分頁自己的底線標示。 */
+.wrap-tabs > .ant-tabs-nav .ant-tabs-nav-wrap
+{
+    overflow: visible;
+}
+
+.wrap-tabs > .ant-tabs-nav .ant-tabs-nav-list
+{
+    flex-wrap: wrap;
+    transform: none !important;
+    row-gap: 4px;
+    column-gap: 32px;
+}
+
+.wrap-tabs > .ant-tabs-nav .ant-tabs-tab + .ant-tabs-tab
+{
+    margin-left: 0;
+}
+
+.wrap-tabs > .ant-tabs-nav .ant-tabs-nav-operations
+{
+    display: none !important;
+}
+
+.wrap-tabs > .ant-tabs-nav .ant-tabs-ink-bar
+{
+    display: none;
+}
+
+.wrap-tabs > .ant-tabs-nav .ant-tabs-tab-active
+{
+    box-shadow: inset 0 -2px 0 var(--ant-color-primary, #3f51b5);
 }

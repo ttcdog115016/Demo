@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Row, Col, Typography, Button, Table, Tag, Space, Badge, Progress } from 'antd';
 import {
@@ -6,12 +6,18 @@ import {
     ArrowRightOutlined,
     CheckCircleOutlined,
     CloseCircleOutlined,
+    ExclamationCircleOutlined,
     ClockCircleOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
-import { useAuditStore, type AuditLogItem } from '../../store/useAuditStore';
+import { useAuditStore, selectAuditLogsForUser, type AuditLogItem } from '../../store/useAuditStore';
+import { resolveAuditLogComplianceStatus } from '../../utils/complianceReport';
+import { useAuthStore } from '../../store/useAuthStore';
+import { getRoleDisplayName } from '../../utils/roleLabel';
+import { probeBackendHealth, type BackendHealthState } from '../../utils/adminDashboardStats';
 
+import { scaleFontSize } from '../../utils/fontScale';
 const { Title, Text, Paragraph } = Typography;
 
 // 儀表板「最近處理紀錄」表格最多顯示之筆數
@@ -20,10 +26,32 @@ const RECENT_LOGS_DISPLAY_LIMIT = 5;
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { t: translate } = useTranslation();
-  const userInfo = { name: 'Data.Owner.A', role: 'DATA_OWNER' };
+  // ★ 2026-10-07：改讀登入中的使用者，不再寫死；角色以「Data Owner」顯示而非 DATA_OWNER
+  const currentUserSession = useAuthStore((state) => state.user);
+  const userInfo = { name: currentUserSession?.name ?? '', role: getRoleDisplayName(currentUserSession?.role ?? 'data_owner') };
+  // ★ 2026-10-29：「系統運作正常」原本寫死綠燈，改依後端連線檢查（同系統管理大廳，GET /api/v1/settings）
+  const [backendHealthState, setBackendHealthState] = useState<BackendHealthState>({ status: 'checking' });
+  useEffect(() => {
+    let isUnmounted = false;
+    const probeAndStore = (): void => { void probeBackendHealth().then((healthResult) => { if (!isUnmounted) setBackendHealthState(healthResult); }); };
+    probeAndStore();
+    const healthTimerId = window.setInterval(probeAndStore, 60 * 1000); // 與系統管理大廳相同，每 60 秒重查
+    return () => { isUnmounted = true; window.clearInterval(healthTimerId); };
+  }, []);
+  const backendBadgeProps = backendHealthState.status === 'ok'
+    ? { status: 'processing' as const, color: '#52c41a', text: translate('dashboard.system_normal', '系統運作正常') }
+    : backendHealthState.status === 'down'
+      ? { status: 'error' as const, color: '#ff4d4f', text: translate('dashboard.system_down', '無法連線至後端，請稍後再試或聯絡管理員') }
+      : { status: 'default' as const, color: undefined, text: translate('dashboard.system_checking', '檢查後端連線中…') };
+  // ★ 2026-10-29：歡迎詞只顯示使用者名稱（帳號為 Email 時取 @ 前面那段，例如 owner@test.com → owner）
+  const welcomeNameString = userInfo.name.includes('@') ? userInfo.name.split('@')[0] : userInfo.name;
+
+  // ★ 2026-10-07：Admin 發布之「重要」公告，以可關閉橫幅顯示於首頁（一般公告只在右上角鈴鐺）
 
   // 讀取全域歷史審計紀錄 (真實紀錄，非假資料)，最新紀錄已由 addAuditLog 插入於陣列最前端
-  const auditLogsList = useAuditStore((state) => state.auditLogs);
+  // ★ 2026-10-29：紀錄存後端（登入後載入），只統計目前帳號的紀錄
+  const allAuditLogsList = useAuditStore((state) => state.auditLogs);
+  const auditLogsList = useMemo(() => selectAuditLogsForUser(allAuditLogsList, currentUserSession?.name), [allAuditLogsList, currentUserSession?.name]);
 
   const recentLogs = useMemo(
     () => auditLogsList.slice(0, RECENT_LOGS_DISPLAY_LIMIT),
@@ -47,7 +75,7 @@ export const Dashboard: React.FC = () => {
     });
 
     const totalCountValue = thisMonthLogsList.length;
-    const successCountValue = thisMonthLogsList.filter((logItemRecord) => logItemRecord.status === 'passed').length;
+    const successCountValue = thisMonthLogsList.filter((logItemRecord) => resolveAuditLogComplianceStatus(logItemRecord) === 'passed').length; // ★ 2026-11-06：未完成風險評估不算成功
     const failedCountValue = totalCountValue - successCountValue;
     const successPercentValue = totalCountValue > 0 ? Math.round((successCountValue / totalCountValue) * 100) : 0;
 
@@ -70,10 +98,13 @@ export const Dashboard: React.FC = () => {
     },
     {
         title: translate('dashboard.col_status', '狀態'),
-        dataIndex: 'status',
         key: 'status',
-        render: (status: AuditLogItem['status']) => {
-            const isSuccess = status === 'passed';
+        render: (_: unknown, logItemRecord: AuditLogItem) => {
+            const complianceStatus = resolveAuditLogComplianceStatus(logItemRecord);
+            if (complianceStatus === 'unassessed') {
+                return <Tag color="warning" icon={<ExclamationCircleOutlined />}>{translate('dashboard.status_unassessed', '未評估')}</Tag>;
+            }
+            const isSuccess = complianceStatus === 'passed';
             return (
                 <Tag
                     color={isSuccess ? 'success' : 'error'}
@@ -87,14 +118,14 @@ export const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ padding: '24px', maxWidth: '85.5em', margin: '0 auto' }}>
       <Space direction="vertical" size="large" style={{ display: 'flex', width: '100%' }}>
         
         {/* --- 1. 歡迎與狀態區塊 --- */}
         <div>
-          <Title level={2} style={{ margin: 0 }}>{translate('dashboard.welcome_back', '歡迎回來，{{name}}', { name: userInfo.name })}</Title>
+          <Title level={2} style={{ margin: 0 }}>{translate('dashboard.welcome_back', '歡迎回來 {{name}}', { name: welcomeNameString })}</Title>
           <Space size="middle" style={{ marginTop: '12px' }}>
-            <Badge status="processing" color="#52c41a" text={<Text type="secondary">{translate('dashboard.system_normal', '系統運作正常')}</Text>} />
+            <Badge status={backendBadgeProps.status} color={backendBadgeProps.color} text={<Text type="secondary">{backendBadgeProps.text}</Text>} />
             <Text type="secondary" style={{ opacity: 0.5 }}>|</Text>
             <Text type="secondary">
                 {translate('dashboard.role_label', '權限身份：')}<Text strong style={{ color: '#1677ff' }}>{userInfo.role}</Text>
@@ -111,8 +142,8 @@ export const Dashboard: React.FC = () => {
                 styles={{ body: { height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '32px' } }}
             >
               <Title level={3} style={{ marginTop: 0 }}>{translate('dashboard.new_task_title', '建立新的去識別化任務')}</Title>
-              <Paragraph type="secondary" style={{ fontSize: '16px', marginBottom: '24px', lineHeight: '1.8' }}>
-                {translate('dashboard.new_task_desc', '支援 CSV, Excel 格式。系統將引導您進行屬性分類與隱私設定，並在本地端安全處理您的資料，確保原始機敏資料絕不外流。')}
+              <Paragraph type="secondary" style={{ fontSize: scaleFontSize(16), marginBottom: '24px', lineHeight: '1.8' }}>
+                {translate('dashboard.new_task_desc', '系統將引導您進行屬性分類與隱私設定。資料僅送至本系統的後端處理，本系統不會將資料傳送給第三方。')}
               </Paragraph>
               <div>
                   <Button
@@ -120,7 +151,7 @@ export const Dashboard: React.FC = () => {
                     size="large"
                     icon={<PlusOutlined />}
                     onClick={() => navigate('/workspace?step=1')}
-                    style={{ borderRadius: '8px', padding: '0 24px', height: '48px', fontSize: '16px' }}
+                    style={{ borderRadius: '8px', padding: '0 24px', height: '48px', fontSize: scaleFontSize(16) }}
                   >
                     {translate('dashboard.new_task_btn', '新增去識別化任務')}
                   </Button>
@@ -136,7 +167,7 @@ export const Dashboard: React.FC = () => {
                 styles={{ body: { padding: '24px' } }}
             >
               <Title level={1} style={{ marginTop: 0, marginBottom: '24px', color: '#1677ff' }}>
-                  {monthlyTaskStatistics.totalCountValue} <Text type="secondary" style={{ fontSize: '16px', fontWeight: 'normal' }}>{translate('dashboard.unit_count', '件')}</Text>
+                  {monthlyTaskStatistics.totalCountValue} <Text type="secondary" style={{ fontSize: scaleFontSize(16), fontWeight: 'normal' }}>{translate('dashboard.unit_count', '件')}</Text>
               </Title>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>

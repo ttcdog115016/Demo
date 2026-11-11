@@ -20,6 +20,9 @@ import Step2_Mapping from '../step2_mapping/Step2_Mapping';
 import Step3_Rules from '../step3_rules/Step3_Rules';
 import Step4_Result from '../step4_result/Step4_Result';
 import { validateProgression } from './validateProgression'; 
+import { listDpFieldsWithBoundsFinerThanNoiseUnit, applyDpDatetimeNoiseUnit } from '../../utils/dpFieldHelpers';
+import { resolveDpFieldRiskRole, hasDpRiskAttackSurface } from '../../utils/riskAssessment';
+import { confirmIfBackendBusy } from './backendBusyConfirm';
 
 /**
  * ============================================================================
@@ -33,6 +36,9 @@ const STEP_INDEX_UPLOAD = 0;
 const STEP_INDEX_MAPPING = 1;
 const STEP_INDEX_RULES = 2;
 const STEP_INDEX_RESULT = 3;
+
+// ★ QA 回饋：跨步驟驗證失敗的提示訊息 (notification) 顯示秒數，取代 message 預設的 3 秒過短問題
+const STEP_VALIDATION_NOTIFICATION_AUTO_CLOSE_SECONDS = 8;
 
 /**
  * 函數名稱: MainLayout
@@ -73,8 +79,135 @@ export default function MainLayout(): React.ReactElement
         (state) => state.resetWorkspace
     );
 
-    const { message: globalMessageApi } = AntdApp.useApp(); 
-    
+    // ★ QA 回饋：跨步驟驗證失敗的提示訊息內容較長（例如敏感欄位數量、自訂區間設定等說明），
+    //   若使用 message（頂部小提示條）預設僅顯示 3 秒且無法手動關閉，使用者常常來不及看完
+    //   就自動消失。改用 notification（右下角通知卡片）：本身內建可手動關閉的 X 按鈕，
+    //   並將顯示時間拉長，兩者一併解決「顯示時間太短」與「無法手動關閉」兩項回饋。
+    const { notification: globalNotificationApi, modal: globalModalApi } = AntdApp.useApp();
+
+    /**
+     * 函數名稱: confirmDpNoiseUnitBeforeLeavingRules
+     * 函數功能: DP 模式由 Step3 前往 Step4 時，若有日期欄位的上下限比雜訊單位細（例如邊界到秒、雜訊單位為天），
+     *           跳出小視窗提醒；使用者可改為建議單位後繼續、維持目前設定繼續，或返回修改。沒有這種欄位時直接繼續。
+     * ★ 2026-10-01：先前只在 Step3 欄位下方顯示黃色提示，使用者反映不夠明顯。
+     */
+    const confirmDpNoiseUnitBeforeLeavingRules = (proceedAction: () => void): void =>
+    {
+        const workspaceStateSnapshot = useWorkspaceStore.getState();
+        const mismatchedFieldsList = workspaceStateSnapshot.privacyMode === 'differential-privacy'
+            ? listDpFieldsWithBoundsFinerThanNoiseUnit(workspaceStateSnapshot.dpFields)
+            : [];
+        if (mismatchedFieldsList.length === 0)
+        {
+            proceedAction();
+            return;
+        }
+
+        const unitLabelMap: Record<string, string> = {
+            day: translate('step3_dp.noise_unit_day', '天'), hour: translate('step3_dp.noise_unit_hour', '時'),
+            minute: translate('step3_dp.noise_unit_minute', '分'), second: translate('step3_dp.noise_unit_second', '秒')
+        };
+        const applySuggestedUnitsAndProceed = (): void =>
+        {
+            useWorkspaceStore.setState((currentStoreState) => ({
+                dpFields: currentStoreState.dpFields.map((fieldItemRecord) => {
+                    const mismatchedItem = mismatchedFieldsList.find((item) => item.fieldId === fieldItemRecord.id);
+                    return mismatchedItem ? applyDpDatetimeNoiseUnit(fieldItemRecord, mismatchedItem.boundsUnit) : fieldItemRecord;
+                })
+            }));
+            proceedAction();
+        };
+
+        const noiseUnitConfirmDialog = globalModalApi.confirm({
+            title: translate('workspace.dp_noise_unit_confirm_title', '日期欄位的雜訊單位比上下限粗'),
+            // ★ 2026-10-02：三顆按鈕在 520px 內放不下而凸出視窗外，改加寬並允許換行、主要按鈕靠右
+            width: '43em',
+            closable: true,
+            content: (
+                <div data-testid="dp-noise-unit-confirm">
+                    <p style={{ marginBottom: 8 }}>
+                        {translate('workspace.dp_noise_unit_confirm_desc', '下列欄位在 Step2 設定的上下限比 Step3 選的雜訊單位細，敏感度與加噪會以雜訊單位計，邊界的時間部分會被四捨五入：')}
+                    </p>
+                    <ul style={{ paddingLeft: 20, margin: 0 }}>
+                        {mismatchedFieldsList.map((item) => (
+                            <li key={item.fieldId ?? item.fieldName}>
+                                {translate('workspace.dp_noise_unit_confirm_item', '「{{field}}」：上下限細到「{{boundsUnit}}」，雜訊單位為「{{noiseUnit}}」', {
+                                    field: item.fieldName, boundsUnit: unitLabelMap[item.boundsUnit], noiseUnit: unitLabelMap[item.noiseUnit]
+                                })}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            ),
+            footer: (
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                    <Button onClick={() => noiseUnitConfirmDialog.destroy()}>
+                        {translate('workspace.dp_noise_unit_confirm_back', '返回修改')}
+                    </Button>
+                    <Button onClick={() => { noiseUnitConfirmDialog.destroy(); proceedAction(); }}>
+                        {translate('workspace.dp_noise_unit_confirm_keep', '維持目前設定繼續')}
+                    </Button>
+                    <Button type="primary" onClick={() => { noiseUnitConfirmDialog.destroy(); applySuggestedUnitsAndProceed(); }}>
+                        {translate('workspace.dp_noise_unit_confirm_apply', '改為與上下限相同的單位並繼續')}
+                    </Button>
+                </div>
+            )
+        });
+    };
+
+    /**
+     * 函數名稱: confirmDpSensitiveFieldBeforeLeavingMapping
+     * 函數功能: DP 模式由 Step2 往後時，若尚未點選風險評估敏感欄位，跳出視窗提醒 Step4 會輪流評估 N 個類別型欄位
+     *           （執行時間約 N 倍）；可「返回點選」或「仍要繼續」。已點選，或非 DP 模式時直接繼續。
+     * ★ 2026-10-02：使用者反映 Step2 表格上方的提示不夠明顯，比照 confirmDpNoiseUnitBeforeLeavingRules 加確認視窗。
+     */
+    const confirmDpSensitiveFieldBeforeLeavingMapping = (proceedAction: () => void): void =>
+    {
+        const workspaceStateSnapshot = useWorkspaceStore.getState();
+        const dpFieldsList = workspaceStateSnapshot.dpFields || [];
+        // ★ 2026-10-30：沒有攻擊面（例如只啟用 1 個欄位）時點選敏感欄位也無法評估，Step4 會略過三攻擊與 CAP，
+        //   Step2 已顯示警告，不再跳「將輪流評估」的視窗
+        if (workspaceStateSnapshot.privacyMode !== 'differential-privacy' || dpFieldsList.some((fieldItemRecord) => fieldItemRecord.isRiskSensitive)
+            || !hasDpRiskAttackSurface(dpFieldsList))
+        {
+            proceedAction();
+            return;
+        }
+
+        const autoCandidateFieldNamesList = dpFieldsList
+            .filter((fieldItemRecord) => resolveDpFieldRiskRole(fieldItemRecord) !== 'none' && fieldItemRecord.fieldType === 'Categorical')
+            .map((fieldItemRecord) => fieldItemRecord.fieldName);
+
+        const sensitiveFieldConfirmDialog = globalModalApi.confirm({
+            title: translate('workspace.dp_sensitive_confirm_title', '尚未點選敏感欄位'),
+            width: '37em',
+            closable: true,
+            content: (
+                <div data-testid="dp-sensitive-confirm">
+                    <p style={{ marginBottom: 8 }}>
+                        {translate('workspace.dp_sensitive_confirm_desc', 'Step4 將輪流以下列 {{count}} 個類別型欄位為敏感欄位，各執行一輪三攻擊與 CAP，取風險最高的結果，執行時間約為點選 1 個敏感欄位時的 {{count}} 倍：', { count: autoCandidateFieldNamesList.length })}
+                    </p>
+                    <p style={{ marginBottom: 8, fontWeight: 600 }}>
+                        {autoCandidateFieldNamesList.map((fieldNameText) => `「${fieldNameText}」`).join('、') || translate('workspace.dp_sensitive_confirm_none', '（無，三攻擊與 CAP 將無法執行）')}
+                    </p>
+                    <p style={{ margin: 0 }}>
+                        {translate('workspace.dp_sensitive_confirm_hint', '建議返回 Step2，在表格「敏感欄位」欄點選真正需要保護的欄位（例如疾病），結果較有意義，且點選幾個就只執行幾輪。')}
+                    </p>
+                </div>
+            ),
+            footer: (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                    <Button onClick={() => { sensitiveFieldConfirmDialog.destroy(); proceedAction(); }}>
+                        {translate('workspace.dp_sensitive_confirm_continue', '仍要繼續（自動輪流評估）')}
+                    </Button>
+                    <Button type="primary" onClick={() => sensitiveFieldConfirmDialog.destroy()}>
+                        {translate('workspace.dp_sensitive_confirm_back', '返回點選')}
+                    </Button>
+                </div>
+            )
+        });
+    };
+
     // 取得當前主題之 Token，並判定是否處於深色模式 (符合規範 g)
     const isDarkModeActiveStatus = theme.useToken().token.colorBgContainer !== '#ffffff';
 
@@ -99,9 +232,14 @@ export default function MainLayout(): React.ReactElement
             const progressionValidationErrorMessageString = validateProgression(targetStepIndexValue, currentStepIndexValue, currentWorkspaceStoreStateSnapshot, translate);
 
             // 若驗證不通過，彈出警告並重導向回合法之最高步驟
-            if (progressionValidationErrorMessageString) 
+            if (progressionValidationErrorMessageString)
             {
-                globalMessageApi.warning(progressionValidationErrorMessageString);
+                globalNotificationApi.warning({
+                    message: translate('workspace.step_jump_blocked_title', '無法跳至該步驟'),
+                    description: progressionValidationErrorMessageString,
+                    duration: STEP_VALIDATION_NOTIFICATION_AUTO_CLOSE_SECONDS,
+                    placement: 'bottomRight',
+                });
 
                 // 強制覆寫網址列之 query parameter 以對齊真實狀態
                 executeNavigationAction(`/workspace?step=${currentStepIndexValue + 1}`, { replace: true });
@@ -111,9 +249,28 @@ export default function MainLayout(): React.ReactElement
         }
 
         // 若驗證通過或為「向後回退」，直接更新 Store 狀態並跳轉
-        useWorkspaceStore.setState({ currentStep: targetStepIndexValue });
+        const jumpToTargetStep = (): void =>
+        {
+            useWorkspaceStore.setState({ currentStep: targetStepIndexValue });
+            executeNavigationAction(`/workspace?step=${targetStepIndexValue + 1}`);
+        };
 
-        executeNavigationAction(`/workspace?step=${targetStepIndexValue + 1}`);
+        // DP：由 Step3 往後時檢查日期欄位雜訊單位（見 confirmDpNoiseUnitBeforeLeavingRules）
+        if (currentStepIndexValue === STEP_INDEX_RULES && targetStepIndexValue > currentStepIndexValue)
+        {
+            // ★ 2026-10-22：再檢查上一筆是否可能仍在後端執行（見 backendBusyConfirm.tsx；2026-10-29 拔除 DP 執行時間預估）
+            confirmDpNoiseUnitBeforeLeavingRules(() => confirmIfBackendBusy({ modalApi: globalModalApi, translate, proceedAction: jumpToTargetStep, context: 'navigate' }));
+            return;
+        }
+
+        // DP：由 Step2 往後時提醒尚未點選敏感欄位（見 confirmDpSensitiveFieldBeforeLeavingMapping）
+        if (currentStepIndexValue === STEP_INDEX_MAPPING && targetStepIndexValue > currentStepIndexValue)
+        {
+            confirmDpSensitiveFieldBeforeLeavingMapping(jumpToTargetStep);
+            return;
+        }
+
+        jumpToTargetStep();
     };
 
     /**
@@ -130,18 +287,43 @@ export default function MainLayout(): React.ReactElement
         const progressionValidationErrorMessageString = validateProgression(expectedNextTargetStepIndexValue, currentStepIndexValue, currentWorkspaceStoreStateSnapshot, translate);
 
         // 遇到阻擋條件時彈出錯誤，中斷前進流程
-        if (progressionValidationErrorMessageString) 
+        if (progressionValidationErrorMessageString)
         {
-            globalMessageApi.error(progressionValidationErrorMessageString);
+            globalNotificationApi.error({
+                message: translate('workspace.step_next_blocked_title', '無法前往下一步'),
+                description: progressionValidationErrorMessageString,
+                duration: STEP_VALIDATION_NOTIFICATION_AUTO_CLOSE_SECONDS,
+                placement: 'bottomRight',
+            });
 
-            return; 
+            return;
         }
         
-        // 呼叫全域 Store 之內建 Action 更新 currentStep
-        executeNextStepAction();
+        const goToNextStep = (): void =>
+        {
+            // 呼叫全域 Store 之內建 Action 更新 currentStep
+            executeNextStepAction();
 
-        // 同步更新網址列
-        executeNavigationAction(`/workspace?step=${expectedNextTargetStepIndexValue + 1}`); 
+            // 同步更新網址列
+            executeNavigationAction(`/workspace?step=${expectedNextTargetStepIndexValue + 1}`);
+        };
+
+        // DP：由 Step3 前往 Step4 時檢查日期欄位雜訊單位（見 confirmDpNoiseUnitBeforeLeavingRules）
+        if (currentStepIndexValue === STEP_INDEX_RULES)
+        {
+            // ★ 2026-10-22：再檢查上一筆是否可能仍在後端執行（見 backendBusyConfirm.tsx；2026-10-29 拔除 DP 執行時間預估）
+            confirmDpNoiseUnitBeforeLeavingRules(() => confirmIfBackendBusy({ modalApi: globalModalApi, translate, proceedAction: goToNextStep, context: 'navigate' }));
+            return;
+        }
+
+        // DP：由 Step2 前往 Step3 時提醒尚未點選敏感欄位（見 confirmDpSensitiveFieldBeforeLeavingMapping）
+        if (currentStepIndexValue === STEP_INDEX_MAPPING)
+        {
+            confirmDpSensitiveFieldBeforeLeavingMapping(goToNextStep);
+            return;
+        }
+
+        goToNextStep(); 
     };
 
     /**

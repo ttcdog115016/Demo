@@ -1,0 +1,885 @@
+{
+  "opts": {
+    "base": "https://angeles-missouri-animation-tuner.trycloudflare.com",
+    "users": "dp,dp",
+    "rows": 5000,
+    "csv": "stress-test\\data\\input_test.csv",
+    "stagger": 0,
+    "repeat": 1,
+    "baseline": true,
+    "report": true,
+    "pageLoad": true,
+    "timeoutSec": 900,
+    "maxSec": 300,
+    "docker": true,
+    "out": "C:\\Users\\TTCWEI\\Desktop\\Demo\\stress-test\\results"
+  },
+  "meta": {
+    "startedAt": "2026/10/5 14:41:18",
+    "csvName": "input_test.csv",
+    "rows": 69773,
+    "cols": 10,
+    "bytes": 5526633
+  },
+  "baselineRuns": [
+    {
+      "userId": 0,
+      "mode": "dp",
+      "phase": "baseline",
+      "ok": true,
+      "error": null,
+      "totalMs": 77597,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 86,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 2775,
+          "bytes": 3542348,
+          "ok": true,
+          "detail": "3459 KB"
+        },
+        {
+          "name": "POST /dp",
+          "status": 200,
+          "ms": 20836,
+          "bytes": 5878951,
+          "ok": true,
+          "detail": "輸出 69773 筆、消耗 ε=17"
+        },
+        {
+          "name": "POST /risk/dp #1 (地區)",
+          "status": 200,
+          "ms": 11963,
+          "bytes": 521,
+          "ok": true,
+          "detail": "指認 4.1% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/dp #2 (職業)",
+          "status": 200,
+          "ms": 12355,
+          "bytes": 518,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/cap #1 (地區)",
+          "status": 200,
+          "ms": 13557,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /risk/cap #2 (職業)",
+          "status": 200,
+          "ms": 15477,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /report (PDF)",
+          "status": 200,
+          "ms": 512,
+          "bytes": 39869,
+          "ok": true,
+          "detail": "39 KB"
+        }
+      ],
+      "attackReport": {
+        "singling_out_risk": 0.0408,
+        "linkability_risk": 0,
+        "inference_risk": 0,
+        "sample_size": 69773,
+        "linkability_evaluated": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0,
+        "processing_config": {
+          "method": "dp",
+          "deid_params": {
+            "accumulated_epsilon": 17,
+            "accumulated_delta": 0.00002,
+            "default_delta": 0.00001
+          },
+          "risk_params": {
+            "n_iter": 50,
+            "ctrl_ratio": 0.2,
+            "seed": 42,
+            "n_subset": 500,
+            "n_repeats": 1,
+            "overlap_ratio": 0
+          }
+        },
+        "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.04, 連結性風險: 0.00, 推斷性風險: 0.00。"
+      },
+      "capReport": {
+        "cap_before": 1,
+        "cap_after": 1,
+        "n_original": 69773,
+        "n_processed": 69773,
+        "message": "CAP 前後對比完成。原始: 1.00, 處理後: 1.00。"
+      }
+    }
+  ],
+  "concurrentRuns": [
+    {
+      "userId": 1,
+      "mode": "dp",
+      "phase": "R1",
+      "ok": true,
+      "error": null,
+      "totalMs": 112662,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 339,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 7194,
+          "bytes": 3542348,
+          "ok": true,
+          "detail": "3459 KB"
+        },
+        {
+          "name": "POST /dp",
+          "status": 200,
+          "ms": 22429,
+          "bytes": 5878450,
+          "ok": true,
+          "detail": "輸出 69773 筆、消耗 ε=17"
+        },
+        {
+          "name": "POST /risk/dp #1 (地區)",
+          "status": 200,
+          "ms": 15328,
+          "bytes": 518,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/dp #2 (職業)",
+          "status": 200,
+          "ms": 22278,
+          "bytes": 518,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.0%"
+        },
+        {
+          "name": "POST /risk/cap #1 (地區)",
+          "status": 200,
+          "ms": 25619,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /risk/cap #2 (職業)",
+          "status": 200,
+          "ms": 18556,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /report (PDF)",
+          "status": 200,
+          "ms": 883,
+          "bytes": 39836,
+          "ok": true,
+          "detail": "39 KB"
+        }
+      ],
+      "attackReport": {
+        "singling_out_risk": 0,
+        "linkability_risk": 0,
+        "inference_risk": 0,
+        "sample_size": 69773,
+        "linkability_evaluated": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0,
+        "processing_config": {
+          "method": "dp",
+          "deid_params": {
+            "accumulated_epsilon": 17,
+            "accumulated_delta": 0.00002,
+            "default_delta": 0.00001
+          },
+          "risk_params": {
+            "n_iter": 50,
+            "ctrl_ratio": 0.2,
+            "seed": 42,
+            "n_subset": 500,
+            "n_repeats": 1,
+            "overlap_ratio": 0
+          }
+        },
+        "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.00, 連結性風險: 0.00, 推斷性風險: 0.00。"
+      },
+      "capReport": {
+        "cap_before": 1,
+        "cap_after": 1,
+        "n_original": 69773,
+        "n_processed": 69773,
+        "message": "CAP 前後對比完成。原始: 1.00, 處理後: 1.00。"
+      }
+    },
+    {
+      "userId": 2,
+      "mode": "dp",
+      "phase": "R1",
+      "ok": true,
+      "error": null,
+      "totalMs": 126289,
+      "steps": [
+        {
+          "name": "GET / (頁面載入)",
+          "status": 200,
+          "ms": 335,
+          "bytes": 465,
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "GET 靜態資源 x2",
+          "status": 200,
+          "ms": 3412,
+          "bytes": 3542348,
+          "ok": true,
+          "detail": "3459 KB"
+        },
+        {
+          "name": "POST /dp",
+          "status": 200,
+          "ms": 38215,
+          "bytes": 5877822,
+          "ok": true,
+          "detail": "輸出 69773 筆、消耗 ε=17"
+        },
+        {
+          "name": "POST /risk/dp #1 (地區)",
+          "status": 200,
+          "ms": 19004,
+          "bytes": 521,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.4%"
+        },
+        {
+          "name": "POST /risk/dp #2 (職業)",
+          "status": 200,
+          "ms": 22322,
+          "bytes": 521,
+          "ok": true,
+          "detail": "指認 0.0% / 連結 0.0% / 推斷 0.3%"
+        },
+        {
+          "name": "POST /risk/cap #1 (地區)",
+          "status": 200,
+          "ms": 29608,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /risk/cap #2 (職業)",
+          "status": 200,
+          "ms": 12959,
+          "bytes": 143,
+          "ok": true,
+          "detail": "CAP 100.0% → 100.0%"
+        },
+        {
+          "name": "POST /report (PDF)",
+          "status": 200,
+          "ms": 405,
+          "bytes": 39948,
+          "ok": true,
+          "detail": "39 KB"
+        }
+      ],
+      "attackReport": {
+        "singling_out_risk": 0,
+        "linkability_risk": 0,
+        "inference_risk": 0.0044,
+        "sample_size": 69773,
+        "linkability_evaluated": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0,
+        "processing_config": {
+          "method": "dp",
+          "deid_params": {
+            "accumulated_epsilon": 17,
+            "accumulated_delta": 0.00002,
+            "default_delta": 0.00001
+          },
+          "risk_params": {
+            "n_iter": 50,
+            "ctrl_ratio": 0.2,
+            "seed": 42,
+            "n_subset": 500,
+            "n_repeats": 1,
+            "overlap_ratio": 0
+          }
+        },
+        "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.00, 連結性風險: 0.00, 推斷性風險: 0.00。"
+      },
+      "capReport": {
+        "cap_before": 1,
+        "cap_after": 1,
+        "n_original": 69773,
+        "n_processed": 69773,
+        "message": "CAP 前後對比完成。原始: 1.00, 處理後: 1.00。"
+      }
+    }
+  ],
+  "dockerSamples": [
+    {
+      "t": 1791182480664,
+      "name": "open-pets",
+      "cpu": 0.22,
+      "memMB": 288.6
+    },
+    {
+      "t": 1791182482736,
+      "name": "open-pets",
+      "cpu": 0.27,
+      "memMB": 288.6
+    },
+    {
+      "t": 1791182485752,
+      "name": "open-pets",
+      "cpu": 0.28,
+      "memMB": 288.6
+    },
+    {
+      "t": 1791182487838,
+      "name": "open-pets",
+      "cpu": 4.2,
+      "memMB": 288.7
+    },
+    {
+      "t": 1791182489926,
+      "name": "open-pets",
+      "cpu": 99.8,
+      "memMB": 293
+    },
+    {
+      "t": 1791182491987,
+      "name": "open-pets",
+      "cpu": 99.74,
+      "memMB": 293
+    },
+    {
+      "t": 1791182494052,
+      "name": "open-pets",
+      "cpu": 99.64,
+      "memMB": 293
+    },
+    {
+      "t": 1791182497058,
+      "name": "open-pets",
+      "cpu": 15.72,
+      "memMB": 286.1
+    },
+    {
+      "t": 1791182499144,
+      "name": "open-pets",
+      "cpu": 0.32,
+      "memMB": 285
+    },
+    {
+      "t": 1791182501219,
+      "name": "open-pets",
+      "cpu": 0.28,
+      "memMB": 285
+    },
+    {
+      "t": 1791182503342,
+      "name": "open-pets",
+      "cpu": 0.23,
+      "memMB": 285
+    },
+    {
+      "t": 1791182506323,
+      "name": "open-pets",
+      "cpu": 0.32,
+      "memMB": 285
+    },
+    {
+      "t": 1791182508409,
+      "name": "open-pets",
+      "cpu": 7.88,
+      "memMB": 285.3
+    },
+    {
+      "t": 1791182510467,
+      "name": "open-pets",
+      "cpu": 99.73,
+      "memMB": 297.4
+    },
+    {
+      "t": 1791182512526,
+      "name": "open-pets",
+      "cpu": 99.99,
+      "memMB": 297.4
+    },
+    {
+      "t": 1791182515530,
+      "name": "open-pets",
+      "cpu": 260.98,
+      "memMB": 287.1
+    },
+    {
+      "t": 1791182517602,
+      "name": "open-pets",
+      "cpu": 0.27,
+      "memMB": 287.1
+    },
+    {
+      "t": 1791182519676,
+      "name": "open-pets",
+      "cpu": 2.05,
+      "memMB": 287
+    },
+    {
+      "t": 1791182521747,
+      "name": "open-pets",
+      "cpu": 55.86,
+      "memMB": 302.2
+    },
+    {
+      "t": 1791182523809,
+      "name": "open-pets",
+      "cpu": 99.43,
+      "memMB": 302.2
+    },
+    {
+      "t": 1791182526814,
+      "name": "open-pets",
+      "cpu": 99.85,
+      "memMB": 306
+    },
+    {
+      "t": 1791182528897,
+      "name": "open-pets",
+      "cpu": 0.2,
+      "memMB": 312.3
+    },
+    {
+      "t": 1791182530976,
+      "name": "open-pets",
+      "cpu": 0.28,
+      "memMB": 312.3
+    },
+    {
+      "t": 1791182533051,
+      "name": "open-pets",
+      "cpu": 0.32,
+      "memMB": 312.3
+    },
+    {
+      "t": 1791182536069,
+      "name": "open-pets",
+      "cpu": 3.79,
+      "memMB": 312.6
+    },
+    {
+      "t": 1791182538137,
+      "name": "open-pets",
+      "cpu": 3.19,
+      "memMB": 312.4
+    },
+    {
+      "t": 1791182540228,
+      "name": "open-pets",
+      "cpu": 2.67,
+      "memMB": 312.6
+    },
+    {
+      "t": 1791182542295,
+      "name": "open-pets",
+      "cpu": 0.25,
+      "memMB": 317.6
+    },
+    {
+      "t": 1791182545302,
+      "name": "open-pets",
+      "cpu": 0.26,
+      "memMB": 317.6
+    },
+    {
+      "t": 1791182547375,
+      "name": "open-pets",
+      "cpu": 0.26,
+      "memMB": 317.6
+    },
+    {
+      "t": 1791182549463,
+      "name": "open-pets",
+      "cpu": 0.29,
+      "memMB": 317.6
+    },
+    {
+      "t": 1791182551529,
+      "name": "open-pets",
+      "cpu": 0.22,
+      "memMB": 317.6
+    },
+    {
+      "t": 1791182553609,
+      "name": "open-pets",
+      "cpu": 3.5,
+      "memMB": 318.5
+    },
+    {
+      "t": 1791182556615,
+      "name": "open-pets",
+      "cpu": 22.87,
+      "memMB": 342.4
+    },
+    {
+      "t": 1791182558683,
+      "name": "open-pets",
+      "cpu": 0.26,
+      "memMB": 337
+    },
+    {
+      "t": 1791182560759,
+      "name": "open-pets",
+      "cpu": 0.23,
+      "memMB": 337
+    },
+    {
+      "t": 1791182562853,
+      "name": "open-pets",
+      "cpu": 0.26,
+      "memMB": 337
+    },
+    {
+      "t": 1791182565862,
+      "name": "open-pets",
+      "cpu": 0.22,
+      "memMB": 337
+    },
+    {
+      "t": 1791182567943,
+      "name": "open-pets",
+      "cpu": 0.3,
+      "memMB": 337
+    },
+    {
+      "t": 1791182570019,
+      "name": "open-pets",
+      "cpu": 2.99,
+      "memMB": 336.8
+    },
+    {
+      "t": 1791182572081,
+      "name": "open-pets",
+      "cpu": 0.62,
+      "memMB": 336.8
+    },
+    {
+      "t": 1791182575125,
+      "name": "open-pets",
+      "cpu": 99.99,
+      "memMB": 344.8
+    },
+    {
+      "t": 1791182577192,
+      "name": "open-pets",
+      "cpu": 99.86,
+      "memMB": 344.8
+    },
+    {
+      "t": 1791182579255,
+      "name": "open-pets",
+      "cpu": 99.79,
+      "memMB": 347
+    },
+    {
+      "t": 1791182581334,
+      "name": "open-pets",
+      "cpu": 2.44,
+      "memMB": 342.7
+    },
+    {
+      "t": 1791182583392,
+      "name": "open-pets",
+      "cpu": 100.01,
+      "memMB": 345.3
+    },
+    {
+      "t": 1791182586397,
+      "name": "open-pets",
+      "cpu": 99.86,
+      "memMB": 345.3
+    },
+    {
+      "t": 1791182588464,
+      "name": "open-pets",
+      "cpu": 99.68,
+      "memMB": 345.8
+    },
+    {
+      "t": 1791182590548,
+      "name": "open-pets",
+      "cpu": 0.17,
+      "memMB": 345.4
+    },
+    {
+      "t": 1791182592620,
+      "name": "open-pets",
+      "cpu": 2.81,
+      "memMB": 343.3
+    },
+    {
+      "t": 1791182595629,
+      "name": "open-pets",
+      "cpu": 2.68,
+      "memMB": 342.4
+    },
+    {
+      "t": 1791182597700,
+      "name": "open-pets",
+      "cpu": 100.12,
+      "memMB": 359.4
+    },
+    {
+      "t": 1791182599759,
+      "name": "open-pets",
+      "cpu": 99.87,
+      "memMB": 359.4
+    },
+    {
+      "t": 1791182601825,
+      "name": "open-pets",
+      "cpu": 99.82,
+      "memMB": 361.4
+    },
+    {
+      "t": 1791182603891,
+      "name": "open-pets",
+      "cpu": 0.18,
+      "memMB": 364.6
+    },
+    {
+      "t": 1791182606900,
+      "name": "open-pets",
+      "cpu": 0.34,
+      "memMB": 337.7
+    },
+    {
+      "t": 1791182608971,
+      "name": "open-pets",
+      "cpu": 2.16,
+      "memMB": 338.2
+    },
+    {
+      "t": 1791182611030,
+      "name": "open-pets",
+      "cpu": 2.53,
+      "memMB": 337.7
+    },
+    {
+      "t": 1791182613099,
+      "name": "open-pets",
+      "cpu": 100.01,
+      "memMB": 357.1
+    },
+    {
+      "t": 1791182616109,
+      "name": "open-pets",
+      "cpu": 99.95,
+      "memMB": 357
+    },
+    {
+      "t": 1791182618174,
+      "name": "open-pets",
+      "cpu": 286.63,
+      "memMB": 361.4
+    },
+    {
+      "t": 1791182620235,
+      "name": "open-pets",
+      "cpu": 99.79,
+      "memMB": 362.3
+    },
+    {
+      "t": 1791182622288,
+      "name": "open-pets",
+      "cpu": 100.2,
+      "memMB": 362.2
+    },
+    {
+      "t": 1791182625295,
+      "name": "open-pets",
+      "cpu": 238.9,
+      "memMB": 342.2
+    },
+    {
+      "t": 1791182627369,
+      "name": "open-pets",
+      "cpu": 0.25,
+      "memMB": 342.2
+    },
+    {
+      "t": 1791182629453,
+      "name": "open-pets",
+      "cpu": 0.89,
+      "memMB": 342.5
+    },
+    {
+      "t": 1791182631524,
+      "name": "open-pets",
+      "cpu": 0.29,
+      "memMB": 342.1
+    },
+    {
+      "t": 1791182633606,
+      "name": "open-pets",
+      "cpu": 0.25,
+      "memMB": 342
+    },
+    {
+      "t": 1791182636601,
+      "name": "open-pets",
+      "cpu": 100.26,
+      "memMB": 361.7
+    },
+    {
+      "t": 1791182638667,
+      "name": "open-pets",
+      "cpu": 99.86,
+      "memMB": 361.9
+    },
+    {
+      "t": 1791182640720,
+      "name": "open-pets",
+      "cpu": 262.66,
+      "memMB": 347.9
+    },
+    {
+      "t": 1791182642798,
+      "name": "open-pets",
+      "cpu": 1.1,
+      "memMB": 348
+    },
+    {
+      "t": 1791182645816,
+      "name": "open-pets",
+      "cpu": 0.84,
+      "memMB": 347.9
+    },
+    {
+      "t": 1791182647902,
+      "name": "open-pets",
+      "cpu": 0.74,
+      "memMB": 347.5
+    },
+    {
+      "t": 1791182649979,
+      "name": "open-pets",
+      "cpu": 1.37,
+      "memMB": 347.9
+    },
+    {
+      "t": 1791182652053,
+      "name": "open-pets",
+      "cpu": 0.28,
+      "memMB": 363.8
+    },
+    {
+      "t": 1791182654138,
+      "name": "open-pets",
+      "cpu": 0.27,
+      "memMB": 363.8
+    },
+    {
+      "t": 1791182657151,
+      "name": "open-pets",
+      "cpu": 0.28,
+      "memMB": 363.8
+    },
+    {
+      "t": 1791182659228,
+      "name": "open-pets",
+      "cpu": 0.25,
+      "memMB": 363.8
+    },
+    {
+      "t": 1791182661291,
+      "name": "open-pets",
+      "cpu": 0.48,
+      "memMB": 363.9
+    },
+    {
+      "t": 1791182663363,
+      "name": "open-pets",
+      "cpu": 3.31,
+      "memMB": 363.8
+    },
+    {
+      "t": 1791182666372,
+      "name": "open-pets",
+      "cpu": 4.14,
+      "memMB": 364.2
+    },
+    {
+      "t": 1791182668460,
+      "name": "open-pets",
+      "cpu": 5.52,
+      "memMB": 365.1
+    },
+    {
+      "t": 1791182670532,
+      "name": "open-pets",
+      "cpu": 25.58,
+      "memMB": 358.1
+    },
+    {
+      "t": 1791182672603,
+      "name": "open-pets",
+      "cpu": 0.15,
+      "memMB": 358.1
+    },
+    {
+      "t": 1791182675615,
+      "name": "open-pets",
+      "cpu": 0.25,
+      "memMB": 358.1
+    },
+    {
+      "t": 1791182677698,
+      "name": "open-pets",
+      "cpu": 0.34,
+      "memMB": 358.1
+    },
+    {
+      "t": 1791182679778,
+      "name": "open-pets",
+      "cpu": 3.18,
+      "memMB": 357.9
+    },
+    {
+      "t": 1791182681850,
+      "name": "open-pets",
+      "cpu": 3.94,
+      "memMB": 358.8
+    }
+  ]
+}

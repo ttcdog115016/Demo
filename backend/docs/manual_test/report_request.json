@@ -1,0 +1,37 @@
+{
+  "task_id": "demo-report",
+  "attack_report": {
+    "singling_out_risk": 0.1333,
+    "linkability_risk": 1.0,
+    "inference_risk": 0.75,
+    "sample_size": 12,
+    "linkability_evaluated": 2,
+    "n_repeats": 1,
+    "overlap_ratio": 0.0,
+    "processing_config": {
+      "method": "k-anon",
+      "deid_params": {
+        "k": 2,
+        "suppression_limit_percent": 20,
+        "limit_exceeded_action": "allow_with_warning",
+        "suppression_method": "row_suppression"
+      },
+      "risk_params": {
+        "n_iter": 50,
+        "ctrl_ratio": 0.2,
+        "seed": 42,
+        "n_subset": 500,
+        "n_repeats": 1,
+        "overlap_ratio": 0.0
+      }
+    },
+    "message": "三攻擊風險評估完成（Mode1 真 holdout）。指認性風險: 0.13, 連結性風險: 1.00, 推斷性風險: 0.75。 連結性：要求評估 500 筆，受資料量限制實際評估 2 筆。"
+  },
+  "cap_report": {
+    "cap_before": 1.0,
+    "cap_after": 1.0,
+    "n_original": 12,
+    "n_processed": 12,
+    "message": "CAP 前後對比完成。原始: 1.00, 處理後: 1.00。"
+  }
+}

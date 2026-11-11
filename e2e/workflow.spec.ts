@@ -10,10 +10,14 @@ test.describe('Privacy Toolkit 全流程端到端測試 (E2E Workflow Test)', ()
     await page.goto('/login');
     await expect(page.getByText('PRIVACY APP')).toBeVisible();
 
-    // 點擊一鍵快速登入
-    const quickLoginBtn = page.getByRole('button', { name: /一鍵快速登入|One-Click Quick Login/i });
-    await expect(quickLoginBtn).toBeVisible();
-    await quickLoginBtn.click();
+    // ★ 2026-10-27：登入改經後端會員系統，測試帳號（User 角色）由環境變數提供：
+    //   E2E_USERNAME／E2E_PASSWORD（以後端 CLI 建立：python -m app.cli.main create-user -u <帳號> -p <密碼> -r user）
+    const e2eUsername = process.env.E2E_USERNAME ?? '';
+    const e2ePassword = process.env.E2E_PASSWORD ?? '';
+    test.skip(!e2eUsername || !e2ePassword, '未設定 E2E_USERNAME／E2E_PASSWORD');
+    await page.getByLabel(/帳號|Account/).fill(e2eUsername);
+    await page.getByLabel(/密碼|Password/).fill(e2ePassword);
+    await page.getByRole('button', { name: /登入系統|Log In/i }).click();
 
     // 驗證進入主頁面
     await page.waitForURL('**/', { timeout: 10000 });
@@ -37,7 +41,7 @@ test.describe('Privacy Toolkit 全流程端到端測試 (E2E Workflow Test)', ()
     await toStep2Btn.click();
 
     // ------------------------------------------------------------------
-    // Step 4: 完成 Step 2 屬性設定 (確保有「準識別碼」)
+    // Step 4: 完成 Step 2 屬性設定 (確保有「間接識別碼」)
     // ------------------------------------------------------------------
     // 1. 優先點擊套用系統推薦設定
     const applyBtn = page.getByRole('button', { name: /套用系統推薦設定/i });
@@ -46,12 +50,12 @@ test.describe('Privacy Toolkit 全流程端到端測試 (E2E Workflow Test)', ()
       await page.waitForTimeout(500);
     }
 
-    // 2. 若有警示提示，點擊第一個下拉選單設定為「準識別碼」
+    // 2. 若有警示提示，點擊第一個下拉選單設定為「間接識別碼」
     try {
       const firstRowSelect = page.locator('.ant-table-row').first().locator('.ant-select').first();
       if (await firstRowSelect.isVisible()) {
         await firstRowSelect.click();
-        const option = page.locator('.ant-select-item-option-content').filter({ hasText: '準識別碼' }).first();
+        const option = page.locator('.ant-select-item-option-content').filter({ hasText: '間接識別碼' }).first();
         await option.waitFor({ state: 'visible', timeout: 2000 });
         await option.click();
       }

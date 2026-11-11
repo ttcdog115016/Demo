@@ -1,0 +1,25 @@
+{
+  "version": "scenario_醫療研究",
+  "dataset": "醫療研究",
+  "risk_cap": {
+    "enabled": true,
+    "columns": {
+      "出生日期": {
+        "role": "quasi_identifier",
+        "type": "temporal"
+      },
+      "性別": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "居住里": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "診斷碼": {
+        "role": "sensitive",
+        "type": "categorical"
+      }
+    }
+  }
+}

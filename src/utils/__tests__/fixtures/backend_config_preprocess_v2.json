@@ -1,0 +1,121 @@
+{
+  "version": "open-pets-2.0.0-example",
+  "dataset": "範例資料",
+  "input_format": "csv",
+  "preprocess": {
+    "enabled": true,
+    "algorithm": "sha3-256",
+    "columns": [
+      {
+        "column": "姓名",
+        "actions": [
+          {
+            "action": "hash",
+            "params": {
+              "salt": "use_timestamp"
+            }
+          }
+        ]
+      },
+      {
+        "column": "身分證號",
+        "actions": [
+          {
+            "action": "normalize",
+            "params": {
+              "case": "upper",
+              "width": "half"
+            }
+          },
+          {
+            "action": "hash",
+            "params": {
+              "salt": "use_timestamp"
+            }
+          }
+        ]
+      },
+      {
+        "column": "地址",
+        "actions": [
+          {
+            "action": "trim",
+            "params": {
+              "mode": "edges"
+            }
+          },
+          {
+            "action": "regex_replace",
+            "params": {
+              "pattern": "(?<=區).*$",
+              "replacement": ""
+            }
+          }
+        ]
+      },
+      {
+        "column": "出生日期",
+        "actions": [
+          {
+            "action": "anchor_truncate",
+            "params": {
+              "anchor": "-",
+              "direction": "after",
+              "keep": 0
+            }
+          }
+        ]
+      },
+      {
+        "column": "醫療費用",
+        "actions": [
+          {
+            "action": "clamp",
+            "params": {
+              "min": 0,
+              "max": 100000
+            }
+          },
+          {
+            "action": "cast",
+            "params": {
+              "type": "int",
+              "rounding": "round"
+            }
+          }
+        ]
+      },
+      {
+        "column": "檢驗值_血糖",
+        "actions": [
+          {
+            "action": "cast",
+            "params": {
+              "type": "float"
+            }
+          }
+        ]
+      },
+      {
+        "column": "職業",
+        "actions": [
+          {
+            "action": "fill_default",
+            "params": {
+              "value": "未填"
+            }
+          }
+        ]
+      },
+      {
+        "column": "保險別",
+        "actions": [
+          {
+            "action": "drop_nulls",
+            "params": {}
+          }
+        ]
+      }
+    ]
+  }
+}

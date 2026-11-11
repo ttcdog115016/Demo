@@ -1,0 +1,33 @@
+{
+  "version": "benchmark_dp_5m",
+  "dataset": "test_data_5000k",
+  "differential_privacy": {
+    "enabled": true,
+    "column_budgets": {
+      "薪資": {
+        "type": "continuous",
+        "epsilon_budget": 0.05,
+        "sensitivity": 125000,
+        "minimum_unit": 1000,
+        "clipping_bounds": [25000, 150000],
+        "out_of_bounds_strategy": "clamp"
+      },
+      "就醫次數": {
+        "type": "continuous",
+        "epsilon_budget": 0.03,
+        "sensitivity": 20,
+        "minimum_unit": 1,
+        "clipping_bounds": [0, 19],
+        "out_of_bounds_strategy": "clamp"
+      }
+    }
+  },
+  "risk_attacks": {
+    "enabled": true,
+    "columns": {
+      "薪資": { "role": "quasi_identifier", "type": "numeric" },
+      "就醫次數": { "role": "quasi_identifier", "type": "numeric" },
+      "疾病": { "role": "sensitive", "type": "categorical" }
+    }
+  }
+}

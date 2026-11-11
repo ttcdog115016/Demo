@@ -1,0 +1,565 @@
+diff --git a/.env.example b/.env.example
+index f05d1b4..7aafcea 100644
+--- a/.env.example
++++ b/.env.example
+@@ -21,7 +21,7 @@ OPEN_PETS_SYSTEM_MASTER_KEY=
+ 
+ # 登入功能（/auth 與 /users 兩組端點）簽發 access token 用的簽章金鑰。
+ # 未設定時這兩組端點一律回 503「登入功能尚未啟用，請聯繫系統管理員。」，
+-# 去識別化、差分隱私、風險評估與資料前處理等功能不受影響、照常提供服務；
++# 處理端點（去識別化、差分隱私、風險評估、資料前處理、報告）須登入，同樣回 503；
+ # 服務啟動時會在系統日誌寫明缺的是本項設定。
+ # 要啟用登入功能請以高強度隨機字串設定：
+ #   python -c "import secrets; print(secrets.token_hex(32))"
+@@ -33,6 +33,11 @@ OPEN_PETS_JWT_SECRET=
+ # × 10 欄的 CSV 約 430~540 MB）。設為 0 代表明確要求不設限。
+ OPEN_PETS_MAX_UPLOAD_MB=
+ 
++# API 以 source／*_source 欄位讀取「伺服器本機」資料檔或 sqlite:/// 時允許的目錄，
++# 多個目錄以作業系統路徑分隔字元分隔（Linux「:」、Windows「;」）。
++# 未設定即停用，處理端點只收上傳檔案；OPEN_PETS_DATA_DIR（帳號、系統資料庫、稽核日誌）一律不可讀。
++OPEN_PETS_ALLOWED_SOURCE_DIRS=
++
+ # ── 系統日誌 ────────────────────────────────────────────────────
+ # 以下三項只作用於系統日誌（程式運行的警告與錯誤），與審計日誌無關：
+ # 審計日誌的落點由 OPEN_PETS_DATA_DIR 決定，且不會因日誌設定而關閉或改寫。
+diff --git a/app/api/auth_router.py b/app/api/auth_router.py
+index a3c9aeb..70de233 100644
+--- a/app/api/auth_router.py
++++ b/app/api/auth_router.py
+@@ -1,7 +1,7 @@
+ """身分驗證端點（/auth）：登入、登出、換發 token、變更自己的密碼。
+ 
+-本組端點與去識別化、差分隱私、風險評估、前處理四組功能各自獨立：後者不掛身分驗證。
+-此處的角色只用於決定誰能管理帳號（見 users_router）。
++★ TTC 2026-10-29：處理端點（去識別化、差分隱私、風險評估、前處理、報告）改須登入，
++共用本檔的 get_current_user（見 processing_guard）；角色只用於決定誰能管理帳號（見 users_router）。
+ 
+ ★get_current_user 每次都從資料庫重讀角色與啟用狀態，不採信 token 裡的 role：
+ token 一經簽出內容就固定了，若照它判斷，降級與停權要等到 token 過期才會生效。
+@@ -59,6 +59,8 @@ class RefreshRequest(BaseModel):
+ class ChangePasswordRequest(BaseModel):
+     current_password: str = Field(..., min_length=1)
+     new_password: str = Field(..., min_length=1)
++    # ★ TTC 2026-10-30：目前這次登入的 refresh token；改密碼後其餘登入一律撤銷，只保留這一張
++    refresh_token: str | None = None
+ 
+ 
+ def get_current_user(
+@@ -210,5 +212,6 @@ def change_password(
+         # 與登入失敗回同一句話，不額外提示「舊密碼錯誤」
+         raise PetsError("ERR_UNAUTHORIZED", _CREDENTIALS_MESSAGE)
+ 
++    get_token_manager().revoke_all(user["username"], keep=req.refresh_token)
+     audit.log_operation("change_password", "success", {}, user=user["username"])
+     return {"message": "密碼已變更。"}
+diff --git a/app/api/dataset_input.py b/app/api/dataset_input.py
+index 9dae7fe..05ea512 100644
+--- a/app/api/dataset_input.py
++++ b/app/api/dataset_input.py
+@@ -7,6 +7,7 @@ API 的上傳是 multipart 的檔案欄位、連線字串是文字欄位，兩
+ 連線字串指的是伺服器本機的路徑（SQLite 是檔案不是伺服器，沒有主機、埠號與帳密），
+ 服務包在容器內時須寫容器內的路徑，且路徑基準為容器的工作目錄。
+ """
++import os
+ from dataclasses import dataclass
+ 
+ import pandas as pd
+@@ -19,6 +20,7 @@ from app.core.dataset_io import (
+     load_dataset_with_format,
+ )
+ from app.core.errors import PetsError
++from app.core.settings import ALLOWED_SOURCE_DIRS_ENV, get_allowed_source_dirs, get_data_dir
+ 
+ _SQLITE_PREFIX = "sqlite:///"
+ 
+@@ -47,6 +49,36 @@ def _is_sqlite(source: str, input_format: str | None) -> bool:
+     return source.startswith(_SQLITE_PREFIX)
+ 
+ 
++def _is_within(path: str, root: str) -> bool:
++    try:
++        return os.path.commonpath([path, root]) == root
++    except ValueError:  # Windows 不同磁碟機
++        return False
++
++
++def _require_allowed_source(source: str, source_field: str) -> None:
++    """★ TTC 2026-10-30：source 只能指向部署者開放的目錄，且一律不得落在系統資料目錄。
++
++    未限制時，任何登入者都能把使用者資料庫（密碼雜湊、refresh token）、系統資料庫
++    或稽核日誌當成資料集讀出來。路徑先解析符號連結與「..」再比對，避免繞道。
++    """
++    allowed = get_allowed_source_dirs()
++    if not allowed:
++        raise PetsError(
++            "ERR_FORBIDDEN",
++            f"此伺服器未開放以 {source_field} 讀取本機資料來源，請改以上傳檔案提供資料"
++            f"（部署者可以環境變數 {ALLOWED_SOURCE_DIRS_ENV} 開放特定目錄）。",
++        )
++    raw = source[len(_SQLITE_PREFIX):] if source.startswith(_SQLITE_PREFIX) else source
++    path = os.path.realpath(raw)
++    if _is_within(path, os.path.realpath(get_data_dir())) or not any(
++        _is_within(path, root) for root in allowed
++    ):
++        raise PetsError(
++            "ERR_FORBIDDEN", f"{source_field} 指向的路徑不在允許讀取的資料目錄內。"
++        )
++
++
+ async def resolve_dataset(
+     *,
+     file: UploadFile | None,
+@@ -89,6 +121,8 @@ async def resolve_dataset(
+         )
+         return ResolvedDataset(df=df, fmt=fmt, origin=file.filename, name=file.filename)
+ 
++    _require_allowed_source(source, source_field)
++
+     # 缺資料表名擋在連線之前（擋的檢查前置）。此處自行檢查而非交給 dataset_io，
+     # 是因為訊息要指名本端點的欄位名，各端點的欄位名不同。
+     if _is_sqlite(source, input_format) and not table:
+diff --git a/app/api/system_router.py b/app/api/system_router.py
+index 77c0bcb..f4f345f 100644
+--- a/app/api/system_router.py
++++ b/app/api/system_router.py
+@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
+ 
+ from app.api.auth_router import get_current_user, require_role
+ from app.core.errors import PetsError
++from app.governance.auth import get_password_min_length
+ from app.governance.history_signing import sign_record, verify_record
+ from app.governance.system_store import get_system_store
+ 
+@@ -142,8 +143,11 @@ class SettingsUpdate(BaseModel):
+ 
+ @router.get("/settings")
+ def get_settings():
+-    """系統設定（免登入：登入前就要知道閒置登出時間，也作為前端的後端連線檢查）。"""
+-    return get_system_store().get_settings()
++    """系統設定（免登入：登入前就要知道閒置登出時間，也作為前端的後端連線檢查）。
++
++    ★ TTC 2026-10-30：附帶唯讀的密碼長度下限，前端表單以此為準，不再寫死 12。
++    """
++    return {**get_system_store().get_settings(), "password_min_length": get_password_min_length()}
+ 
+ 
+ @router.put("/settings")
+diff --git a/app/core/settings.py b/app/core/settings.py
+index 0a2db36..8d572f9 100644
+--- a/app/core/settings.py
++++ b/app/core/settings.py
+@@ -24,6 +24,9 @@ SYSTEM_MASTER_KEY_ENV = "OPEN_PETS_SYSTEM_MASTER_KEY"
+ DATA_DIR_ENV = "OPEN_PETS_DATA_DIR"
+ MAX_UPLOAD_MB_ENV = "OPEN_PETS_MAX_UPLOAD_MB"
+ JWT_SECRET_ENV = "OPEN_PETS_JWT_SECRET"
++# ★ TTC 2026-10-30：API 以 source 欄位讀伺服器本機檔案時允許的目錄（以作業系統路徑分隔字元
++#   分隔多個，Windows 為「;」、Linux 為「:」）。未設定即停用，只收上傳檔案。
++ALLOWED_SOURCE_DIRS_ENV = "OPEN_PETS_ALLOWED_SOURCE_DIRS"
+ 
+ # 系統日誌（application log）的三個環境變數。名稱集中列在此處與上面五個並列，
+ # 讓部署者與交付文件有單一清單可看；讀取與解讀的邏輯在 core/logging_setup.py。
+@@ -65,9 +68,9 @@ def get_jwt_secret() -> str | None:
+     本專案開源，寫死等同於任何人都能自行簽出一張看似合法的 token。
+ 
+     缺值時不由程式隨機生成——每次重啟都會換一把，已登入者全數被踢出且查不出原因；
+-    也不使整台服務啟動失敗——會員系統與三大功能各自獨立，前者的設定沒填不該拖垮後者。
+-    故一律回傳 None，由呼叫端（governance.token）停用 /auth 與 /users 兩組端點，
+-    其餘端點照常提供服務。
++    也不使整台服務啟動失敗，故一律回傳 None，由呼叫端（governance.token）停用
++    /auth 與 /users 兩組端點。
++    ★ TTC 2026-10-29：處理端點改須登入（api/processing_guard），未設定金鑰時處理端點同樣回 503。
+     """
+     value = os.getenv(JWT_SECRET_ENV)
+     return value if value else None
+@@ -97,6 +100,16 @@ def get_data_dir() -> str:
+     return fallback
+ 
+ 
++def get_allowed_source_dirs() -> list[str]:
++    """回傳 API 可讀取伺服器本機資料來源的目錄（絕對、已解析符號連結）；未設定回傳空串列。
++
++    source 欄位等於讓登入者指定伺服器上的任意路徑，不設範圍時連使用者資料庫
++    （含密碼雜湊與 refresh token）都讀得到，故預設停用，由部署者明確開放特定目錄。
++    """
++    raw = os.getenv(ALLOWED_SOURCE_DIRS_ENV) or ""
++    return [os.path.realpath(p) for p in raw.split(os.pathsep) if p.strip()]
++
++
+ def get_max_upload_bytes() -> int:
+     """回傳單次請求允許的最大位元組數；部署方可用環境變數調整。
+ 
+diff --git a/app/governance/auth.py b/app/governance/auth.py
+index d8baf07..1fe50ce 100644
+--- a/app/governance/auth.py
++++ b/app/governance/auth.py
+@@ -15,8 +15,9 @@ from app.core.settings import get_data_dir
+ 
+ logger = logging.getLogger(__name__)
+ 
+-# 系統只有兩種角色：admin 能管帳號，user 不能。權限只在會員端點內部生效，
+-# 去識別化、差分隱私、風險評估與前處理等功能端點不掛身分驗證，與角色無關。
++# 系統只有兩種角色：admin 能管帳號，user 不能。
++# ★ TTC 2026-10-29：處理端點（前處理、K-匿名、DP、風險評估、報告）須登入（見 api/processing_guard），
++#   兩種角色皆可使用；未設定 OPEN_PETS_JWT_SECRET 時處理端點同樣回 503。
+ ROLES = ("admin", "user")
+ 
+ # 登入失敗鎖定：時間窗內連續失敗達門檻即鎖定一段時間，期間即使密碼正確也不放行。
+@@ -31,6 +32,9 @@ LOGIN_LOCKOUT_SECONDS = 900
+ #   既有帳號的舊密碼仍可登入，下次變更時才套用。
+ PASSWORD_MIN_LENGTH_ENV = "OPEN_PETS_PASSWORD_MIN_LENGTH"
+ DEFAULT_PASSWORD_MIN_LENGTH = 12
++# ★ TTC 2026-10-30：複雜度與前端一致（大小寫字母、數字、特殊符號各至少一個；任何非英數字皆算符號）。
++#   設為 0 可關閉（僅供測試）；直接呼叫 API、CLI、桌面版首位管理員都套用同一規則。
++PASSWORD_REQUIRE_COMPLEXITY_ENV = "OPEN_PETS_PASSWORD_REQUIRE_COMPLEXITY"
+ 
+ 
+ def get_password_min_length() -> int:
+@@ -43,14 +47,31 @@ def get_password_min_length() -> int:
+     return value if value >= 1 else DEFAULT_PASSWORD_MIN_LENGTH
+ 
+ 
+-def _require_password_length(password: str) -> None:
+-    """新密碼長度不足時拋出 ERR_INVALID_PARAM（400）。"""
++def password_complexity_required() -> bool:
++    return os.getenv(PASSWORD_REQUIRE_COMPLEXITY_ENV, "1").strip() not in ("0", "false", "False")
++
++
++def password_policy_error(password: str) -> str | None:
++    """新密碼不合規則時回傳原因，合格回傳 None；供 API 與桌面版 launcher 共用。"""
++    password = password or ""
+     min_length = get_password_min_length()
+-    if len(password or "") < min_length:
+-        raise PetsError(
+-            "ERR_INVALID_PARAM",
+-            f"密碼長度至少需 {min_length} 個字元。",
+-        )
++    if len(password) < min_length:
++        return f"密碼長度至少需 {min_length} 個字元。"
++    if password_complexity_required() and not (
++        any(c.islower() and c.isascii() for c in password)
++        and any(c.isupper() and c.isascii() for c in password)
++        and any(c.isdigit() and c.isascii() for c in password)
++        and any(not (c.isascii() and c.isalnum()) for c in password)
++    ):
++        return "密碼需包含大寫字母、小寫字母、數字及特殊符號。"
++    return None
++
++
++def _require_password_length(password: str) -> None:
++    """新密碼不合規則（長度、複雜度）時拋出 ERR_INVALID_PARAM（400）。"""
++    error = password_policy_error(password)
++    if error:
++        raise PetsError("ERR_INVALID_PARAM", error)
+ 
+ # 密碼儲存採 scrypt（金鑰衍生函式，Python 標準庫內建，不新增相依、離線可部署）。
+ # 每位使用者一組獨立隨機鹽值，且刻意設定高記憶體成本，使字典攻擊與彩虹表失效——
+@@ -400,6 +421,8 @@ class AuthManager:
+         「這個帳號存在，只是密碼打錯了」。
+         """
+         _require_password_length(new_password)
++        if new_password == current_password:
++            raise PetsError("ERR_INVALID_PARAM", "新密碼不可與目前密碼相同。")
+         with sqlite3.connect(self.db_path) as conn:
+             row = conn.execute(
+                 "SELECT password_hash FROM users WHERE username = ?", (username,)
+diff --git a/app/governance/token.py b/app/governance/token.py
+index 7088fe4..d67e928 100644
+--- a/app/governance/token.py
++++ b/app/governance/token.py
+@@ -20,6 +20,7 @@ refresh token 與帳號同放一個 SQLite 檔（users.db），資料表由 Auth
+ 刪帳號必須連同其 token 一起消失，分成兩個檔就無法在同一個交易內完成。
+ """
+ 
++import hashlib
+ import logging
+ import secrets
+ import sqlite3
+@@ -68,8 +69,8 @@ def log_availability() -> None:
+     if auth_enabled():
+         return
+     logger.warning(
+-        "未設定 %s（.env）——/auth 與 /users 兩組端點已停用，呼叫時一律回 503；"
+-        "去識別化、差分隱私、風險評估與前處理等功能不受影響。"
++        "未設定 %s（.env）——/auth、/users 與須登入的處理端點（去識別化、差分隱私、"
++        "風險評估、前處理、報告）一律回 503。"
+         "如需啟用會員系統，請於 .env 設定該金鑰後重新啟動服務。",
+         JWT_SECRET_ENV,
+     )
+@@ -116,6 +117,14 @@ def decode_access_token(token: str) -> dict:
+         raise PetsError("ERR_UNAUTHORIZED", "access token 無效。") from exc
+ 
+ 
++def hash_refresh_token(token: str) -> str:
++    """★ TTC 2026-10-30：refresh token 只存 SHA-256 摘要，資料庫外流也拿不到可用的 token。
++
++    token 本身是 32 bytes 亂數，無須加鹽或慢雜湊；查驗時以同一摘要比對。
++    """
++    return hashlib.sha256(token.encode("utf-8")).hexdigest()
++
++
+ class TokenManager:
+     """refresh token 的存放與生命週期（建立／輪替／撤銷／查驗）。"""
+ 
+@@ -134,7 +143,7 @@ class TokenManager:
+                 "INSERT INTO refresh_tokens (token_id, username, issued_at, expires_at, revoked) "
+                 "VALUES (?, ?, ?, ?, 0)",
+                 (
+-                    token_id,
++                    hash_refresh_token(token_id),
+                     username,
+                     now.isoformat(),
+                     (now + timedelta(days=REFRESH_TOKEN_TTL_DAYS)).isoformat(),
+@@ -152,7 +161,7 @@ class TokenManager:
+         with sqlite3.connect(self.db_path) as conn:
+             row = conn.execute(
+                 "SELECT username, expires_at, revoked FROM refresh_tokens WHERE token_id = ?",
+-                (token_id,),
++                (hash_refresh_token(token_id),),
+             ).fetchone()
+         if row is None:
+             return None
+@@ -180,17 +189,22 @@ class TokenManager:
+         """撤銷單一 token（登出）。標記為已撤銷而不刪除，讓紀錄仍看得到它曾存在。"""
+         with sqlite3.connect(self.db_path) as conn:
+             conn.execute(
+-                "UPDATE refresh_tokens SET revoked = 1 WHERE token_id = ?", (token_id,)
++                "UPDATE refresh_tokens SET revoked = 1 WHERE token_id = ?",
++                (hash_refresh_token(token_id),),
+             )
+             conn.commit()
+ 
+-    def revoke_all(self, username: str) -> None:
+-        """撤銷某帳號的所有 token：管理者重設密碼、停用帳號時強制其重新登入。"""
++    def revoke_all(self, username: str, keep: str | None = None) -> None:
++        """撤銷某帳號的所有 token：管理者重設密碼、停用帳號時強制其重新登入。
++
++        keep：本人改密碼時保留目前這一次登入，其餘裝置一律登出。
++        """
++        keep_hash = hash_refresh_token(keep) if keep else ""
+         with sqlite3.connect(self.db_path) as conn:
+             conn.execute(
+                 "UPDATE refresh_tokens SET revoked = 1 "
+-                "WHERE username = ? AND revoked = 0",
+-                (username,),
++                "WHERE username = ? AND revoked = 0 AND token_id != ?",
++                (username, keep_hash),
+             )
+             conn.commit()
+ 
+diff --git a/tests/api/test_api_system.py b/tests/api/test_api_system.py
+index cdbfd85..ffc151a 100644
+--- a/tests/api/test_api_system.py
++++ b/tests/api/test_api_system.py
+@@ -210,7 +210,8 @@ def test_processing_call_is_logged_with_run_id(client, api_auth, real_processing
+ # ──────────────────────────────────────────────────────────────
+ def test_settings_readable_without_login(client, api_auth):
+     body = client.get(f"{BASE}/settings").json()
+-    assert body == {"session_timeout_minutes": 15}
++    # ★ TTC 2026-10-30：附帶唯讀的密碼長度下限（conftest 放寬為 1）
++    assert body == {"session_timeout_minutes": 15, "password_min_length": 1}
+ 
+ 
+ def test_settings_update_admin_only(client, api_auth, login):
+diff --git a/tests/api/test_security_consistency.py b/tests/api/test_security_consistency.py
+new file mode 100644
+index 0000000..00c3699
+--- /dev/null
++++ b/tests/api/test_security_consistency.py
+@@ -0,0 +1,140 @@
++"""★ TTC 2026-10-30：帳號安全與前端一致性
++涵蓋：
++  - source 欄位只能讀部署者開放的目錄，且一律不能讀系統資料目錄（使用者資料庫等）
++  - 密碼複雜度（大小寫、數字、符號）與前端同一規則；新舊密碼不得相同
++  - 本人改密碼後，其他登入的 refresh token 全數失效，目前這一張保留
++"""
++import json
++import sqlite3
++
++import pytest
++
++from app.core.errors import PetsError
++from app.governance.auth import AuthManager, password_policy_error
++
++BASE = "/api/v1"
++
++TRIM_CONFIG = {"preprocess": {"enabled": True, "columns": [{"column": "地區", "actions": [{"action": "trim", "params": {"mode": "all"}}]}]}}
++
++
++@pytest.fixture
++def strict_policy(monkeypatch):
++    monkeypatch.setenv("OPEN_PETS_PASSWORD_MIN_LENGTH", "12")
++    monkeypatch.setenv("OPEN_PETS_PASSWORD_REQUIRE_COMPLEXITY", "1")
++
++
++# ── source 目錄限制 ─────────────────────────────────────────────────────
++
++
++def _preprocess_from_source(client, source, table):
++    return client.post(
++        f"{BASE}/preprocess",
++        files={"config": ("config.json", json.dumps(TRIM_CONFIG), "application/json")},
++        data={"source": source, "table": table},
++    )
++
++
++def test_source_disabled_when_no_dirs_allowed(client, sqlite_source, monkeypatch):
++    monkeypatch.delenv("OPEN_PETS_ALLOWED_SOURCE_DIRS", raising=False)
++    resp = _preprocess_from_source(client, sqlite_source.url, sqlite_source.table)
++    assert resp.status_code == 403
++    assert "上傳" in resp.json()["message"]
++
++
++def test_source_outside_allowed_dirs_rejected(client, sqlite_source, tmp_path, monkeypatch):
++    monkeypatch.setenv("OPEN_PETS_ALLOWED_SOURCE_DIRS", str(tmp_path / "elsewhere"))
++    resp = _preprocess_from_source(client, sqlite_source.url, sqlite_source.table)
++    assert resp.status_code == 403
++
++
++def test_source_cannot_read_user_database(client, tmp_path, monkeypatch):
++    """即使資料目錄落在開放範圍內，使用者資料庫仍不可當資料集讀出"""
++    data_dir = tmp_path / "data"
++    data_dir.mkdir()
++    manager = AuthManager(db_path=str(data_dir / "users.db"))
++    manager.create_user("victim", "Victim-Password-1", "admin")
++    monkeypatch.setenv("OPEN_PETS_DATA_DIR", str(data_dir))
++    monkeypatch.setenv("OPEN_PETS_ALLOWED_SOURCE_DIRS", str(tmp_path))
++
++    resp = _preprocess_from_source(
++        client, f"sqlite:///{(data_dir / 'users.db').as_posix()}", "users"
++    )
++    assert resp.status_code == 403
++    # 以「..」繞道同樣擋下
++    sneaky = (tmp_path / "x" / ".." / "data" / "users.db").as_posix()
++    assert _preprocess_from_source(client, f"sqlite:///{sneaky}", "users").status_code == 403
++
++
++# ── 密碼規則 ────────────────────────────────────────────────────────────
++
++
++@pytest.mark.parametrize(
++    "password",
++    ["aaaaaaaaaaaa", "abcdefghijk1!", "ABCDEFGHIJK1!", "Abcdefghijkl!", "Abcdefghijk12"],
++)
++def test_weak_passwords_rejected(strict_policy, password):
++    assert password_policy_error(password) is not None
++
++
++@pytest.mark.parametrize("password", ["Abcdefghij1!", "Abcdefghij 1", "Passw0rd.long"])
++def test_strong_passwords_accepted(strict_policy, password):
++    """任何非英數字都算特殊符號，與前端 /[^A-Za-z\\d]/ 一致"""
++    assert password_policy_error(password) is None
++
++
++def test_create_user_applies_complexity(strict_policy, tmp_path):
++    manager = AuthManager(db_path=str(tmp_path / "users.db"))
++    with pytest.raises(PetsError):
++        manager.create_user("bob", "aaaaaaaaaaaa", "user")
++
++
++def test_new_password_must_differ(client, api_auth, strict_policy):
++    api_auth.reset_password("user", "Old-Password-1")
++    token = client.post(
++        f"{BASE}/auth/login", json={"username": "user", "password": "Old-Password-1"}
++    ).json()["access_token"]
++    resp = client.patch(
++        f"{BASE}/auth/password",
++        json={"current_password": "Old-Password-1", "new_password": "Old-Password-1"},
++        headers={"Authorization": f"Bearer {token}"},
++    )
++    assert resp.status_code == 400
++
++
++# ── 改密碼撤銷其他登入 ──────────────────────────────────────────────────
++
++
++def test_change_password_revokes_other_sessions(client, api_auth):
++    def login():
++        return client.post(
++            f"{BASE}/auth/login", json={"username": "user", "password": "user123"}
++        ).json()
++
++    other = login()
++    current = login()
++    resp = client.patch(
++        f"{BASE}/auth/password",
++        json={
++            "current_password": "user123",
++            "new_password": "user-new-pass",
++            "refresh_token": current["refresh_token"],
++        },
++        headers={"Authorization": f"Bearer {current['access_token']}"},
++    )
++    assert resp.status_code == 200
++
++    assert client.post(
++        f"{BASE}/auth/refresh", json={"refresh_token": other["refresh_token"]}
++    ).status_code == 401
++    assert client.post(
++        f"{BASE}/auth/refresh", json={"refresh_token": current["refresh_token"]}
++    ).status_code == 200
++
++
++def test_refresh_tokens_not_stored_in_plaintext(client, api_auth):
++    issued = client.post(
++        f"{BASE}/auth/login", json={"username": "user", "password": "user123"}
++    ).json()["refresh_token"]
++    with sqlite3.connect(api_auth.db_path) as conn:
++        stored = [row[0] for row in conn.execute("SELECT token_id FROM refresh_tokens")]
++    assert issued not in stored
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 8a1737f..ceaaaef 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -8,6 +8,12 @@ import os
+ # ★ TTC 2026-10-28：後端加了密碼長度下限（預設 12，見 app/governance/auth.py）。既有測試沿用短密碼，
+ #   這裡把下限放寬為 1；長度規則本身由 tests/unit/test_password_min_length.py 驗證。
+ os.environ.setdefault("OPEN_PETS_PASSWORD_MIN_LENGTH", "1")
++# ★ TTC 2026-10-30：密碼複雜度與 source 目錄限制（見 auth.py、api/dataset_input.py）。既有測試沿用簡單密碼、
++#   以暫存目錄的 SQLite 當資料來源，這裡關閉複雜度、開放暫存目錄；規則本身由 test_security_consistency.py 驗證。
++import tempfile
++
++os.environ.setdefault("OPEN_PETS_PASSWORD_REQUIRE_COMPLEXITY", "0")
++os.environ.setdefault("OPEN_PETS_ALLOWED_SOURCE_DIRS", tempfile.gettempdir())
+ import gc
+ import json
+ import logging
+diff --git a/tests/unit/test_token.py b/tests/unit/test_token.py
+index d73dfa4..77166b9 100644
+--- a/tests/unit/test_token.py
++++ b/tests/unit/test_token.py
+@@ -13,6 +13,7 @@ from app.governance.token import (
+     create_access_token,
+     decode_access_token,
+     ensure_auth_enabled,
++    hash_refresh_token,
+     log_availability,
+ )
+ 
+@@ -150,7 +151,7 @@ def test_expired_refresh_token_is_rejected(tokens):
+     with sqlite3.connect(tokens.db_path) as conn:
+         conn.execute(
+             "UPDATE refresh_tokens SET expires_at = ? WHERE token_id = ?",
+-            ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), token_id),
++            ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), hash_refresh_token(token_id)),
+         )
+         conn.commit()
+     assert tokens.resolve(token_id) is None
+@@ -162,6 +163,16 @@ def test_revoked_token_is_kept_for_the_record(tokens):
+     tokens.revoke(token_id)
+     with sqlite3.connect(tokens.db_path) as conn:
+         revoked = conn.execute(
+-            "SELECT revoked FROM refresh_tokens WHERE token_id = ?", (token_id,)
++            "SELECT revoked FROM refresh_tokens WHERE token_id = ?", (hash_refresh_token(token_id),)
+         ).fetchone()
+     assert revoked == (1,)
++
++
++def test_refresh_token_is_stored_hashed(tokens):
++    """★ TTC 2026-10-30：資料庫只存摘要，讀出資料表也拿不到可換發的 token"""
++    token_id = tokens.issue("admin")
++    with sqlite3.connect(tokens.db_path) as conn:
++        stored = [row[0] for row in conn.execute("SELECT token_id FROM refresh_tokens")]
++    assert token_id not in stored
++    assert hash_refresh_token(token_id) in stored
++    assert tokens.resolve(stored[0]) is None

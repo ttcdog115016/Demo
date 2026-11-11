@@ -1,0 +1,35 @@
+# 採白名單：先全部排除，再放行建置所需檔案（node_modules、dist、.git、簡報、截圖、掃描報告等一律不進建置 context）
+*
+
+# 前端
+!package.json
+!package-lock.json
+!index.html
+!tsconfig.json
+!tsconfig.app.json
+!tsconfig.node.json
+!vite.config.ts
+!public
+!src
+
+# 後端（只放行執行所需：程式碼與相依鎖定檔；測試、文件、範例資料不進映像檔）
+!backend/app
+!backend/pyproject.toml
+!backend/uv.lock
+# backend/app 底下不應進入映像檔的項目（承接後端自己的 .dockerignore）
+backend/app/**/__pycache__
+backend/app/**/*.pyc
+# 開發機的帳號資料庫與稽核軌跡（不得隨映像檔散布）
+backend/app/governance/*.db
+backend/app/governance/*.jsonl
+# 字型目錄僅排除說明文件；字型檔與 OFL 授權條款為報告產出與授權要求所需，須保留
+backend/app/governance/fonts/README.md
+
+# 授權聲明
+!LICENSE
+!sbom/FRONTEND_THIRD_PARTY_LICENSES.md
+!docker/THIRD_PARTY_NOTICES.header.txt
+
+# 進入點（單機版 launcher 與容器進入點）
+!packaging/launcher.py
+!docker/openpets_server.py

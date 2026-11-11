@@ -1,0 +1,172 @@
+diff --git a/app/engines/risk/subset.py b/app/engines/risk/subset.py
+index 5ff475f..8e95288 100644
+--- a/app/engines/risk/subset.py
++++ b/app/engines/risk/subset.py
+@@ -6,6 +6,9 @@
+ 
+ 條件格式（JSON 物件，欄名 → 條件；多欄並列＝AND，須同時滿足）：
+     數值區間：{"年齡": {"min": 30, "max": 40}}   閉區間，min／max 皆含（可只給一側）
++    日期區間：{"就診日": {"min": "2024-01-01", "max": "2024-06-30"}}
++                                                閉區間，邊界為日期字串（YYYY-MM-DD，可帶時間）；
++                                                只給日期時以「日」比較，當天任何時刻皆含
+     類別集合：{"地區": ["台北", "台中"]}          isin（成員需落在清單內）
+     空條件（None／{}）＝不限定，全體參與。
+ 
+@@ -15,8 +18,11 @@
+     欄位不存在 → 擋（資料層對不上，fail fast，ERR_CONFIG_DATA_MISMATCH）。
+     條件格式無法解讀 → 擋（無可解讀的降級語意，fail fast，ERR_SUBSET_COND_MALFORMED）。
+     區間下在非數值欄 → 不擋不爆：以 to_numeric 強制轉換，轉不動者成 NaN 自然落選，備註告知。
++    日期區間同理：以 to_datetime 強制轉換，轉不動者成 NaT 自然落選，備註告知。
++    區間邊界一側數值、一側日期 → 擋（ERR_SUBSET_COND_MALFORMED）。
+     篩不到（空群）→ 不擋：回空 df ＋前後筆數，交由端點據實告知（降級語意，非錯誤）。
+ """
++import re
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+@@ -146,7 +152,10 @@ def _column_mask(
+ def _range_mask(
+     series: pd.Series, col: str, cond: dict[str, Any], notes: list[str]
+ ) -> pd.Series:
+-    """數值閉區間遮罩：min／max 皆含、可只給一側。非數值欄不爆、轉不動者落選並備註。"""
++    """閉區間遮罩：min／max 皆含、可只給一側。邊界皆數值＝數值區間；皆日期字串＝日期區間。
++
++    欄位內容轉不動（非數值／非日期）者不爆、落選並備註。
++    """
+     lo = cond.get("min")
+     hi = cond.get("max")
+     if lo is None and hi is None:
+@@ -154,13 +163,18 @@ def _range_mask(
+             "ERR_SUBSET_COND_MALFORMED",
+             f"欄位 '{col}' 的區間條件至少需提供 min 或 max。",
+         )
+-    for name, val in (("min", lo), ("max", hi)):
+-        # 布林是 int 子類，但區間邊界寫 True／False 顯屬誤填，一併擋掉
+-        if val is not None and (isinstance(val, bool) or not isinstance(val, (int, float))):
+-            raise PetsError(
+-                "ERR_SUBSET_COND_MALFORMED",
+-                f"欄位 '{col}' 區間的 {name} 須為數值，收到 {val!r}。",
+-            )
++    kinds = {
++        _bound_kind(col, name, val)
++        for name, val in (("min", lo), ("max", hi))
++        if val is not None
++    }
++    if len(kinds) > 1:
++        raise PetsError(
++            "ERR_SUBSET_COND_MALFORMED",
++            f"欄位 '{col}' 區間的 min／max 須同為數值或同為日期，收到 {lo!r}、{hi!r}。",
++        )
++    if kinds == {"date"}:
++        return _date_range_mask(series, col, lo, hi, notes)
+ 
+     # 非數值欄給區間＝不擋不爆：強制轉數值，原本有值卻轉不成數字者變 NaN、比較恆 False 而落選
+     numeric = pd.to_numeric(series, errors="coerce")
+@@ -177,3 +191,52 @@ def _range_mask(
+     if hi is not None:
+         mask &= numeric <= hi
+     return mask
++
++
++# 日期邊界：YYYY-MM-DD（分隔可為 - / .），可帶時間；純數字字串（如 "30"）不視為日期
++_DATE_BOUND_RE = re.compile(r"^\s*\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[ T].*)?$")
++_DATE_ONLY_RE = re.compile(r"^\s*\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\s*$")
++
++
++def _bound_kind(col: str, name: str, val: Any) -> str:
++    """區間邊界種類：'number'（int／float）或 'date'（可解析的日期字串）；其餘擋。"""
++    # 布林是 int 子類，但區間邊界寫 True／False 顯屬誤填，一併擋掉
++    if isinstance(val, (int, float)) and not isinstance(val, bool):
++        return "number"
++    if isinstance(val, str) and _DATE_BOUND_RE.match(val):
++        try:
++            pd.Timestamp(val.strip())
++            return "date"
++        except (ValueError, TypeError):
++            pass
++    raise PetsError(
++        "ERR_SUBSET_COND_MALFORMED",
++        f"欄位 '{col}' 區間的 {name} 須為數值或日期字串（YYYY-MM-DD），收到 {val!r}。",
++    )
++
++
++def _date_range_mask(
++    series: pd.Series, col: str, lo: str | None, hi: str | None, notes: list[str]
++) -> pd.Series:
++    """日期閉區間遮罩：欄位強制轉日期，轉不動者落選並備註。
++
++    邊界只給日期（無時間）時以「日」比較：欄位先截成當天 00:00，使 max 當天任何時刻皆含。
++    """
++    dates = pd.to_datetime(series, errors="coerce", format="mixed")
++    if getattr(dates.dt, "tz", None) is not None:
++        dates = dates.dt.tz_localize(None)
++    coerced = dates.isna() & series.notna()
++    if coerced.any():
++        notes.append(
++            f"子群體條件：欄位 '{col}' 含 {int(coerced.sum())} 筆非日期內容，"
++            f"套用日期區間時該類紀錄一律落選。"
++        )
++
++    mask = pd.Series(True, index=series.index)
++    for val, keep in ((lo, lambda d, b: d >= b), (hi, lambda d, b: d <= b)):
++        if val is None:
++            continue
++        bound = pd.Timestamp(val.strip())
++        cells = dates.dt.normalize() if _DATE_ONLY_RE.match(val) else dates
++        mask &= keep(cells, bound)
++    return mask
+diff --git a/tests/unit/test_risk_subset.py b/tests/unit/test_risk_subset.py
+index a9e53fe..6238794 100644
+--- a/tests/unit/test_risk_subset.py
++++ b/tests/unit/test_risk_subset.py
+@@ -7,6 +7,7 @@
+   - 多欄 AND
+   - 欄位不存在／條件畸形 → fail fast
+   - 空群不擋（回空 df）、非數值欄套區間不爆並備註
++  - 日期區間（日期字串邊界、可只給一側、轉不動者落選並備註、與數值混用擋）
+ """
+ import pandas as pd
+ import pytest
+@@ -96,3 +97,42 @@ def test_range_on_non_numeric_column_does_not_raise():
+     # "20" 落在區間；"壞值" 轉不成數字而落選、不拋例外
+     assert res.df["代碼"].tolist() == ["20"]
+     assert any("非數值內容" in n for n in res.notes)
++
++
++def _visit_df():
++    return pd.DataFrame(
++        {"就診日": ["2024-01-01", "2024-03-15", "2024-06-30 23:59", "2024-07-01", "2023/12/31"]}
++    )
++
++
++def test_date_range_both_sides_inclusive():
++    """日期區間兩側皆給：閉區間；只給日期時 max 當天任何時刻皆含。"""
++    res = select_subgroup(_visit_df(), {"就診日": {"min": "2024-01-01", "max": "2024-06-30"}})
++    assert res.df["就診日"].tolist() == ["2024-01-01", "2024-03-15", "2024-06-30 23:59"]
++    assert res.notes == []
++
++
++def test_date_range_one_sided():
++    """日期區間可只給一側。"""
++    res = select_subgroup(_visit_df(), {"就診日": {"min": "2024-06-30"}})
++    assert res.df["就診日"].tolist() == ["2024-06-30 23:59", "2024-07-01"]
++    res = select_subgroup(_visit_df(), {"就診日": {"max": "2023-12-31"}})
++    assert res.df["就診日"].tolist() == ["2023/12/31"]
++
++
++def test_date_range_unparseable_rows_dropped_with_note():
++    """日期區間下轉不成日期者落選、不拋例外，並備註；空值不計入備註。"""
++    df = pd.DataFrame({"就診日": ["2024-02-01", "不詳", None, "2024-05-05"]})
++    res = select_subgroup(df, {"就診日": {"min": "2024-01-01", "max": "2024-12-31"}})
++    assert res.df["就診日"].tolist() == ["2024-02-01", "2024-05-05"]
++    assert any("1 筆非日期內容" in n for n in res.notes)
++
++
++def test_date_range_mixed_or_bad_bounds_block():
++    """一側數值一側日期、或日期字串無法解析 → 擋。"""
++    with pytest.raises(ValueError, match="ERR_SUBSET_COND_MALFORMED"):
++        select_subgroup(_visit_df(), {"就診日": {"min": "2024-01-01", "max": 5}})
++    with pytest.raises(ValueError, match="ERR_SUBSET_COND_MALFORMED"):
++        select_subgroup(_visit_df(), {"就診日": {"min": "2024-13-45"}})
++    with pytest.raises(ValueError, match="ERR_SUBSET_COND_MALFORMED"):
++        select_subgroup(_visit_df(), {"就診日": {"min": "30"}})

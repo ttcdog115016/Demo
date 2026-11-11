@@ -1,0 +1,56 @@
+{
+  "version": "scenario_金融分析",
+  "dataset": "金融分析",
+  "k_anonymity": {
+    "enabled": true,
+    "k": 5,
+    "l": 2,
+    "suppression_method": "row_suppression",
+    "suppression_limit_percent": 20,
+    "limit_exceeded_action": "allow_with_warning",
+    "columns": {
+      "客戶編號": {
+        "role": "identifier",
+        "type": "string"
+      },
+      "姓名": {
+        "role": "identifier",
+        "type": "string"
+      },
+      "身分證號": {
+        "role": "identifier",
+        "type": "string"
+      },
+      "出生日期": {
+        "role": "quasi_identifier",
+        "type": "temporal"
+      },
+      "性別": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "居住里": {
+        "role": "quasi_identifier",
+        "type": "categorical"
+      },
+      "產品類別": {
+        "role": "sensitive",
+        "type": "categorical"
+      }
+    },
+    "generalization_hierarchies": {
+      "出生日期": {
+        "levels": [
+          "day",
+          "month",
+          "year"
+        ]
+      }
+    },
+    "qi_generalization_levels": {
+      "出生日期": 3,
+      "性別": 0,
+      "居住里": 0
+    }
+  }
+}

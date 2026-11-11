@@ -1,0 +1,105 @@
+diff --git a/app/api/system_router.py b/app/api/system_router.py
+index 54fb700..77c0bcb 100644
+--- a/app/api/system_router.py
++++ b/app/api/system_router.py
+@@ -4,6 +4,7 @@
+     處理紀錄  登入者讀寫自己的；admin 可列出所有人的（?all=1）
+     維運日誌  登入者可寫入；讀取與清除限 admin
+     系統設定  免登入可讀（閒置登出時間；前端也用它檢查後端是否連得上）；修改限 admin
++    介面偏好  登入者讀寫自己的（外觀主題、語系、字體大小）
+ （系統公告同日移除。）
+ 
+ 維運日誌：登入成功／失敗、帳號鎖定、登出、每次處理 API 呼叫由後端自行記錄（origin=server，見 auth_router、
+@@ -115,6 +116,25 @@ def clear_system_logs(_: dict = Depends(require_role("admin"))):
+     return {"message": "日誌已清除。"}
+ 
+ 
++# ── 介面偏好 ────────────────────────────────────────────────────────────────
++class PreferencesUpdate(BaseModel):
++    """只更新有送的欄位；theme 送 null 表示改回「跟隨作業系統」。"""
++    theme: Literal["light", "dark"] | None = None
++    language: Literal["zh_TW", "en_US"] | None = None
++    font_size: Literal["small", "medium", "large", "extraLarge"] | None = None
++
++
++@router.get("/preferences")
++def get_preferences(user: dict = Depends(get_current_user)):
++    """目前帳號的介面偏好；沒存過回空物件（前端用預設值）。"""
++    return get_system_store().get_preferences(user["username"])
++
++
++@router.put("/preferences")
++def update_preferences(req: PreferencesUpdate, user: dict = Depends(get_current_user)):
++    return get_system_store().save_preferences(user["username"], req.model_dump(exclude_unset=True))
++
++
+ # ── 系統設定 ────────────────────────────────────────────────────────────────
+ class SettingsUpdate(BaseModel):
+     session_timeout_minutes: int | None = Field(None, ge=1, le=1440)
+diff --git a/app/governance/system_store.py b/app/governance/system_store.py
+index 91e856f..2ca4084 100644
+--- a/app/governance/system_store.py
++++ b/app/governance/system_store.py
+@@ -82,6 +82,11 @@ class SystemStore:
+                     updated_at INTEGER NOT NULL,
+                     updated_by TEXT
+                 );
++                CREATE TABLE IF NOT EXISTS user_preferences (
++                    username TEXT PRIMARY KEY,
++                    prefs_json TEXT NOT NULL,
++                    updated_at INTEGER NOT NULL
++                );
+                 CREATE TABLE IF NOT EXISTS runs (
+                     run_id TEXT PRIMARY KEY,
+                     username TEXT NOT NULL,
+@@ -195,6 +200,22 @@ class SystemStore:
+         with self._connect() as conn:
+             conn.execute("DELETE FROM system_logs")
+ 
++    # ── 介面偏好（★ TTC 2026-10-29：依帳號記住外觀主題、語系、字體大小） ──
++    def get_preferences(self, username: str) -> dict[str, Any]:
++        with self._connect() as conn:
++            row = conn.execute("SELECT prefs_json FROM user_preferences WHERE username = ?", (username,)).fetchone()
++        return json.loads(row["prefs_json"]) if row else {}
++
++    def save_preferences(self, username: str, changes: dict[str, Any]) -> dict[str, Any]:
++        """只更新有送的欄位，回傳更新後的完整偏好。"""
++        merged = {**self.get_preferences(username), **changes}
++        with self._connect() as conn:
++            conn.execute(
++                "INSERT OR REPLACE INTO user_preferences (username, prefs_json, updated_at) VALUES (?, ?, ?)",
++                (username, json.dumps(merged, ensure_ascii=False), _now_ms()),
++            )
++        return merged
++
+     # ── 系統設定 ──────────────────────────────────────────────────────────
+     def get_settings(self) -> dict[str, Any]:
+         result = dict(DEFAULT_SETTINGS)
+diff --git a/tests/api/test_api_system.py b/tests/api/test_api_system.py
+index 379eee4..cdbfd85 100644
+--- a/tests/api/test_api_system.py
++++ b/tests/api/test_api_system.py
+@@ -227,5 +227,23 @@ def test_settings_update_admin_only(client, api_auth, login):
+     ).status_code == 422
+ 
+ 
++def test_preferences_are_per_user(client, api_auth, login):
++    assert client.get(f"{BASE}/preferences").status_code == 401
++    user_headers = login("user", "user123")
++    assert client.get(f"{BASE}/preferences", headers=user_headers).json() == {}
++
++    saved = client.put(f"{BASE}/preferences", json={"theme": "light", "language": "en_US"}, headers=user_headers).json()
++    assert saved == {"theme": "light", "language": "en_US"}
++    # 只更新有送的欄位
++    saved = client.put(f"{BASE}/preferences", json={"font_size": "large"}, headers=user_headers).json()
++    assert saved == {"theme": "light", "language": "en_US", "font_size": "large"}
++    # theme 送 null＝改回跟隨作業系統
++    assert client.put(f"{BASE}/preferences", json={"theme": None}, headers=user_headers).json()["theme"] is None
++
++    # 別的帳號互不影響
++    assert client.get(f"{BASE}/preferences", headers=login()).json() == {}
++    assert client.put(f"{BASE}/preferences", json={"font_size": "huge"}, headers=user_headers).status_code == 422
++
++
+ def test_announcements_removed(client, api_auth, login):
+     assert client.get(f"{BASE}/announcements", headers=login()).status_code == 404

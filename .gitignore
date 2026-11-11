@@ -26,7 +26,39 @@ dist-ssr
 .vercel
 .env*
 
+# 本機工具設定與待刪除暫存區
+.claude/
+_to_delete/
+
+# 單機版打包產出
+packaging/build/
+packaging/dist/
+
+# ngrok 設定含個人 authtoken，不可進版控（★ 2026-11-02 資安掃描 2-1）；範本見 ngrok.example.yml
+ngrok.yml
+
+# 本機產出物與暫存，不進版控（★ 2026-11-02）
+packaging/__pycache__/
+_claude_tmp/
+stress-test/data/
+current_url.txt
+watchdog.log
+push_url_secret.txt
+Claude outputs/*.tgz
+Claude outputs/*.pptx
+Claude outputs/*.png
+Claude outputs/*.csv
+Claude outputs/*.pdf
+Demo 展示環境建置與維運手冊*.pdf
+Claude outputs/*.json
+
 # 文件網站（Hugo）建置產物
 doc_site/public/
 doc_site/resources/
 .hugo_build.lock
+
+# Docker 版實測輸出（docker/playwright.docker.config.ts）
+test-results-docker/
+
+# 後端併入 repo：.env.example 是範本，不是祕密
+!backend/.env.example

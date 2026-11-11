@@ -159,7 +159,7 @@ components:
               hash_type: { type: string }
         generalization_rules:
           type: object
-          description: 準識別碼的泛化策略
+          description: 間接識別碼的泛化策略
           additionalProperties:
             type: object
             properties:
@@ -241,7 +241,7 @@ components:
         masking_rules:
           id:
             strategy: "hash"
-            hash_type: "sha256"
+            hash_type: "SHA256"
         generalization_rules:
           age:
             strategy: "binning"
