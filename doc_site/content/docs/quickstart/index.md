@@ -6,7 +6,7 @@ weight: 2
 這一頁寫給**第一次安裝、不熟電腦指令**的人。照著做，約 15 到 30 分鐘就能在自己的電腦裝好 Open-PETs 並開始使用。每一步都會告訴你「這一步在做什麼」「你應該看到什麼」「看到錯誤怎麼辦」。
 
 {{< callout type="info" >}}
-**目前的最新版本是預發版 `2.0.0-rc3`**（正式版尚未發佈）。下面的指令都已經寫好這個版本號，直接複製貼上即可。之後有新版本時，把版本號換掉就好。
+**目前的最新版本是預發版 `2.0.0-rc4`**（正式版尚未發佈）。下面的指令都已經寫好這個版本號，直接複製貼上即可。之後有新版本時，把版本號換掉就好。
 {{< /callout >}}
 
 ## 先看這一頁：你需要知道的名詞
@@ -86,7 +86,7 @@ Open-PETs 附了一個小工具 `open-pets.ps1`，用問答幫你完成安裝與
 ```powershell
 New-Item -ItemType Directory -Force C:\open-pets-app | Out-Null
 cd C:\open-pets-app
-$v = '2.0.0-rc3'
+$v = '2.0.0-rc4'
 Invoke-WebRequest -UseBasicParsing "https://github.com/ttcdog115016/Demo/releases/download/v$v/open-pets.ps1" -OutFile open-pets.ps1
 Unblock-File .\open-pets.ps1
 ```
@@ -98,7 +98,7 @@ Unblock-File .\open-pets.ps1
 {{< tab name="Linux（bash）" >}}
 ```bash
 mkdir -p ~/open-pets-app && cd ~/open-pets-app
-v=2.0.0-rc3
+v=2.0.0-rc4
 curl -fsSLO "https://github.com/ttcdog115016/Demo/releases/download/v$v/open-pets.sh"
 chmod +x open-pets.sh
 ```
@@ -130,7 +130,7 @@ powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup
 | 工具問你 | 你怎麼回答 |
 | --- | --- |
 | 請選擇你要怎麼使用 Open-PETs | 輸入 `1`（本地），按 Enter |
-| 要安裝哪一版（如果有問） | 輸入 `2.0.0-rc3`，按 Enter |
+| 要安裝哪一版（如果有問） | 輸入 `2.0.0-rc4`，按 Enter |
 | 請確認…要開始安裝嗎 | 看一下內容，輸入 `Y`，按 Enter |
 | 建立第一個管理員：帳號、密碼 | 帳號建議用你的 Email；密碼至少 12 個字元，要同時有大寫、小寫、數字與符號（輸入時畫面不會顯示字，是正常的），再輸入一次確認 |
 
@@ -163,7 +163,7 @@ powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup
 | --- | --- | --- |
 | `Docker 沒有在執行（連不到 Docker 引擎）` | Docker Desktop 沒開，或還沒準備好 | 開啟 Docker Desktop，等左下角綠色 Engine running，再重新執行 `.\open-pets.ps1 setup` |
 | `找不到 Docker` | 還沒安裝 Docker Desktop | 回到[步驟 2-1](#2-1-安裝-docker-desktop) |
-| `下載映像檔失敗` | 沒有網路，或版本號打錯 | 確認可以上網；版本請填 `2.0.0-rc3`（不含開頭的 v） |
+| `下載映像檔失敗` | 沒有網路，或版本號打錯 | 確認可以上網；版本請填 `2.0.0-rc4`（不含開頭的 v） |
 | `這台電腦上已經有一個叫「open-pets」的容器…新的會改叫「open-pets-app」` | 這台電腦之前裝過舊版 | 不是錯誤，工具已經自動避開，不會動到舊的 |
 | 瀏覽器打不開 `localhost:8080` | 埠被改了，或系統還沒就緒 | 執行 `.\open-pets.ps1 status` 看正確的網址與狀態 |
 | 登入頁沒有帳號可以選 | 還沒建立管理員 | 執行 `.\open-pets.ps1 create-admin` |

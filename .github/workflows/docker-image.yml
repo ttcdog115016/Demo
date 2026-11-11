@@ -75,23 +75,34 @@ jobs:
             "$TRIVY_IMAGE" image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln,secret \
             "open-pets-app:$VERSION"
 
-      - name: Smoke test (health + both modes)
+      - name: Smoke test (health + all modes)
         env:
           VERSION: ${{ steps.v.outputs.version }}
         run: |
           set -e
           wait_healthy() { for _ in $(seq 1 40); do [ "$(docker inspect --format '{{.State.Health.Status}}' "$1")" = healthy ] && return 0; sleep 2; done; docker logs "$1"; return 1; }
-          docker run -d --name t-off --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-            -p 127.0.0.1:18080:8080 -v t-off:/data "open-pets-app:$VERSION"
-          docker run -d --name t-on --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-            -p 127.0.0.1:18081:8080 -v t-on:/data -e OPEN_PETS_MODE=online -e OPEN_PETS_ALLOWED_HOSTS=example.test "open-pets-app:$VERSION"
-          wait_healthy t-off
-          wait_healthy t-on
+          # 起一個容器：名稱 埠 預期的模式 [額外的 docker run 參數…]
+          start() {
+            name="$1"; port="$2"; shift 3
+            docker run -d --name "$name" --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+              -p "127.0.0.1:$port:8080" -v "$name:/data" "$@" "open-pets-app:$VERSION"
+          }
+          # 預設（不設 OPEN_PETS_MODE）＝ local；舊值 offline 仍視為 local；online、lan 需要 OPEN_PETS_ALLOWED_HOSTS
+          start t-default 18080 local
+          start t-alias   18082 local -e OPEN_PETS_MODE=offline
+          start t-on      18081 online -e OPEN_PETS_MODE=online -e OPEN_PETS_ALLOWED_HOSTS=example.test
+          start t-lan     18083 lan    -e OPEN_PETS_MODE=lan    -e OPEN_PETS_ALLOWED_HOSTS=192.0.2.10
+          for n in t-default t-alias t-on t-lan; do wait_healthy "$n"; done
           # /api/v1/status 的 version 是後端程式內的版本字串，只確認服務名稱，不比對版本（避免兩邊漏改一處就讓發版失敗）
           curl -fsS http://127.0.0.1:18080/api/v1/status | grep -q 'Open-PETs'
-          curl -fsS http://127.0.0.1:18080/runtime-config.js | grep -q '"mode": "offline"'
+          curl -fsS http://127.0.0.1:18080/runtime-config.js | grep -q '"mode": "local"'
+          curl -fsS http://127.0.0.1:18082/runtime-config.js | grep -q '"mode": "local"'
           curl -fsS http://127.0.0.1:18081/runtime-config.js | grep -q '"mode": "online"'
-          docker rm -f t-off t-on >/dev/null
+          curl -fsS http://127.0.0.1:18083/runtime-config.js | grep -q '"mode": "lan"'
+          # 不合法的模式值必須讓容器拒絕啟動（不可靜默退回預設）
+          rc=0; timeout 60 docker run --rm --read-only --cap-drop ALL -e OPEN_PETS_MODE=bogus "open-pets-app:$VERSION" >/dev/null 2>&1 || rc=$?
+          if [ "$rc" = 0 ] || [ "$rc" = 124 ]; then echo "OPEN_PETS_MODE=bogus 應該要啟動失敗（結束碼 $rc）"; exit 1; fi
+          docker rm -f t-default t-alias t-on t-lan >/dev/null
 
       - name: Log in to GHCR
         if: github.ref_type == 'tag'
