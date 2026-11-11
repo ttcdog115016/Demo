@@ -422,6 +422,33 @@ tag `v2.0.0-rc2` 指向合併 commit `de1a87b`（含檔名修正與 `.tar.gz` �
 - 由另一台真實的使用者電腦連入、主機有多張網卡、離線環境載入 Caddy 映像檔。
 - 新映像檔與 `docker-compose.lan.yml` 尚未發佈（需要新的預發版）。
 
+## 十六、追加（115/11/11）：互動式安裝／切換模式小工具與「新手快速上手」手冊
+
+為了讓非資訊背景的使用者上手，新增 `docker/open-pets.ps1`（Windows PowerShell 5.1 以上）與 `docker/open-pets.sh`（bash），納入交付包與 Release；手冊新增「新手快速上手」頁，原「安裝教學」改為完整參考。
+
+| 項目 | 內容 |
+|---|---|
+| 指令 | `setup`（問答式安裝）、`mode local|lan|online`（切換模式）、`status`、`start`、`stop`、`logs`、`create-admin`、`reset-password`、`export-ca`（內網：匯出根憑證並產生給同事的說明與指紋）、`backup`、`update <版本>`、`help` |
+| 設定做法 | 把模式與要用的 compose 檔寫進 `.env`（`OPEN_PETS_MODE`、`COMPOSE_FILE`、`COMPOSE_PATH_SEPARATOR`），之後單純 `docker compose up -d` 就是對的設定；`docker-compose.yml` 的容器名稱改為 `OPEN_PETS_CONTAINER_NAME`（預設不變） |
+| 手冊 | 新增 `docs/quickstart`：名詞白話表、模式選擇流程圖與對照表、共同準備、本地／內網／線上三條路徑（每步「在做什麼／應該看到什麼／錯誤怎麼辦」）、三種模式切換對照表、日常速查、給同事的一頁說明；網站選單、首頁、概覽、常見問題同步 |
+
+### 實測
+| 項目 | 結果 |
+|---|---|
+| Windows 版 `setup` 本地模式（使用者的 Demo 正占用 8080 與容器名稱 `open-pets`） | 自動改用 8081 與 `open-pets-app`，Demo 未被動到；Docker 對撞名的拒絕也證實了保護機制 |
+| 模式切換 本地→內網→線上→本地→內網 | 全程資料保留：在本地建立的帳號，切到內網後以 HTTPS 登入成功、切回本地也能登入；線上模式的錯誤 Host 得到 400；切回本地時 HTTPS 容器被移除、憑證資料保留；**local→lan 來回後匯出的根憑證位元組完全相同**（同事不用重新信任） |
+| `export-ca`、`backup`、`stop`／`start`、`logs`、`status` | 通過；說明檔為 UTF-8 含 BOM；`.env` 無 BOM |
+| 防呆 | 網址含 `http://` 或空格、錯誤的模式名稱、Docker 連不上（以 `DOCKER_HOST` 模擬，未關閉 Docker Desktop）都有白話訊息與下一步；Release 缺少 lan 檔案（rc2）時在寫入設定之前就失敗，資料夾沒有殘留 |
+| 實測抓到並修正的問題 | (1) PowerShell 5.1 傳給 docker 的格式字串含雙引號會被吃掉，同名容器偵測失效，改用 `{{.Labels}}` 自行解析；(2) 函式回傳值混入 docker 輸出，`logs` 沒有顯示；(3) 重複執行 `setup` 時把自己占用的埠當成別人占用而換埠，改為沿用 `.env` 並判斷容器是否為本資料夾所有 |
+| Linux 版 `open-pets.sh` | `shellcheck` 無警告、`bash -n` 通過；在 Linux 容器內（`docker:cli`，連到主機的 Docker）實測本地、線上、內網、切換、備份、`export-ca`、錯誤處理與資料保留；**未在真實 Linux 主機上測試**（連接埠偵測、防火牆提示、互動問答） |
+| 手冊 | Hugo 建置無錯誤、內部錨點檢查無壞連結；流程圖（Mermaid）在瀏覽器正確顯示（深色模式） |
+| 交付包 | 含 `open-pets.ps1`、`open-pets.sh`（預設版本已換成該版、`.ps1` 保留 BOM、`.sh` 為 LF），檔名皆 ASCII，`sha256sum -c` 全過 |
+
+### 未涵蓋
+- 互動問答的真人操作（測試以 `-Yes` 與非互動參數為主）；防火牆規則的實際建立（測試帳號不是系統管理員，工具只印出指令）。
+- 根憑證在各使用者電腦的安裝（會修改系統信任設定，未實際執行）。
+- 工具與手冊以 rc3 的實際 Release 檔案走一遍，待發版後進行。
+
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 
 | 位置 | 內容 |

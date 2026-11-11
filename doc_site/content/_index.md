@@ -20,17 +20,17 @@ layout: hextra-home
 </div>
 
 <div class="hx:mb-6">
-{{< hextra/hero-button text="開始部署" link="docs/deploy" >}}
+{{< hextra/hero-button text="新手快速上手" link="docs/quickstart" >}}
 </div>
 
 <div class="hx:mt-6"></div>
 
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
-    title="安裝教學"
+    title="新手快速上手"
     icon="server"
-    subtitle="三種取得方式（GHCR、離線 tar.gz、原始碼），啟動、對外開放、更新與備份。"
-    link="docs/deploy"
+    subtitle="不熟指令也能裝：選本地、內網或線上，用問答式小工具安裝並隨時切換模式。"
+    link="docs/quickstart"
   >}}
   {{< hextra/feature-card
     title="前端操作說明"

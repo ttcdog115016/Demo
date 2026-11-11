@@ -17,6 +17,9 @@ export default defineConfig({
     // e2e/ 是 Playwright 測試（npm run test:e2e），不由 vitest 執行；
     // doc_site/ 是 Hugo 使用手冊（含佈景主題 hextra 自帶的 Playwright 測試），也不由 vitest 執行
     exclude: [...configDefaults.exclude, 'e2e/**', 'doc_site/**'],
+    // 共用設定：放寬 Testing Library 的 waitFor 預設等待時間（見 src/test/setupTests.ts）；單一測試的逾時也放寬到 30 秒，才不會比 waitFor 先逾時
+    setupFiles: ['./src/test/setupTests.ts'],
+    testTimeout: 30_000,
   },
   server: {
     host: '0.0.0.0',     // 新增：允許伺服器監聽所有網卡的 IP，讓外部網路可以連入

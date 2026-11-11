@@ -35,10 +35,14 @@ menu:
       name: 文件
       pageRef: /docs
       weight: 1
-    - identifier: deploy
-      name: 部署教學
-      pageRef: /docs/deploy
+    - identifier: quickstart
+      name: 快速上手
+      pageRef: /docs/quickstart
       weight: 2
+    - identifier: deploy
+      name: 安裝教學
+      pageRef: /docs/deploy
+      weight: 3
     - name: 搜尋
       weight: 5
       params:

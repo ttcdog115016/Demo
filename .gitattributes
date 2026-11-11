@@ -1,0 +1,2 @@
+# Linux／macOS 的 shell 腳本一律用 LF（CRLF 會讓 #!/usr/bin/env bash 失效）；其餘檔案維持原本的換行行為
+*.sh text eol=lf

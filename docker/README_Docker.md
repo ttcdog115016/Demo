@@ -2,6 +2,18 @@
 
 一個映像檔 `open-pets-app:<版本>` 內含前端網頁與後端服務，同一個容器、同一個埠（8080）。不需要另外安裝 nginx、Python 或 Node.js。
 
+## 最快上手（建議：用附的小工具）
+資料夾裡的 `open-pets.ps1`（Windows）與 `open-pets.sh`（Linux）會用問答幫你完成安裝、選擇與切換模式，不用自己改設定檔：
+
+```powershell
+.\open-pets.ps1 setup                  # 第一次安裝：選本地／內網／線上、啟動、建立管理員
+.\open-pets.ps1 mode lan               # 之後隨時切換模式（local／lan／online），資料不會不見
+.\open-pets.ps1 status                 # 看目前模式、狀態與網址
+.\open-pets.ps1 help                   # 全部指令
+```
+
+Linux 把 `.\open-pets.ps1` 換成 `./open-pets.sh`。工具只寫同資料夾的 `.env`、需要時下載缺少的設定檔、呼叫 `docker compose`，不會修改系統設定。完整圖文教學見網站手冊的「新手快速上手」；下面的手動做法是同一件事的完整參考。
+
 ## 三種取得方式
 
 同一個版本的三種管道內容相同（映像檔由同一次建置產生），依環境選一種即可。

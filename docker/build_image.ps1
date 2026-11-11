@@ -6,6 +6,7 @@
 #         docker-compose.yml         啟動設定（離線／本機）
 #         docker-compose.online.yml  線上模式（對外網域，與上一個疊加使用）
 #         docker-compose.lan.yml、Caddyfile.lan  內網模式（內建 Caddy HTTPS，與 docker-compose.yml 疊加使用）
+#         open-pets.ps1、open-pets.sh  互動式安裝與切換模式小工具（Windows／Linux）
 #         SHA256SUMS.txt             完整性檢查碼（交付時另以安全管道傳遞一份）
 #         README_Docker.md       安裝、升級、備份說明
 #         Caddyfile.example、nginx.conf.example  線上模式的反向代理範例（HTTPS）
@@ -68,6 +69,11 @@ foreach ($f in 'docker-compose.yml', 'docker-compose.online.yml', 'docker-compos
     Copy-Item (Join-Path $DockerDir $f) $OutDir
 }
 # 反向代理範例（交付包內不放子資料夾，所以改成 .example 檔名）
+# 小工具：把「預設版本」換成這一版（使用者執行 setup 時就不用再問版本號）。.ps1 保留 UTF-8 BOM（Windows PowerShell 5.1 讀中文需要），.sh 一律 LF 且不含 BOM
+$toolPs1 = [System.IO.File]::ReadAllText((Join-Path $DockerDir 'open-pets.ps1')).Replace('__DEFAULT_VERSION__', $Version)
+[System.IO.File]::WriteAllText((Join-Path $OutDir 'open-pets.ps1'), $toolPs1, (New-Object System.Text.UTF8Encoding($true)))
+$toolSh = [System.IO.File]::ReadAllText((Join-Path $DockerDir 'open-pets.sh')).Replace('__DEFAULT_VERSION__', $Version).Replace("`r`n", "`n")
+[System.IO.File]::WriteAllText((Join-Path $OutDir 'open-pets.sh'), $toolSh, (New-Object System.Text.UTF8Encoding($false)))
 Copy-Item (Join-Path $DockerDir 'proxy-examples\Caddyfile') (Join-Path $OutDir 'Caddyfile.example')
 Copy-Item (Join-Path $DockerDir 'proxy-examples\nginx.conf') (Join-Path $OutDir 'nginx.conf.example')
 "OPEN_PETS_VERSION=$Version" | Set-Content (Join-Path $OutDir 'env.example') -Encoding ascii
