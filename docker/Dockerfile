@@ -33,7 +33,7 @@ RUN mkdir -p /out/swagger-ui \
     done
 
 # ---------- 第二階段：依 uv.lock 建出後端執行相依（與後端自己的 Dockerfile 相同做法）----------
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS backend-deps
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS backend-deps
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.15@sha256:e590846f4776907b254ac0f44b5b380347af5d90d668138ca7938d1b0c2f98d3 /uv /usr/local/bin/uv
 
@@ -56,7 +56,7 @@ RUN mkdir -p /licenses \
  && cat /tmp/header.txt /tmp/python-licenses.txt > /licenses/THIRD_PARTY_NOTICES.txt
 
 # ---------- 第四階段：交付映像檔（不含 node、uv、建置工具）----------
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 ARG OPEN_PETS_VERSION=dev
 ARG OPEN_PETS_SOURCE_URL=https://github.com/ttcdog115016/Demo
