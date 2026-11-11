@@ -41,7 +41,7 @@ weight: 2
 ```
 
 - 前端與後端在**同一個容器、同一個埠（8080）**，不需要另外安裝 nginx、Python 或 Node.js。
-- 容器預設只綁本機（`127.0.0.1`），要讓其他電腦連入請看[第 9 節](#9-開放給其他電腦)。
+- 容器預設只綁本機（`127.0.0.1`），要讓其他電腦連入請看[第 9 節](#9-開放給其他電腦內網)。
 - 第一次啟動會自動產生雜湊鹽值與簽章金鑰，存在磁碟區的 `/data/.secrets.env`，**不需要自己準備 `.env` 的金鑰**。
 
 ## 2. 選擇取得方式
@@ -292,12 +292,12 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 
 | | 離線模式（預設） | 線上模式 |
 | --- | --- | --- |
-| 適用 | 一台電腦、內網單一用途、無網路環境 | 多人使用、以網域對外提供服務 |
-| 啟動指令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.online.yml up -d` |
+| 適用 | 一台電腦、無網路環境 | 多人使用：同一個內網的其他電腦用瀏覽器連線（內網 IP 或主機名稱，建議加內網 HTTPS，見[第 9 節](#9-開放給其他電腦內網)）；也可設成對外網域 |
+| 啟動指令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.online.yml up -d`；內網 HTTPS 再疊加 `-f docker-compose.https.yml` |
 | 環境變數 | `OPEN_PETS_MODE=offline`（預設） | `OPEN_PETS_MODE=online` |
 | 系統設定的「系統維運日誌」分頁 | 隱藏 | 顯示（管理員查看全站登入與 API 紀錄） |
 | 登入頁 Demo 測試帳號 | 不顯示 | 不顯示（`OPEN_PETS_SHOW_DEMO_ACCOUNTS=true` 僅限展示站） |
-| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=你的網域`。沒設定時 `docker compose` 會直接報錯（`required variable OPEN_PETS_ALLOWED_HOSTS is missing a value`），不會啟動 |
+| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=使用者會輸入的網址`（內網 IP、主機名稱，或對外網域，逗號分隔）。沒設定時 `docker compose` 會直接報錯（`required variable OPEN_PETS_ALLOWED_HOSTS is missing a value`），不會啟動 |
 
 - 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令即可，資料磁碟區不變。
 - `OPEN_PETS_MODE` 填了其他值，容器會在啟動時報錯並結束（`docker logs open-pets` 看得到原因），不會悄悄退回預設。
@@ -308,69 +308,149 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 | --- | --- | --- |
 | `OPEN_PETS_VERSION` | 要使用的映像檔版本 | 檔內預設版本 |
 | `OPEN_PETS_IMAGE` | 映像檔名稱（用 GHCR 時填 `ghcr.io/ttcdog115016/open-pets-app`） | `open-pets-app` |
-| `OPEN_PETS_PORT` | 本機對外的埠 | 8080 |
-| `OPEN_PETS_ALLOWED_HOSTS` | 允許的網址主機名稱，逗號分隔，用來擋 DNS rebinding | 離線模式不限制 |
+| `OPEN_PETS_PORT` | 應用程式在本機的埠 | 8080 |
+| `OPEN_PETS_BIND` | 應用程式埠綁定的網卡位址；只在不用 HTTPS、直接以 HTTP 開放內網時才改（不建議） | `127.0.0.1`（只有本機） |
+| `OPEN_PETS_HTTPS_PORT`、`OPEN_PETS_HTTPS_BIND` | 內網 HTTPS 代理對內網開放的埠與網卡位址 | 443、`0.0.0.0` |
+| `OPEN_PETS_ALLOWED_HOSTS` | 允許的網址（內網 IP、主機名稱或網域），逗號分隔，用來擋 DNS rebinding；內網 HTTPS 的憑證也依這份清單簽發 | 離線模式不限制 |
 | `OPEN_PETS_MAX_UPLOAD_MB` | 單次上傳上限（MB） | 1024 |
 | `OPEN_PETS_DEFAULT_SALT`、`OPEN_PETS_SYSTEM_MASTER_KEY`、`OPEN_PETS_JWT_SECRET` | 要把金鑰與資料分開保管時才填（各 64 字元隨機字串，環境變數優先於自動產生的） | 第一次啟動自動產生 |
 
 修改 `.env` 後執行 `docker compose up -d`，容器會用新設定重建。
 
-## 9. 開放給其他電腦
+## 9. 開放給其他電腦（內網）
 
-預設只有這台電腦（`127.0.0.1`）連得進來。**不要直接把 8080 以明文 HTTP 開放到區網或網際網路**，請在前面加一層提供 HTTPS 的反向代理。
+預設只有這台電腦（`127.0.0.1`）連得進來。要讓**同一個內網的其他電腦**用瀏覽器使用，請用**線上模式加內網 HTTPS**：在這台主機多開一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，**不需要對外網路，也不需要申請網域或 Let's Encrypt**。應用程式本身的 8080 仍只綁本機，內網其他電腦只能走 HTTPS。
 
-### 反向代理與 HTTPS
+{{< callout type="info" >}}
+這個做法已實測：以 **IP 位址**連線時，登入、上傳 5 萬筆、K-匿名化、下載 CSV 與 PDF 全部正常，瀏覽器沒有主控台錯誤；以**主機名稱**連線時，憑證與連線也驗證過。根憑證的安裝步驟（各作業系統與瀏覽器）依標準做法撰寫，尚未在每種環境實測。
+{{< /callout >}}
 
-交付包附兩份範例（原始碼在 `docker/proxy-examples/`），都已實測過 HTTPS 下的完整流程（登入、上傳、K-匿名化、下載 CSV 與 PDF）：
+### 9-1. 先決定使用者輸入的網址
 
-| 範例 | 特色 |
+使用者會在瀏覽器輸入 `https://<網址>`。這個「網址」可以是主機的內網 IP（例如 `192.168.1.20`）、內網 DNS 的主機名稱（例如 `pets-server`），或兩者都有。
+
+- **建議把主機的 IP 固定下來**（路由器的 DHCP 保留，或在主機設定固定 IP）。IP 變了，憑證與使用者的書籤都要跟著改。
+- 查主機 IP：Windows 執行 `ipconfig`，找「IPv4 位址」；Linux 執行 `hostname -I`。
+- 在安裝資料夾的 `.env` 加入這份清單（逗號分隔，**逗號前後不要加空格**），**使用者會輸入的每個網址都要列**：
+
+    ```text
+    OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server
+    ```
+
+    這份清單同時是應用程式的主機名稱檢查（漏列的網址會得到 400 `Invalid host header`）和憑證要簽發的名稱。
+- 如果清單裡有 IP，**第一個 IP 會是「沒有送主機名稱」的連線所用的預設憑證**。用 IP 當網址時，瀏覽器不會送主機名稱，所以主機有多個 IP 時，請把使用者實際會用的那個放在最前面。
+
+### 9-2. 取得設定檔並啟動
+
+從該版本的 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)（離線交付包裡也有）取得這三個檔案，放在安裝資料夾（跟 `docker-compose.yml` 同一個資料夾）。**`2.0.0-rc2`（含）以前發佈的版本沒有 `docker-compose.https.yml` 與 `Caddyfile.lan`**，這兩個檔案從 repo 的 `docker/` 資料夾取得（`https://github.com/ttcdog115016/Demo/tree/main/docker`）：
+
+| 檔案 | 用途 |
 | --- | --- |
-| `Caddyfile.example` | Caddy 自動申請並續期憑證，設定最短 |
-| `nginx.conf.example` | nginx，憑證自行準備（例如 certbot 或內部 CA） |
+| `docker-compose.online.yml` | 線上模式（多人使用） |
+| `docker-compose.https.yml` | 內網 HTTPS 的 Caddy 容器 |
+| `Caddyfile.lan` | Caddy 設定，由 compose 掛載，一般不需要修改 |
 
-使用時把範例裡的 `openpets.example.com` 換成你的網域。不論用哪種代理，這幾點都要做到：
+{{< callout type="warning" >}}
+**離線環境要先帶 Caddy 映像檔。** `docker-compose.https.yml` 會用到 `caddy:2.11.9` 映像檔。在有網路的電腦執行 `docker pull caddy:2.11.9` 與 `docker save caddy:2.11.9 -o caddy.tar`，把 `caddy.tar` 帶到主機後 `docker load -i caddy.tar`。
+{{< /callout >}}
 
-- 把 `Host` 標頭**原樣轉送**，否則會被主機名稱檢查擋掉。
-- 允許大檔案上傳（預設上限 1024 MB）、不要先緩衝整個請求本文。
-- 逾時設長一點，大檔案的處理時間可能很久。
-- 在代理層加上 `Strict-Transport-Security`（範例已加）。
-
-### 設定線上模式與允許的網域
-
-在 `.env` 填入使用者會用的主機名稱（逗號分隔），並用線上模式啟動：
-
-```text
-OPEN_PETS_ALLOWED_HOSTS=pets.example.com
-```
+啟動（三個檔案疊加）：
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.online.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.online.yml -f docker-compose.https.yml up -d
+docker ps
 ```
 
-漏列的主機名稱連進來會得到 400（`Invalid host header`）。容器自己的健康檢查所用的 `127.0.0.1`、`localhost` 不需要列。
+應該看到兩個容器：`open-pets`（`healthy`）與 `open-pets-proxy-1`（`Up`）。沒設定 `OPEN_PETS_ALLOWED_HOSTS` 時 `docker compose` 會直接報錯，不會啟動。
 
-### 區域網路（不經反向代理，僅限內網測試）
+### 9-3. 開放防火牆
 
-如果只是內網測試，也可以在 `docker-compose.yml` 把 `ports` 的 `127.0.0.1:` 拿掉並在防火牆開放 8080；正式使用仍建議走反向代理與 HTTPS。
+內網其他電腦要連到主機的 443 埠：
 
 {{< tabs >}}
 {{< tab name="Windows（PowerShell）" >}}
 用**系統管理員身分**開 PowerShell：
 
 ```powershell
-New-NetFirewallRule -DisplayName "Open-PETs 8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
+New-NetFirewallRule -DisplayName "Open-PETs HTTPS 443" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
 ```
 {{< /tab >}}
 {{< tab name="Linux（bash）" >}}
 ```bash
-sudo ufw allow 8080/tcp   # 以 ufw 為例；其他防火牆請用對應的指令
+sudo ufw allow 443/tcp   # 以 ufw 為例；其他防火牆請用對應的指令
 ```
 {{< /tab >}}
 {{< /tabs >}}
 
-### 透過網際網路
+主機的 443 已被其他程式占用時，在 `.env` 加 `OPEN_PETS_HTTPS_PORT=8443`（防火牆也開 8443），使用者的網址要加上埠：`https://192.168.1.20:8443`。
 
-用 Cloudflare Tunnel 等通道時，把通道目標設為 `http://localhost:8080`，並依上面設定線上模式與 `OPEN_PETS_ALLOWED_HOSTS`（作法見《Demo 展示環境建置與維運手冊（cloudflared 通道＋內網測試）》）。
+### 9-4. 讓使用者電腦信任根憑證
+
+憑證是由 Caddy 的私有 CA 簽發的，使用者電腦要**信任這個 CA 的根憑證**，瀏覽器才不會顯示「您的連線不是私人連線」。這件事每台使用者電腦做一次。
+
+1. 在主機匯出根憑證（只有憑證，不含私鑰，可以放心傳給使用者）：
+
+    ```powershell
+    docker compose -f docker-compose.yml -f docker-compose.online.yml -f docker-compose.https.yml cp proxy:/data/caddy/pki/authorities/local/root.crt ./open-pets-ca.crt
+    ```
+
+2. 把 `open-pets-ca.crt` 交給使用者（隨身碟、內網檔案伺服器或電子郵件都可以），並在每台使用者電腦安裝成「受信任的根憑證授權單位」：
+
+    {{< tabs >}}
+    {{< tab name="Windows" >}}
+    在使用者電腦用**系統管理員身分**開 PowerShell：
+
+    ```powershell
+    certutil -addstore -f Root open-pets-ca.crt
+    ```
+
+    或雙擊 `open-pets-ca.crt` → 安裝憑證 → 本機電腦 → 選「將所有憑證放入以下的存放區」→ 受信任的根憑證授權單位。Chrome 與 Edge 使用 Windows 的憑證存放區，裝好後重新開啟瀏覽器即可。公司有網域時，可以用群組原則一次佈署到所有電腦。
+    {{< /tab >}}
+    {{< tab name="macOS" >}}
+    ```bash
+    sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain open-pets-ca.crt
+    ```
+    {{< /tab >}}
+    {{< tab name="Firefox" >}}
+    Firefox 有自己的憑證存放區：設定 → 隱私權與安全性 → 憑證 → 檢視憑證 → 憑證機構 → 匯入 `open-pets-ca.crt`，勾選「信任這個 CA 來識別網站」。
+    {{< /tab >}}
+    {{< /tabs >}}
+
+3. 使用者開啟 `https://192.168.1.20`（換成你的網址），網址列應顯示鎖頭，出現登入頁。
+
+{{< callout type="warning" >}}
+**根憑證的私鑰在主機的 `caddy-data` 磁碟區裡，請當作機密保管，也要一起備份。** 主機換新、重裝或 `caddy-data` 遺失後，Caddy 會產生新的根憑證，所有使用者電腦都得重新信任。**不要把根憑證放到網際網路上讓人下載安裝**，信任它的電腦會相信這個 CA 簽發的任何憑證。
+{{< /callout >}}
+
+### 9-5. 憑證的更新
+
+Caddy 簽發的內網憑證預設有效期約 12 小時，Caddy 會在容器運行中自動續期，不需要處理；根憑證有效期約 10 年。只要 `proxy` 容器一直在運行（`restart: unless-stopped` 已設定），使用者不會遇到憑證過期。
+
+### 不用 HTTPS 的簡化做法（不建議）
+
+只在可信任、隔離的內網做測試時才使用。帳號密碼與資料會以明文在內網傳輸，瀏覽器在非 HTTPS 網址也會停用部分功能（例如設定檔頁的「複製 JSON」按鈕）。在 `.env` 設定：
+
+```text
+OPEN_PETS_BIND=0.0.0.0
+OPEN_PETS_ALLOWED_HOSTS=192.168.1.20
+```
+
+用線上模式啟動（不疊加 HTTPS 檔案），防火牆開放 8080，使用者開 `http://192.168.1.20:8080`：
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.online.yml up -d
+```
+
+### 對外網際網路，或使用自己的反向代理
+
+不建議把系統直接放到網際網路。如果必須對外，請用有正式憑證的反向代理（交付包附 `Caddyfile.example` 與 `nginx.conf.example`，作法見交付包的 `README_Docker.md`），把 `OPEN_PETS_ALLOWED_HOSTS` 設成對外網域，並確認：
+
+- 把 `Host` 標頭**原樣轉送**，否則會被主機名稱檢查擋掉。
+- 允許大檔案上傳（預設上限 1024 MB）、不要先緩衝整個請求本文。
+- 逾時設長一點，大檔案的處理時間可能很久。
+- 在代理層加上 `Strict-Transport-Security`（範例已加）。
+
+用 Cloudflare Tunnel 等通道時，把通道目標設為 `http://localhost:8080`（作法見《Demo 展示環境建置與維運手冊（cloudflared 通道＋內網測試）》）。
 
 ## 10. 更新與退回
 

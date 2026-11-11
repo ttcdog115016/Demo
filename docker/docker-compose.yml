@@ -10,8 +10,10 @@ services:
     container_name: open-pets
     restart: unless-stopped
     ports:
-      # 只綁本機。要讓區網其他電腦連入，請前面加反向代理並啟用 HTTPS，不要直接把 8080 以明文 HTTP 開放
-      - "127.0.0.1:${OPEN_PETS_PORT:-8080}:8080"
+      # 預設只綁本機。內網多人使用請疊加 docker-compose.online.yml 與 docker-compose.https.yml（內網 HTTPS，見說明文件），
+      # 應用程式的 8080 仍只綁本機，由 HTTPS 代理對內網開放。
+      # OPEN_PETS_BIND 只在「不用 HTTPS、直接以 HTTP 開放內網」時才改（例如 0.0.0.0）：帳號密碼與資料會以明文在內網傳輸，不建議
+      - "${OPEN_PETS_BIND:-127.0.0.1}:${OPEN_PETS_PORT:-8080}:8080"
     volumes:
       # 帳號資料庫、稽核日誌、系統日誌、自動產生的金鑰（.secrets.env）都在這裡，升級映像檔不會遺失
       - open-pets-data:/data
