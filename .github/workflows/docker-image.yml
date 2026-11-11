@@ -162,7 +162,7 @@ jobs:
 
       - name: Upload delivery package (dry run)
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: open-pets-app_${{ steps.v.outputs.version }}
           path: dist/open-pets-app_${{ steps.v.outputs.version }}
