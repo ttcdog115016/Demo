@@ -1,6 +1,6 @@
 ---
 title: 常見問題
-weight: 6
+weight: 7
 ---
 
 ## 使用時
@@ -18,6 +18,11 @@ weight: 6
 
 | 狀況 | 原因與處理 |
 | --- | --- |
+| 執行 `.\open-pets.ps1` 出現「因為這個系統上已停用指令碼執行」 | Windows 預設不讓下載來的指令檔直接執行 | 先 `Unblock-File .\open-pets.ps1`；還是不行就改用 `powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup`（只對這一次有效，不改系統設定） |
+| 工具說「這台電腦上已經有一個叫「open-pets」的容器…新的會改叫…」 | 這台電腦之前裝過舊版或別的安裝 | 不是錯誤，工具已經自動避開，不會動到舊的；用 `.\open-pets.ps1 status` 看新的實際網址與埠 |
+| 工具說「8080 埠已經有別的程式在用，改用 8081」 | 這台電腦的 8080 被別的程式占用 | 不是錯誤，網址改用工具印出的新埠（例如 `http://localhost:8081`） |
+| 切換模式後同事連不上 | 切到本地（只剩這台電腦）、防火牆沒開，或同事還沒信任新憑證 | `.\open-pets.ps1 status` 看目前模式與網址；內網模式要開防火牆並 `export-ca` 給同事，見[新手快速上手](quickstart/) |
+| 想退回上一個模式 | 切換是可逆的，資料不會丟 | `.\open-pets.ps1 mode 上一個模式`（local／lan／online）；從內網切回本地再切回來，憑證沿用，同事不用重新信任 |
 | `docker` 指令出現 `error during connect`，或 `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`（較新版的 Docker 訊息） | Docker Desktop 沒有啟動，或剛啟動還沒就緒。開啟 Docker Desktop，等左下角顯示 Engine running，再執行 `docker version` 確認 Server 有版本資訊後重試 |
 | `docker compose up` 回報 `port is already allocated` | 本機的 8080 埠已被其他程式占用。在 `.env` 加一行 `OPEN_PETS_PORT=8081`（任一空的埠），再 `docker compose up -d`，網址改用該埠 |
 | 容器一直是 `starting` 或 `unhealthy`，或啟動後馬上結束 | 先看日誌：`docker logs --tail 100 open-pets`。常見原因：`OPEN_PETS_MODE` 填了 `local`、`offline`（等同 `local`）、`online`、`lan` 以外的值（容器會報錯並結束；新值 `local`、`lan` 要 2.0.0-rc2 之後的映像檔才認得）、線上或內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 設錯。剛啟動約 40 秒內顯示 `starting` 是正常的。線上或內網模式沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 在啟動前就會報 `required variable ... is missing a value` |

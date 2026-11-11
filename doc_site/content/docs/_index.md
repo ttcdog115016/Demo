@@ -14,7 +14,8 @@ Open-PETs 以單一 Docker 映像檔交付，裝在一台電腦或主機上，�
 ## 文件導覽
 
 {{< cards >}}
-  {{< card link="deploy" title="安裝教學" icon="server" subtitle="IT／維運人員：三種取得方式、啟動、對外開放、更新、備份" >}}
+  {{< card link="quickstart" title="新手快速上手" icon="play" subtitle="第一次安裝、不熟指令：選模式、用小工具安裝、隨時切換" >}}
+  {{< card link="deploy" title="安裝教學（完整參考）" icon="server" subtitle="IT／維運人員：三種取得方式、手動設定、反向代理、更新、備份" >}}
   {{< card link="frontend" title="前端操作說明" icon="cursor-click" subtitle="所有使用者、管理員：四步驟去識別化與帳號管理" >}}
   {{< card link="api" title="API 使用說明" icon="code" subtitle="系統整合、開發人員：端點與呼叫範例" >}}
   {{< card link="cli" title="命令列使用說明" icon="terminal" subtitle="IT 人員：批次作業與帳號維護" >}}

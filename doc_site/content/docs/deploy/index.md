@@ -1,9 +1,13 @@
 ---
-title: 安裝教學
-weight: 2
+title: 安裝教學（完整參考）
+weight: 3
 ---
 
 適用版本：Open-PETs **2.0.0**（前端與後端合在同一個 Docker 映像檔）　｜　環境：**Windows 10／11＋Docker Desktop**，附 Linux 指令對照
+
+{{< callout type="info" >}}
+**第一次安裝、不熟指令？請先看[新手快速上手](../quickstart/)。** 那一頁用問答式的小工具（`open-pets.ps1`／`open-pets.sh`）帶你完成安裝，並教你在本地、內網、線上三種模式之間切換。本頁是**完整參考**：每個步驟的手動做法、進階設定、備份驗證、授權與移轉。
+{{< /callout >}}
 
 本頁說明如何在一台電腦或主機上安裝 Open-PETs，讓使用者用瀏覽器操作。映像檔有三種取得方式（有網路、離線、原始碼），內容是同一個版本，裝好之後的操作完全一樣。
 
@@ -307,6 +311,20 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 - `OPEN_PETS_MODE` 填了 `local`、`offline`、`online`、`lan` 以外的值，容器會在啟動時報錯並結束（`docker logs open-pets` 看得到原因），不會悄悄退回預設。
 - 新值 `local`、`lan` 與 `docker-compose.lan.yml` 要 **2.0.0-rc2 之後**的版本才有；`2.0.0-rc2` 只認 `offline`、`online`。
 
+### 用小工具切換，或手動切換
+
+**用小工具（建議）：** 在安裝資料夾執行 `.\open-pets.ps1 mode local`、`mode lan` 或 `mode online`（Linux 用 `./open-pets.sh`）。工具會改好 `.env`、需要的設定檔，並重啟，資料不會不見。細節見[新手快速上手的步驟 4](../quickstart/#步驟-4三種模式之間怎麼切換)。
+
+**手動：** 工具其實只是在 `.env` 裡寫下這幾行，之後單純 `docker compose up -d` 就會用對的設定檔，不必每次輸入一長串 `-f`：
+
+| 模式 | `.env` 要有的行 |
+| --- | --- |
+| 本地 | `OPEN_PETS_MODE=local`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml` |
+| 內網 | `OPEN_PETS_MODE=lan`<br>`OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml` |
+| 線上 | `OPEN_PETS_MODE=online`<br>`OPEN_PETS_ALLOWED_HOSTS=pets.example.com`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml:docker-compose.online.yml` |
+
+改完 `.env` 執行 `docker compose up -d --remove-orphans`（`--remove-orphans` 會把用不到的容器，例如從內網切回本地時的 HTTPS 容器，一併移除；資料不受影響）。不想用 `COMPOSE_FILE` 的話，也可以每次明確寫 `-f docker-compose.yml -f docker-compose.lan.yml`。
+
 `.env` 其他可設定的項目：
 
 | 變數 | 用途 | 未設定時 |
@@ -393,6 +411,8 @@ sudo ufw allow 443/tcp   # 以 ufw 為例；其他防火牆請用對應的指令
 ### 9-4. 讓使用者電腦信任根憑證
 
 憑證是由 Caddy 的私有 CA 簽發的，使用者電腦要**信任這個 CA 的根憑證**，瀏覽器才不會顯示「您的連線不是私人連線」。這件事每台使用者電腦做一次。
+
+**用小工具一鍵完成：** 執行 `.\open-pets.ps1 export-ca`（Linux：`./open-pets.sh export-ca`），會匯出 `open-pets-ca.crt`，並產生已經填好網址與憑證指紋的「給同事的說明」`open-pets-colleague-guide.txt`。下面是手動做法。
 
 1. 在主機匯出根憑證（只有憑證，不含私鑰，可以放心傳給使用者）：
 

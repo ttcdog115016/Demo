@@ -1,6 +1,6 @@
 ---
 title: API 使用說明
-weight: 4
+weight: 5
 ---
 
 Open-PETs 的處理引擎提供 HTTP API。你可以用 curl、Python 或其他程式語言呼叫，把去識別化整合進自己的系統。API 的帳號和網頁畫面共用同一套。
