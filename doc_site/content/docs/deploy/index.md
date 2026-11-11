@@ -8,8 +8,21 @@ weight: 2
 本頁說明如何在一台電腦或主機上安裝 Open-PETs，讓使用者用瀏覽器操作。映像檔有三種取得方式（有網路、離線、原始碼），內容是同一個版本，裝好之後的操作完全一樣。
 
 {{< callout type="warning" >}}
-**目前 GitHub Releases 只有預發版（`2.0.0-rc2`），正式版 `2.0.0` 尚未發佈。** 下文的 `<版本>` 請換成 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)上你要安裝的版本；正式版發佈前，要先試用就填 `2.0.0-rc2`。
+**目前 GitHub Releases 只有預發版（`2.0.0-rc2`），正式版 `2.0.0` 尚未發佈。** 現在要安裝，版本請填 **`2.0.0-rc2`**；填 `2.0.0` 會拉不到映像檔。
 {{< /callout >}}
+
+### 版本號怎麼填
+
+文中的 `<版本>` 要換成**實際存在的版本號**。到 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)，看你要安裝的那一筆：
+
+| Releases 頁上看到的 | 要填的版本號 |
+| --- | --- |
+| 標題 `Open-PETs 2.0.0-rc2`（標籤 `v2.0.0-rc2`，有 Pre-release 標示） | `2.0.0-rc2`（**不含開頭的 v**） |
+| 之後正式發佈時，標題 `Open-PETs 2.0.0`（標籤 `v2.0.0`） | `2.0.0` |
+
+- 每次安裝或更新都要寫明確的版本，系統不提供 `latest`。
+- 帶 `-rc` 的是預發版，只用來試用與驗證；正式環境等正式版發佈後再安裝。
+- 離線交付包的檔名也帶同一個版本，例如 `open-pets-app_2.0.0-rc2.tar.gz`。
 
 ## 1. 架構
 
@@ -91,11 +104,11 @@ mkdir -p ~/open-pets && cd ~/open-pets
 ## 4. 方式一：容器映像檔（GHCR）
 
 1. 到 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)，把該版本的 `docker-compose.yml` 與 `env.example` 下載到安裝資料夾，並把 `env.example` 複製成 `.env`。
-2. 用文字編輯器開啟 `.env`，內容改成（`<版本>` 換成要安裝的版本）：
+2. 用文字編輯器開啟 `.env`，內容改成下面這樣（目前請填 `2.0.0-rc2`，之後正式版發佈就換成正式版的版本號）：
 
     ```text
     OPEN_PETS_IMAGE=ghcr.io/ttcdog115016/open-pets-app
-    OPEN_PETS_VERSION=<版本>
+    OPEN_PETS_VERSION=2.0.0-rc2
     ```
 
 3. 如果套件是私有的，先用有 `read:packages` 權限的 GitHub 權杖登入。公開的套件不需要這一步：
