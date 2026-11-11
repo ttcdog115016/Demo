@@ -1,5 +1,5 @@
 /**
- * 離線／線上模式的旗標合併：執行期設定（Docker 單一映像檔）優先，沒有就退回建置旗標（exe、nginx 版 Demo 站）。
+ * 本地／線上／內網模式的旗標合併：執行期設定（Docker 單一映像檔）優先，沒有就退回建置旗標（exe、nginx 版 Demo 站）。
  */
 import { describe, it, expect } from 'vitest';
 import { resolveFlags } from '../featureFlags';
@@ -16,6 +16,18 @@ describe('resolveFlags：沒有執行期設定時，與加入執行期設定之�
 describe('resolveFlags：Docker 單一映像檔（建置時帶 desktop，由執行期設定決定模式）', () => {
     it('offline：不顯示維運日誌與 Demo 帳號', () => {
         expect(resolveFlags({ mode: 'offline', showDemoAccounts: false }, 'desktop'))
+            .toEqual({ isOfflineMode: true, showDemoAccounts: false, showSystemLogTab: false });
+    });
+    it('local：與 offline 相同（不顯示維運日誌與 Demo 帳號）', () => {
+        expect(resolveFlags({ mode: 'local' }, 'desktop'))
+            .toEqual({ isOfflineMode: true, showDemoAccounts: false, showSystemLogTab: false });
+    });
+    it('lan（內網）：與 online 相同，顯示維運日誌，Demo 帳號預設不顯示', () => {
+        expect(resolveFlags({ mode: 'lan' }, 'desktop'))
+            .toEqual({ isOfflineMode: false, showDemoAccounts: false, showSystemLogTab: true });
+    });
+    it('local 在一般建置也成立（執行期設定蓋過建置旗標）', () => {
+        expect(resolveFlags({ mode: 'local' }, undefined))
             .toEqual({ isOfflineMode: true, showDemoAccounts: false, showSystemLogTab: false });
     });
     it('online：顯示維運日誌，Demo 帳號仍預設不顯示', () => {

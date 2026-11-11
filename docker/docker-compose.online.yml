@@ -1,14 +1,18 @@
-# 線上模式（多人使用的伺服器）：與 docker-compose.yml 疊加使用，同一份映像檔
+# 線上模式（online）：以「對外網域」提供服務（網際網路）。與 docker-compose.yml 疊加使用，同一份映像檔
 #   docker compose -f docker-compose.yml -f docker-compose.online.yml up -d
-# 必填：在同資料夾的 .env 設 OPEN_PETS_ALLOWED_HOSTS=你的網域（逗號分隔），防 DNS rebinding。
+# 必填：在同資料夾的 .env 設 OPEN_PETS_ALLOWED_HOSTS=使用者會輸入的對外網域（逗號分隔），防 DNS rebinding。
+#       例如 OPEN_PETS_ALLOWED_HOSTS=pets.example.com
 #
-# 對外開放的方式：容器仍只綁本機 127.0.0.1，前面放反向代理（nginx、Caddy、IIS ARR…）並啟用 HTTPS，
-# 由代理轉送到 127.0.0.1:8080。不要把 8080 直接以明文 HTTP 開放到區網或網際網路。
+# 對外開放的方式：容器仍只綁本機 127.0.0.1，前面放反向代理（nginx、Caddy、IIS ARR…）並啟用 HTTPS（正式憑證），
+# 由代理轉送到 127.0.0.1:8080；範例見交付包的 Caddyfile.example、nginx.conf.example。
 # 反向代理需允許大檔案上傳（預設上限 1024 MB）並把 Host 標頭原樣轉送，例如 nginx：
 #   client_max_body_size 1024M;  proxy_set_header Host $host;  proxy_request_buffering off;
+# 不要把 8080 直接以明文 HTTP 開放到網際網路。
+#
+# 只在同一個內網使用（沒有對外網域）：請改用「內網模式」，見 docker-compose.lan.yml（內建 HTTPS）。
 services:
   open-pets:
     environment:
       OPEN_PETS_MODE: online
       # 用 :? 讓沒設定時直接報錯，不會在沒有主機限制的情況下對外開放
-      OPEN_PETS_ALLOWED_HOSTS: ${OPEN_PETS_ALLOWED_HOSTS:?線上模式必須在 .env 設定 OPEN_PETS_ALLOWED_HOSTS（你的網域）}
+      OPEN_PETS_ALLOWED_HOSTS: ${OPEN_PETS_ALLOWED_HOSTS:?線上模式必須在 .env 設定 OPEN_PETS_ALLOWED_HOSTS（對外網域，逗號分隔）}

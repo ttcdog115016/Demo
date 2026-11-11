@@ -395,6 +395,33 @@ tag `v2.0.0-rc2` 指向合併 commit `de1a87b`（含檔名修正與 `.tar.gz` �
 
 **尚未做或不在範圍**：正式版 `v2.0.0` 不發（使用者決定）；rc1、rc2 的 Release、tag 與 GHCR 版本暫時保留，待使用者指示再刪（簽章已寫進公開的 Sigstore 透明日誌，無法撤回）；main 分支尚未取得這些內容。
 
+## 十五、追加（115/11/11）：三種模式（本地／內網／線上）與內網 HTTPS
+
+模式由兩種（`offline`／`online`）改為三種，由 `OPEN_PETS_MODE` 選擇：
+
+| 模式 | 值 | 情境 | 啟動 |
+|---|---|---|---|
+| 本地（預設） | `local`（舊值 `offline` 仍接受，視為 `local`） | 一台電腦、無網路 | `docker compose up -d` |
+| 內網 | `lan` | 同一個內網的多台電腦（內網 IP／主機名稱），**內建 Caddy HTTPS（私有 CA）** | 疊加 `docker-compose.lan.yml` |
+| 線上 | `online` | 以對外網域提供服務，自備反向代理與正式憑證 | 疊加 `docker-compose.online.yml` |
+
+畫面行為：`local` 隱藏「系統維運日誌」分頁；`lan`、`online` 顯示。差異主要在部署方式。新增 `OPEN_PETS_BIND`（預設 `127.0.0.1`，只在不用 HTTPS、直接以 HTTP 開放內網時才改，不建議）。2.0.0-rc2 只認 `offline`、`online`；`local`、`lan` 與 `docker-compose.lan.yml` 要之後的版本才有。
+
+### 實測（使用獨立的容器名稱與埠，未動到線上 Demo）
+| 項目 | 結果 |
+|---|---|
+| 模式值 | 未設定、`offline`、`local` 皆得到 `mode: local`；`online`、`lan` 各自正確；填錯值（例如 `bogus`）容器報錯並結束，訊息列出 `local、online、lan（舊值 offline 視為 local）` |
+| 前端旗標單元測試 | `featureFlags` 9 項全過（新增 `local`、`lan`、一般建置下的 `local`） |
+| 模式 e2e（`e2e/docker_modes.spec.ts`） | `local`、`offline`（別名）、`online`、`lan` 四種各 3 項全過；「系統維運日誌」分頁在 `local` 隱藏、`online`／`lan` 顯示 |
+| compose | 預設為 `OPEN_PETS_MODE: local` 且只綁 `127.0.0.1`；`online`、`lan` 沒設 `OPEN_PETS_ALLOWED_HOSTS` 時直接報錯；線上疊加檔啟動後 `mode: online`，錯誤的 Host 得到 400 |
+| 內網模式 `docker-compose.lan.yml`（單一疊加檔） | 容器 healthy、Caddy 無錯誤；以 **IP 位址** 經 HTTPS 完整流程（登入、上傳 5 萬筆、K-匿名化、下載 CSV 與 PDF）通過，無主控台錯誤；匯出的根憑證可驗證（OpenSSL 客戶端、IP 與主機名稱檢查開啟），未信任該 CA 的客戶端被拒；Windows 檢出的 CRLF 版檔案也能啟動 |
+| 實測抓到並修正的問題 | Caddy 位址清單要用空格分隔（啟動時把 `.env` 的逗號轉成空格）；網址是 IP 時瀏覽器不送 SNI，需 `default_sni`（啟動時挑清單第一個 IP，沒有 IP 就用第一個主機名稱）；`skip_install_trust` 避免唯讀容器的錯誤訊息；Windows 的 curl 對私有 CA 需 `--ssl-no-revoke`（瀏覽器不受影響） |
+
+### 未涵蓋
+- 根憑證在各使用者電腦（Windows、macOS、Firefox）的安裝步驟依標準做法撰寫，**未實際安裝**（會修改系統信任設定）。
+- 由另一台真實的使用者電腦連入、主機有多張網卡、離線環境載入 Caddy 映像檔。
+- 新映像檔與 `docker-compose.lan.yml` 尚未發佈（需要新的預發版）。
+
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 
 | 位置 | 內容 |

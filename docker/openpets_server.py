@@ -11,7 +11,8 @@
   reset-password    互動重設某個帳號的密碼（忘記管理員密碼時用）
   verify-log 等     其餘後端 CLI 指令原樣轉交（create-user、verify-log、k-anonymity、dp、report…）
 
-模式：OPEN_PETS_MODE=offline（預設）或 online；OPEN_PETS_SHOW_DEMO_ACCOUNTS=true 才顯示登入頁的 Demo 測試帳號。
+模式：OPEN_PETS_MODE=local（本地，預設）、online（線上，對外網域）或 lan（內網）；舊值 offline 仍接受，視為 local。
+  OPEN_PETS_SHOW_DEMO_ACCOUNTS=true 才顯示登入頁的 Demo 測試帳號。
   同一份映像檔、同一份前端，模式由 /runtime-config.js 在執行期告訴前端（見 resolve_runtime_config）。
 
 金鑰：OPEN_PETS_DEFAULT_SALT／OPEN_PETS_SYSTEM_MASTER_KEY／OPEN_PETS_JWT_SECRET 由環境變數提供；
@@ -71,7 +72,8 @@ def ensure_secrets() -> None:
         os.environ[key] = stored[key]
 
 
-VALID_MODES = ("offline", "online")
+VALID_MODES = ("local", "online", "lan")
+MODE_ALIASES = {"offline": "local"}   # 2.0.0-rc2 以前的名稱，仍接受
 TRUE_VALUES = ("1", "true", "yes", "on")
 FALSE_VALUES = ("", "0", "false", "no", "off")
 
@@ -79,12 +81,14 @@ FALSE_VALUES = ("", "0", "false", "no", "off")
 def resolve_runtime_config() -> dict:
     """讀環境變數決定前端的執行期設定；值不合法就中止啟動，不靜默退回預設（避免設錯了卻以為生效）。
 
-    OPEN_PETS_MODE             offline（預設，本機／離線）或 online（多人使用的伺服器）；online 才顯示系統維運日誌分頁。
+    OPEN_PETS_MODE             local（預設，本地：一台電腦）、online（線上：以對外網域提供服務）或 lan（內網：同一個內網的多台電腦）；
+                               舊值 offline 視為 local。online 與 lan 才顯示系統維運日誌分頁。
     OPEN_PETS_SHOW_DEMO_ACCOUNTS  true 才在登入頁顯示 Demo 測試帳號；預設 false，只給我們自己的 Demo 站開。
     """
-    mode = os.getenv("OPEN_PETS_MODE", "").strip().lower() or "offline"
+    mode = os.getenv("OPEN_PETS_MODE", "").strip().lower() or "local"
+    mode = MODE_ALIASES.get(mode, mode)
     if mode not in VALID_MODES:
-        raise SystemExit(f"[設定錯誤] OPEN_PETS_MODE={mode!r} 不合法，只接受 {' 或 '.join(VALID_MODES)}。")
+        raise SystemExit(f"[設定錯誤] OPEN_PETS_MODE={mode!r} 不合法，只接受 {'、'.join(VALID_MODES)}（舊值 offline 視為 local）。")
     demo_raw = os.getenv("OPEN_PETS_SHOW_DEMO_ACCOUNTS", "").strip().lower()
     if demo_raw not in TRUE_VALUES + FALSE_VALUES:
         raise SystemExit(f"[設定錯誤] OPEN_PETS_SHOW_DEMO_ACCOUNTS={demo_raw!r} 不合法，只接受 true 或 false。")

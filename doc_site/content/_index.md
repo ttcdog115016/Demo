@@ -4,7 +4,7 @@ layout: hextra-home
 ---
 
 {{< hextra/hero-badge >}}
-  <span>v2.0.0・單一映像檔・離線／線上</span>
+  <span>v2.0.0・單一映像檔・本地／內網／線上</span>
 {{< /hextra/hero-badge >}}
 
 <div class="hx:mt-6 hx:mb-6">

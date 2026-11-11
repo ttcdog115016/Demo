@@ -4,7 +4,8 @@
 # 產出：docker\dist\open-pets-app_<版本>\
 #         open-pets-app_<版本>.tar.gz  映像檔（docker load -i 直接匯入，不必先解壓縮）
 #         docker-compose.yml         啟動設定（離線／本機）
-#         docker-compose.online.yml  線上模式（與上一個疊加使用）
+#         docker-compose.online.yml  線上模式（對外網域，與上一個疊加使用）
+#         docker-compose.lan.yml、Caddyfile.lan  內網模式（內建 Caddy HTTPS，與 docker-compose.yml 疊加使用）
 #         SHA256SUMS.txt             完整性檢查碼（交付時另以安全管道傳遞一份）
 #         README_Docker.md       安裝、升級、備份說明
 #         Caddyfile.example、nginx.conf.example  線上模式的反向代理範例（HTTPS）
@@ -63,7 +64,7 @@ $raw = [System.IO.File]::Create($TarGz)
 $gz  = New-Object System.IO.Compression.GZipStream($raw, [System.IO.Compression.CompressionLevel]::Optimal)
 try { $in.CopyTo($gz) } finally { $gz.Dispose(); $raw.Dispose(); $in.Dispose() }
 Remove-Item $TmpTar -Force
-foreach ($f in 'docker-compose.yml', 'docker-compose.online.yml', 'README_Docker.md', 'REBUILD.md') {
+foreach ($f in 'docker-compose.yml', 'docker-compose.online.yml', 'docker-compose.lan.yml', 'Caddyfile.lan', 'README_Docker.md', 'REBUILD.md') {
     Copy-Item (Join-Path $DockerDir $f) $OutDir
 }
 # 反向代理範例（交付包內不放子資料夾，所以改成 .example 檔名）

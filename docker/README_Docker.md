@@ -20,7 +20,7 @@
 - 可用磁碟：映像檔約 1 GB；資料另計（上傳的處理暫存也放在資料磁碟區，大檔案請預留空間）
 
 ## 一、安裝（離線）
-資料夾內有 `open-pets-app_<版本>.tar.gz`、`docker-compose.yml`、`docker-compose.online.yml`、`SHA256SUMS.txt`，另有授權聲明與重新建置說明（見「八、授權與原始碼」）。
+資料夾內有 `open-pets-app_<版本>.tar.gz`、`docker-compose.yml`、`docker-compose.online.yml`（線上）、`docker-compose.lan.yml`（內網）、`Caddyfile.lan`、`SHA256SUMS.txt`，另有授權聲明與重新建置說明（見「八、授權與原始碼」）。
 
 1. **核對完整性**：`SHA256SUMS.txt` 的檢查碼要與另一條管道取得的一致。
    - PowerShell：`Get-FileHash .\open-pets-app_2.0.0.tar.gz -Algorithm SHA256`
@@ -35,21 +35,35 @@
 5. 瀏覽器開啟 http://localhost:8080 ，用剛建立的帳號登入。
 
 ## 選擇模式（同一份映像檔）
-離線／本機與線上共用同一份映像檔，啟動時用環境變數選模式，不需要另外建置。
+本地、線上、內網共用同一份映像檔，啟動時用環境變數 `OPEN_PETS_MODE` 選模式，不需要另外建置。
 
-| | 離線模式（預設） | 線上模式 |
-|---|---|---|
-| 適用 | 一台電腦或內網單一用途、無網路環境 | 多人使用、以網域對外提供服務 |
-| 啟動指令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.online.yml up -d` |
-| 環境變數 | `OPEN_PETS_MODE=offline`（預設） | `OPEN_PETS_MODE=online` |
-| 系統設定的「系統維運日誌」分頁 | 隱藏 | 顯示（管理員查看全站登入與 API 紀錄） |
-| 登入頁 Demo 測試帳號 | 不顯示 | 不顯示（要顯示須另設 `OPEN_PETS_SHOW_DEMO_ACCOUNTS=true`，僅限展示站） |
-| 對外埠 | 只綁 `127.0.0.1` | 仍只綁 `127.0.0.1`，前面放反向代理並啟用 HTTPS |
-| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=你的網域`（沒設定會拒絕啟動） |
+| | 本地（預設） | 線上 | 內網 |
+|---|---|---|---|
+| `OPEN_PETS_MODE` | `local`（舊值 `offline` 仍接受，視為 `local`） | `online` | `lan` |
+| 適用 | 一台電腦、無網路環境 | 以**對外網域**提供服務（網際網路） | **同一個內網**的多台電腦（內網 IP 或主機名稱） |
+| 啟動指令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.online.yml up -d` | `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d` |
+| HTTPS | 不需要（本機） | 自備反向代理與正式憑證（`Caddyfile.example`／`nginx.conf.example`） | **內建 Caddy HTTPS**（私有 CA，使用者電腦要信任根憑證） |
+| 對外埠 | 只綁 `127.0.0.1` | 應用程式 8080 只綁 `127.0.0.1`，由反向代理對外 | 應用程式 8080 只綁 `127.0.0.1`，Caddy 對內網開放 443（`OPEN_PETS_HTTPS_PORT` 可改） |
+| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=對外網域` | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=內網IP,主機名稱`（例如 `192.168.1.20,pets-server`），逗號分隔、不加空格 |
+| 系統設定的「系統維運日誌」分頁 | 隱藏 | 顯示（管理員查看全站登入與 API 紀錄） | 顯示 |
+| 登入頁 Demo 測試帳號 | 不顯示 | 不顯示（要顯示須另設 `OPEN_PETS_SHOW_DEMO_ACCOUNTS=true`，僅限展示站） | 不顯示 |
 
-- 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令即可，`/data` 磁碟區不變。
-- `OPEN_PETS_MODE` 填了其他值，容器會在啟動時報錯並結束（`docker logs open-pets` 可看到原因），不會悄悄退回預設。
-- 線上模式由反向代理終止 HTTPS；代理需把 `Host` 標頭原樣轉送、允許大檔案上傳（預設上限 1024 MB）、關閉請求緩衝。可直接改用交付包內的 `Caddyfile.example`（自動憑證）或 `nginx.conf.example`（原始碼的 `docker/proxy-examples/`），兩份都已實測過 HTTPS 下的完整流程（登入、上傳、K-匿名化、下載 CSV 與 PDF）。後端只認 `OPEN_PETS_ALLOWED_HOSTS` 內的 Host，其他網域直接連到容器會得到 400。後端不記錄用戶端 IP（稽核紀錄以帳號為準），所以不需要設定 `X-Forwarded-For` 的信任範圍。
+- 三種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令即可，`/data` 磁碟區不變。
+- `OPEN_PETS_MODE` 填了 `local`、`offline`、`online`、`lan` 以外的值，容器會在啟動時報錯並結束（`docker logs open-pets` 可看到原因），不會悄悄退回預設。
+- 線上與內網的必填設定沒設時，`docker compose` 會直接報錯（`required variable OPEN_PETS_ALLOWED_HOSTS is missing a value`），不會啟動。
+- 新值 `local`、`lan` 與 `docker-compose.lan.yml` 要 2.0.0-rc2 **之後**的版本才有；rc2 只認 `offline`、`online`。
+
+### 內網模式（lan）
+`docker-compose.lan.yml` 會多開一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，不需要對外網路或網域。使用者在瀏覽器輸入 `https://<內網IP或主機名稱>`。重點：
+- `.env` 的 `OPEN_PETS_ALLOWED_HOSTS` 要列出使用者會輸入的每個網址；清單裡的**第一個 IP** 是沒送主機名稱的連線（網址是 IP 時瀏覽器不會送）所用的預設憑證。
+- 主機防火牆要開放 443（`OPEN_PETS_HTTPS_PORT` 可改）。
+- **每台使用者電腦要信任 Caddy 的根憑證**，否則瀏覽器會顯示憑證警告。匯出：`docker compose -f docker-compose.yml -f docker-compose.lan.yml cp proxy:/data/caddy/pki/authorities/local/root.crt ./open-pets-ca.crt`，再安裝成「受信任的根憑證授權單位」（Windows：`certutil -addstore -f Root open-pets-ca.crt`）。根憑證的私鑰在 `caddy-data` 磁碟區，請當作機密並一起備份。
+- 離線環境要先帶 Caddy 映像檔：`docker pull caddy:2.11.9`、`docker save`，到主機 `docker load`。
+- 不建議以明文 HTTP 直接開放內網；真的要的話用 `.env` 的 `OPEN_PETS_BIND=0.0.0.0`（帳號密碼會以明文傳輸，部分瀏覽器功能會停用）。
+- 完整步驟、各瀏覽器與作業系統的信任方式見網站手冊的「安裝教學 第 9 節」。
+
+### 線上模式（online）
+由反向代理終止 HTTPS；代理需把 `Host` 標頭原樣轉送、允許大檔案上傳（預設上限 1024 MB）、關閉請求緩衝。可直接改用交付包內的 `Caddyfile.example`（自動憑證）或 `nginx.conf.example`（原始碼的 `docker/proxy-examples/`），兩份都已實測過 HTTPS 下的完整流程（登入、上傳、K-匿名化、下載 CSV 與 PDF）。後端只認 `OPEN_PETS_ALLOWED_HOSTS` 內的 Host，其他網址直接連到容器會得到 400。後端不記錄用戶端 IP（稽核紀錄以帳號為準），所以不需要設定 `X-Forwarded-For` 的信任範圍。
 
 ## 二、升級
 資料與金鑰都在 `open-pets-data` 磁碟區，換映像檔不會遺失。兩種取得新版的方式，同一個版本的映像檔內容相同。
