@@ -230,7 +230,7 @@ powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup
 | 你／同事看到 | 原因 | 怎麼辦 |
 | --- | --- | --- |
 | 瀏覽器顯示「您的連線不是私人連線」 | 這台電腦還沒信任憑證 | 照上面第 5 步做一次 |
-| 同事連不上，一直轉圈圈或「無法連線」 | 防火牆沒開，或這台電腦沒開機 | 確認第 2 步已經執行；在同事電腦的 PowerShell 執行 `Test-NetConnection 192.168.1.20 -Port 443`，要顯示 `TcpTestSucceeded : True` |
+| 同事連不上，一直轉圈圈，最後顯示 `ERR_CONNECTION_TIMED_OUT`（回應時間過長） | **網址列沒有輸入 `https://`**（只打 IP 時，瀏覽器會改走沒有開放的 `http://`）；或防火牆沒開、這台電腦沒開機、同事的電腦不在同一個網路（例如手機行動熱點會隔離裝置） | 先確認同事輸入的是 **`https://192.168.1.20`**（要有 `https://`）。還是不行：確認第 2 步已經執行；在同事電腦的 PowerShell 執行 `Test-NetConnection 192.168.1.20 -Port 443`，要顯示 `TcpTestSucceeded : True`，顯示 `False` 就是網路不通 |
 | 同事連進來出現 `ERR_SSL_PROTOCOL_ERROR`（SSL 錯誤）或憑證名稱不符 | 同事輸入的網址不在你填的清單裡（例如你只填 IP，同事卻輸入電腦名稱） | 執行 `.\open-pets.ps1 mode lan -Hosts 192.168.1.20,pets-server`，把同事會用的網址都列進去，再 `export-ca` |
 | 工具說「443 埠已經有別的程式在用，HTTPS 改用 8443」 | 這台電腦的 443 被別的程式占用 | 不是錯誤，但同事的網址要加上埠：`https://192.168.1.20:8443`，防火牆也要開 8443 |
 | 這台電腦重開機後 IP 變了 | IP 沒固定 | 把 IP 固定後，執行 `.\open-pets.ps1 mode lan -Hosts 新的IP`，並重新執行 `export-ca` 給同事新的說明 |
