@@ -217,7 +217,7 @@ powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup
 1. 把 `open-pets-ca.crt` 存到自己的電腦。
 2. 用系統管理員身分開 PowerShell，執行 `certutil -addstore -f Root open-pets-ca.crt`。
 3. 完全關閉瀏覽器再重開。
-4. 開啟 `https://192.168.1.20`（換成你的網址），網址列出現鎖頭，就成功了。
+4. 開啟 `https://192.168.1.20`，網址列出現鎖頭，就成功了。**網址要換成你自己的**：就是步驟 1 裡回答「網址」那一題填的（或 `-Hosts` 帶的值）；忘了的話，在安裝資料夾執行 `.\open-pets.ps1 status` 就會列出來。同事輸入清單以外的網址會連不上。
 
 **同事的電腦沒有系統管理員權限怎麼辦？** 請資訊人員用群組原則把 `open-pets-ca.crt` 一次佈署到所有電腦。
 
