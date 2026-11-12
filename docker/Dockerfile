@@ -48,7 +48,7 @@ RUN uv sync --locked --no-default-groups
 # ---------- 授權聲明：由實際安裝的 Python 套件產生（pip-licenses 只在這個階段，不進交付映像檔）----------
 FROM backend-deps AS notices
 
-RUN uv pip install --python /opt/venv/bin/python pip-licenses==5.0.0
+RUN uv pip install --python /opt/venv/bin/python pip-licenses==5.5.5
 COPY docker/THIRD_PARTY_NOTICES.header.txt /tmp/header.txt
 RUN mkdir -p /licenses \
  && /opt/venv/bin/pip-licenses --from=mixed --format=plain-vertical --with-urls --with-license-file --no-license-path \
@@ -94,7 +94,9 @@ COPY --from=frontend /out ./frontend
 
 # 授權聲明（MIT、第三方元件）：二進位散布時隨映像檔附上，見 /licenses/THIRD_PARTY_NOTICES.txt 開頭的 LGPL／MPL 說明
 COPY --from=notices /licenses /licenses
-COPY LICENSE sbom/FRONTEND_THIRD_PARTY_LICENSES.md /licenses/
+COPY LICENSE sbom/FRONTEND_THIRD_PARTY_LICENSES.md sbom/frontend-sbom.cdx.json /licenses/
+# 前端 npm 套件的授權全文（原檔名含中文，映像檔內改用英文檔名，方便各種系統取出）
+COPY sbom/3.2_*.txt /licenses/FRONTEND_LICENSES_FULLTEXT.txt
 COPY packaging/launcher.py /opt/openpets/launcher.py
 COPY docker/openpets_server.py /opt/openpets/openpets_server.py
 

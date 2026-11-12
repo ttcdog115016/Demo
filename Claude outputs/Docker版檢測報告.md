@@ -522,6 +522,52 @@ tag `v2.0.0-rc2` 指向合併 commit `de1a87b`（含檔名修正與 `.tar.gz` �
 - 互動問答的真人操作、防火牆規則的實際建立；Linux 版工具未在真實 Linux 主機上測試（沿用第十六節）。
 - 未發正式版 `v2.0.0`；`v2.0.0-rc1`～`rc3` 仍保留（由於 tag 受保護，需要刪除時須由管理員處理）。
 
+## 十九、追加（115/11/12）：線上模式移除、開源／SBOM／軟體安全文件稽核與 rc4 重新掃描
+
+### （一）本次變更
+| 項目 | 內容 |
+|---|---|
+| 移除線上（online）模式（PR #24） | 只移除 online，保留本地（`local`）與內網（`lan`）。容器遇到 `OPEN_PETS_MODE=online` 會拒絕啟動並提示改用 `lan`／`local`；刪除 `docker-compose.online.yml`、`proxy-examples/`；安裝小工具問答剩兩種，舊 online 資料夾 `status` 會提示、`update` 會先請使用者切換模式；冒煙測試新增「online 必須被拒絕」。**不相容變更**：舊 online 設定升級後無法啟動（資料不受影響）。第十節、第十一節、第十五節描述的 online 模式為歷史紀錄。 |
+| 測試穩定（PR #22、#23） | CI 偶發失敗的根因：假時鐘加固定次數讓出，遇到慢速 CI 時非同步工作尚未完成；另有 5 個測試檔繪製元件卻沒有卸載。改為「等到條件成立」的共用工具（`src/test/settle.ts`）並在全域 `afterEach` 卸載元件。限 2 核整套測試連跑 4 次全部乾淨。 |
+
+### （二）開源、SBOM、軟體安全文件稽核與處理
+| 領域 | 稽核發現 | 處理 |
+|---|---|---|
+| 授權聲明 | `package.json` 沒有 `license` 欄位；`backend/pyproject.toml` 沒有授權欄位且 `description` 是範本字樣；`backend/LICENSE` 與根目錄 `LICENSE` 只差行尾空白 | 兩處補上 `license: MIT`、後端補說明；兩份 LICENSE 內容統一 |
+| 授權聲明 | `THIRD_PARTY_NOTICES.txt` 有 21 個套件的授權名稱顯示 `UNKNOWN`（授權全文有附，但名稱沒帶出來） | `pip-licenses` 由 5.0.0 升到 5.5.5（能讀 PEP 639 的授權運算式），重建後 `UNKNOWN` 為 0（例如 numpy 為 `BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0`、fpdf2 為 `LGPL-3.0-only`） |
+| 授權聲明 | numpy、scipy 預編譯檔內附 `libgfortran`、`libquadmath`（GPL／LGPL 並附 GCC 例外）標頭沒有特別說明；內網模式的 Caddy 是另外的映像檔，授權說明沒提 | 標頭新增第 6、7 點：位置、未修改、原始碼取得方式，以及 Caddy 不在 `open-pets-app` 映像檔內 |
+| 授權交付物 | `FRONTEND_THIRD_PARTY_LICENSES.md` 說「授權全文見 `3.2_附件一_開源元件授權全文_前端.txt`」，但這個檔案**沒有**隨映像檔或 Release 交付（只在原始碼壓縮檔裡）；前端 SBOM 也沒有隨交付物附上 | 映像檔 `/licenses` 與 Release 新增 `FRONTEND_LICENSES_FULLTEXT.txt`（原檔名含中文，改用 ASCII 檔名）與 `frontend-sbom.cdx.json`；清單內的指引同步改寫 |
+| SBOM | `build_image.ps1` 以 `aquasec/trivy:latest` 產生映像檔 SBOM，與 CI 使用的固定版本不一致 | 固定為 CI 相同的 `0.76.2` 與 digest；文件註明映像檔 SBOM（作業系統與 Python 套件）不含前端 npm 套件與 Caddy，前端另有 `frontend-sbom.cdx.json` |
+| 軟體安全 | 沒有 `SECURITY.md`，無通報管道 | 新增 `SECURITY.md`（GitHub 私人漏洞通報、支援版本、範圍）。**需 repo 管理員啟用 Private vulnerability reporting** 才有按鈕 |
+| 軟體安全 | `dependabot.yml` 只追蹤基底映像檔與 Actions，前端 npm 與後端 Python 套件沒有人盯 | 新增 `npm`（`/`）與 `uv`（`/backend`），每週檢查、小版本與修補版合併成一個 PR、不自動提大版本 |
+| 治理文件 | 手冊第 15 節沒有說明分支與標籤保護 | 新增「分支與標籤保護」「相依套件自動更新」兩小節 |
+
+### （三）rc4 映像檔重新掃描
+以與 CI 相同的 Trivy 0.76.2（固定 digest）直接掃描 `ghcr.io/ttcdog115016/open-pets-app:2.0.0-rc4`（Debian 13.7，建置時間 115/11/12）：
+
+| 類別 | 結果 |
+|---|---|
+| Python 套件 | 0 項弱點 |
+| 祕密（secret） | 0 項 |
+| Debian 作業系統套件 | 205 項：HIGH 47、MEDIUM 74、LOW 65、UNKNOWN 19；**沒有任何一項已有修補版**（`--ignore-unfixed` 下為 0，故發版流程的掃描關卡通過） |
+
+HIGH 主要集中在 util-linux 系列（`bsdutils`、`libblkid1`、`libmount1`、`login`、`mount` 等，4 個 CVE）、`libsqlite3-0`（3 個）、`libsystemd0`、`ncurses`、`perl-base`、`libacl1`。這與第八節記錄的「47 個尚無修補版的 HIGH」相同，仍屬「等 Debian 釋出修補版」的狀態，沒有新增項目。原始輸出：`trivy/rc4/trivy-rc4-ghcr.json`。
+
+### （四）先前各報告建議的現況
+| 先前建議（第八節） | 現況 |
+|---|---|
+| 1. 定期重建並重跑 Trivy | 發版與 PR 映像檔檢查都會重跑；本節重掃 rc4 結果同上，仍待 Debian 修補 |
+| 2. 基底映像檔固定 digest | 已完成（Python、Node 皆固定，由 Dependabot 追蹤同版本線更新） |
+| 3. 映像檔簽章 | 已完成（cosign keyless，rc4 驗證通過；校驗碼檔另有簽章） |
+| 4. 對外開放時終止 HTTPS | 內網模式已內建 HTTPS；對外開放的線上模式已移除，不再提供 |
+| 5、6、7（前端程式碼議題、前端開發工具弱點、舊 e2e 腳本） | 本次未重跑 SonarQube／Dependency-Check，現況未重新確認 |
+
+### （五）未涵蓋與待辦
+- **SonarQube、Dependency-Check、ZAP 本次沒有重跑**（第三～四節結果沿用 115/11/10）；Python 與作業系統層以本節 Trivy 為準，前端 npm 弱點未重掃。
+- 新增的交付物（`FRONTEND_LICENSES_FULLTEXT.txt`、`frontend-sbom.cdx.json`）與升級後的授權聲明，在**下一次預發版**才會進入 Release 與離線包；目前最新的 rc4 不含。已在本機建置映像檔確認 `/licenses` 內容、`UNKNOWN` 為 0、冒煙測試通過。
+- 需要管理員自己處理：啟用 Private vulnerability reporting；確認兩個 ruleset 的繞過名單含 Repository admin；到 ngrok 後台刪除舊 token（舊報告提醒）。
+- 供應商待辦（審查報告 11 項與 F9）不在本次範圍。
+
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 
 | 位置 | 內容 |
@@ -532,3 +578,4 @@ tag `v2.0.0-rc2` 指向合併 commit `de1a87b`（含檔名修正與 `.tar.gz` �
 | `zap/` | baseline（初測、最終映像檔）與 API 掃描報告（HTML、JSON、Markdown）及紀錄 |
 | `e2e/` | 瀏覽器流程各步驟截圖、Playwright 結果 JSON、下載的使用注意事項 |
 | `trivy/trivy-image-modes.json`、`zap/baseline-modes.*` | 第十節追加的最終映像檔掃描 |
+| `trivy/rc4/trivy-rc4-ghcr.json` | 第十九節：v2.0.0-rc4 映像檔重新掃描（Trivy 0.76.2） |

@@ -8,7 +8,8 @@
 #         open-pets.ps1、open-pets.sh  互動式安裝與切換模式小工具（Windows／Linux）
 #         SHA256SUMS.txt             完整性檢查碼（交付時另以安全管道傳遞一份）
 #         README_Docker.md       安裝、升級、備份說明
-#         LICENSE、THIRD_PARTY_NOTICES.txt、FRONTEND_THIRD_PARTY_LICENSES.md  授權聲明（取自映像檔）
+#         LICENSE、THIRD_PARTY_NOTICES.txt、FRONTEND_THIRD_PARTY_LICENSES.md、FRONTEND_LICENSES_FULLTEXT.txt  授權聲明（取自映像檔）
+#         frontend-sbom.cdx.json     前端（npm）軟體物料清單（取自映像檔）
 #         REBUILD.md、open-pets-source_<版本>.zip  重新建置與替換第三方元件（含前端與 backend/）
 #         image-sbom.cdx.json        映像檔 SBOM
 # 需要：Docker Desktop（含 buildx）、可連網（建置時下載基底映像與前後端相依套件；交付後的安裝端不需要）。
@@ -78,7 +79,7 @@ $tmpContainer = "open-pets-licenses-$PID"
 docker create --name $tmpContainer $Image | Out-Null
 if ($LASTEXITCODE) { Fail 'docker create 失敗' }
 try {
-    foreach ($f in 'LICENSE', 'THIRD_PARTY_NOTICES.txt', 'FRONTEND_THIRD_PARTY_LICENSES.md') {
+    foreach ($f in 'LICENSE', 'THIRD_PARTY_NOTICES.txt', 'FRONTEND_THIRD_PARTY_LICENSES.md', 'FRONTEND_LICENSES_FULLTEXT.txt', 'frontend-sbom.cdx.json') {
         docker cp "${tmpContainer}:/licenses/$f" (Join-Path $OutDir $f)
         if ($LASTEXITCODE) { Fail "取不出 /licenses/$f（映像檔缺少授權聲明）" }
     }
@@ -89,8 +90,10 @@ Copy-Item $SourceZip $OutDir
 Remove-Item $Work -Recurse -Force
 
 # 映像檔 SBOM（CycloneDX）：需要 Trivy 映像檔（首次要連網拉取）；失敗只警告，不中斷
+# Trivy 固定版本與 digest，與 .github/workflows/docker-image.yml 的 TRIVY_IMAGE 一致（兩邊要一起改）
+$TrivyImage = 'aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb'
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache -v "${OutDir}:/out" `
-    aquasec/trivy:latest image -q --format cyclonedx -o /out/image-sbom.cdx.json $Image
+    $TrivyImage image -q --format cyclonedx -o /out/image-sbom.cdx.json $Image
 if ($LASTEXITCODE) { Write-Host '[警告] 映像檔 SBOM 產生失敗（需要連網拉取 aquasec/trivy），交付包不含 image-sbom.cdx.json' -ForegroundColor Yellow }
 
 Step '3/3 計算 SHA256'

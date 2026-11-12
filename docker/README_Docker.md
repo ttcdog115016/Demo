@@ -182,6 +182,6 @@ docker logs open-pets                                                           
 ## 十一、授權與原始碼
 
 - 本軟體（前端與後端程式碼）為 MIT 授權，全文見 `LICENSE`。
-- 映像檔含開源第三方元件，授權與取得原始碼的方式見 `THIRD_PARTY_NOTICES.txt`（Python 套件）與 `FRONTEND_THIRD_PARTY_LICENSES.md`（前端套件）。同樣的檔案也在映像檔內：`docker exec open-pets ls /licenses`。
+- 映像檔含開源第三方元件，授權與取得原始碼的方式見 `THIRD_PARTY_NOTICES.txt`（Python 套件）與 `FRONTEND_THIRD_PARTY_LICENSES.md`、`FRONTEND_LICENSES_FULLTEXT.txt`（前端套件清單與授權全文）。同樣的檔案也在映像檔內：`docker exec open-pets ls /licenses`。
 - fpdf2（LGPL-3.0）以原始碼檔形式存在映像檔內，certifi（MPL-2.0）未經修改。要替換這些元件或自行重新建置，請依 `REBUILD.md`；全部原始碼在 `open-pets-source_<版本>.zip`。
-- `image-sbom.cdx.json` 是映像檔的軟體物料清單（CycloneDX），可匯入弱點管理工具。
+- `image-sbom.cdx.json` 是映像檔（作業系統與 Python 套件）的軟體物料清單（CycloneDX），可匯入弱點管理工具；前端 npm 套件的物料清單是 `frontend-sbom.cdx.json`；內網模式用的 Caddy 是另外的映像檔，不在這兩份裡。

@@ -143,4 +143,4 @@ Unblock-File .\open-pets.ps1
 
 ## 授權
 
-本專案為 MIT 授權（[`LICENSE`](LICENSE)、`backend/LICENSE`）。第三方元件的授權與取得原始碼的方式見映像檔內的 `/licenses`，以及 Release 的 `THIRD_PARTY_NOTICES.txt`、`FRONTEND_THIRD_PARTY_LICENSES.md`。
+本專案為 MIT 授權（[`LICENSE`](LICENSE)、`backend/LICENSE`）。第三方元件的授權與取得原始碼的方式見映像檔內的 `/licenses`，以及 Release 的 `THIRD_PARTY_NOTICES.txt`、`FRONTEND_THIRD_PARTY_LICENSES.md`、`FRONTEND_LICENSES_FULLTEXT.txt`。軟體物料清單（SBOM）有映像檔與前端兩份（`image-sbom.cdx.json`、`frontend-sbom.cdx.json`）。資安問題通報方式見 [`SECURITY.md`](SECURITY.md)。

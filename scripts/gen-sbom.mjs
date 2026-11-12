@@ -256,7 +256,7 @@ writeFileSync(join(OUT_DIR, 'frontend-sbom.cdx.json'), `${JSON.stringify(ordered
 
 const licenseNotes = [
     ['dompurify', '**dompurify（MPL-2.0 OR Apache-2.0）**：雙授權，擇一適用；本專案以 Apache-2.0 使用，未修改其原始碼。MPL-2.0 全文（`LICENSE-MPL`）一併收錄於授權全文。'],
-    ['rgbcolor', '**rgbcolor（MIT OR SEE LICENSE IN FEEL-FREE.md）**：套件宣告為 MIT，並附 FEEL-FREE.md 說明；授權全文見 `3.2_附件一_開源元件授權全文_前端.txt`。'],
+    ['rgbcolor', '**rgbcolor（MIT OR SEE LICENSE IN FEEL-FREE.md）**：套件宣告為 MIT，並附 FEEL-FREE.md 說明；授權全文見 `FRONTEND_LICENSES_FULLTEXT.txt`。'],
     ['xlsx', '**xlsx（Apache-2.0）**：取自 SheetJS 官方 CDN（cdn.sheetjs.com/xlsx-0.20.3），npm 上的版本較舊且有已知弱點。'],
     ['victory-vendor', '**victory-vendor（MIT AND ISC）**：內含 d3 等第三方套件（ISC、BSD-3-Clause 等），各自的授權檔已一併收錄於授權全文。'],
     ['size-sensor', '**size-sensor（ISC）**：套件及上游原始碼庫都沒有附授權檔，授權全文欄位僅列授權種類與網址。'],
@@ -266,7 +266,7 @@ const licensesMarkdown = [
     `# OpenPETs ${COMPONENT_VERSION} 前端第三方元件授權清單`,
     '',
     `SBOM（CycloneDX ${bom.specVersion}）：前端 \`frontend-sbom.cdx.json\`（依 \`package-lock.json\` 產生，僅含執行期相依）。`,
-    '各 npm 套件授權全文見 `3.2_附件一_開源元件授權全文_前端.txt`（版面比照廠商《第三階段執行報告書》附件一）。',
+    '各 npm 套件授權全文見 `FRONTEND_LICENSES_FULLTEXT.txt`（映像檔 `/licenses` 與交付包都附；原始碼內的檔名是 `3.2_附件一_開源元件授權全文_前端.txt`，內容相同，版面比照廠商《第三階段執行報告書》附件一）。',
     `共 ${uniqueComponents.length} 筆（SBOM 共 ${components.length} 個元件；同名同版本但安裝在不同位置的元件，授權只列一次）。`,
     '',
     '## 前端 npm 套件（執行期）',
