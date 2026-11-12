@@ -127,7 +127,7 @@ jobs:
           echo "OPEN_PETS_VERSION=$VERSION" > "$out/env.example"
           # 授權聲明取自映像檔本身，與映像檔內 /licenses 完全一致
           cid=$(docker create "open-pets-app:$VERSION")
-          for f in LICENSE THIRD_PARTY_NOTICES.txt FRONTEND_THIRD_PARTY_LICENSES.md; do docker cp "$cid:/licenses/$f" "$out/$f"; done
+          for f in LICENSE THIRD_PARTY_NOTICES.txt FRONTEND_THIRD_PARTY_LICENSES.md FRONTEND_LICENSES_FULLTEXT.txt frontend-sbom.cdx.json; do docker cp "$cid:/licenses/$f" "$out/$f"; done
           docker rm "$cid" >/dev/null
           # 原始碼（前端＋backend/），供依 REBUILD.md 重新建置、替換第三方元件
           git archive --format=zip --prefix=open-pets/ -o "$out/open-pets-source_$VERSION.zip" HEAD -- \

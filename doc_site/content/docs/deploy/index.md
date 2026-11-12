@@ -170,7 +170,7 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 | `SHA256SUMS.txt` | 完整性檢查碼；交付時請另用安全管道確認一份 |
 | `README_Docker.md`、`REBUILD.md` | 安裝說明、重新建置說明 |
 | `open-pets-source_<版本>.zip` | 全部原始碼（前端與 `backend/`） |
-| `LICENSE`、`THIRD_PARTY_NOTICES.txt`、`FRONTEND_THIRD_PARTY_LICENSES.md`、`image-sbom.cdx.json` | 授權聲明與軟體物料清單 |
+| `LICENSE`、`THIRD_PARTY_NOTICES.txt`、`FRONTEND_THIRD_PARTY_LICENSES.md`、`FRONTEND_LICENSES_FULLTEXT.txt`、`image-sbom.cdx.json`、`frontend-sbom.cdx.json` | 授權聲明與軟體物料清單（映像檔、前端各一份） |
 
 1. 把整個資料夾複製到主機，並在該資料夾開終端機。
 2. 核對完整性（結果要與另一條管道取得的一致）：
@@ -594,9 +594,9 @@ docker run --rm -v "${PWD}:/w" -w /w gcr.io/projectsigstore/cosign:latest verify
 ## 13. 授權與原始碼
 
 - 本軟體（前端與後端程式碼）為 MIT 授權，全文見 `LICENSE`（後端另見 `backend/LICENSE`）。
-- 映像檔含開源第三方元件，授權與取得原始碼的方式見 `THIRD_PARTY_NOTICES.txt`（Python 套件）與 `FRONTEND_THIRD_PARTY_LICENSES.md`（前端套件）。同樣的檔案也在映像檔內：`docker exec open-pets ls /licenses`。
+- 映像檔含開源第三方元件，授權與取得原始碼的方式見 `THIRD_PARTY_NOTICES.txt`（Python 套件）與 `FRONTEND_THIRD_PARTY_LICENSES.md`、`FRONTEND_LICENSES_FULLTEXT.txt`（前端套件清單與授權全文）。同樣的檔案也在映像檔內：`docker exec open-pets ls /licenses`。
 - 其中 fpdf2（LGPL-3.0）以原始碼檔形式存在映像檔內，certifi（MPL-2.0）未經修改。要替換這些元件或自行重建，請依 `REBUILD.md`。全部原始碼都在 `open-pets-source_<版本>.zip`。
-- `image-sbom.cdx.json` 是映像檔的軟體物料清單（CycloneDX），可匯入弱點管理工具。
+- `image-sbom.cdx.json` 是映像檔（作業系統與 Python 套件）的軟體物料清單（CycloneDX），可匯入弱點管理工具；前端 npm 套件的物料清單是 `frontend-sbom.cdx.json`；內網模式用的 Caddy 是另外的映像檔，不在這兩份裡。
 
 ## 14. 移轉到甲方 GitHub 帳號
 
@@ -643,6 +643,19 @@ repo 的 `.github/workflows/` 有四個工作流程：
 - 結果在 repo 的 **Actions** 分頁：綠色勾勾代表通過；紅色叉叉點進去可看失敗的步驟與訊息。
 - **發新版：** 在要發版的 commit 建立標籤並推送，例如 `v2.0.0`。版本含連字號（如 `2.0.0-rc4`）會被標為預發版。GHCR 映像檔、離線 tar.gz 與 Release 都由同一次建置產生，內容相同。**標籤一旦有對應的 Release 或映像檔，就不要刪除或改指別處，需要重發請改用新版本號。**
 - 只使用 GitHub 內建的 `GITHUB_TOKEN`，不需要另外設定密碼或金鑰。
+
+### 分支與標籤保護
+
+repo 設了兩個 ruleset（Settings → Rules → Rulesets）：
+
+| 名稱 | 保護對象 | 規則 |
+| --- | --- | --- |
+| `protect-main` | `main` 分支 | 不能刪除、不能強制推送；一定要經過 Pull Request，且 `build-and-test`、`backend-tests` 兩個檢查通過才能合併。核准人數設為 0（目前一人維護；有第二位維護者後建議改成 1） |
+| `protect-release-tags` | `v*` 標籤 | 不能刪除、不能改指別處（可以新增）。已發佈的版本與映像檔簽章因此不會被換掉 |
+
+### 相依套件自動更新（Dependabot）
+
+`.github/dependabot.yml` 每週檢查：基底映像檔（Python、Node，只跟同一個版本線）、GitHub Actions、前端 npm 套件（`/`）、後端 Python 套件（`/backend`，uv）。npm 與 Python 的小版本與修補版會合併成一個 Pull Request，**大版本不自動提**，要人工評估；每個 Pull Request 都要通過上面的必過檢查才能合併。
 
 ### 本文件網站
 

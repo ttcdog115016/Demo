@@ -28,6 +28,8 @@ backend/app/governance/fonts/README.md
 # 授權聲明
 !LICENSE
 !sbom/FRONTEND_THIRD_PARTY_LICENSES.md
+!sbom/frontend-sbom.cdx.json
+!sbom/3.2_*.txt
 !docker/THIRD_PARTY_NOTICES.header.txt
 
 # 進入點（單機版 launcher 與容器進入點）

@@ -19,3 +19,28 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # 前端 npm 套件：小版本與修補版合併成一個 PR（每個 PR 都要過 build-and-test 才能合併），大版本要人工評估
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  # 後端 Python 套件（backend/pyproject.toml 與 uv.lock）：同上。numpy、scipy 等需要預編譯檔，
+  # 合併前由 backend-tests 與 docker-build-check（含冒煙測試）把關。
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
