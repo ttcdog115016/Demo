@@ -10,7 +10,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('../../config/featureFlags', () => ({
-    IS_DESKTOP_BUILD: true, SHOW_DEMO_ACCOUNTS: false, SHOW_SYSTEM_LOG_TAB: false, RUNTIME_MODE: 'local',
+    IS_DESKTOP_BUILD: true, SHOW_DEMO_ACCOUNTS: false, SHOW_SYSTEM_LOG_TAB: false,
 }));
 // 部分模組載入時就會呼叫 matchMedia，須在 import 之前設定
 vi.hoisted(() => {

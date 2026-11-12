@@ -41,33 +41,8 @@ export const resolveFlags = (runtimeConfig: RuntimeConfig, buildTarget: string |
 	return { isOfflineMode, showDemoAccounts, showSystemLogTab: !isOfflineMode };
 };
 
-/** 目前實際使用的模式（舊名稱 offline 已併入 local） */
-export type RuntimeMode = 'local' | 'lan' | 'online';
-
-/**
- * 從執行期設定取出「目前是哪一種模式」，給「系統模式」分頁顯示用（純函式，方便單元測試）。
- * 沒有執行期設定（npm run dev、nginx 版 Demo 站、單機版 exe）時回傳 null：這些部署不是由 Docker 映像檔的 OPEN_PETS_MODE 決定。
- */
-export const resolveRuntimeMode = (runtimeConfig: RuntimeConfig): RuntimeMode | null =>
-{
-	switch (runtimeConfig.mode)
-	{
-		case 'local':
-		case 'offline':
-			return 'local';
-		case 'lan':
-			return 'lan';
-		case 'online':
-			return 'online';
-		default:
-			return null;
-	}
-};
-
 const runtimeConfig: RuntimeConfig = (globalThis as unknown as { __OPEN_PETS_CONFIG__?: RuntimeConfig }).__OPEN_PETS_CONFIG__ ?? {};
 const resolvedFlags = resolveFlags(runtimeConfig, import.meta.env.VITE_BUILD_TARGET);
-/** 目前的模式；null 代表這個部署沒有用執行期設定（見 resolveRuntimeMode） */
-export const RUNTIME_MODE: RuntimeMode | null = resolveRuntimeMode(runtimeConfig);
 
 /**
  * ★ 2026-10-28：單機版執行檔（packaging/build_exe.ps1 以 `vite build --mode desktop` 建置，讀 .env.desktop）。
