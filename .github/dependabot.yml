@@ -44,3 +44,8 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # scikit-learn 1.9 移除了 sklearn.tree._tree.DOUBLE，diffprivlib 0.6.6（目前最新版）匯入時就會失敗
+      # （ImportError，後端測試與映像檔冒煙測試都起不來）。diffprivlib 沒有限制 scikit-learn 上限，
+      # 解析器會照樣選到 1.9。等 diffprivlib 釋出支援 1.9 的版本後再移除這條。
+      - dependency-name: scikit-learn
+        update-types: ["version-update:semver-minor"]
