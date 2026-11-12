@@ -16,14 +16,14 @@ Open-PETs 的處理引擎提供 HTTP API。你可以用 curl、Python 或其他�
 
 - `<主機>` 是部署主機的名稱或 IP；在部署主機本機呼叫時用 `localhost`。對外以 HTTPS 提供時，改用對外網址，例如 `https://pets.example.com/api/v1`。
 - **互動文件 `/docs`：** 會列出所有端點與欄位。用法：
-    1. 依下方「登入與權杖」取得 access_token。
+    1. 依下方「登入與憑證」取得 access_token。
     2. 按右上角 **Authorize**，貼上 access_token。
     3. 在任一端點按 **Try it out** → **Execute** 就能直接試打。
 - `openapi.json` 可以匯入 Postman、Insomnia 等工具。
 
 ![API 互動文件](api-swagger.png)
 
-## 登入與權杖
+## 登入與憑證
 
 **1. 登入：** `POST /auth/login`
 
@@ -54,13 +54,13 @@ Content-Type: application/json
 Authorization: Bearer <access_token>
 ```
 
-**權杖規則：**
+**憑證規則：**
 
 | 項目 | 規則 |
 | --- | --- |
 | access_token | 有效 15 分鐘（`expires_in = 900` 秒）。沒帶或過期時回 401。 |
 | refresh_token | 有效 7 天，每個只能用一次。 |
-| 換發權杖 | `POST /auth/refresh`，body 帶 `{"refresh_token": "…"}`，回傳一組新的權杖，舊的 refresh_token 隨即作廢。 |
+| 換發憑證 | `POST /auth/refresh`，body 帶 `{"refresh_token": "…"}`，回傳一組新的憑證，舊的 refresh_token 隨即作廢。 |
 | 登出 | `POST /auth/logout`，body 帶 `{"refresh_token": "…"}`，作廢該 refresh_token。已發出的 access_token 會在到期前持續有效。 |
 | 變更密碼 | `PATCH /auth/password`，body 帶 `{"current_password", "new_password", "refresh_token"}`。保留帶來的這組登入，其他登入一律作廢。 |
 | 登入失敗鎖定 | 180 秒內累計失敗 5 次，鎖定 15 分鐘。鎖定期間與密碼錯誤相同，都回 401。 |
@@ -72,7 +72,7 @@ Authorization: Bearer <access_token>
 | 分類 | 方法與路徑 | 用途 | 權限 |
 | --- | --- | --- | --- |
 | 認證 | `POST /auth/login` | 登入 | 公開 |
-| 認證 | `POST /auth/refresh` | 換發權杖 | 公開（需 refresh_token） |
+| 認證 | `POST /auth/refresh` | 換發憑證 | 公開（需 refresh_token） |
 | 認證 | `POST /auth/logout` | 登出 | 公開（需 refresh_token） |
 | 認證 | `PATCH /auth/password` | 變更自己的密碼 | 登入 |
 | 帳號管理 | `GET /users` | 帳號清單（含失敗次數與鎖定時間） | Admin |
@@ -204,7 +204,7 @@ x-run-id: 9b17990e9bcb4e848a88c6d29c9eba68
 | 狀態碼 | 常見原因 |
 | --- | --- |
 | 400 | 參數、設定檔或資料內容有誤 |
-| 401 | 沒帶權杖、權杖過期，或帳號密碼錯誤（`ERR_UNAUTHORIZED`） |
+| 401 | 沒帶登入憑證、憑證過期，或帳號密碼錯誤（`ERR_UNAUTHORIZED`） |
 | 403 | 權限不足（例如 User 呼叫帳號管理端點） |
 | 409 | 資料已存在（例如帳號重複） |
 | 413 | 上傳超過上限（預設 1 GB，`OPEN_PETS_MAX_UPLOAD_MB`） |

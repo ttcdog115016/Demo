@@ -447,7 +447,45 @@ tag `v2.0.0-rc2` 指向合併 commit `de1a87b`（含檔名修正與 `.tar.gz` �
 ### 未涵蓋
 - 互動問答的真人操作（測試以 `-Yes` 與非互動參數為主）；防火牆規則的實際建立（測試帳號不是系統管理員，工具只印出指令）。
 - 根憑證在各使用者電腦的安裝（會修改系統信任設定，未實際執行）。
-- 工具與手冊以 rc3 的實際 Release 檔案走一遍，待發版後進行。
+- 工具與手冊以 rc3 的實際 Release 檔案走一遍：已於發版後完成，見第十七節。
+
+## 十七、追加（115/11/11）：v2.0.0-rc3 預發版實跑結果
+
+### 發版經過（含一次失敗與重發）
+1. 第一次推送 `v2.0.0-rc3`（指向 `fd27862`）：發版流程（run 42972998433）在「冒煙測試」失敗——測試仍期待預設容器回報 `"mode": "offline"`，但預設模式已改名為 `local`。**映像檔本身沒有問題**；建置與 Trivy 掃描都通過，**但 GHCR、簽章與 Release 都沒有執行，沒有發佈任何東西**。
+2. 修正：冒煙測試改為檢查預設（未設定）、`OPEN_PETS_MODE=offline`（舊名稱）→ `local`，`online`、`lan` 各自正確，且不合法的模式值必須讓容器拒絕啟動；`actionlint` 通過，並先在本機用同一份腳本對映像檔跑過（結束碼 0）。修正 commit `b3a95c7`、再改回範例版本號 `d0894bb`，兩次 CI 都全綠。
+3. 依使用者決定仍以 `rc3` 發版：因舊的 `rc3` 標籤從未發佈過任何東西，先刪除遠端舊標籤，再於 `d0894bb` 重建並推送。重發流程（run 42975227992）全部成功。（此為改寫已推送的標籤，僅因舊標籤沒有對應的 Release 與映像檔才可行；之後一律不再這樣做，需要重發時改用新版本號。）
+
+### 驗證結果
+| 項目 | 結果 |
+|---|---|
+| Release | 預發版；17 個檔案＋1 個簽章 bundle，檔名皆 ASCII，含 `open-pets.ps1`、`open-pets.sh`、`docker-compose.lan.yml`、`Caddyfile.lan`、`docker-compose.online.yml` |
+| 校驗碼 | `sha256sum -c SHA256SUMS.txt`：17 個檔案全部 OK |
+| 簽章 | `cosign verify`（映像檔 `sha256:96a21c9f…dadbda`）通過，簽署身分為 `docker-image.yml@refs/tags/v2.0.0-rc3`、commit `d0894bb`；`cosign verify-blob`（`SHA256SUMS.txt`）Verified OK。簽章已寫入公開的 Sigstore 透明日誌（無法撤回） |
+| GHCR | 未登入即可拉取 `ghcr.io/ttcdog115016/open-pets-app:2.0.0-rc3`；映像檔 label `revision=d0894bb…`、`version=2.0.0-rc3` |
+| 離線包 | `.tar.gz` 可直接 `docker load -i`；載入後 14 層與 GHCR 映像檔逐層完全相同 |
+| 工具檔 | 預設版本已換成 `2.0.0-rc3`（不含 `__DEFAULT_VERSION__`）；`.ps1` 含 BOM、`.sh` 為 LF 且 `sh -n` 通過 |
+| 模式值 | 由 CI 在 rc3 建出的映像檔上檢查：未設定與 `offline`→`local`、`online`、`lan`，不合法值被拒絕 |
+
+### 用 Release 檔案照「新手快速上手」走一遍（獨立專案 `optool-rc3`，埠 18170／18473）
+| 步驟 | 結果 |
+|---|---|
+| 空資料夾只用 `Invoke-WebRequest` 下載 `open-pets.ps1`，執行 `setup`（本地） | 工具自動從 Release 下載 `docker-compose.yml`，啟動並 healthy；`runtime-config.js` 回報 `local`；`.env` 無 BOM |
+| `mode lan` | 自動下載 `docker-compose.lan.yml`、`Caddyfile.lan`，啟動 HTTPS 代理；防火牆只印出指令、未建立規則；只有 HTTPS 埠對外，明文埠只綁 `127.0.0.1` |
+| `export-ca` | 匯出根憑證，工具顯示的 SHA-256 指紋與 `openssl` 計算值一致；以該憑證連線成功、不信任時連線被拒；在本地建立的帳號以 HTTPS 登入成功 |
+| `mode online`、`mode local` | 代理容器自動移除；每次切換後帳號仍可登入；`runtime-config.js` 依序回報 `lan`、`online`、`local` |
+| `backup`、`stop`／`start`、`status` | 通過；備份檔含帳號庫、稽核紀錄與 `.secrets.env`；重啟後帳號仍可登入 |
+| 「全新電腦」路徑（本機沒有該映像檔） | 工具顯示「會從網路下載」，自 GHCR 拉取成功並 healthy，revision 為 `d0894bb` |
+| 清理與 Demo | 只清除自己建立的專案、磁碟區與映像檔標籤；使用者的 `open-pets`、`open-pets-web` 全程 Up、未受影響 |
+
+### 驗證時的小插曲（與產品無關）
+測試腳本在 PowerShell 5.1 用 `Get-Content` 讀到的字串直接 `ConvertTo-Json`，會被序列化成帶額外屬性的物件而得到 422；轉成純字串後登入成功。這是測試腳本的問題，不是系統問題。
+
+### 未涵蓋
+- HTTPS 只在同一台電腦以 `127.0.0.1` 驗證；**未從另一台電腦、以內網 IP 或主機名稱實際連線**，也未在別台電腦安裝根憑證。
+- 互動問答的真人操作（以 `-Yes` 與非互動參數測試）、防火牆規則的實際建立。
+- Linux 版工具未在真實 Linux 主機上測試（沿用第十六節的說明）。
+- `v2.0.0-rc1`、`v2.0.0-rc2` 仍保留；未發正式版 `v2.0.0`。
 
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 

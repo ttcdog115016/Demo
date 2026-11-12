@@ -1,152 +1,190 @@
-# Open-PETs Docker 部署說明（前端＋後端單一映像檔）
+# Open-PETs 安裝說明（離線交付包／Docker）
 
-一個映像檔 `open-pets-app:<版本>` 內含前端網頁與後端服務，同一個容器、同一個埠（8080）。不需要另外安裝 nginx、Python 或 Node.js。
+Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端網頁與後端服務在**同一個映像檔 `open-pets-app`、同一個容器、同一個埠（8080）**，不用另外裝 nginx、Python 或 Node.js。所有運算都在你的主機上進行，資料不會傳到其他地方。
 
-## 最快上手（建議：用附的小工具）
-資料夾裡的 `open-pets.ps1`（Windows）與 `open-pets.sh`（Linux）會用問答幫你完成安裝、選擇與切換模式，不用自己改設定檔：
+完整圖文教學（含畫面說明與疑難排解）在網站：**https://ttcdog115016.github.io/Demo/docs/quickstart/**
+
+## 一、最快上手（用附的小工具）
+
+資料夾裡的 `open-pets.ps1`（Windows）與 `open-pets.sh`（Linux）用問答幫你安裝與切換模式，不用自己改設定檔。
+
+**準備：** 已安裝 Docker Desktop（Windows）或 Docker Engine（Linux），並且開著（Windows 左下角顯示綠色 Engine running）。
+
+**Windows：** 在這個資料夾開啟 PowerShell（資料夾空白處按住 Shift＋右鍵 →「在此處開啟 PowerShell 視窗」），執行：
 
 ```powershell
-.\open-pets.ps1 setup                  # 第一次安裝：選本地／內網／線上、啟動、建立管理員
-.\open-pets.ps1 mode lan               # 之後隨時切換模式（local／lan／online），資料不會不見
-.\open-pets.ps1 status                 # 看目前模式、狀態與網址
-.\open-pets.ps1 help                   # 全部指令
+.\open-pets.ps1 setup
 ```
 
-Linux 把 `.\open-pets.ps1` 換成 `./open-pets.sh`。工具只寫同資料夾的 `.env`、需要時下載缺少的設定檔、呼叫 `docker compose`，不會修改系統設定。完整圖文教學見網站手冊的「新手快速上手」；下面的手動做法是同一件事的完整參考。
+出現「已停用指令碼執行」時，改成：`powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup`（只對這一次有效）。
 
-## 三種取得方式
+**Linux：** `./open-pets.sh setup`（第一次先 `chmod +x open-pets.sh`）。
 
-同一個版本的三種管道內容相同（映像檔由同一次建置產生），依環境選一種即可。
+工具會問你要用哪種模式、要不要建立管理員，**照畫面回答**。之後常用指令：
 
-| | 容器映像檔（GHCR） | 離線安裝（tar） | 原始碼 |
+| 我想要 | 指令（Linux 把 `.\open-pets.ps1` 換成 `./open-pets.sh`） |
+|---|---|
+| 切換模式（資料不會不見） | `.\open-pets.ps1 mode local`、`mode lan`、`mode online` |
+| 看目前模式、狀態與網址 | `.\open-pets.ps1 status` |
+| 停止／重新啟動 | `.\open-pets.ps1 stop`、`.\open-pets.ps1 start` |
+| 建立管理員／忘記管理員密碼 | `.\open-pets.ps1 create-admin`、`.\open-pets.ps1 reset-password` |
+| 備份 | `.\open-pets.ps1 backup` |
+| 更新到新版 | `.\open-pets.ps1 update 新版本號` |
+| 給同事憑證與說明（內網） | `.\open-pets.ps1 export-ca` |
+| 看日誌、看全部指令 | `.\open-pets.ps1 logs`、`.\open-pets.ps1 help` |
+
+工具只寫同資料夾的 `.env`、需要時下載缺少的設定檔、呼叫 `docker compose`，**不會修改系統設定**。
+
+## 二、三種模式
+
+同一個映像檔，用環境變數 `OPEN_PETS_MODE` 選模式，預設是本地。**不確定就先選本地**，之後一行指令就能切換。
+
+| | 本地（預設） | 內網 | 線上 |
 |---|---|---|---|
-| 適用 | 可以連網、想用 `docker pull` 更新 | 無網路或內網環境 | 想自行檢視、重新建置，或替換 fpdf2、certifi 等第三方元件 |
-| 取得 | `ghcr.io/<擁有者>/open-pets-app:<版本>`（私有時需登入，見「二、升級」） | 交付包內的 `open-pets-app_<版本>.tar.gz` | 交付包內的 `open-pets-source_<版本>.zip`，或 GitHub repo 的同一個版本 |
-| 驗證 | 映像檔 digest（Release 說明）；cosign 簽章 | `SHA256SUMS.txt` | 壓縮檔註解與映像檔 label 內的 commit |
-| 使用 | `docker compose pull` → `up -d` | `docker load -i` → `docker compose up -d` | 依 `REBUILD.md` 建置後同樣用 compose 啟動 |
+| `OPEN_PETS_MODE` | `local`（舊值 `offline` 仍接受，視為 `local`） | `lan` | `online` |
+| 誰用 | 只有這台電腦 | 同一個內網的多台電腦 | 網際網路上的人 |
+| 網址 | `http://localhost:8080` | `https://內網IP或主機名稱` | `https://你的網域` |
+| HTTPS | 不需要 | 內建 Caddy HTTPS（私有 CA，使用者電腦要信任根憑證） | 自備反向代理與正式憑證 |
+| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=內網IP,主機名稱` | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=對外網域` |
+| 啟動指令（不用小工具時） | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d` | `docker compose -f docker-compose.yml -f docker-compose.online.yml up -d` |
+| 「系統維運日誌」分頁 | 隱藏 | 顯示（管理員） | 顯示（管理員） |
 
-**確認映像檔對應哪個原始碼 commit**：`docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' open-pets-app:<版本>`；原始碼壓縮檔的 commit 可用 `unzip -z open-pets-source_<版本>.zip` 或解壓縮工具的「註解」欄位查看，兩者應相同。
+- 三種模式的資料、帳號、稽核紀錄與金鑰格式相同，可直接切換，資料磁碟區不變。
+- `OPEN_PETS_MODE` 填了 `local`、`offline`、`online`、`lan` 以外的值，容器會在啟動時報錯並結束，不會悄悄退回預設。
+- 內網、線上沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 會直接報錯，不會啟動。
+- `local`、`lan` 與 `docker-compose.lan.yml`、小工具要 **2.0.0-rc3 起**的版本才有。
 
-## 需求
-- Docker Engine 或 Docker Desktop（含 `docker compose`）
-- 可用磁碟：映像檔約 1 GB；資料另計（上傳的處理暫存也放在資料磁碟區，大檔案請預留空間）
+### 內網模式要注意
 
-## 一、安裝（離線）
-資料夾內有 `open-pets-app_<版本>.tar.gz`、`docker-compose.yml`、`docker-compose.online.yml`（線上）、`docker-compose.lan.yml`（內網）、`Caddyfile.lan`、`SHA256SUMS.txt`，另有授權聲明與重新建置說明（見「八、授權與原始碼」）。
+- `OPEN_PETS_ALLOWED_HOSTS` 要列出使用者會輸入的**每個**網址（逗號分隔、不加空格）。清單裡的**第一個 IP** 是沒送主機名稱的連線所用的預設憑證。
+- 主機防火牆要開 443（`OPEN_PETS_HTTPS_PORT` 可改）。工具會印出要執行的指令。
+- **每台使用者電腦要信任根憑證**：在主機執行 `.\open-pets.ps1 export-ca`，把 `open-pets-ca.crt` 與 `open-pets-colleague-guide.txt` 交給使用者照做。
+- **使用者的網址一定要打 `https://`**。只打 IP 會走 `http://`，畫面會一直轉圈後顯示「回應時間過長」。
+- **換了網路、IP 變了**：執行 `.\open-pets.ps1 mode lan -Hosts 新IP,舊IP`。根憑證不變，使用者不用重新信任。
+- 根憑證的私鑰在 `caddy-data` 磁碟區，請當作機密並一起備份。
+- 離線環境要先帶 Caddy 映像檔：`docker pull caddy:2.11.9`、`docker save`，到主機 `docker load`。
+
+### 線上模式要注意
+
+由反向代理終止 HTTPS。代理要把 `Host` 標頭原樣轉送、允許大檔案上傳（預設上限 1024 MB）、關閉請求緩衝。可直接改用 `Caddyfile.example`（自動憑證）或 `nginx.conf.example`。後端只認 `OPEN_PETS_ALLOWED_HOSTS` 內的 Host，其他網址會得到 400。**不要把 8080 直接對外開放。**
+
+## 三、手動安裝（不用小工具）
+
+### 離線：用交付包
 
 1. **核對完整性**：`SHA256SUMS.txt` 的檢查碼要與另一條管道取得的一致。
-   - PowerShell：`Get-FileHash .\open-pets-app_2.0.0.tar.gz -Algorithm SHA256`
+   - PowerShell：`Get-FileHash .\open-pets-app_<版本>.tar.gz -Algorithm SHA256`
    - Linux：`sha256sum -c SHA256SUMS.txt`
-   - 若交付包內有 `SHA256SUMS.txt.sigstore.json`，連網時可再驗證 `SHA256SUMS.txt` 沒被換掉：`cosign verify-blob --bundle SHA256SUMS.txt.sigstore.json --certificate-identity-regexp '^https://github.com/<擁有者>/<repo>/\.github/workflows/docker-image\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS.txt`
-2. 匯入映像檔：`docker load -i open-pets-app_2.0.0.tar.gz`
-3. 啟動：`docker compose up -d`
-4. 建立第一個系統管理員（互動輸入，密碼不會留在指令歷史）：
+2. **匯入映像檔**：`docker load -i open-pets-app_<版本>.tar.gz`（不用先解壓縮）
+3. **設定版本**：把 `env.example` 複製成 `.env`（內容是 `OPEN_PETS_VERSION=<版本>`）。
+4. **啟動**：`docker compose up -d`
+5. **建立第一個管理員**（互動輸入，密碼不會留在指令歷史）：
    ```
    docker exec -it open-pets python /opt/openpets/openpets_server.py create-admin
    ```
-5. 瀏覽器開啟 http://localhost:8080 ，用剛建立的帳號登入。
+6. 瀏覽器開 http://localhost:8080 ，用剛建立的帳號登入。
 
-## 選擇模式（同一份映像檔）
-本地、線上、內網共用同一份映像檔，啟動時用環境變數 `OPEN_PETS_MODE` 選模式，不需要另外建置。
+### 有網路：從 GHCR 取得
 
-| | 本地（預設） | 線上 | 內網 |
-|---|---|---|---|
-| `OPEN_PETS_MODE` | `local`（舊值 `offline` 仍接受，視為 `local`） | `online` | `lan` |
-| 適用 | 一台電腦、無網路環境 | 以**對外網域**提供服務（網際網路） | **同一個內網**的多台電腦（內網 IP 或主機名稱） |
-| 啟動指令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.online.yml up -d` | `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d` |
-| HTTPS | 不需要（本機） | 自備反向代理與正式憑證（`Caddyfile.example`／`nginx.conf.example`） | **內建 Caddy HTTPS**（私有 CA，使用者電腦要信任根憑證） |
-| 對外埠 | 只綁 `127.0.0.1` | 應用程式 8080 只綁 `127.0.0.1`，由反向代理對外 | 應用程式 8080 只綁 `127.0.0.1`，Caddy 對內網開放 443（`OPEN_PETS_HTTPS_PORT` 可改） |
-| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=對外網域` | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=內網IP,主機名稱`（例如 `192.168.1.20,pets-server`），逗號分隔、不加空格 |
-| 系統設定的「系統維運日誌」分頁 | 隱藏 | 顯示（管理員查看全站登入與 API 紀錄） | 顯示 |
-| 登入頁 Demo 測試帳號 | 不顯示 | 不顯示（要顯示須另設 `OPEN_PETS_SHOW_DEMO_ACCOUNTS=true`，僅限展示站） | 不顯示 |
+在 `.env` 寫兩行：`OPEN_PETS_IMAGE=ghcr.io/ttcdog115016/open-pets-app` 與 `OPEN_PETS_VERSION=<版本>`，然後 `docker compose pull`、`docker compose up -d`。套件若是私有的，先 `docker login ghcr.io -u <GitHub 帳號>`（需要 GitHub 的 `read:packages` 權限）。版本一律指定明確版號，**不使用 `latest`**。
 
-- 三種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令即可，`/data` 磁碟區不變。
-- `OPEN_PETS_MODE` 填了 `local`、`offline`、`online`、`lan` 以外的值，容器會在啟動時報錯並結束（`docker logs open-pets` 可看到原因），不會悄悄退回預設。
-- 線上與內網的必填設定沒設時，`docker compose` 會直接報錯（`required variable OPEN_PETS_ALLOWED_HOSTS is missing a value`），不會啟動。
-- 新值 `local`、`lan` 與 `docker-compose.lan.yml` 要 2.0.0-rc2 **之後**的版本才有；rc2 只認 `offline`、`online`。
+### 原始碼
 
-### 內網模式（lan）
-`docker-compose.lan.yml` 會多開一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，不需要對外網路或網域。使用者在瀏覽器輸入 `https://<內網IP或主機名稱>`。重點：
-- `.env` 的 `OPEN_PETS_ALLOWED_HOSTS` 要列出使用者會輸入的每個網址；清單裡的**第一個 IP** 是沒送主機名稱的連線（網址是 IP 時瀏覽器不會送）所用的預設憑證。
-- 主機防火牆要開放 443（`OPEN_PETS_HTTPS_PORT` 可改）。
-- **每台使用者電腦要信任 Caddy 的根憑證**，否則瀏覽器會顯示憑證警告。匯出：`docker compose -f docker-compose.yml -f docker-compose.lan.yml cp proxy:/data/caddy/pki/authorities/local/root.crt ./open-pets-ca.crt`，再安裝成「受信任的根憑證授權單位」（Windows：`certutil -addstore -f Root open-pets-ca.crt`）。根憑證的私鑰在 `caddy-data` 磁碟區，請當作機密並一起備份。
-- 離線環境要先帶 Caddy 映像檔：`docker pull caddy:2.11.9`、`docker save`，到主機 `docker load`。
-- 不建議以明文 HTTP 直接開放內網；真的要的話用 `.env` 的 `OPEN_PETS_BIND=0.0.0.0`（帳號密碼會以明文傳輸，部分瀏覽器功能會停用）。
-- 完整步驟、各瀏覽器與作業系統的信任方式見網站手冊的「安裝教學 第 9 節」。
+`open-pets-source_<版本>.zip` 含全部原始碼（前端與 `backend/`），重新建置與替換第三方元件見 `REBUILD.md`。
 
-### 線上模式（online）
-由反向代理終止 HTTPS；代理需把 `Host` 標頭原樣轉送、允許大檔案上傳（預設上限 1024 MB）、關閉請求緩衝。可直接改用交付包內的 `Caddyfile.example`（自動憑證）或 `nginx.conf.example`（原始碼的 `docker/proxy-examples/`），兩份都已實測過 HTTPS 下的完整流程（登入、上傳、K-匿名化、下載 CSV 與 PDF）。後端只認 `OPEN_PETS_ALLOWED_HOSTS` 內的 Host，其他網址直接連到容器會得到 400。後端不記錄用戶端 IP（稽核紀錄以帳號為準），所以不需要設定 `X-Forwarded-For` 的信任範圍。
+三種管道拿到的是同一個版本。要確認映像檔對應的原始碼 commit：
+`docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' open-pets-app:<版本>`
 
-## 二、升級
-資料與金鑰都在 `open-pets-data` 磁碟區，換映像檔不會遺失。兩種取得新版的方式，同一個版本的映像檔內容相同。
+## 四、驗證映像檔來源
 
-**離線：用 tar**
-1. 核對新版 tar.gz 的 SHA256，`docker load -i open-pets-app_<新版本>.tar.gz`
-2. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本（沒有 `.env` 就把 `env.example` 複製成 `.env`）
-3. `docker compose up -d`（自動以新映像檔重建容器）
+映像檔由本專案的 GitHub Actions 建置並用 cosign 簽署。**不用安裝 cosign，用 Docker 執行**（要能連網；`<digest>` 見該版 Release 說明）：
 
-**有網路：用 GitHub Container Registry（GHCR）**
-1. 第一次：在 `.env` 加 `OPEN_PETS_IMAGE=ghcr.io/<擁有者>/open-pets-app`（擁有者名稱一律小寫）。如果套件是私有的，先用有 `read:packages` 權限的 token 登入：`docker login ghcr.io -u <GitHub 帳號>`。
-2. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本，執行 `docker compose pull`（只會下載有變更的層，通常遠小於整個 tar），再 `docker compose up -d`。
-3. 要驗證下載的是對的版本：到 GitHub Releases 對照該版的 image digest（`docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/<擁有者>/open-pets-app:<版本>`）。
-   也可以驗證映像檔確實由本專案的 GitHub Actions 建置（cosign 簽章，指令見該版 Release 說明的「驗證來源」）。需要安裝 [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 並能連到 Sigstore；完全隔離的環境無法驗證簽章，以 SHA256 為準。簽章會記在公開的 Sigstore 透明日誌，其中包含本專案的 GitHub 帳號與 repo 名稱。
-4. 版本一律指定明確的版號，不使用 `latest`（交付包與 GHCR 都不提供 `latest`），避免無意間升級。
+```powershell
+docker run --rm gcr.io/projectsigstore/cosign:latest verify "ghcr.io/ttcdog115016/open-pets-app@sha256:<digest>" --certificate-identity-regexp '^https://github.com/ttcdog115016/Demo/\.github/workflows/docker-image\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
-**退回：** 把 `OPEN_PETS_VERSION` 改回舊版再 `docker compose up -d`（舊映像檔還在就不必重新取得）。
+看到 `The following checks were performed on each of these signatures` 就通過；出現 `no matching signatures` 就**不要使用**該映像檔。
 
-## 三、備份與還原
-備份 `open-pets-data`（帳號、稽核日誌、金鑰）。**金鑰與稽核紀錄是一組的**：
-- `OPEN_PETS_DEFAULT_SALT` 遺失或變更，之後的雜湊結果就和過去對不起來
-- `OPEN_PETS_SYSTEM_MASTER_KEY` 變更，舊稽核紀錄無法驗證簽章
+交付包內若有 `SHA256SUMS.txt.sigstore.json`，可在放有這兩個檔的資料夾驗證檢查碼清單沒被換掉：
+
+```powershell
+docker run --rm -v "${PWD}:/w" -w /w gcr.io/projectsigstore/cosign:latest verify-blob --bundle SHA256SUMS.txt.sigstore.json --certificate-identity-regexp '^https://github.com/ttcdog115016/Demo/\.github/workflows/docker-image\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS.txt
+```
+
+完全隔離的環境無法驗證簽章，以 `SHA256SUMS.txt`（另一條管道取得）為準。
+
+## 五、升級與退回
+
+資料與金鑰都在 `open-pets-data` 磁碟區，換映像檔不會遺失。**最簡單：** `.\open-pets.ps1 update 新版本號`（更新前自動備份）。
+
+手動：把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本；離線要先 `docker load -i` 新的 tar.gz，有網路則 `docker compose pull`；然後 `docker compose up -d`。**退回**：把版本改回舊的再 `docker compose up -d`。
+
+## 六、備份與還原
+
+**最簡單：** `.\open-pets.ps1 backup`（備份檔在資料夾的 `backups`）。
+
+要備份的是 `open-pets-data` 磁碟區。**金鑰與稽核紀錄是一組的，要一起備份、當作機密保管**：`OPEN_PETS_DEFAULT_SALT` 遺失或變更，之後的雜湊結果就對不上以前的資料；`OPEN_PETS_SYSTEM_MASTER_KEY` 變更，舊稽核紀錄無法驗證。內網模式另外要備份 `caddy-data`。
+
+手動備份與還原（用映像檔本身的 `tar`，離線環境也能用；磁碟區名稱以 `docker volume ls` 為準）：
 
 ```
-# 備份（先停服務以免寫入中）
+# 備份（先停服務，避免寫到一半）
 docker compose stop
-docker run --rm -v open-pets_open-pets-data:/data -v "${PWD}:/backup" alpine tar czf /backup/open-pets-data.tgz -C /data .
+docker run --rm --user root --entrypoint tar -v open-pets_open-pets-data:/data -v "${PWD}:/backup" open-pets-app:<版本> czf /backup/open-pets-data.tgz -C /data .
 docker compose start
 
-# 還原到新的磁碟區
-docker run --rm -v open-pets_open-pets-data:/data -v "${PWD}:/backup" alpine tar xzf /backup/open-pets-data.tgz -C /data
-docker run --rm -v open-pets_open-pets-data:/data alpine chown -R 10001:10001 /data
-```
-（磁碟區實際名稱以 `docker volume ls` 為準；沒有 alpine 映像檔的離線環境可改用 `open-pets-app` 映像檔加 `--entrypoint tar` 與 `--user root`。）
-
-## 四、金鑰
-預設第一次啟動自動產生三把金鑰，存在 `/data/.secrets.env`（權限 600）。要把金鑰與資料分開保管，在 `.env` 填入 `OPEN_PETS_DEFAULT_SALT`、`OPEN_PETS_SYSTEM_MASTER_KEY`、`OPEN_PETS_JWT_SECRET`（各 64 字元隨機字串，環境變數優先於 `.secrets.env`）。產生方式：
-
-```
-docker run --rm open-pets-app:2.0.0 python -c "import secrets; print(secrets.token_hex(32))"
+# 還原到新的磁碟區（先 docker compose down）
+docker volume create open-pets_open-pets-data
+docker run --rm --user root --entrypoint sh -v open-pets_open-pets-data:/data -v "${PWD}:/backup" open-pets-app:<版本> -c "tar xzf /backup/open-pets-data.tgz -C /data && chown -R 10001:10001 /data"
+docker compose up -d
 ```
 
-## 五、維護指令
+還原後執行 `docker exec open-pets python /opt/openpets/openpets_server.py verify-log`，確認稽核紀錄驗證通過。
+
+## 七、金鑰
+
+預設第一次啟動會自動產生三把金鑰，存在 `/data/.secrets.env`（權限 600）。要把金鑰與資料分開保管，在 `.env` 填 `OPEN_PETS_DEFAULT_SALT`、`OPEN_PETS_SYSTEM_MASTER_KEY`、`OPEN_PETS_JWT_SECRET`（各 64 字元隨機字串，環境變數優先）。產生方式：
+
+```
+docker run --rm open-pets-app:<版本> python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+## 八、維護指令
+
 ```
 docker exec -it open-pets python /opt/openpets/openpets_server.py reset-password   # 忘記密碼
 docker exec -it open-pets python /opt/openpets/openpets_server.py verify-log ...   # 驗證稽核紀錄簽章
 docker exec -it open-pets python /opt/openpets/openpets_server.py --help-cli       # 後端 CLI 說明
 docker logs open-pets                                                              # 服務日誌
-docker inspect --format '{{.State.Health.Status}}' open-pets                       # 健康狀態
 ```
-API 互動文件：http://localhost:8080/docs
 
-## 六、安全設定
+容器名稱以 `docker ps` 為準。API 互動文件：http://localhost:8080/docs
+
+## 九、安全設定
+
 | 項目 | 設定 |
 |---|---|
-| 對外埠 | 預設只綁 `127.0.0.1`。要讓區網連入，在前面放反向代理並啟用 HTTPS；不要直接以明文 HTTP 開放 |
-| 反向代理的網域 | 在 `.env` 設 `OPEN_PETS_ALLOWED_HOSTS=網域`（防 DNS rebinding） |
+| 對外埠 | 預設只綁 `127.0.0.1`。要讓其他電腦連入，用內網模式（內建 HTTPS）或在前面放反向代理並啟用 HTTPS；不要直接以明文 HTTP 開放 |
+| 允許的網址 | `OPEN_PETS_ALLOWED_HOSTS`（防 DNS rebinding） |
 | 容器身分 | 非 root（uid 10001）；根檔案系統唯讀；`cap_drop: ALL`；`no-new-privileges` |
 | 可寫位置 | 只有 `/data`（含上傳暫存 `/data/tmp`） |
-| 回應標頭 | CSP、X-Frame-Options、X-Content-Type-Options 等與單機版相同 |
 | 映像檔內容 | 不含 node、uv、建置工具、開發機的帳號資料庫或稽核紀錄 |
 
-## 七、疑難排解
-- `docker compose up` 後網頁打不開：`docker logs open-pets` 看啟動錯誤；`docker ps` 的 STATUS 應為 `healthy`
-- 登入頁沒有帳號可用：尚未建立管理員，見「一、安裝」第 4 步
-- `docker compose up` 回報 `port is already allocated`：本機的 8080 埠已被其他程式佔用。在 `.env` 加一行 `OPEN_PETS_PORT=8081`（任一空的埠）再 `docker compose up -d`，瀏覽器改開該埠
-- 上傳大檔失敗：預設上限 1024 MB（`OPEN_PETS_MAX_UPLOAD_MB`），前端也限制 1024 MB，要改需一起改
+## 十、疑難排解
 
-## 八、授權與原始碼
+| 你看到 | 怎麼辦 |
+|---|---|
+| 網頁打不開 | `.\open-pets.ps1 status` 看網址與狀態；`docker ps` 的 STATUS 應為 `healthy`；`docker logs open-pets` 看錯誤 |
+| 「已停用指令碼執行」 | `powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 指令` |
+| 登入頁沒有帳號可用 | 還沒建立管理員：`.\open-pets.ps1 create-admin` |
+| `port is already allocated` | 8080 被占用。在 `.env` 加 `OPEN_PETS_PORT=8081`（任一空的埠）再 `docker compose up -d`，網址改用該埠 |
+| 內網一直轉圈、`ERR_CONNECTION_TIMED_OUT` | 網址要打完整的 `https://IP`；再檢查防火牆 443、同一個網路（手機熱點常隔離裝置） |
+| 內網「您的連線不是私人連線」 | 使用者還沒信任根憑證，照 `open-pets-colleague-guide.txt` 做 |
+| 上傳大檔失敗 | 預設上限 1024 MB（`OPEN_PETS_MAX_UPLOAD_MB`），前端也限制 1024 MB，要改需一起改 |
+
+## 十一、授權與原始碼
+
 - 本軟體（前端與後端程式碼）為 MIT 授權，全文見 `LICENSE`。
-- 映像檔含開源第三方元件，其授權與取得原始碼的方式見 `THIRD_PARTY_NOTICES.txt`（Python 套件）與 `FRONTEND_THIRD_PARTY_LICENSES.md`（前端套件）。同樣的檔案也在映像檔內：`docker exec open-pets ls /licenses`。
-- 其中 fpdf2（LGPL-3.0）以原始碼檔形式存在映像檔內，certifi（MPL-2.0）未經修改。要替換這些元件或自行重新建置，請依 `REBUILD.md`，全部原始碼（前端與 `backend/`）都在 `open-pets-source_<版本>.zip`。
+- 映像檔含開源第三方元件，授權與取得原始碼的方式見 `THIRD_PARTY_NOTICES.txt`（Python 套件）與 `FRONTEND_THIRD_PARTY_LICENSES.md`（前端套件）。同樣的檔案也在映像檔內：`docker exec open-pets ls /licenses`。
+- fpdf2（LGPL-3.0）以原始碼檔形式存在映像檔內，certifi（MPL-2.0）未經修改。要替換這些元件或自行重新建置，請依 `REBUILD.md`；全部原始碼在 `open-pets-source_<版本>.zip`。
 - `image-sbom.cdx.json` 是映像檔的軟體物料清單（CycloneDX），可匯入弱點管理工具。
-

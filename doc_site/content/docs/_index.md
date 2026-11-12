@@ -3,73 +3,63 @@ title: 概覽
 weight: 1
 ---
 
-Open-PETs 是一套資料去識別化工具。它提供 K-匿名化與差分隱私兩種保護方式，處理完會模擬再識別攻擊並評估風險，最後產出可交付的資料和檢測報告。
+**Open-PETs 是一套資料去識別化工具。** 它用 K-匿名化與差分隱私兩種方式保護資料，處理完會模擬「有人想把資料認回是誰」的攻擊並評估風險，最後產出可以交付的資料與檢測報告。
 
-Open-PETs 以單一 Docker 映像檔交付，裝在一台電腦或主機上，使用者用瀏覽器連線操作。所有運算都在這台主機進行，資料不會傳到其他地方。同一份映像檔有三種模式：**本地**（一台電腦，預設）、**內網**（同一個內網的多台電腦，內建 HTTPS）、**線上**（以對外網域提供服務），見[安裝教學第 8 節](deploy/#8-三種模式本地線上內網)。
+它裝在一台電腦或主機上，使用者用瀏覽器操作。**所有運算都在這台主機上進行，資料不會傳到其他地方。**
 
-{{< callout type="info" >}}
-前端與後端原始碼都在 GitHub [`ttcdog115016/Demo`](https://github.com/ttcdog115016/Demo)（後端在 `backend/`）；日後正式上線會改放到甲方的 GitHub 帳號，移轉方式見[安裝教學](deploy/#14-移轉到甲方-github-帳號)。
-{{< /callout >}}
-
-## 文件導覽
+## 我要做什麼？
 
 {{< cards >}}
-  {{< card link="quickstart" title="新手快速上手" icon="play" subtitle="第一次安裝、不熟指令：選模式、用小工具安裝、隨時切換" >}}
-  {{< card link="deploy" title="安裝教學（完整參考）" icon="server" subtitle="IT／維運人員：三種取得方式、手動設定、反向代理、更新、備份" >}}
-  {{< card link="frontend" title="前端操作說明" icon="cursor-click" subtitle="所有使用者、管理員：四步驟去識別化與帳號管理" >}}
-  {{< card link="api" title="API 使用說明" icon="code" subtitle="系統整合、開發人員：端點與呼叫範例" >}}
-  {{< card link="cli" title="命令列使用說明" icon="terminal" subtitle="IT 人員：批次作業與帳號維護" >}}
-  {{< card link="faq" title="常見問題" icon="question-mark-circle" subtitle="部署與使用時的常見狀況" >}}
+  {{< card link="quickstart" title="我要安裝" icon="play" subtitle="第一次安裝、不熟指令：選模式、用小工具安裝、隨時切換" >}}
+  {{< card link="frontend" title="我要使用" icon="cursor-click" subtitle="登入後怎麼做去識別化、管理帳號" >}}
+  {{< card link="faq" title="我遇到問題" icon="question-mark-circle" subtitle="連不上、登入失敗、上傳失敗等常見狀況" >}}
+  {{< card link="deploy" title="資訊人員：完整參考" icon="server" subtitle="手動設定、反向代理、更新、備份、驗證與授權" >}}
+  {{< card link="api" title="系統整合：API" icon="code" subtitle="端點與呼叫範例" >}}
+  {{< card link="cli" title="資訊人員：命令列" icon="terminal" subtitle="批次作業與帳號維護" >}}
 {{< /cards >}}
 
-## 架構
+## 三種使用方式
 
-前端與後端合在**同一個容器、同一個埠（8080）**：
+同一份軟體，依你的情況選一種，之後隨時可以切換，資料都會保留：
 
-```text
-使用者瀏覽器
-    │  http://<主機>:8080（對外開放時前面放反向代理，改走 https）
-    ▼
-容器 open-pets（埠 8080）
-    │  網頁畫面（前端）＋去識別化運算、帳號、稽核紀錄（後端）
-    ▼
-Docker 磁碟區 open-pets-data   帳號資料庫、處理紀錄、稽核紀錄、自動產生的金鑰
-```
+| | 誰會用 | 網址 |
+| --- | --- | --- |
+| **本地**（預設） | 只有你自己，在這台電腦上 | `http://localhost:8080` |
+| **內網** | 同一個辦公室或內網的同事（內建 HTTPS） | `https://你電腦的IP` |
+| **線上** | 網際網路上的人（需要網域與反向代理） | `https://你的網域` |
 
-映像檔有三種取得方式，內容是同一個版本：
+不確定就先選「本地」。詳細說明見[新手快速上手](quickstart/)，技術細節見[安裝教學第 8 節](deploy/#8-三種模式本地線上內網)。
 
-| 方式 | 說明 |
-| --- | --- |
-| 容器映像檔（GHCR） | `ghcr.io/ttcdog115016/open-pets-app:<版本>`，有網路時用 `docker compose pull` |
-| 離線安裝 | 交付包的 `open-pets-app_<版本>.tar.gz`，`docker load -i` 後以 compose 啟動 |
-| 原始碼 | 交付包的 `open-pets-source_<版本>.zip` 或 GitHub repo，依 `REBUILD.md` 重新建置 |
+## 帳號
+
+- 系統**沒有預設帳號**。安裝時會建立第一個管理員（Admin），見[新手快速上手](quickstart/)；手動安裝見[安裝教學第 7 節](deploy/#7-啟動後建立管理員並確認)。
+- 一般使用者（User）由管理員在「系統設定 → 帳號與權限管理」建立，**不開放自行註冊**。
+- 權責分離：Admin 管理帳號與設定，User 執行去識別化作業。
 
 ## 使用需求
 
 - 使用者：Chrome、Edge 或 Firefox 的最新版本。
 - 單次上傳上限 1 GB，最多 50 個欄位。
-- 安裝主機：Windows 10／11＋Docker Desktop，或 Linux＋Docker Engine，詳見[安裝教學](deploy/)。
+- 安裝主機：Windows 10／11＋Docker Desktop，或 Linux＋Docker Engine。
 
-## 帳號
+## 資料存放在哪裡
 
-- 系統沒有預設帳號。安裝後用命令建立第一個管理員（Admin），見[安裝教學](deploy/#7-啟動後建立管理員並確認)。
-- 一般使用者（User）由管理員在「系統設定 → 帳號與權限管理」建立，系統不開放自行註冊。
-- 基於權責分離，Admin 管理帳號與設定，User 執行去識別化作業。
-
-## 資料存放位置
-
-資料都在 Docker 磁碟區 `open-pets-data`（容器內的 `/data`），更新或重建容器不會影響它：
+資料都在 Docker 的「資料磁碟區」`open-pets-data`（容器內的 `/data`），更新或重建不會影響它：
 
 | 位置（容器內） | 內容 |
 | --- | --- |
-| `/data/.secrets.env` | 第一次啟動自動產生的金鑰：雜湊鹽值、稽核紀錄簽章金鑰、登入權杖金鑰（權限 600） |
+| `/data/.secrets.env` | 第一次啟動自動產生的金鑰（雜湊鹽值、稽核紀錄簽章金鑰、登入憑證金鑰） |
 | `/data/users.db` | 帳號資料庫 |
 | `/data/system.db` | 處理紀錄、系統設定、介面偏好 |
-| `/data/audit.jsonl` | 稽核紀錄，具簽章，可驗證是否被竄改 |
+| `/data/audit.jsonl` | 稽核紀錄，有簽章，可驗證是否被竄改 |
 
-- 去識別化結果、設定檔、檢測報告由使用者從瀏覽器下載，存在使用者自己的電腦。
-- 備份與還原的做法見[安裝教學第 11 節](deploy/#11-備份與還原)。
+- 去識別化的結果、設定檔、檢測報告由使用者從瀏覽器下載，存在使用者自己的電腦。
+- 備份與還原：用 `.\open-pets.ps1 backup`，或見[安裝教學第 11 節](deploy/#11-備份與還原)。
 
 {{< callout type="warning" >}}
-**請務必備份資料磁碟區，並當作機密保管。** 磁碟區裡的鹽值（`OPEN_PETS_DEFAULT_SALT`）是雜湊用的，遺失或變更後，新的雜湊結果就對不上以前的資料；簽章金鑰變更後，舊的稽核紀錄無法再驗證。
+**請務必定期備份資料磁碟區，並當作機密保管。** 磁碟區裡的鹽值遺失或變更後，新的雜湊結果就對不上以前的資料；簽章金鑰變更後，舊的稽核紀錄無法再驗證。
 {{< /callout >}}
+
+## 程式碼與移轉
+
+前端與後端原始碼都在 GitHub [`ttcdog115016/Demo`](https://github.com/ttcdog115016/Demo)（後端在 `backend/`）。日後正式上線會改放到甲方的 GitHub 帳號，移轉方式見[安裝教學第 14 節](deploy/#14-移轉到甲方-github-帳號)。
