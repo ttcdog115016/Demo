@@ -189,7 +189,7 @@ confirm_files() { # confirm_files MODE VERSION
     [ "$mode" = online ] && need="$need docker-compose.online.yml"
     for f in $need; do
         [ -f "$DIR/$f" ] && continue
-        [ -z "$ver" ] && stop_tool "資料夾裡缺少 $f，又不知道要下載哪一版。" '請加上 --version 2.0.0-rc3（換成你要的版本）再執行一次。'
+        [ -z "$ver" ] && stop_tool "資料夾裡缺少 $f，又不知道要下載哪一版。" '請加上 --version 2.0.0-rc4（換成你要的版本）再執行一次。'
         note "下載 $f ..."
         local url="$RELEASE_BASE/v$ver/$f"
         if command -v curl > /dev/null 2>&1; then curl -fsSL -o "$DIR/$f" "$url" || { rm -f "$DIR/$f"; false; }
@@ -300,8 +300,8 @@ cmd_setup() {
     valid_mode "$m" || stop_tool "不認得的模式：$m" '模式只有三種：local（本地）、lan（內網）、online（線上）。'
 
     ver="$(default_version)"
-    [ -z "$ver" ] && ver="$(ask '要安裝哪一版（到 GitHub 的 Releases 頁看，不含開頭的 v，例如 2.0.0-rc3）' '')"
-    [ -z "$ver" ] && stop_tool '需要版本號才能安裝。' '請加上 --version 2.0.0-rc3（換成你要的版本）再執行一次。'
+    [ -z "$ver" ] && ver="$(ask '要安裝哪一版（到 GitHub 的 Releases 頁看，不含開頭的 v，例如 2.0.0-rc4）' '')"
+    [ -z "$ver" ] && stop_tool '需要版本號才能安裝。' '請加上 --version 2.0.0-rc4（換成你要的版本）再執行一次。'
     resolve_image "$ver"
 
     if [ "$m" = lan ]; then
@@ -505,7 +505,7 @@ cmd_update() {
     need_docker
     load_current
     local newv="${ARG1:-$OPT_VERSION}"
-    [ -z "$newv" ] && stop_tool '請指定要更新到哪一版。' '例如：./open-pets.sh update 2.0.0-rc3（版本號到 GitHub 的 Releases 頁看，不含開頭的 v）'
+    [ -z "$newv" ] && stop_tool '請指定要更新到哪一版。' '例如：./open-pets.sh update 2.0.0-rc4（版本號到 GitHub 的 Releases 頁看，不含開頭的 v）'
     title "更新：$CFG_VERSION → $newv"
     printf '%s  資料不會不見；更新前會先自動備份。%s\n' "$C_G" "$C_0"
     confirm_step '要更新嗎' || { printf '%s已取消，沒有做任何變更。%s\n' "$C_Y" "$C_0"; return 0; }
@@ -530,7 +530,7 @@ Open-PETs 安裝與模式切換小工具
   忘記管理員密碼　　./open-pets.sh reset-password
   給同事的憑證與說明./open-pets.sh export-ca    （內網模式）
   備份　　　　　　　./open-pets.sh backup
-  更新版本　　　　　./open-pets.sh update 2.0.0-rc3
+  更新版本　　　　　./open-pets.sh update 2.0.0-rc4
 
   不想回答問題、全部用預設值：加上 --yes。進階參數見檔案開頭的說明。
 EOF

@@ -10,7 +10,7 @@ weight: 3
 {{< /callout >}}
 
 {{< callout type="warning" >}}
-**目前 GitHub Releases 只有預發版（最新是 `2.0.0-rc3`），正式版 `2.0.0` 尚未發佈。** 現在安裝請填 **`2.0.0-rc3`**，填 `2.0.0` 會拉不到映像檔。
+**目前 GitHub Releases 只有預發版（最新是 `2.0.0-rc4`），正式版 `2.0.0` 尚未發佈。** 現在安裝請填 **`2.0.0-rc4`**，填 `2.0.0` 會拉不到映像檔。
 {{< /callout >}}
 
 ### 版本號怎麼填
@@ -19,12 +19,12 @@ weight: 3
 
 | Releases 頁上看到的 | 要填的版本號 |
 | --- | --- |
-| 標題 `Open-PETs 2.0.0-rc3`（標籤 `v2.0.0-rc3`，有 Pre-release 標示） | `2.0.0-rc3`（**不含開頭的 v**） |
+| 標題 `Open-PETs 2.0.0-rc4`（標籤 `v2.0.0-rc4`，有 Pre-release 標示） | `2.0.0-rc4`（**不含開頭的 v**） |
 | 日後正式版：標題 `Open-PETs 2.0.0`（標籤 `v2.0.0`） | `2.0.0` |
 
 - 每次安裝或更新都要寫明確版本，系統不提供 `latest`。
 - 帶 `-rc` 的是預發版，只用於試用與驗證；正式環境請等正式版。
-- 離線交付包的檔名也帶同一個版本，例如 `open-pets-app_2.0.0-rc3.tar.gz`。
+- 離線交付包的檔名也帶同一個版本，例如 `open-pets-app_2.0.0-rc4.tar.gz`。
 
 ## 1. 架構
 
@@ -109,13 +109,13 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
     {{< tabs >}}
     {{< tab name="Windows（PowerShell）" >}}
     ```powershell
-    $v = '2.0.0-rc3'
+    $v = '2.0.0-rc4'
     Invoke-WebRequest -UseBasicParsing "https://github.com/ttcdog115016/Demo/releases/download/v$v/docker-compose.yml" -OutFile docker-compose.yml
     ```
     {{< /tab >}}
     {{< tab name="Linux（bash）" >}}
     ```bash
-    v=2.0.0-rc3
+    v=2.0.0-rc4
     curl -fsSLO "https://github.com/ttcdog115016/Demo/releases/download/v$v/docker-compose.yml"
     ```
     {{< /tab >}}
@@ -656,7 +656,7 @@ repo 的 `.github/workflows/` 有四個工作流程：
 | `pages.yml` | `doc_site/` 有修改並推送到 `main` | 建置並發佈本文件網站 |
 
 - 結果在 repo 的 **Actions** 分頁：綠色勾勾代表通過；紅色叉叉點進去可看失敗的步驟與訊息。
-- **發新版：** 在要發版的 commit 建立標籤並推送，例如 `v2.0.0`。版本含連字號（如 `2.0.0-rc3`）會被標為預發版。GHCR 映像檔、離線 tar.gz 與 Release 都由同一次建置產生，內容相同。**標籤一旦有對應的 Release 或映像檔，就不要刪除或改指別處，需要重發請改用新版本號。**
+- **發新版：** 在要發版的 commit 建立標籤並推送，例如 `v2.0.0`。版本含連字號（如 `2.0.0-rc4`）會被標為預發版。GHCR 映像檔、離線 tar.gz 與 Release 都由同一次建置產生，內容相同。**標籤一旦有對應的 Release 或映像檔，就不要刪除或改指別處，需要重發請改用新版本號。**
 - 只使用 GitHub 內建的 `GITHUB_TOKEN`，不需要另外設定密碼或金鑰。
 
 ### 本文件網站

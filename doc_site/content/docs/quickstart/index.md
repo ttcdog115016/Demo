@@ -6,7 +6,7 @@ weight: 2
 這一頁教你**從零開始**把 Open-PETs 裝好。不需要懂程式，照著做，約 15～30 分鐘。每一步都會告訴你「做什麼」和「應該看到什麼」。
 
 {{< callout type="info" >}}
-目前最新版本是預發版 **`2.0.0-rc3`**（正式版尚未發佈）。下面的指令已經寫好這個版本，直接複製貼上就好。
+目前最新版本是預發版 **`2.0.0-rc4`**（正式版尚未發佈）。下面的指令已經寫好這個版本，直接複製貼上就好。
 {{< /callout >}}
 
 ## 先看這 4 個詞
@@ -65,7 +65,7 @@ Open-PETs 附一個小工具 `open-pets.ps1`，用問答幫你安裝與切換模
 ```powershell
 New-Item -ItemType Directory -Force C:\open-pets-app | Out-Null
 cd C:\open-pets-app
-$v = '2.0.0-rc3'
+$v = '2.0.0-rc4'
 Invoke-WebRequest -UseBasicParsing "https://github.com/ttcdog115016/Demo/releases/download/v$v/open-pets.ps1" -OutFile open-pets.ps1
 Unblock-File .\open-pets.ps1
 ```
@@ -75,7 +75,7 @@ Unblock-File .\open-pets.ps1
 {{< tab name="Linux（bash）" >}}
 ```bash
 mkdir -p ~/open-pets-app && cd ~/open-pets-app
-v=2.0.0-rc3
+v=2.0.0-rc4
 curl -fsSLO "https://github.com/ttcdog115016/Demo/releases/download/v$v/open-pets.sh"
 chmod +x open-pets.sh
 ```
@@ -107,7 +107,7 @@ powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup
 | 工具問你 | 回答 |
 | --- | --- |
 | 要怎麼使用 | 輸入 `1`，按 Enter |
-| 要安裝哪一版（有問才答） | 輸入 `2.0.0-rc3` |
+| 要安裝哪一版（有問才答） | 輸入 `2.0.0-rc4` |
 | 要開始安裝嗎 | 輸入 `Y` |
 | 建立管理員：帳號、密碼 | 帳號建議用 Email。密碼至少 12 個字元，要有大寫、小寫、數字、符號（輸入時畫面不顯示字，是正常的），再輸入一次確認 |
 
@@ -236,7 +236,7 @@ powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup
 | 「已停用指令碼執行」 | Windows 安全設定 | 指令改成 `powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 指令`（見第 3 步） |
 | 「Docker 沒有在執行」 | Docker Desktop 沒開，或還沒準備好 | 開啟 Docker Desktop，等綠色 Engine running，再重跑 |
 | 「找不到 Docker」 | 還沒安裝 | 回到第 2 步 |
-| 「下載映像檔失敗」 | 沒有網路，或版本號打錯 | 確認能上網；版本填 `2.0.0-rc3`（不含開頭的 v） |
+| 「下載映像檔失敗」 | 沒有網路，或版本號打錯 | 確認能上網；版本填 `2.0.0-rc4`（不含開頭的 v） |
 | 瀏覽器打不開網址 | 埠被改了，或系統還沒就緒 | `.\open-pets.ps1 status` 看正確網址 |
 | 登入頁沒有帳號可選 | 還沒建立管理員 | `.\open-pets.ps1 create-admin` |
 | 登入失敗太多次被鎖住 | 180 秒內失敗 5 次會鎖 15 分鐘 | 等 15 分鐘，或請管理員重設密碼 |
