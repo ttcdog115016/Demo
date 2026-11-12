@@ -3,7 +3,7 @@ Open-PETs 安裝與模式切換小工具（Windows PowerShell 5.1 以上）
 
 最常用的三個指令（在這個檔案所在的資料夾開啟 PowerShell 執行）：
   .\open-pets.ps1 setup                  第一次安裝：用問答幫你選模式、填網址、啟動、建立管理員
-  .\open-pets.ps1 mode local|lan|online  切換模式（本地／內網／線上），資料不會不見
+  .\open-pets.ps1 mode local|lan  切換模式（本地／內網），資料不會不見
   .\open-pets.ps1 status                 看目前是什麼模式、有沒有在運作、要開哪個網址
 
 其他指令：start、stop、logs、create-admin、reset-password、export-ca、backup、update <版本>、help
@@ -185,14 +185,20 @@ function Get-LanIPs {
     } catch {}
     return $found
 }
-function Test-Mode([string]$m) { return @('local', 'lan', 'online') -contains $m }
+function Test-Mode([string]$m) { return @('local', 'lan') -contains $m }
+# 線上（online）模式已移除：舊的資料夾可能還留著 OPEN_PETS_MODE=online，標籤要看得懂，但不能再選、不能再套用
 function Get-ModeLabel([string]$m) {
-    switch ($m) { 'local' { return '本地' } 'lan' { return '內網' } 'online' { return '線上' } default { return $m } }
+    switch ($m) { 'local' { return '本地' } 'lan' { return '內網' } 'online' { return '線上（已移除）' } default { return $m } }
+}
+function Stop-RemovedOnline {
+    Stop-Tool '線上（online）模式已移除。' @(
+        '同一個內網的多台電腦用：.\open-pets.ps1 mode lan -Hosts <這台電腦的內網IP>',
+        '只有這台電腦用：.\open-pets.ps1 mode local',
+        '資料（帳號、處理紀錄、稽核紀錄、金鑰）都在資料磁碟區裡，切換不會刪除。')
 }
 function Get-ComposeFileValue([string]$m) {
     switch ($m) {
         'lan' { return 'docker-compose.yml:docker-compose.lan.yml' }
-        'online' { return 'docker-compose.yml:docker-compose.online.yml' }
         default { return 'docker-compose.yml' }
     }
 }
@@ -209,7 +215,6 @@ function Get-DefaultVersion {
 function Confirm-Files([string]$mode, [string]$ver) {
     $need = @('docker-compose.yml')
     if ($mode -eq 'lan') { $need += @('docker-compose.lan.yml', 'Caddyfile.lan') }
-    if ($mode -eq 'online') { $need += 'docker-compose.online.yml' }
     foreach ($f in $need) {
         $path = Join-Path $Script:Dir $f
         if (Test-Path $path) { continue }
@@ -310,8 +315,9 @@ function Show-AccessInfo($cfg) {
             Note '每台要使用的電腦第一次要先信任憑證，否則瀏覽器會顯示警告：執行 .\open-pets.ps1 export-ca，把產生的說明檔交給同事。'
         }
         'online' {
-            foreach ($h in $cfg.Hosts.Split(',')) { Say "  對外網址：https://$h" 'Green' }
-            Note "線上模式需要你另外設定反向代理與 HTTPS（見手冊「線上模式」）；本機的應用程式在 http://127.0.0.1:$($cfg.Port)"
+            Warn '這個資料夾還是舊版的「線上模式」設定，線上模式已移除。請改用內網或本地（資料不會不見）：'
+            Say '    .\open-pets.ps1 mode lan -Hosts <這台電腦的內網IP>' 'Yellow'
+            Say '    .\open-pets.ps1 mode local' 'Yellow'
         }
     }
 }
@@ -342,11 +348,11 @@ function Cmd-Setup {
         Say '請選擇你要怎麼使用 Open-PETs：' 'White'
         Say '  1. 本地   只有我自己，在這一台電腦上用                         （最簡單）' 'White'
         Say '  2. 內網   同一個辦公室／內網的同事，用他們自己的電腦連進來      （需要信任憑證）' 'White'
-        Say '  3. 線上   讓外面（網際網路）的人用，有自己的網域               （建議請資訊人員協助）' 'White'
-        $choice = Ask '輸入 1、2 或 3' '1'
-        switch ($choice) { '1' { $m = 'local' } '2' { $m = 'lan' } '3' { $m = 'online' } default { $m = $choice.ToLower() } }
+        $choice = Ask '輸入 1 或 2' '1'
+        switch ($choice) { '1' { $m = 'local' } '2' { $m = 'lan' } default { $m = $choice.ToLower() } }
     }
-    if (-not (Test-Mode $m)) { Stop-Tool "不認得的模式：$m" @('模式只有三種：local（本地）、lan（內網）、online（線上）。') }
+    if ($m -eq 'online') { Stop-RemovedOnline }
+    if (-not (Test-Mode $m)) { Stop-Tool "不認得的模式：$m" @('模式只有兩種：local（本地）、lan（內網）。') }
 
     # 2. 版本與映像檔
     $ver = Get-DefaultVersion
@@ -369,14 +375,9 @@ function Cmd-Setup {
         if ($Hosts) { $default = $Hosts } elseif ($ips.Count -gt 0) { $default = $ips[0].IP }
         $hostList = ConvertTo-HostList (Ask '網址（多個請用逗號分隔，例如 192.168.1.20,pets-server）' $default)
     }
-    elseif ($m -eq 'online') {
-        Say ''
-        Say '請填對外的網域（使用者會在瀏覽器輸入的網址，不含 https://），例如 pets.example.com' 'White'
-        $hostList = ConvertTo-HostList (Ask '對外網域（多個請用逗號分隔）' $Hosts)
-    }
     if ($m -ne 'local') {
         $problem = Test-HostList $hostList
-        if ($problem) { Stop-Tool $problem @('範例：192.168.1.20 或 192.168.1.20,pets-server 或 pets.example.com') }
+        if ($problem) { Stop-Tool $problem @('範例：192.168.1.20 或 192.168.1.20,pets-server') }
     }
 
     # 4. 名稱與埠：避開別人已經在用的（例如這台電腦上已經有別的 Open-PETs）；
@@ -448,7 +449,7 @@ function Cmd-Setup {
     Title '全部完成'
     Say '  之後常用：' 'White'
     Say '    .\open-pets.ps1 status        看目前狀態與網址' 'Gray'
-    Say '    .\open-pets.ps1 mode lan      切換模式（local／lan／online）' 'Gray'
+    Say '    .\open-pets.ps1 mode lan      切換模式（local／lan）' 'Gray'
     Say '    .\open-pets.ps1 stop          停止（資料會保留）' 'Gray'
     Say '    .\open-pets.ps1 help          看全部指令' 'Gray'
 }
@@ -460,9 +461,10 @@ function Cmd-Mode {
     if (-not $envMap.Contains('OPEN_PETS_VERSION')) { Stop-Tool '這個資料夾還沒有安裝過（找不到 .env）。' @('請先執行 .\open-pets.ps1 setup。') }
     $newMode = $Arg1
     if (-not $newMode) { $newMode = $Mode }
-    if (-not $newMode) { Stop-Tool '請指定要切換到哪個模式。' @('例如：.\open-pets.ps1 mode lan （local＝本地、lan＝內網、online＝線上）') }
+    if (-not $newMode) { Stop-Tool '請指定要切換到哪個模式。' @('例如：.\open-pets.ps1 mode lan （local＝本地、lan＝內網）') }
     $newMode = $newMode.ToLower()
-    if (-not (Test-Mode $newMode)) { Stop-Tool "不認得的模式：$newMode" @('模式只有三種：local（本地）、lan（內網）、online（線上）。') }
+    if ($newMode -eq 'online') { Stop-RemovedOnline }
+    if (-not (Test-Mode $newMode)) { Stop-Tool "不認得的模式：$newMode" @('模式只有兩種：local（本地）、lan（內網）。') }
     $current = 'local'
     if ($envMap.Contains('OPEN_PETS_MODE')) { $current = $envMap['OPEN_PETS_MODE'] }
     if ($current -eq 'offline') { $current = 'local' }
@@ -479,11 +481,10 @@ function Cmd-Mode {
                 if ($ips.Count -gt 0) { $d = $ips[0].IP }
                 $hostList = Ask '同事要用哪個網址連進來（內網 IP 或主機名稱，多個用逗號分隔）' $d
             }
-            else { $hostList = Ask '對外網域（不含 https://，多個用逗號分隔）' '' }
         }
         $hostList = ConvertTo-HostList $hostList
         $problem = Test-HostList $hostList
-        if ($problem) { Stop-Tool $problem @('範例：192.168.1.20 或 192.168.1.20,pets-server 或 pets.example.com') }
+        if ($problem) { Stop-Tool $problem @('範例：192.168.1.20 或 192.168.1.20,pets-server') }
     }
 
     Title "切換模式：$(Get-ModeLabel $current) → $(Get-ModeLabel $newMode)"
@@ -496,10 +497,6 @@ function Cmd-Mode {
         }
         'lan' {
             Note '切換後：同事改用 https://<網址> 連進來；每台電腦第一次要信任憑證；這台電腦的防火牆要開放 HTTPS 埠。'
-            Note '「系統設定」裡的「系統維運日誌」分頁會顯示給管理員。'
-        }
-        'online' {
-            Note '切換後：應用程式本身只在本機 127.0.0.1；要讓外面的人連，需要你另外設定反向代理與正式憑證（見手冊「線上模式」）。'
             Note '「系統設定」裡的「系統維運日誌」分頁會顯示給管理員。'
         }
     }
@@ -644,6 +641,7 @@ function Cmd-Backup {
 function Cmd-Update {
     Test-DockerReady
     $cfg = Get-CurrentConfig
+    if ($cfg.Mode -eq 'online') { Stop-RemovedOnline }   # 新版不含線上用的設定檔，先切換模式再更新
     $newVersion = $Arg1
     if (-not $newVersion) { $newVersion = $Version }
     if (-not $newVersion) { Stop-Tool '請指定要更新到哪一版。' @('例如：.\open-pets.ps1 update 2.0.0-rc4（版本號到 GitHub 的 Releases 頁看，不含開頭的 v）') }
@@ -663,7 +661,6 @@ function Cmd-Help {
     Say '  第一次安裝　　　　.\open-pets.ps1 setup' 'White'
     Say '  切換模式　　　　　.\open-pets.ps1 mode local    （本地：只有這台電腦用）' 'White'
     Say '　　　　　　　　　　.\open-pets.ps1 mode lan      （內網：同一個辦公室的同事連進來，內建 HTTPS）' 'White'
-    Say '　　　　　　　　　　.\open-pets.ps1 mode online   （線上：以對外網域提供服務）' 'White'
     Say '  看狀態與網址　　　.\open-pets.ps1 status' 'White'
     Say '  啟動／停止　　　　.\open-pets.ps1 start      .\open-pets.ps1 stop' 'White'
     Say '  看日誌（出問題時）.\open-pets.ps1 logs' 'White'

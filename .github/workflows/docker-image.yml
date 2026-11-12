@@ -119,13 +119,11 @@ jobs:
           mkdir -p "$out"
           # 以 gzip 壓縮（-n：不寫檔名與時間戳）。CI 的 docker save 不壓縮各層，未壓縮約 600 MB；docker load 可以直接讀 .tar.gz
           docker save "open-pets-app:$VERSION" | gzip -n > "$out/open-pets-app_$VERSION.tar.gz"
-          cp docker/docker-compose.yml docker/docker-compose.online.yml docker/docker-compose.lan.yml docker/Caddyfile.lan docker/README_Docker.md docker/REBUILD.md "$out/"
+          cp docker/docker-compose.yml docker/docker-compose.lan.yml docker/Caddyfile.lan docker/README_Docker.md docker/REBUILD.md "$out/"
           # 小工具：把「預設版本」換成這一版（使用者執行 setup 時就不用再問版本號）
           sed "s/__DEFAULT_VERSION__/$VERSION/" docker/open-pets.ps1 > "$out/open-pets.ps1"
           sed "s/__DEFAULT_VERSION__/$VERSION/" docker/open-pets.sh > "$out/open-pets.sh"
           chmod +x "$out/open-pets.sh"
-          cp docker/proxy-examples/Caddyfile "$out/Caddyfile.example"
-          cp docker/proxy-examples/nginx.conf "$out/nginx.conf.example"
           echo "OPEN_PETS_VERSION=$VERSION" > "$out/env.example"
           # 授權聲明取自映像檔本身，與映像檔內 /licenses 完全一致
           cid=$(docker create "open-pets-app:$VERSION")
@@ -176,7 +174,7 @@ jobs:
 
           單一 Docker 映像檔（前端＋後端）。同一個版本的 GHCR 映像檔與離線 tar 是同一次建置，內容相同。
 
-          **最快上手（建議）**：下載下方的 \`open-pets.ps1\`（Windows）或 \`open-pets.sh\`（Linux），執行 \`.\open-pets.ps1 setup\`（Linux：\`./open-pets.sh setup\`），用問答選擇本地、內網或線上模式並完成安裝；之後用 \`mode local|lan|online\` 隨時切換。圖文教學見文件網站的「新手快速上手」。
+          **最快上手（建議）**：下載下方的 \`open-pets.ps1\`（Windows）或 \`open-pets.sh\`（Linux），執行 \`.\open-pets.ps1 setup\`（Linux：\`./open-pets.sh setup\`），用問答選擇本地或內網模式並完成安裝；之後用 \`mode local|lan\` 隨時切換。圖文教學見文件網站的「新手快速上手」。
 
           **有網路（GHCR）**
           \`\`\`

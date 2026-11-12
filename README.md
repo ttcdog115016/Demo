@@ -43,15 +43,17 @@ Unblock-File .\open-pets.ps1
 
 ## 先選一種使用方式
 
-同一份軟體有三種模式，**不確定就先選「本地」**，之後一行指令就能切換，帳號與資料都會保留。
+同一份軟體有兩種模式，**不確定就先選「本地」**，之後一行指令就能切換，帳號與資料都會保留。
 
-| | 本地（預設） | 內網 | 線上 |
-|---|---|---|---|
-| 誰用 | 只有你自己 | 同一個辦公室、內網的同事 | 網際網路上的人 |
-| 網址 | `http://localhost:8080` | `https://你電腦的IP` | `https://你的網域` |
-| 同事要做 | — | 每台電腦第一次要「信任憑證」 | 不用做什麼 |
-| 難度 | ★ | ★★ | ★★★ |
-| 切換指令 | `.\open-pets.ps1 mode local` | `.\open-pets.ps1 mode lan` | `.\open-pets.ps1 mode online` |
+| | 本地（預設） | 內網 |
+|---|---|---|
+| 誰用 | 只有你自己 | 同一個辦公室、內網的同事 |
+| 網址 | `http://localhost:8080` | `https://你電腦的IP` |
+| 同事要做 | — | 每台電腦第一次要「信任憑證」 |
+| 難度 | ★ | ★★ |
+| 切換指令 | `.\open-pets.ps1 mode local` | `.\open-pets.ps1 mode lan` |
+
+> 「線上（online）」模式已移除。原本用線上模式安裝的資料夾，請執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`），帳號與資料不會不見。
 
 ### 內網：讓同事一起用
 
@@ -62,10 +64,6 @@ Unblock-File .\open-pets.ps1
 
 > ⚠️ **網址一定要打 `https://`。** 只打 IP 會走 `http://`，畫面會一直轉圈，最後顯示 `ERR_CONNECTION_TIMED_OUT`。
 > 換了網路、IP 變了：`.\open-pets.ps1 mode lan -Hosts 新IP,舊IP`，根憑證不變，同事不用重新信任。
-
-### 線上：給外面的人用
-
-需要自己的**網域**、**反向代理**與**正式 HTTPS 憑證**，建議請資訊人員協助。公司內部使用請選「內網」。詳見[手冊：線上模式](https://ttcdog115016.github.io/Demo/docs/deploy/#9-6-線上模式online對外網域)。
 
 ---
 
@@ -129,8 +127,8 @@ Unblock-File .\open-pets.ps1
 
 ## 給資訊人員與開發者
 
-- **完整參考：** [安裝教學（手動設定、反向代理、更新、備份、授權）](https://ttcdog115016.github.io/Demo/docs/deploy/)、[API](https://ttcdog115016.github.io/Demo/docs/api/)、[命令列](https://ttcdog115016.github.io/Demo/docs/cli/)、[`docker/README_Docker.md`](docker/README_Docker.md)。
-- **架構：** 前端（React＋TypeScript＋Vite）與後端（FastAPI，`backend/`）合在同一個容器、同一個埠（8080）。模式由環境變數 `OPEN_PETS_MODE`（`local`／`lan`／`online`）決定，容器預設非 root、唯讀根檔案系統、只綁 `127.0.0.1`。
+- **完整參考：** [安裝教學（手動設定、更新、備份、授權）](https://ttcdog115016.github.io/Demo/docs/deploy/)、[API](https://ttcdog115016.github.io/Demo/docs/api/)、[命令列](https://ttcdog115016.github.io/Demo/docs/cli/)、[`docker/README_Docker.md`](docker/README_Docker.md)。
+- **架構：** 前端（React＋TypeScript＋Vite）與後端（FastAPI，`backend/`）合在同一個容器、同一個埠（8080）。模式由環境變數 `OPEN_PETS_MODE`（`local`／`lan`）決定，容器預設非 root、唯讀根檔案系統、只綁 `127.0.0.1`。
 - **本機開發：**
 
   ```bash

@@ -4,12 +4,10 @@
 # 產出：docker\dist\open-pets-app_<版本>\
 #         open-pets-app_<版本>.tar.gz  映像檔（docker load -i 直接匯入，不必先解壓縮）
 #         docker-compose.yml         啟動設定（離線／本機）
-#         docker-compose.online.yml  線上模式（對外網域，與上一個疊加使用）
 #         docker-compose.lan.yml、Caddyfile.lan  內網模式（內建 Caddy HTTPS，與 docker-compose.yml 疊加使用）
 #         open-pets.ps1、open-pets.sh  互動式安裝與切換模式小工具（Windows／Linux）
 #         SHA256SUMS.txt             完整性檢查碼（交付時另以安全管道傳遞一份）
 #         README_Docker.md       安裝、升級、備份說明
-#         Caddyfile.example、nginx.conf.example  線上模式的反向代理範例（HTTPS）
 #         LICENSE、THIRD_PARTY_NOTICES.txt、FRONTEND_THIRD_PARTY_LICENSES.md  授權聲明（取自映像檔）
 #         REBUILD.md、open-pets-source_<版本>.zip  重新建置與替換第三方元件（含前端與 backend/）
 #         image-sbom.cdx.json        映像檔 SBOM
@@ -65,17 +63,14 @@ $raw = [System.IO.File]::Create($TarGz)
 $gz  = New-Object System.IO.Compression.GZipStream($raw, [System.IO.Compression.CompressionLevel]::Optimal)
 try { $in.CopyTo($gz) } finally { $gz.Dispose(); $raw.Dispose(); $in.Dispose() }
 Remove-Item $TmpTar -Force
-foreach ($f in 'docker-compose.yml', 'docker-compose.online.yml', 'docker-compose.lan.yml', 'Caddyfile.lan', 'README_Docker.md', 'REBUILD.md') {
+foreach ($f in 'docker-compose.yml', 'docker-compose.lan.yml', 'Caddyfile.lan', 'README_Docker.md', 'REBUILD.md') {
     Copy-Item (Join-Path $DockerDir $f) $OutDir
 }
-# 反向代理範例（交付包內不放子資料夾，所以改成 .example 檔名）
 # 小工具：把「預設版本」換成這一版（使用者執行 setup 時就不用再問版本號）。.ps1 保留 UTF-8 BOM（Windows PowerShell 5.1 讀中文需要），.sh 一律 LF 且不含 BOM
 $toolPs1 = [System.IO.File]::ReadAllText((Join-Path $DockerDir 'open-pets.ps1')).Replace('__DEFAULT_VERSION__', $Version)
 [System.IO.File]::WriteAllText((Join-Path $OutDir 'open-pets.ps1'), $toolPs1, (New-Object System.Text.UTF8Encoding($true)))
 $toolSh = [System.IO.File]::ReadAllText((Join-Path $DockerDir 'open-pets.sh')).Replace('__DEFAULT_VERSION__', $Version).Replace("`r`n", "`n")
 [System.IO.File]::WriteAllText((Join-Path $OutDir 'open-pets.sh'), $toolSh, (New-Object System.Text.UTF8Encoding($false)))
-Copy-Item (Join-Path $DockerDir 'proxy-examples\Caddyfile') (Join-Path $OutDir 'Caddyfile.example')
-Copy-Item (Join-Path $DockerDir 'proxy-examples\nginx.conf') (Join-Path $OutDir 'nginx.conf.example')
 "OPEN_PETS_VERSION=$Version" | Set-Content (Join-Path $OutDir 'env.example') -Encoding ascii
 
 # 授權聲明：取自映像檔本身（與映像檔內 /licenses 完全一致），二進位散布時隨交付包附上

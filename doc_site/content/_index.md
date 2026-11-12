@@ -4,7 +4,7 @@ layout: hextra-home
 ---
 
 {{< hextra/hero-badge >}}
-  <span>v2.0.0・單一映像檔・本地／內網／線上</span>
+  <span>v2.0.0・單一映像檔・本地／內網</span>
 {{< /hextra/hero-badge >}}
 
 <div class="hx:mt-6 hx:mb-6">
@@ -29,7 +29,7 @@ layout: hextra-home
   {{< hextra/feature-card
     title="新手快速上手"
     icon="server"
-    subtitle="不熟指令也能裝：選本地、內網或線上，用問答式小工具安裝並隨時切換模式。"
+    subtitle="不熟指令也能裝：選本地或內網，用問答式小工具安裝並隨時切換模式。"
     link="docs/quickstart"
   >}}
   {{< hextra/feature-card

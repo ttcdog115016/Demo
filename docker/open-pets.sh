@@ -3,7 +3,7 @@
 #
 # 最常用的三個指令（在這個檔案所在的資料夾執行）：
 #   ./open-pets.sh setup                  第一次安裝：用問答幫你選模式、填網址、啟動、建立管理員
-#   ./open-pets.sh mode local|lan|online  切換模式（本地／內網／線上），資料不會不見
+#   ./open-pets.sh mode local|lan  切換模式（本地／內網），資料不會不見
 #   ./open-pets.sh status                 看目前是什麼模式、有沒有在運作、要開哪個網址
 #
 # 其他指令：start、stop、logs、create-admin、reset-password、export-ca、backup、update <版本>、help
@@ -170,9 +170,16 @@ lan_ips() {
         for a in $(hostname -I 2> /dev/null); do printf '%s eth\n' "$a"; done
     fi
 }
-valid_mode() { case "$1" in local | lan | online) return 0 ;; *) return 1 ;; esac; }
-mode_label() { case "$1" in local) printf '本地' ;; lan) printf '內網' ;; online) printf '線上' ;; *) printf '%s' "$1" ;; esac; }
-compose_file_value() { case "$1" in lan) printf 'docker-compose.yml:docker-compose.lan.yml' ;; online) printf 'docker-compose.yml:docker-compose.online.yml' ;; *) printf 'docker-compose.yml' ;; esac; }
+valid_mode() { case "$1" in local | lan) return 0 ;; *) return 1 ;; esac; }
+# 線上（online）模式已移除：舊的資料夾可能還留著 OPEN_PETS_MODE=online，標籤要看得懂，但不能再選、不能再套用
+mode_label() { case "$1" in local) printf '本地' ;; lan) printf '內網' ;; online) printf '線上（已移除）' ;; *) printf '%s' "$1" ;; esac; }
+stop_removed_online() {
+    stop_tool '線上（online）模式已移除。' \
+        '同一個內網的多台電腦用：./open-pets.sh mode lan --hosts <這台電腦的內網IP>' \
+        '只有這台電腦用：./open-pets.sh mode local' \
+        '資料（帳號、處理紀錄、稽核紀錄、金鑰）都在資料磁碟區裡，切換不會刪除。'
+}
+compose_file_value() { case "$1" in lan) printf 'docker-compose.yml:docker-compose.lan.yml' ;; *) printf 'docker-compose.yml' ;; esac; }
 
 # ------------------------------------------------------------------ 取得設定檔與映像檔
 default_version() {
@@ -186,7 +193,6 @@ default_version() {
 confirm_files() { # confirm_files MODE VERSION
     local mode="$1" ver="$2" need='docker-compose.yml' f
     [ "$mode" = lan ] && need="$need docker-compose.lan.yml Caddyfile.lan"
-    [ "$mode" = online ] && need="$need docker-compose.online.yml"
     for f in $need; do
         [ -f "$DIR/$f" ] && continue
         [ -z "$ver" ] && stop_tool "資料夾裡缺少 $f，又不知道要下載哪一版。" '請加上 --version 2.0.0-rc4（換成你要的版本）再執行一次。'
@@ -258,8 +264,9 @@ show_access() {
             for h in $(printf '%s' "$CFG_HOSTS" | tr ',' ' '); do printf '%s  同一個內網的電腦在瀏覽器開：https://%s%s%s\n' "$C_G" "$h" "$suffix" "$C_0"; done
             note '每台要使用的電腦第一次要先信任憑證，否則瀏覽器會顯示警告：執行 ./open-pets.sh export-ca，把產生的說明檔交給同事。' ;;
         online)
-            for h in $(printf '%s' "$CFG_HOSTS" | tr ',' ' '); do printf '%s  對外網址：https://%s%s\n' "$C_G" "$h" "$C_0"; done
-            note "線上模式需要你另外設定反向代理與 HTTPS（見手冊「線上模式」）；本機的應用程式在 http://127.0.0.1:$CFG_PORT" ;;
+            warn '這個資料夾還是舊版的「線上模式」設定，線上模式已移除。請改用內網或本地（資料不會不見）：'
+            say '    ./open-pets.sh mode lan --hosts <這台電腦的內網IP>'
+            say '    ./open-pets.sh mode local' ;;
     esac
 }
 firewall_hint() {
@@ -293,11 +300,11 @@ cmd_setup() {
         say '請選擇你要怎麼使用 Open-PETs：'
         say '  1. 本地   只有我自己，在這一台電腦上用                         （最簡單）'
         say '  2. 內網   同一個辦公室／內網的同事，用他們自己的電腦連進來      （需要信任憑證）'
-        say '  3. 線上   讓外面（網際網路）的人用，有自己的網域               （建議請資訊人員協助）'
-        choice="$(ask '輸入 1、2 或 3' '1')"
-        case "$choice" in 1) m=local ;; 2) m=lan ;; 3) m=online ;; *) m="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')" ;; esac
+        choice="$(ask '輸入 1 或 2' '1')"
+        case "$choice" in 1) m=local ;; 2) m=lan ;; *) m="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')" ;; esac
     fi
-    valid_mode "$m" || stop_tool "不認得的模式：$m" '模式只有三種：local（本地）、lan（內網）、online（線上）。'
+    [ "$m" = online ] && stop_removed_online
+    valid_mode "$m" || stop_tool "不認得的模式：$m" '模式只有兩種：local（本地）、lan（內網）。'
 
     ver="$(default_version)"
     [ -z "$ver" ] && ver="$(ask '要安裝哪一版（到 GitHub 的 Releases 頁看，不含開頭的 v，例如 2.0.0-rc4）' '')"
@@ -315,14 +322,10 @@ cmd_setup() {
         fi
         d="$OPT_HOSTS"; [ -z "$d" ] && d="$(printf '%s\n' "$ips" | head -n 1 | awk '{print $1}')"
         hostlist="$(normalize_hosts "$(ask '網址（多個請用逗號分隔，例如 192.168.1.20,pets-server）' "$d")")"
-    elif [ "$m" = online ]; then
-        say ''
-        say '請填對外的網域（使用者會在瀏覽器輸入的網址，不含 https://），例如 pets.example.com'
-        hostlist="$(normalize_hosts "$(ask '對外網域（多個請用逗號分隔）' "$OPT_HOSTS")")"
     fi
     if [ "$m" != local ]; then
         problem="$(check_hosts "$hostlist")"
-        [ -n "$problem" ] && stop_tool "$problem" '範例：192.168.1.20 或 192.168.1.20,pets-server 或 pets.example.com'
+        [ -n "$problem" ] && stop_tool "$problem" '範例：192.168.1.20 或 192.168.1.20,pets-server'
     fi
 
     # 名稱與埠：避開別人已經在用的；但「這個資料夾自己」之前安裝的就沿用原本的名稱與埠（重新執行 setup 不該換掉它們）
@@ -371,7 +374,7 @@ cmd_setup() {
     title '全部完成'
     say '  之後常用：'
     note '  ./open-pets.sh status        看目前狀態與網址'
-    note '  ./open-pets.sh mode lan      切換模式（local／lan／online）'
+    note '  ./open-pets.sh mode lan      切換模式（local／lan）'
     note '  ./open-pets.sh stop          停止（資料會保留）'
     note '  ./open-pets.sh help          看全部指令'
 }
@@ -381,9 +384,10 @@ cmd_mode() {
     need_docker
     load_current
     local current="$CFG_MODE" new="${ARG1:-$OPT_MODE}" hostlist='' problem ips d free
-    [ -z "$new" ] && stop_tool '請指定要切換到哪個模式。' '例如：./open-pets.sh mode lan （local＝本地、lan＝內網、online＝線上）'
+    [ -z "$new" ] && stop_tool '請指定要切換到哪個模式。' '例如：./open-pets.sh mode lan （local＝本地、lan＝內網）'
     new="$(printf '%s' "$new" | tr '[:upper:]' '[:lower:]')"
-    valid_mode "$new" || stop_tool "不認得的模式：$new" '模式只有三種：local（本地）、lan（內網）、online（線上）。'
+    [ "$new" = online ] && stop_removed_online
+    valid_mode "$new" || stop_tool "不認得的模式：$new" '模式只有兩種：local（本地）、lan（內網）。'
 
     if [ "$new" != local ]; then
         hostlist="$OPT_HOSTS"; [ -z "$hostlist" ] && hostlist="$CFG_HOSTS"
@@ -391,11 +395,11 @@ cmd_mode() {
             if [ "$new" = lan ]; then
                 ips="$(lan_ips)"; d="$(printf '%s\n' "$ips" | head -n 1 | awk '{print $1}')"
                 hostlist="$(ask '同事要用哪個網址連進來（內網 IP 或主機名稱，多個用逗號分隔）' "$d")"
-            else hostlist="$(ask '對外網域（不含 https://，多個用逗號分隔）' '')"; fi
+            fi
         fi
         hostlist="$(normalize_hosts "$hostlist")"
         problem="$(check_hosts "$hostlist")"
-        [ -n "$problem" ] && stop_tool "$problem" '範例：192.168.1.20 或 192.168.1.20,pets-server 或 pets.example.com'
+        [ -n "$problem" ] && stop_tool "$problem" '範例：192.168.1.20 或 192.168.1.20,pets-server'
     fi
 
     title "切換模式：$(mode_label "$current") → $(mode_label "$new")"
@@ -405,8 +409,6 @@ cmd_mode() {
         local) note '切換後：只有這台電腦能開 http://localhost；同一個內網的同事會連不上。'
             [ "$current" = lan ] && note '內網的 HTTPS 容器會停掉並移除；它保存的憑證資料會保留，之後切回內網沿用，同事不用重新信任。' ;;
         lan) note '切換後：同事改用 https://<網址> 連進來；每台電腦第一次要信任憑證；這台電腦的防火牆要開放 HTTPS 埠。'
-            note '「系統設定」裡的「系統維運日誌」分頁會顯示給管理員。' ;;
-        online) note '切換後：應用程式本身只在本機 127.0.0.1；要讓外面的人連，需要你另外設定反向代理與正式憑證（見手冊「線上模式」）。'
             note '「系統設定」裡的「系統維運日誌」分頁會顯示給管理員。' ;;
     esac
     confirm_step '要切換嗎' || { printf '%s已取消，沒有做任何變更。%s\n' "$C_Y" "$C_0"; return 0; }
@@ -504,6 +506,7 @@ cmd_backup() {
 cmd_update() {
     need_docker
     load_current
+    [ "$CFG_MODE" = online ] && stop_removed_online   # 新版不含線上用的設定檔，先切換模式再更新
     local newv="${ARG1:-$OPT_VERSION}"
     [ -z "$newv" ] && stop_tool '請指定要更新到哪一版。' '例如：./open-pets.sh update 2.0.0-rc4（版本號到 GitHub 的 Releases 頁看，不含開頭的 v）'
     title "更新：$CFG_VERSION → $newv"
@@ -522,7 +525,6 @@ Open-PETs 安裝與模式切換小工具
   第一次安裝　　　　./open-pets.sh setup
   切換模式　　　　　./open-pets.sh mode local    （本地：只有這台電腦用）
 　　　　　　　　　　./open-pets.sh mode lan      （內網：同一個辦公室的同事連進來，內建 HTTPS）
-　　　　　　　　　　./open-pets.sh mode online   （線上：以對外網域提供服務）
   看狀態與網址　　　./open-pets.sh status
   啟動／停止　　　　./open-pets.sh start      ./open-pets.sh stop
   看日誌（出問題時）./open-pets.sh logs

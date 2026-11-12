@@ -30,7 +30,7 @@ weight: 3
 
 ```text
 使用者瀏覽器
-    │  http://<主機>:8080（對外開放時前面放反向代理，改走 https）
+    │  http://<主機>:8080（內網模式由 Caddy 提供 https）
     ▼
 ┌──────────────────────────────────────┐
 │ 容器 open-pets                        │  埠 8080
@@ -43,7 +43,7 @@ weight: 3
 ```
 
 - 前端與後端在**同一個容器、同一個埠（8080）**，不需要另外裝 nginx、Python 或 Node.js。
-- 容器預設只綁本機（`127.0.0.1`）。要讓其他電腦連入，見[第 9 節](#9-開放給其他電腦內網與線上)。
+- 容器預設只綁本機（`127.0.0.1`）。要讓同一個內網的其他電腦連入，見[第 9 節](#9-開放給其他電腦內網)。
 - 第一次啟動會自動產生雜湊鹽值與簽章金鑰，存在磁碟區的 `/data/.secrets.env`，**不用自己準備金鑰**。
 
 ## 2. 選擇取得方式
@@ -163,9 +163,8 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 | 檔案 | 用途 |
 | --- | --- |
 | `open-pets-app_<版本>.tar.gz` | 映像檔（`docker load` 直接讀，不用先解壓縮） |
-| `docker-compose.yml`、`docker-compose.lan.yml`、`docker-compose.online.yml` | 啟動設定：本地（預設）、內網（內建 HTTPS）、線上（對外網域） |
+| `docker-compose.yml`、`docker-compose.lan.yml` | 啟動設定：本地（預設）、內網（內建 HTTPS） |
 | `Caddyfile.lan` | 內網模式的 Caddy 設定（一般不用改） |
-| `Caddyfile.example`、`nginx.conf.example` | 線上模式的反向代理範例 |
 | `open-pets.ps1`、`open-pets.sh` | 安裝與切換模式小工具（預設版本已換成該版） |
 | `env.example` | 設定範本，複製成 `.env` |
 | `SHA256SUMS.txt` | 完整性檢查碼；交付時請另用安全管道確認一份 |
@@ -277,29 +276,30 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 **8080 埠被占用**（`port is already allocated`）：在 `.env` 加一行 `OPEN_PETS_PORT=8081`（任一空的埠），再 `docker compose up -d`，網址改用該埠。
 {{< /callout >}}
 
-## 8. 三種模式：本地、線上、內網
+## 8. 兩種模式：本地、內網
 
 同一個映像檔，用環境變數 `OPEN_PETS_MODE` 選模式。預設是**本地**，不用設定。
 
-| | 本地（預設） | 內網 | 線上 |
-| --- | --- | --- | --- |
-| `OPEN_PETS_MODE` | `local`（舊值 `offline` 仍接受，視為 `local`） | `lan` | `online` |
-| 適用 | 一台電腦、無網路環境 | **同一個內網**的多台電腦，用內網 IP 或主機名稱連線 | 以**對外網域**提供服務（網際網路） |
-| 啟動指令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d` | `docker compose -f docker-compose.yml -f docker-compose.online.yml up -d` |
-| HTTPS | 不需要（本機） | **內建 Caddy HTTPS**（私有 CA，使用者電腦要信任根憑證） | 自備反向代理與正式憑證 |
-| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=內網IP,主機名稱`（例如 `192.168.1.20,pets-server`） | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=對外網域` |
-| 「系統維運日誌」分頁（系統設定內） | 隱藏 | 顯示（管理員查看全站登入與 API 紀錄） | 顯示 |
-| 登入頁 Demo 測試帳號 | 不顯示 | 不顯示 | 不顯示（`OPEN_PETS_SHOW_DEMO_ACCOUNTS=true` 僅限展示站） |
-| 章節 | 第 7 節 | [第 9 節](#9-開放給其他電腦內網與線上) | [9-6](#9-6-線上模式online對外網域) |
+| | 本地（預設） | 內網 |
+| --- | --- | --- |
+| `OPEN_PETS_MODE` | `local`（舊值 `offline` 仍接受，視為 `local`） | `lan` |
+| 適用 | 一台電腦、無網路環境 | **同一個內網**的多台電腦，用內網 IP 或主機名稱連線 |
+| 啟動指令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d` |
+| HTTPS | 不需要（本機） | **內建 Caddy HTTPS**（私有 CA，使用者電腦要信任根憑證） |
+| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=內網IP,主機名稱`（例如 `192.168.1.20,pets-server`） |
+| 「系統維運日誌」分頁（系統設定內） | 隱藏 | 顯示（管理員查看全站登入與 API 紀錄） |
+| 登入頁 Demo 測試帳號 | 不顯示 | 不顯示（`OPEN_PETS_SHOW_DEMO_ACCOUNTS=true` 僅限展示站） |
+| 章節 | 第 7 節 | [第 9 節](#9-開放給其他電腦內網) |
 
-- 內網、線上的 `OPEN_PETS_ALLOWED_HOSTS` 沒設定時，`docker compose` 會直接報錯（`required variable OPEN_PETS_ALLOWED_HOSTS is missing a value`），不會啟動。
-- 三種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令，資料磁碟區不變。
-- `OPEN_PETS_MODE` 填了 `local`、`offline`、`online`、`lan` 以外的值，容器啟動時會報錯並結束（`docker logs` 看得到原因），不會悄悄退回預設。
+- 內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 沒設定時，`docker compose` 會直接報錯（`required variable OPEN_PETS_ALLOWED_HOSTS is missing a value`），不會啟動。
+- 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令，資料磁碟區不變。
+- `OPEN_PETS_MODE` 填了 `local`、`offline`、`lan` 以外的值，容器啟動時會報錯並結束（`docker logs` 看得到原因），不會悄悄退回預設。
+- **線上（`online`）模式已移除**：設成 `online` 一樣會被拒絕，並提示改用 `lan` 或 `local`；舊資料夾的處理方式見 [9-6](#9-6-線上online模式已移除舊設定怎麼改)。
 - `local`、`lan` 兩個模式值與 `docker-compose.lan.yml`、小工具要 **2.0.0-rc3 起**才有；`2.0.0-rc2` 以前只認 `offline`、`online`。
 
 ### 用小工具切換，或手動切換
 
-**用小工具（建議）：** 在安裝資料夾執行 `.\open-pets.ps1 mode local`、`mode lan` 或 `mode online`（Linux 用 `./open-pets.sh`）。工具會改好 `.env` 與設定檔並重啟，資料不會不見。細節見[新手快速上手的第 5 步](../quickstart/#第-5-步切換模式)。
+**用小工具（建議）：** 在安裝資料夾執行 `.\open-pets.ps1 mode local` 或 `mode lan`（Linux 用 `./open-pets.sh`）。工具會改好 `.env` 與設定檔並重啟，資料不會不見。細節見[新手快速上手的第 5 步](../quickstart/#第-5-步切換模式)。
 
 **手動：** 工具其實只是在 `.env` 寫下下面幾行，之後單純 `docker compose up -d` 就會用對的設定檔，不必每次輸入一長串 `-f`：
 
@@ -307,7 +307,6 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 | --- | --- |
 | 本地 | `OPEN_PETS_MODE=local`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml` |
 | 內網 | `OPEN_PETS_MODE=lan`<br>`OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml` |
-| 線上 | `OPEN_PETS_MODE=online`<br>`OPEN_PETS_ALLOWED_HOSTS=pets.example.com`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml:docker-compose.online.yml` |
 
 改完 `.env` 執行 `docker compose up -d --remove-orphans`（會把用不到的容器，例如從內網切回本地時的 HTTPS 容器，一併移除；資料不受影響）。
 
@@ -317,25 +316,22 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 | --- | --- | --- |
 | `OPEN_PETS_VERSION` | 映像檔版本 | 檔內預設版本 |
 | `OPEN_PETS_IMAGE` | 映像檔名稱（用 GHCR 時填 `ghcr.io/ttcdog115016/open-pets-app`） | `open-pets-app` |
-| `OPEN_PETS_MODE` | 模式：`local`、`lan`、`online` | `local` |
+| `OPEN_PETS_MODE` | 模式：`local`、`lan` | `local` |
 | `OPEN_PETS_PORT` | 應用程式在本機的埠 | 8080 |
 | `OPEN_PETS_CONTAINER_NAME` | 容器名稱（同一台電腦裝多份時用） | `open-pets` |
 | `OPEN_PETS_BIND` | 應用程式埠綁定的網卡位址；只在不用 HTTPS、直接以 HTTP 開放內網時才改（不建議） | `127.0.0.1`（只有本機） |
 | `OPEN_PETS_HTTPS_PORT`、`OPEN_PETS_HTTPS_BIND` | 內網模式 HTTPS 代理對內網開放的埠與網卡位址 | 443、`0.0.0.0` |
-| `OPEN_PETS_ALLOWED_HOSTS` | 允許的網址（內網 IP、主機名稱或網域），逗號分隔、**不加空格**，用來擋 DNS rebinding；內網模式的憑證也依這份清單簽發 | 本地模式不限制 |
+| `OPEN_PETS_ALLOWED_HOSTS` | 允許的網址（內網 IP 或主機名稱），逗號分隔、**不加空格**，用來擋 DNS rebinding；內網模式的憑證也依這份清單簽發 | 本地模式不限制 |
 | `OPEN_PETS_MAX_UPLOAD_MB` | 單次上傳上限（MB） | 1024 |
 | `OPEN_PETS_DEFAULT_SALT`、`OPEN_PETS_SYSTEM_MASTER_KEY`、`OPEN_PETS_JWT_SECRET` | 要把金鑰與資料分開保管時才填（各 64 字元隨機字串，環境變數優先於自動產生的） | 第一次啟動自動產生 |
 
 修改 `.env` 後執行 `docker compose up -d`，容器會用新設定重建。
 
-## 9. 開放給其他電腦（內網與線上）
+## 9. 開放給其他電腦（內網）
 
-預設只有這台電腦（`127.0.0.1`）連得進來（本地模式）。要讓其他電腦用瀏覽器使用，有兩種做法：
+預設只有這台電腦（`127.0.0.1`）連得進來（本地模式）。要讓**同一個內網**的其他電腦用瀏覽器使用，用「內網模式（lan）」（9-1 到 9-5）：主機多開一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，**不需要對外網路，也不用申請網域或 Let's Encrypt**。應用程式本身的 8080 只綁本機，其他電腦只能走 HTTPS。
 
-- **同一個內網的多台電腦：用「內網模式（lan）」**（9-1 到 9-5）。主機多開一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，**不需要對外網路，也不用申請網域或 Let's Encrypt**。
-- **以對外網域提供服務：用「線上模式（online）」**（[9-6](#9-6-線上模式online對外網域)）。前面自備反向代理與正式憑證。
-
-兩種做法，應用程式本身的 8080 都只綁本機，其他電腦只能走 HTTPS。
+本系統**不提供**對網際網路開放的模式（原本的線上模式已移除，見 [9-6](#9-6-線上online模式已移除舊設定怎麼改)）。
 
 ### 9-1. 先決定使用者輸入的網址
 
@@ -462,29 +458,18 @@ OPEN_PETS_ALLOWED_HOSTS=192.168.1.20
 docker compose up -d
 ```
 
-### 9-6. 線上模式（online）：對外網域
+### 9-6. 線上（online）模式已移除：舊設定怎麼改
 
-不建議把系統直接放到網際網路。必須以對外網域提供服務時，用**線上模式**，並在前面放有正式憑證的反向代理（交付包附 `Caddyfile.example` 與 `nginx.conf.example`，原始碼在 `docker/proxy-examples/`，都已實測過 HTTPS 下的完整流程）：
+原本的線上模式（以對外網域直接對網際網路提供服務，前面自備反向代理）已移除，交付包不再附 `docker-compose.online.yml`、`Caddyfile.example`、`nginx.conf.example`。
 
-1. 在 `.env` 設定對外網域（使用者會輸入的網址，逗號分隔、不加空格）：
+**原本用線上模式的資料夾：**
 
-    ```text
-    OPEN_PETS_ALLOWED_HOSTS=pets.example.com
-    ```
+1. 在安裝資料夾執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（Linux：`./open-pets.sh mode lan --hosts 內網IP`），或只有這台電腦用的話執行 `mode local`。工具會改好 `.env`、下載需要的設定檔並重啟，**資料（帳號、處理紀錄、稽核紀錄、金鑰）不會不見**。
+2. 沒有用小工具的話：把 `.env` 的 `OPEN_PETS_MODE` 改成 `lan`、`COMPOSE_FILE` 改成 `docker-compose.yml:docker-compose.lan.yml`，並補上 `docker-compose.lan.yml` 與 `Caddyfile.lan`（見 [9-2](#9-2-取得設定檔並啟動)）。
+3. 新版映像檔若仍以 `OPEN_PETS_MODE=online` 啟動，會拒絕啟動並說明上面的做法，不會悄悄改變對網路的開放範圍。
+4. 小工具的 `update` 遇到舊的線上資料夾也會先請你切換模式，再更新。
 
-2. 用線上模式啟動（應用程式的 8080 仍只綁本機，由反向代理轉送到 `127.0.0.1:8080`）：
-
-    ```powershell
-    docker compose -f docker-compose.yml -f docker-compose.online.yml up -d
-    ```
-
-3. 設定反向代理（把範例裡的 `openpets.example.com` 換成你的網域），並確認：
-    - 把 `Host` 標頭**原樣轉送**，否則會被主機名稱檢查擋掉。
-    - 允許大檔案上傳（預設上限 1024 MB），不要先緩衝整個請求本文。
-    - 逾時設長一點，大檔案的處理時間可能很久。
-    - 在代理層加上 `Strict-Transport-Security`（範例已加）。
-
-漏列的網域連進來會得到 400（`Invalid host header`）。容器自己健康檢查用的 `127.0.0.1`、`localhost` 不需要列。用 Cloudflare Tunnel 等通道時，把通道目標設為 `http://localhost:8080`（作法見《Demo 展示環境建置與維運手冊（cloudflared 通道＋內網測試）》）。
+**要讓公司外面的人使用**：本專案不再提供這種模式，也不再提供對外網域的反向代理範例與支援。若仍要自行對外開放，請由資訊人員另行評估網域、憑證、HTTPS、防護與存取控制，並自行承擔對外開放的資安責任；應用程式本身的 8080 不要直接對外開放。
 
 ## 10. 更新與退回
 
@@ -651,7 +636,7 @@ repo 的 `.github/workflows/` 有四個工作流程：
 | 工作流程 | 觸發 | 內容 |
 | --- | --- | --- |
 | `ci.yml` | 推送到 `main`、`master`，或發 Pull Request 到 `main`、`master` | 前端 `npm ci`、型別檢查與打包、`vitest`；後端 `uv sync --locked`、`pytest` |
-| `docker-image.yml` | 推送 `v*` 標籤（手動執行只做建置與打包，不發佈） | 建置映像檔 → Trivy 弱點掃描（有可修補的高風險就失敗）→ 冒煙測試（腳本是 `docker/smoke_test.sh`：本地、`offline` 舊名稱、線上、內網，並確認不合法的模式值會被拒絕）→ 推送 GHCR → cosign 簽章 → 產生離線交付包 → 建立 Release |
+| `docker-image.yml` | 推送 `v*` 標籤（手動執行只做建置與打包，不發佈） | 建置映像檔 → Trivy 弱點掃描（有可修補的高風險就失敗）→ 冒煙測試（腳本是 `docker/smoke_test.sh`：本地、`offline` 舊名稱、內網，並確認不合法的模式值與已移除的 `online` 會被拒絕）→ 推送 GHCR → cosign 簽章 → 產生離線交付包 → 建立 Release |
 | `docker-build-check.yml` | 發 Pull Request，且修改了 `docker/`、`backend/`、`src/`、`public/`、`package*.json` 等與映像檔有關的檔案 | 建置映像檔 → 同一份冒煙測試（不推送、不簽章、不建立 Release）。讓 Dockerfile 與 Dependabot 的基底映像檔升級在合併前就被測到；不是 ruleset 的必過檢查 |
 | `pages.yml` | `doc_site/` 有修改並推送到 `main` | 建置並發佈本文件網站 |
 

@@ -13,12 +13,12 @@ weight: 1
   {{< card link="quickstart" title="我要安裝" icon="play" subtitle="第一次安裝、不熟指令：選模式、用小工具安裝、隨時切換" >}}
   {{< card link="frontend" title="我要使用" icon="cursor-click" subtitle="登入後怎麼做去識別化、管理帳號" >}}
   {{< card link="faq" title="我遇到問題" icon="question-mark-circle" subtitle="連不上、登入失敗、上傳失敗等常見狀況" >}}
-  {{< card link="deploy" title="資訊人員：完整參考" icon="server" subtitle="手動設定、反向代理、更新、備份、驗證與授權" >}}
+  {{< card link="deploy" title="資訊人員：完整參考" icon="server" subtitle="手動設定、更新、備份、驗證與授權" >}}
   {{< card link="api" title="系統整合：API" icon="code" subtitle="端點與呼叫範例" >}}
   {{< card link="cli" title="資訊人員：命令列" icon="terminal" subtitle="批次作業與帳號維護" >}}
 {{< /cards >}}
 
-## 三種使用方式
+## 兩種使用方式
 
 同一份軟體，依你的情況選一種，之後隨時可以切換，資料都會保留：
 
@@ -26,9 +26,8 @@ weight: 1
 | --- | --- | --- |
 | **本地**（預設） | 只有你自己，在這台電腦上 | `http://localhost:8080` |
 | **內網** | 同一個辦公室或內網的同事（內建 HTTPS） | `https://你電腦的IP` |
-| **線上** | 網際網路上的人（需要網域與反向代理） | `https://你的網域` |
 
-不確定就先選「本地」。詳細說明見[新手快速上手](quickstart/)，技術細節見[安裝教學第 8 節](deploy/#8-三種模式本地線上內網)。
+不確定就先選「本地」。詳細說明見[新手快速上手](quickstart/)，技術細節見[安裝教學第 8 節](deploy/#8-兩種模式本地內網)。
 
 ## 帳號
 

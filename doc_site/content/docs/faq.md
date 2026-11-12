@@ -28,11 +28,11 @@ weight: 7
 | 工具說「8080 埠已經有別的程式在用，改用 8081」 | 不是錯誤。網址改用工具印出的新埠，例如 `http://localhost:8081`。手動安裝時，在 `.env` 加 `OPEN_PETS_PORT=8081` 再 `docker compose up -d`（`port is already allocated` 也是這個原因）。 |
 | 登入頁沒有帳號可用 | 還沒建立管理員。執行 `.\open-pets.ps1 create-admin`（手動安裝：`docker exec -it open-pets python /opt/openpets/openpets_server.py create-admin`），見[安裝教學第 7 節](../deploy/#7-啟動後建立管理員並確認)。 |
 | 忘記管理員密碼，或管理員被鎖住 | 在主機執行 `.\open-pets.ps1 reset-password`（手動安裝：`docker exec -it open-pets python /opt/openpets/openpets_server.py reset-password`），會同時解除鎖定。 |
-| 容器一直是 `starting`、`unhealthy`，或啟動後馬上結束 | 先看日誌：`.\open-pets.ps1 logs`（手動：`docker logs --tail 100 open-pets`）。常見原因：`OPEN_PETS_MODE` 填了 `local`、`offline`（等同 `local`）、`online`、`lan` 以外的值；`local`、`lan` 要 **2.0.0-rc3 起**的映像檔才認得；線上或內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 設錯。剛啟動約 40 秒內顯示 `starting` 是正常的。 |
-| `docker compose` 回報 `required variable ... is missing a value` | 線上或內網模式沒設 `OPEN_PETS_ALLOWED_HOSTS`。用 `mode lan -Hosts 網址` 帶入，或在 `.env` 補上。 |
+| 容器一直是 `starting`、`unhealthy`，或啟動後馬上結束 | 先看日誌：`.\open-pets.ps1 logs`（手動：`docker logs --tail 100 open-pets`）。常見原因：`OPEN_PETS_MODE` 填了 `local`、`offline`（等同 `local`）、`lan` 以外的值（**`online` 已移除**，容器會說明要改用 `lan` 或 `local`）；`local`、`lan` 要 **2.0.0-rc3 起**的映像檔才認得；內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 設錯。剛啟動約 40 秒內顯示 `starting` 是正常的。 |
+| `docker compose` 回報 `required variable ... is missing a value` | 內網模式沒設 `OPEN_PETS_ALLOWED_HOSTS`。用 `mode lan -Hosts 網址` 帶入，或在 `.env` 補上。 |
 | `Conflict. The container name ... is already in use` | 在安裝資料夾執行 `docker compose down`（資料在磁碟區，不會遺失），再 `docker compose up -d`。**不要加 `-v`**，那會連資料一起刪掉。 |
 | 換版本後資料不見了 | 資料在磁碟區 `open-pets-data`，換映像檔不會影響。確認 `docker-compose.yml` 的專案名稱沒被改過（`name:`），並用 `docker volume ls` 看磁碟區還在不在。 |
-| 想退回上一個模式 | 切換是可逆的，資料不會丟：`.\open-pets.ps1 mode 上一個模式`（local／lan／online）。從內網切回本地再切回來，憑證沿用，同事不用重新信任。 |
+| 想退回上一個模式 | 切換是可逆的，資料不會丟：`.\open-pets.ps1 mode 上一個模式`（local／lan）。從內網切回本地再切回來，憑證沿用，同事不用重新信任。 |
 
 ### 內網連線（同事連不上）
 
@@ -42,18 +42,18 @@ weight: 7
 | `ERR_CONNECTION_REFUSED` | 同上；多半是防火牆沒開，或 HTTPS 容器沒在運行。 |
 | 「您的連線不是私人連線」（`ERR_CERT_AUTHORITY_INVALID`） | 這台電腦還沒信任內網的根憑證。從主機執行 `.\open-pets.ps1 export-ca`，把 `open-pets-ca.crt` 與說明檔交給使用者，照說明安裝成「受信任的根憑證授權單位」，再重開瀏覽器。手動做法見[安裝教學 9-4](../deploy/#9-4-讓使用者電腦信任根憑證)。 |
 | `ERR_SSL_PROTOCOL_ERROR`、憑證名稱不符，或連線被重設 | 使用者輸入的網址，沒有列在 `.env` 的 `OPEN_PETS_ALLOWED_HOSTS`。執行 `.\open-pets.ps1 mode lan -Hosts 網址1,網址2`（把所有會用的網址都列進去）。清單有多個 IP 時，把使用者實際用的放最前面。 |
-| 400 Invalid host header | 同上：使用者輸入的網址漏列在 `OPEN_PETS_ALLOWED_HOSTS`，補上後重新套用，見[安裝教學第 9 節](../deploy/#9-開放給其他電腦內網與線上)。 |
+| 400 Invalid host header | 同上：使用者輸入的網址漏列在 `OPEN_PETS_ALLOWED_HOSTS`，補上後重新套用，見[安裝教學第 9 節](../deploy/#9-開放給其他電腦內網)。 |
 | **換了網路**（例如從手機熱點換到公司網路）後，原本連得上的網址連不上 | 這台電腦的 IP 變了，設定與憑證只認得舊 IP。用 `ipconfig` 查新 IP，執行 `.\open-pets.ps1 mode lan -Hosts 新IP,舊IP`。根憑證不會變，使用者不用重新信任；再 `export-ca` 讓說明檔換成新網址。 |
 | 工具說「443 埠已經有別的程式在用，HTTPS 改用 8443」 | 不是錯誤。使用者的網址要加埠：`https://你的IP:8443`，防火牆也要開 8443。 |
 | 切換模式後同事連不上 | 切到「本地」就只剩這台電腦能用。用 `status` 看目前模式；切回內網後記得開防火牆並 `export-ca`，見[新手快速上手](../quickstart/)。 |
 | 主機重裝或換新後，所有使用者又出現憑證警告 | `caddy-data` 磁碟區（含根憑證的私鑰）沒有保留，Caddy 產生了新的根憑證。還原 `caddy-data` 的備份，或重新 `export-ca` 並讓使用者重新信任。 |
 
-### 反向代理與上傳（線上模式）
+### 上傳與內網的 HTTPS 代理
 
 | 你看到 | 原因與怎麼辦 |
 | --- | --- |
-| 上傳時出現 413 | 檔案超過上限（預設 1 GB，`OPEN_PETS_MAX_UPLOAD_MB`）。經過反向代理時，代理也有自己的上限（nginx 的 `client_max_body_size`、Caddy 的 `request_body max_size`），要一起調整。 |
-| 經反向代理連線時出現 502 或 504 | 代理轉不到容器。確認 `docker ps` 的容器是 `healthy`，在主機執行 `curl http://127.0.0.1:8080/api/v1/status`，再檢查代理設定的上游位址與逾時。 |
+| 上傳時出現 413 | 檔案超過上限（預設 1 GB，`OPEN_PETS_MAX_UPLOAD_MB`；前端也限制 1 GB，要改需一起改）。 |
+| 內網模式出現 502 或 504 | 內網的 HTTPS 代理（容器名稱以 `-proxy-1` 結尾）轉不到應用程式容器。確認 `docker ps` 的 `open-pets` 是 `healthy`，在主機執行 `curl http://127.0.0.1:8080/api/v1/status`，再用 `.\open-pets.ps1 logs` 與 `docker logs <代理容器名稱>` 看原因。 |
 
 ### 下載與驗證
 
