@@ -41,7 +41,7 @@ layout: hextra-home
   {{< hextra/feature-card
     title="API 使用說明"
     icon="code"
-    subtitle="登入與權杖、端點總覽、curl 與 Python 呼叫範例、錯誤格式。"
+    subtitle="登入與權限、端點總覽、curl 與 Python 呼叫範例、錯誤格式。"
     link="docs/api"
   >}}
   {{< hextra/feature-card

@@ -141,7 +141,7 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 
     確認內容（應有兩行）：`Get-Content .env`（Windows）或 `cat .env`（Linux）。
 
-3. 套件若是私有的，先用有 `read:packages` 權限的 GitHub 權杖登入（公開的不需要）：
+3. 套件若是私有的，先用 GitHub 的 `read:packages` 權限登入（公開的不需要）：
 
     ```powershell
     docker login ghcr.io -u <GitHub 帳號>
@@ -641,7 +641,7 @@ docker run --rm -v "${PWD}:/w" -w /w gcr.io/projectsigstore/cosign:latest verify
 - [ ] **Actions** 分頁已啟用工作流程（複製過來的 repo 預設可能停用）。
 - [ ] GHCR 映像檔位置會跟著帳號改變（`ghcr.io/<新擁有者小寫>/open-pets-app`）。使用者的 `.env` 要把 `OPEN_PETS_IMAGE` 改成新位置；文件、Release 說明裡的網址與 cosign 驗證指令的 repo 名稱也要一併更新。
 - [ ] 重新建置時用 `OPEN_PETS_SOURCE_URL` 指向新的 repo（工作流程會自動帶入）。
-- [ ] 新帳號下的 GHCR 套件可見度：公開的可匿名 `docker pull`，私有的要用有 `read:packages` 的權杖登入。
+- [ ] 新帳號下的 GHCR 套件可見度：公開的可匿名 `docker pull`，私有的要用 GitHub 的 `read:packages` 權限登入。
 - [ ] 部署主機執行 `git remote set-url origin <新網址>`，之後 `git pull` 才會抓新位置。
 
 ## 15. GitHub Actions 自動化

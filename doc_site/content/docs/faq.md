@@ -61,4 +61,4 @@ weight: 7
 | --- | --- |
 | `cosign` 指令找不到 | 不用安裝。改用 Docker 執行，指令見[安裝教學第 12 節](../deploy/#12-驗證映像檔來源)。 |
 | `sha256sum -c` 顯示 FAILED，或 `docker load` 回報檔案損毀 | 檔案下載或複製不完整，請重新取得。檢查碼要與 `SHA256SUMS.txt`（另一條管道取得的）一致，檔名不能改。 |
-| `docker pull` 回報 `denied` 或 `unauthorized` | 套件是私有的。用有 `read:packages` 權限的 GitHub 權杖登入：`docker login ghcr.io -u <GitHub 帳號>`。 |
+| `docker pull` 回報 `denied` 或 `unauthorized` | 套件是私有的。用 GitHub 的 `read:packages` 權限登入：`docker login ghcr.io -u <GitHub 帳號>`。 |

@@ -86,7 +86,7 @@ Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端�
 
 ### 有網路：從 GHCR 取得
 
-在 `.env` 寫兩行：`OPEN_PETS_IMAGE=ghcr.io/ttcdog115016/open-pets-app` 與 `OPEN_PETS_VERSION=<版本>`，然後 `docker compose pull`、`docker compose up -d`。套件若是私有的，先 `docker login ghcr.io -u <GitHub 帳號>`（需要有 `read:packages` 權限的權杖）。版本一律指定明確版號，**不使用 `latest`**。
+在 `.env` 寫兩行：`OPEN_PETS_IMAGE=ghcr.io/ttcdog115016/open-pets-app` 與 `OPEN_PETS_VERSION=<版本>`，然後 `docker compose pull`、`docker compose up -d`。套件若是私有的，先 `docker login ghcr.io -u <GitHub 帳號>`（需要 GitHub 的 `read:packages` 權限）。版本一律指定明確版號，**不使用 `latest`**。
 
 ### 原始碼
 
