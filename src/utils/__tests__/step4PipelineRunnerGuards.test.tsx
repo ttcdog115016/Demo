@@ -34,15 +34,13 @@ import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { usePipelineRunner } from '../../features/step4_result/usePipelineRunner';
 import { clearMemberSession } from '../../api/authApi';
 import { clearBackendBusy, isBackendLikelyBusy } from '../backendBusyCooldown';
+import { settle, settleUntil, SETTLE_TEST_TIMEOUT_MS } from '../../test/settle';
 
 const hookInput = { actualProcessedColumnsList: ['年齡', '疾病'], getCalculatedRole: () => ({ role: 'Quasi-identifier' }) };
 
-const settle = async () => {
-    for (let index = 0; index < 60; index++) {
-        await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-        await new Promise((resolve) => setImmediate(resolve));
-    }
-};
+// 等待工具見 src/test/settle.ts：「預期會發生」用 settleUntil（等到條件成立），「預期不再發生」才用 settle（固定安靜期）
+const deidentificationCalls = () => phaseMocks.runDeidentificationPhase.mock.calls.length;
+const cancelCalls = () => phaseMocks.cancelBackendRun.mock.calls.length;
 
 const dpDeidentificationSuccess = async () => ({
     report: { consumed_epsilon: 1, consumed_delta: 1e-5, accumulated_epsilon: 1, accumulated_delta: 1e-5, message: '', per_column: [] },
@@ -58,7 +56,7 @@ const deferred = <T,>() => {
     return { promise, resolve: resolveFn };
 };
 
-describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () => {
+describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', { timeout: SETTLE_TEST_TIMEOUT_MS }, () => {
     beforeEach(() => {
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -82,11 +80,12 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
         const profileGate = deferred<unknown>();
         phaseMocks.ensureDatasetProfile.mockImplementation(() => profileGate.promise);
         const { result } = renderHook(() => usePipelineRunner(hookInput));
-        await settle();
+        await settleUntil(() => phaseMocks.ensureDatasetProfile.mock.calls.length >= 1);
         expect(phaseMocks.ensureDatasetProfile).toHaveBeenCalledTimes(1);
 
         await act(async () => { result.current.handleCancelPipeline(); });
         profileGate.resolve({ fileKey: 'k', rowCount: 1, columnNamesList: [], columns: {}, numericValues: {} });
+        await settleUntil(() => result.current.isPipelineCanceledStatus);
         await settle();
 
         expect(phaseMocks.runDeidentificationPhase).not.toHaveBeenCalled();
@@ -97,12 +96,14 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
     it('運算途中登出（登入世代改變）：DP 累計預算、快取都不寫回工作區', async () => {
         const deidentificationGate = deferred<unknown>();
         phaseMocks.runDeidentificationPhase.mockImplementation(() => deidentificationGate.promise);
-        renderHook(() => usePipelineRunner(hookInput));
-        await settle();
+        const { result } = renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => deidentificationCalls() >= 1);
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(1);
 
         clearMemberSession();
         deidentificationGate.resolve(await dpDeidentificationSuccess());
+        // 先等這一輪真的收尾（偵測到登入世代改變而中止），再用安靜期確認「之後什麼都沒寫回」
+        await settleUntil(() => !result.current.isPipelineCalculatingStatus);
         await settle();
 
         expect(useWorkspaceStore.getState().dpAccumulatedEpsilon).toBe(0);
@@ -117,11 +118,13 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
             .mockImplementationOnce(() => firstRunGate.promise)
             .mockImplementationOnce(() => new Promise(() => {}));
         const { result } = renderHook(() => usePipelineRunner(hookInput));
-        await settle();
+        await settleUntil(() => deidentificationCalls() >= 1);
         await act(async () => { useWorkspaceStore.setState({ privacyMode: 'k-anonymity' }); });
         await settle();
 
         firstRunGate.resolve(await dpDeidentificationSuccess());
+        await settleUntil(() => deidentificationCalls() >= 2);
+        // 補跑開始後再走完一段假時間，讓「上一輪排定的關閉運算中」有機會觸發（它若觸發就會把進度藏起來）
         await settle();
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(2);
         expect(result.current.isPipelineCalculatingStatus).toBe(true);
@@ -134,6 +137,7 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
             return { attackReport, capReport, highCardinalityInfo: [] };
         });
         const { result } = renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => result.current.attackSimulationMetricsData !== null && result.current.datasetRowStatsData !== null);
         await settle();
         expect(result.current.capReportData).toEqual(capReport);
         expect(result.current.attackReportData).toEqual(attackReport);
@@ -142,6 +146,7 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
 
         phaseMocks.runRiskAssessmentPhase.mockRejectedValueOnce(new Error('風險評估失敗'));
         await act(async () => { void result.current.runFullPipeline(true); });
+        await settleUntil(() => result.current.pipelineFailedMessage !== null && !result.current.isPipelineCalculatingStatus);
         await settle();
         expect(result.current.pipelineFailedMessage).not.toBeNull();
         expect(result.current.capReportData).toBeNull();
@@ -154,6 +159,7 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
     it('前端逾時：通知後端停止這一輪；後端收到取消就不標示「後端可能仍在計算」', async () => {
         phaseMocks.runRiskAssessmentPhase.mockRejectedValue(new AxiosError('timeout of 900000ms exceeded', 'ECONNABORTED'));
         const { result } = renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => result.current.pipelineFailedMessage !== null && cancelCalls() >= 1);
         await settle();
         expect(result.current.pipelineFailedMessage).not.toBeNull();
         expect(phaseMocks.cancelBackendRun).toHaveBeenCalledTimes(1);
@@ -165,6 +171,7 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
         phaseMocks.cancelBackendRun.mockRejectedValue(new Error('network'));
         phaseMocks.runRiskAssessmentPhase.mockRejectedValue(new AxiosError('timeout of 900000ms exceeded', 'ECONNABORTED'));
         renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => cancelCalls() >= 1 && isBackendLikelyBusy());
         await settle();
         expect(phaseMocks.cancelBackendRun).toHaveBeenCalledTimes(1);
         expect(isBackendLikelyBusy()).toBe(true);
@@ -173,6 +180,7 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
     it('通道逾時（524）：通知後端停止；取消成功時不標示忙碌，失敗才標示', async () => {
         phaseMocks.runRiskAssessmentPhase.mockRejectedValue({ response: { status: 524 } });
         const { unmount } = renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => cancelCalls() >= 1);
         await settle();
         expect(phaseMocks.cancelBackendRun).toHaveBeenCalledTimes(1);
         expect(isBackendLikelyBusy()).toBe(false);
@@ -182,6 +190,7 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
         // ★ F5：同一組參數失敗後重新掛載不會自動重跑，這裡清掉「已嘗試」紀錄以模擬全新的一次執行
         useWorkspaceStore.setState({ step4Cache: null, lastRunParamsHash: null, lastAttemptedRunParamsHash: null });
         const second = renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => cancelCalls() >= 1 && isBackendLikelyBusy());
         await settle();
         expect(phaseMocks.cancelBackendRun).toHaveBeenCalledTimes(1);
         expect(isBackendLikelyBusy()).toBe(true);
@@ -191,7 +200,7 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
     it('運算途中離開 Step4（卸載）：通知後端停止這一輪', async () => {
         phaseMocks.runDeidentificationPhase.mockImplementation(() => new Promise(() => {}));
         const { unmount } = renderHook(() => usePipelineRunner(hookInput));
-        await settle();
+        await settleUntil(() => deidentificationCalls() >= 1);
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(1);
         unmount();
         expect(phaseMocks.cancelBackendRun).toHaveBeenCalledTimes(1);
@@ -200,6 +209,7 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
     it('DP 去識別化成功但風險評估失敗後，離開再回到 Step4（重新掛載）不自動重跑、不再扣一次 ε（★ 2026-11-02 F5）', async () => {
         phaseMocks.runRiskAssessmentPhase.mockRejectedValue(new Error('三攻擊請求失敗'));
         const first = renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => first.result.current.pipelineFailedMessage !== null && !first.result.current.isPipelineCalculatingStatus);
         await settle();
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(1);
         expect(useWorkspaceStore.getState().step4Cache).toBeNull();
@@ -214,6 +224,7 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
     it('換一份資料集後，同一組參數仍會自動執行', async () => {
         phaseMocks.runRiskAssessmentPhase.mockRejectedValue(new Error('三攻擊請求失敗'));
         const first = renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => first.result.current.pipelineFailedMessage !== null && !first.result.current.isPipelineCalculatingStatus);
         await settle();
         first.unmount();
         useWorkspaceStore.getState().clearFileData();
@@ -222,6 +233,7 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', () =>
             privacyMode: 'differential-privacy', dpFields: [{ fieldName: '疾病', enabled: true, fieldType: 'Categorical', epsilon: 1 }] as never
         });
         renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => deidentificationCalls() >= 2);
         await settle();
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(2);
     });

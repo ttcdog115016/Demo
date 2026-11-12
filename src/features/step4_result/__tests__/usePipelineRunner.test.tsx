@@ -23,29 +23,10 @@ vi.mock('../../../utils/datasetProfile', async (importOriginal) => ({
 
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
 import { usePipelineRunner } from '../usePipelineRunner';
+import { settle, settleUntil, SETTLE_TEST_TIMEOUT_MS } from '../../../test/settle';
 
 const hookInput = { actualProcessedColumnsList: ['年齡', '疾病'], getCalculatedRole: () => ({ role: 'Quasi-identifier' }) };
 
-// 推進假時鐘並讓檔案讀取等非計時器的非同步工作完成（固定次數：用來當「預期不再發生任何事」的安靜期）
-const settle = async () => {
-    for (let index = 0; index < 60; index++) {
-        await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-        await new Promise((resolve) => setImmediate(resolve));
-    }
-};
-
-// 等到條件成立為止（以真實時間為上限；假時鐘只假造 setTimeout／clearTimeout，Date.now 是真的）。
-// 為什麼不能只靠 settle()：hook 每一輪還會做真實的非同步工作（讀檔去除 BOM、計算資料列統計與檔案指紋、寫稽核紀錄），
-// 完成時間取決於機器速度、不受假時鐘控制。固定讓出 60 次在快的機器夠用，在 CI 這種較慢的機器上可能還沒做完就檢查，
-// 於是偶發 `expected "vi.fn()" to be called 2 times, but got 1 times`（把 settle 的次數降到 2 就能在本機重現同樣的錯誤）。
-// 所以「預期會發生的事」一律用 settleUntil 等到發生，只有「預期不再發生」才用 settle() 當安靜期。
-const settleUntil = async (condition: () => boolean, timeoutMs = 30_000) => {
-    const deadline = Date.now() + timeoutMs;
-    while (!condition() && Date.now() < deadline) {
-        await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-        await new Promise((resolve) => setImmediate(resolve));
-    }
-};
 const deidentificationCallCount = () => phaseMocks.runDeidentificationPhase.mock.calls.length;
 
 let accumulatedDeltaValue = 0;
@@ -55,7 +36,7 @@ const dpDeidentificationSuccess = async () => {
     return { report: { consumed_epsilon: 1, consumed_delta: 1e-5, message: '', per_column: [] }, csvBlob: new Blob(['年齡,疾病\n30,感冒\n']), updatedDpAccumulated: { epsilon: 1, delta: accumulatedDeltaValue }, logMessages: [] };
 };
 
-describe('usePipelineRunner 自動執行時機', () => {
+describe('usePipelineRunner 自動執行時機', { timeout: SETTLE_TEST_TIMEOUT_MS }, () => {
     beforeEach(() => {
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         vi.spyOn(console, 'log').mockImplementation(() => {});
