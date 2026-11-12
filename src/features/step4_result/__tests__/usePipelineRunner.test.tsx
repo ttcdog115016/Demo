@@ -26,13 +26,27 @@ import { usePipelineRunner } from '../usePipelineRunner';
 
 const hookInput = { actualProcessedColumnsList: ['年齡', '疾病'], getCalculatedRole: () => ({ role: 'Quasi-identifier' }) };
 
-// 推進假時鐘並讓檔案讀取等非計時器的非同步工作完成
+// 推進假時鐘並讓檔案讀取等非計時器的非同步工作完成（固定次數：用來當「預期不再發生任何事」的安靜期）
 const settle = async () => {
     for (let index = 0; index < 60; index++) {
         await act(async () => { await vi.advanceTimersByTimeAsync(100); });
         await new Promise((resolve) => setImmediate(resolve));
     }
 };
+
+// 等到條件成立為止（以真實時間為上限；假時鐘只假造 setTimeout／clearTimeout，Date.now 是真的）。
+// 為什麼不能只靠 settle()：hook 每一輪還會做真實的非同步工作（讀檔去除 BOM、計算資料列統計與檔案指紋、寫稽核紀錄），
+// 完成時間取決於機器速度、不受假時鐘控制。固定讓出 60 次在快的機器夠用，在 CI 這種較慢的機器上可能還沒做完就檢查，
+// 於是偶發 `expected "vi.fn()" to be called 2 times, but got 1 times`（把 settle 的次數降到 2 就能在本機重現同樣的錯誤）。
+// 所以「預期會發生的事」一律用 settleUntil 等到發生，只有「預期不再發生」才用 settle() 當安靜期。
+const settleUntil = async (condition: () => boolean, timeoutMs = 30_000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (!condition() && Date.now() < deadline) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+        await new Promise((resolve) => setImmediate(resolve));
+    }
+};
+const deidentificationCallCount = () => phaseMocks.runDeidentificationPhase.mock.calls.length;
 
 let accumulatedDeltaValue = 0;
 const dpDeidentificationSuccess = async () => {
@@ -62,6 +76,7 @@ describe('usePipelineRunner 自動執行時機', () => {
     it('DP 去識別化成功但風險評估失敗時只執行一次，不因寫回的累計值而反覆重跑', async () => {
         phaseMocks.runRiskAssessmentPhase.mockRejectedValue(new Error('風險評估的敏感欄位僅能從已啟用的「類別型」欄位中挑選'));
         const { result } = renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => result.current.pipelineFailedMessage !== null && !result.current.isPipelineCalculatingStatus);
         await settle();
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(1);
         expect(useWorkspaceStore.getState().dpAccumulatedDelta).toBe(1e-5);
@@ -71,11 +86,13 @@ describe('usePipelineRunner 自動執行時機', () => {
 
     it('成功後寫入快取、不再執行；使用者調整參數後自動重新執行', async () => {
         renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => useWorkspaceStore.getState().step4Cache !== null);
         await settle();
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(1);
         expect(useWorkspaceStore.getState().step4Cache).not.toBeNull();
 
         await act(async () => { useWorkspaceStore.setState({ targetDelta: 1e-6 }); });
+        await settleUntil(() => deidentificationCallCount() >= 2);
         await settle();
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(2);
     });
@@ -84,6 +101,7 @@ describe('usePipelineRunner 自動執行時機', () => {
         let releaseFirstRun: () => void = () => {};
         phaseMocks.runDeidentificationPhase.mockImplementationOnce(() => new Promise((resolve) => { releaseFirstRun = () => resolve(dpDeidentificationSuccess()); }));
         renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => deidentificationCallCount() >= 1);
         await settle();
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(1);
 
@@ -92,6 +110,7 @@ describe('usePipelineRunner 自動執行時機', () => {
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(1);
 
         releaseFirstRun();
+        await settleUntil(() => deidentificationCallCount() >= 2);
         await settle();
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(2);
         expect(phaseMocks.runDeidentificationPhase.mock.calls[1][0].privacyMode).toBe('k-anonymity');
@@ -102,16 +121,21 @@ describe('usePipelineRunner 自動執行時機', () => {
     it('失敗後按「重新運算」仍會執行', async () => {
         phaseMocks.runRiskAssessmentPhase.mockRejectedValue(new Error('fail'));
         const { result } = renderHook(() => usePipelineRunner(hookInput));
+        // 第一輪要先完整結束（失敗），否則「重新運算」會被當成重複呼叫而略過
+        await settleUntil(() => result.current.pipelineFailedMessage !== null && !result.current.isPipelineCalculatingStatus);
         await settle();
         await act(async () => { void result.current.runFullPipeline(true); });
+        await settleUntil(() => deidentificationCallCount() >= 2);
         await settle();
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(2);
     });
 
     it('換上傳檔案（欄位設定相同）時快取失效並重新執行', async () => {
         renderHook(() => usePipelineRunner(hookInput));
+        await settleUntil(() => useWorkspaceStore.getState().step4Cache !== null);
         await settle();
         await act(async () => { useWorkspaceStore.setState({ dataFile: new File(['年齡,疾病\n40,糖尿病\n'], 'data.csv', { lastModified: 2 }) }); });
+        await settleUntil(() => deidentificationCallCount() >= 2);
         await settle();
         expect(phaseMocks.runDeidentificationPhase).toHaveBeenCalledTimes(2);
     });
