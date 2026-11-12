@@ -25,6 +25,7 @@ import {
 	TeamOutlined,
 	CodeOutlined,
 	SafetyCertificateOutlined,
+	ApiOutlined,
 	PlusOutlined,
 	KeyOutlined,
 	EditOutlined,
@@ -41,7 +42,8 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
 import { getRoleDisplayName } from '../../utils/roleLabel';
-import { SHOW_SYSTEM_LOG_TAB } from '../../config/featureFlags';
+import { SHOW_SYSTEM_LOG_TAB, RUNTIME_MODE } from '../../config/featureFlags';
+import ModeInfoPanel from './ModeInfoPanel';
 import { saveSystemSettings, loadSystemSettings, DEFAULT_SESSION_TIMEOUT_MINUTES, getPasswordMinLength } from '../../utils/systemSettingsSync';
 import { useSystemLogStore, logSystemEvent, type SystemLogLevel, type SystemLogEntry } from '../../store/useSystemLogStore';
 import SystemLogCharts, { type SystemLogChartSelection } from './SystemLogCharts';
@@ -1006,6 +1008,16 @@ export default function SystemPreferences(): React.ReactElement
 				),
 			}
 		);
+	}
+
+	// ★ 2026-11-12：管理員的唯讀「系統模式」分頁——顯示目前是本地／內網／線上，並說明如何在主機上切換（見 ModeInfoPanel.tsx）
+	if (currentUserRoleName === 'admin')
+	{
+		tabListItemsArray.push({
+			key: 'mode',
+			label: <span><ApiOutlined /> {translate('admin.tab_mode', '系統模式')}</span>,
+			children: <ModeInfoPanel mode={RUNTIME_MODE} />,
+		});
 	}
 
 	// ★ 2026-10-29：單機版隱藏「系統維運日誌」分頁（見 config/featureFlags.ts）；系統公告同日移除

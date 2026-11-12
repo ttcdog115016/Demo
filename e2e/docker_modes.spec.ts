@@ -42,4 +42,24 @@ test.describe(`模式：${expectedMode}，Demo 帳號：${expectDemo}`, () => {
     if (expectedMode === 'online' || expectedMode === 'lan') await expect(logTab).toBeVisible();
     else await expect(logTab).toHaveCount(0);
   });
+
+  test('管理員的「系統模式」分頁：顯示目前模式，只能看、不能切換', async ({ page }) => {
+    test.skip(!adminUsername || !adminPassword, '未設定管理員帳密');
+    const modeNames: Record<string, string> = { local: '本地', lan: '內網', online: '線上' };
+    await page.goto('/login');
+    await page.getByLabel(/帳號|Account/).fill(adminUsername);
+    await page.getByLabel(/密碼|Password/).fill(adminPassword);
+    await page.getByRole('button', { name: /登入系統|Log In/i }).click();
+    await page.waitForURL('**/admin', { timeout: 15_000 });
+    await page.goto('/settings/preferences');
+    await page.getByRole('tab', { name: /系統模式/ }).click();
+    await expect(page.getByTestId('mode-current-tag')).toHaveText(modeNames[expectedMode]);
+    await expect(page.getByTestId('mode-conn-origin')).toBeVisible();
+    // 目前模式以外的另外兩種，各有一張切換說明卡片；目前模式自己沒有
+    for (const [modeKey] of Object.entries(modeNames)) {
+      const card = page.getByTestId(`mode-switch-${modeKey}`);
+      if (modeKey === expectedMode) await expect(card).toHaveCount(0);
+      else await expect(card).toBeVisible();
+    }
+  });
 });
