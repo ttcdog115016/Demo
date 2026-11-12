@@ -235,7 +235,7 @@ docker exec -it open-pets python /opt/openpets/openpets_server.py reset-password
 
 ## 相關設定（.env）
 
-系統的設定檔是安裝資料夾裡的 `.env`（compose 會讀它），修改後執行 `docker compose up -d`，容器會用新設定重建。各變數的說明見[安裝教學第 8 節](../deploy/#8-三種模式本地線上內網)。
+系統的設定檔是安裝資料夾裡的 `.env`（compose 會讀它），修改後執行 `docker compose up -d`，容器會用新設定重建。各變數的說明見[安裝教學第 8 節](../deploy/#8-兩種模式本地內網)。
 
 {{< callout type="warning" >}}
 金鑰（鹽值、簽章金鑰）預設存在資料磁碟區的 `/data/.secrets.env`；若改成寫在 `.env`，這個檔案要當作機密保管，不要寄給他人。

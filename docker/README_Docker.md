@@ -24,7 +24,7 @@ Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端�
 
 | 我想要 | 指令（Linux 把 `.\open-pets.ps1` 換成 `./open-pets.sh`） |
 |---|---|
-| 切換模式（資料不會不見） | `.\open-pets.ps1 mode local`、`mode lan`、`mode online` |
+| 切換模式（資料不會不見） | `.\open-pets.ps1 mode local`、`mode lan` |
 | 看目前模式、狀態與網址 | `.\open-pets.ps1 status` |
 | 停止／重新啟動 | `.\open-pets.ps1 stop`、`.\open-pets.ps1 start` |
 | 建立管理員／忘記管理員密碼 | `.\open-pets.ps1 create-admin`、`.\open-pets.ps1 reset-password` |
@@ -35,23 +35,24 @@ Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端�
 
 工具只寫同資料夾的 `.env`、需要時下載缺少的設定檔、呼叫 `docker compose`，**不會修改系統設定**。
 
-## 二、三種模式
+## 二、兩種模式
 
 同一個映像檔，用環境變數 `OPEN_PETS_MODE` 選模式，預設是本地。**不確定就先選本地**，之後一行指令就能切換。
 
-| | 本地（預設） | 內網 | 線上 |
-|---|---|---|---|
-| `OPEN_PETS_MODE` | `local`（舊值 `offline` 仍接受，視為 `local`） | `lan` | `online` |
-| 誰用 | 只有這台電腦 | 同一個內網的多台電腦 | 網際網路上的人 |
-| 網址 | `http://localhost:8080` | `https://內網IP或主機名稱` | `https://你的網域` |
-| HTTPS | 不需要 | 內建 Caddy HTTPS（私有 CA，使用者電腦要信任根憑證） | 自備反向代理與正式憑證 |
-| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=內網IP,主機名稱` | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=對外網域` |
-| 啟動指令（不用小工具時） | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d` | `docker compose -f docker-compose.yml -f docker-compose.online.yml up -d` |
-| 「系統維運日誌」分頁 | 隱藏 | 顯示（管理員） | 顯示（管理員） |
+| | 本地（預設） | 內網 |
+|---|---|---|
+| `OPEN_PETS_MODE` | `local`（舊值 `offline` 仍接受，視為 `local`） | `lan` |
+| 誰用 | 只有這台電腦 | 同一個內網的多台電腦 |
+| 網址 | `http://localhost:8080` | `https://內網IP或主機名稱` |
+| HTTPS | 不需要 | 內建 Caddy HTTPS（私有 CA，使用者電腦要信任根憑證） |
+| 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=內網IP,主機名稱` |
+| 啟動指令（不用小工具時） | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d` |
+| 「系統維運日誌」分頁 | 隱藏 | 顯示（管理員） |
 
-- 三種模式的資料、帳號、稽核紀錄與金鑰格式相同，可直接切換，資料磁碟區不變。
-- `OPEN_PETS_MODE` 填了 `local`、`offline`、`online`、`lan` 以外的值，容器會在啟動時報錯並結束，不會悄悄退回預設。
-- 內網、線上沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 會直接報錯，不會啟動。
+- 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可直接切換，資料磁碟區不變。
+- `OPEN_PETS_MODE` 填了 `local`、`offline`、`lan` 以外的值，容器會在啟動時報錯並結束，不會悄悄退回預設。
+- **線上（`online`）模式已移除**：設成 `online` 一樣會拒絕啟動，並提示改用 `lan` 或 `local`。原本用線上模式的資料夾，執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`）即可，資料不會不見；不想用內網 HTTPS 又要給其他電腦用的話，請改在前面自備反向代理，並由你自己承擔對外開放的安全責任（本專案不再提供範例與支援）。
+- 內網沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 會直接報錯，不會啟動。
 - `local`、`lan` 與 `docker-compose.lan.yml`、小工具要 **2.0.0-rc3 起**的版本才有。
 
 ### 內網模式要注意
@@ -63,10 +64,6 @@ Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端�
 - **換了網路、IP 變了**：執行 `.\open-pets.ps1 mode lan -Hosts 新IP,舊IP`。根憑證不變，使用者不用重新信任。
 - 根憑證的私鑰在 `caddy-data` 磁碟區，請當作機密並一起備份。
 - 離線環境要先帶 Caddy 映像檔：`docker pull caddy:2.11.9`、`docker save`，到主機 `docker load`。
-
-### 線上模式要注意
-
-由反向代理終止 HTTPS。代理要把 `Host` 標頭原樣轉送、允許大檔案上傳（預設上限 1024 MB）、關閉請求緩衝。可直接改用 `Caddyfile.example`（自動憑證）或 `nginx.conf.example`。後端只認 `OPEN_PETS_ALLOWED_HOSTS` 內的 Host，其他網址會得到 400。**不要把 8080 直接對外開放。**
 
 ## 三、手動安裝（不用小工具）
 
@@ -164,7 +161,7 @@ docker logs open-pets                                                           
 
 | 項目 | 設定 |
 |---|---|
-| 對外埠 | 預設只綁 `127.0.0.1`。要讓其他電腦連入，用內網模式（內建 HTTPS）或在前面放反向代理並啟用 HTTPS；不要直接以明文 HTTP 開放 |
+| 對外埠 | 預設只綁 `127.0.0.1`。要讓其他電腦連入，用內網模式（內建 HTTPS）；不要直接以明文 HTTP 開放 |
 | 允許的網址 | `OPEN_PETS_ALLOWED_HOSTS`（防 DNS rebinding） |
 | 容器身分 | 非 root（uid 10001）；根檔案系統唯讀；`cap_drop: ALL`；`no-new-privileges` |
 | 可寫位置 | 只有 `/data`（含上傳暫存 `/data/tmp`） |

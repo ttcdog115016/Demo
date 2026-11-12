@@ -23,11 +23,11 @@ services:
       OPEN_PETS_DEFAULT_SALT: ${OPEN_PETS_DEFAULT_SALT:-}
       OPEN_PETS_SYSTEM_MASTER_KEY: ${OPEN_PETS_SYSTEM_MASTER_KEY:-}
       OPEN_PETS_JWT_SECRET: ${OPEN_PETS_JWT_SECRET:-}
-      # 經反向代理以網域連入時，填該網域（逗號分隔），防 DNS rebinding；留空＝不限制
+      # 內網模式（lan）必填：使用者會輸入的網址（內網 IP 或主機名稱，逗號分隔），防 DNS rebinding；本地模式留空＝不限制
       OPEN_PETS_ALLOWED_HOSTS: ${OPEN_PETS_ALLOWED_HOSTS:-}
       OPEN_PETS_MAX_UPLOAD_MB: ${OPEN_PETS_MAX_UPLOAD_MB:-1024}
-      # 模式：local（預設，本地：一台電腦）、lan（內網，見 docker-compose.lan.yml）、online（線上，對外網域，見 docker-compose.online.yml）
-      # 舊值 offline 仍接受，視為 local
+      # 模式：local（預設，本地：一台電腦）、lan（內網，見 docker-compose.lan.yml）
+      # 舊值 offline 仍接受，視為 local；線上（online）模式已移除，設定它會拒絕啟動
       OPEN_PETS_MODE: ${OPEN_PETS_MODE:-local}
       # 登入頁是否顯示 Demo 測試帳號；交付環境保持 false
       OPEN_PETS_SHOW_DEMO_ACCOUNTS: ${OPEN_PETS_SHOW_DEMO_ACCOUNTS:-false}
