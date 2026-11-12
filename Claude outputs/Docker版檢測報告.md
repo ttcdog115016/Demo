@@ -487,6 +487,41 @@ tag `v2.0.0-rc2` 指向合併 commit `de1a87b`（含檔名修正與 `.tar.gz` �
 - Linux 版工具未在真實 Linux 主機上測試（沿用第十六節的說明）。
 - `v2.0.0-rc1`、`v2.0.0-rc2` 仍保留；未發正式版 `v2.0.0`。
 
+## 十八、追加（115/11/12）：發版與分支治理、PR 映像檔檢查，以及 v2.0.0-rc4 預發版
+
+### 治理與流程改善
+| 項目 | 內容 |
+|---|---|
+| 分支保護 | ruleset `protect-main`：預設分支禁止刪除、禁止強制推送、必須經 PR（核准人數 0）、必須通過 `build-and-test` 與 `backend-tests` |
+| 發版 tag 保護 | ruleset `protect-release-tags`：`v*` 禁止刪除與更新（改指），仍可新增。rc3 曾因發版失敗而刪除並重推未發佈的 tag，之後有發佈過的版本一律改用新版本號 |
+| 舊 PR 與分支 | #4、#5 已關閉（內容已被取代；#5 合併反而會讓可執行的測試被跳過）；遠端 9 個分支已刪除，只留 `main`。未合併的 3 個分支刪除前 SHA：`521e8d0`（#4）、`c48458d`（#5）、`5ac04f1`（`merge/feature-into-main`） |
+| Actions 升級（PR #18） | checkout v7、setup-node v7、setup-python v7、setup-buildx v4、upload-artifact v7；Docker 前端建置與 CI 的 Node 由已停止維護的 20 統一為 24（固定 digest）。不採用 Dependabot 的 Node 26（剛進 LTS、未驗證）與 Python 3.15（後端鎖定的 numpy、pandas、scipy、scikit-learn、pydantic-core 等沒有 cp315 預編譯檔，映像檔沒有編譯器，會建置失敗）；`dependabot.yml` 對 python 忽略主要／次要版本、對 node 忽略主要版本 |
+| PR 映像檔建置檢查（PR #19） | 新增 `docker-build-check.yml`：PR 改到 `docker/`、`backend/`、`src/` 等映像檔相關檔案時建置映像檔並跑冒煙測試（不推送、不簽章、不列必過檢查）。冒煙測試抽成共用腳本 `docker/smoke_test.sh`，與發版流程共用，避免再發生 rc3 那種「測試期望值沒跟著改名」的失敗 |
+| Release 說明 | 新增「沒有安裝 cosign 也可以驗證（用 Docker 執行）」的指令 |
+| 發版流程手動試跑 | 升級後（`b4feb59`）與共用腳本合併後（`4338a69`）各試跑一次（版本號為必填欄位，填 `2.0.0-dryrun`、`2.0.0-dryrun2`），全部成功；發佈步驟皆跳過，沒有新增 Release、tag 或 GHCR 版本 |
+
+### v2.0.0-rc4 預發版
+標籤 `v2.0.0-rc4` 建立在 PR #20 合併後的 `56408ce`，發版流程（run 43163426678）成功。
+
+| 項目 | 結果 |
+|---|---|
+| Release | 預發版；17 個檔案＋1 個簽章 bundle，檔名皆 ASCII；Release 說明含 Docker 版 cosign 寫法 |
+| 校驗碼 | `sha256sum -c SHA256SUMS.txt`：17 個檔案全部 OK |
+| 映像檔簽章 | 以 Release 說明的 Docker 寫法 `cosign verify` 通過；簽署身分 `docker-image.yml@refs/tags/v2.0.0-rc4`、commit `56408ce`；映像檔 digest `sha256:fead003b…019e07c` |
+| `SHA256SUMS.txt` 簽章 | `cosign verify-blob` Verified OK |
+| GHCR | 未登入可拉取 `ghcr.io/ttcdog115016/open-pets-app:2.0.0-rc4`；label `revision=56408cef…`、`version=2.0.0-rc4` |
+| 離線包 | `.tar.gz` 可直接 `docker load -i`；載入後 14 層與 GHCR 映像檔逐層相同 |
+| 工具 | 兩個工具的預設版本已換成 `2.0.0-rc4`（不含 `__DEFAULT_VERSION__`）；`.ps1` 含 BOM、`.sh` 為 LF 且 `sh -n` 通過 |
+| 模式與弱點掃描 | 發版流程內 Trivy 掃描（有可修補的高風險／嚴重就失敗）與共用冒煙測試（local、offline 別名、online、lan、壞值被拒）皆通過 |
+| 照手冊以 Release 檔案實際安裝 | 本機沒有映像檔的情況下，只下載 `open-pets.ps1`，`setup` 本地模式自 GHCR 下載並 healthy；`mode lan` 自動從 rc4 Release 下載 `docker-compose.lan.yml`、`Caddyfile.lan`，匯出根憑證後以 HTTPS 連線成功且回報 `lan` |
+| 清理與 Demo | 只清除自己建立的專案、磁碟區與映像檔標籤；使用者的 `open-pets`、`open-pets-web` 全程 Up、未受影響 |
+
+### 未涵蓋
+- 兩個 ruleset 的「繞過名單」只有管理員在設定頁看得到，公開 API 無法確認，請使用者自行確認含 Repository admin。
+- rc4 的內網 HTTPS 只在同一台電腦以 `127.0.0.1` 驗證；從另一台電腦以內網 IP 連線的實測（rc3 時由使用者做過）未對 rc4 重做。
+- 互動問答的真人操作、防火牆規則的實際建立；Linux 版工具未在真實 Linux 主機上測試（沿用第十六節）。
+- 未發正式版 `v2.0.0`；`v2.0.0-rc1`～`rc3` 仍保留（由於 tag 受保護，需要刪除時須由管理員處理）。
+
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 
 | 位置 | 內容 |
