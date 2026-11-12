@@ -36,7 +36,7 @@ certifi 等其他套件的替換方式相同。
 ## 基底映像檔固定在 digest
 `Dockerfile` 的 `FROM` 寫成 `名稱:標籤@sha256:…`：標籤給人看，digest 才是實際使用的內容，所以同一份原始碼在不同時間建出來的基底相同。代價是基底不會自動更新，要手動或靠 Dependabot 換新：
 1. `docker buildx imagetools inspect python:3.12-slim`，取得最上面的 `Digest:`（多平台索引的 digest）。
-2. 把 `Dockerfile` 內對應的 `@sha256:…` 換成新值（`node:20-alpine`、`python:3.12-slim`、`ghcr.io/astral-sh/uv` 共四處，其中 `python:3.12-slim` 出現兩次要一起換）。
+2. 把 `Dockerfile` 內對應的 `@sha256:…` 換成新值（`node:24-alpine`、`python:3.12-slim`、`ghcr.io/astral-sh/uv` 共四處，其中 `python:3.12-slim` 出現兩次要一起換）。
 3. 重新建置並做弱點掃描，確認沒有新增的可修補 HIGH／CRITICAL。
 建置時仍會執行 `apt-get upgrade`，所以系統套件的修補不必等基底更新。
 

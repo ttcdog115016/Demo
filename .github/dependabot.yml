@@ -6,6 +6,15 @@ updates:
     directory: /docker
     schedule:
       interval: weekly
+    # 只自動提「同一個版本線」的 digest 與安全更新，換版本線要人工評估後再改 Dockerfile：
+    #   - python：後端鎖定的 numpy、pandas、scipy、scikit-learn 等要有該 Python 版本的預編譯檔才能建置
+    #     （映像檔裡沒有編譯器）。目前用 3.12；換版本前要先升級後端相依並跑完整測試。
+    #   - node：只用在前端建置階段。目前用 24（LTS）；每年 LTS 換版時再手動升級，避免自動跳到非 LTS 的版本。
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
