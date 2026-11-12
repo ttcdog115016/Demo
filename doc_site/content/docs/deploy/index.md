@@ -646,12 +646,13 @@ docker run --rm -v "${PWD}:/w" -w /w gcr.io/projectsigstore/cosign:latest verify
 
 ## 15. GitHub Actions 自動化
 
-repo 的 `.github/workflows/` 有三個工作流程：
+repo 的 `.github/workflows/` 有四個工作流程：
 
 | 工作流程 | 觸發 | 內容 |
 | --- | --- | --- |
-| `ci.yml` | 推送或發 Pull Request 到 `main`、`master`、`feature/backend-v2-integration` | 前端 `npm ci`、型別檢查與打包、`vitest`；後端 `uv sync --locked`、`pytest` |
-| `docker-image.yml` | 推送 `v*` 標籤（手動執行只做建置與打包，不發佈） | 建置映像檔 → Trivy 弱點掃描（有可修補的高風險就失敗）→ 冒煙測試（本地、`offline` 舊名稱、線上、內網，並確認不合法的模式值會被拒絕）→ 推送 GHCR → cosign 簽章 → 產生離線交付包 → 建立 Release |
+| `ci.yml` | 推送到 `main`、`master`，或發 Pull Request 到 `main`、`master` | 前端 `npm ci`、型別檢查與打包、`vitest`；後端 `uv sync --locked`、`pytest` |
+| `docker-image.yml` | 推送 `v*` 標籤（手動執行只做建置與打包，不發佈） | 建置映像檔 → Trivy 弱點掃描（有可修補的高風險就失敗）→ 冒煙測試（腳本是 `docker/smoke_test.sh`：本地、`offline` 舊名稱、線上、內網，並確認不合法的模式值會被拒絕）→ 推送 GHCR → cosign 簽章 → 產生離線交付包 → 建立 Release |
+| `docker-build-check.yml` | 發 Pull Request，且修改了 `docker/`、`backend/`、`src/`、`public/`、`package*.json` 等與映像檔有關的檔案 | 建置映像檔 → 同一份冒煙測試（不推送、不簽章、不建立 Release）。讓 Dockerfile 與 Dependabot 的基底映像檔升級在合併前就被測到；不是 ruleset 的必過檢查 |
 | `pages.yml` | `doc_site/` 有修改並推送到 `main` | 建置並發佈本文件網站 |
 
 - 結果在 repo 的 **Actions** 分頁：綠色勾勾代表通過；紅色叉叉點進去可看失敗的步驟與訊息。

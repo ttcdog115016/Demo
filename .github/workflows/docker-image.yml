@@ -78,31 +78,8 @@ jobs:
       - name: Smoke test (health + all modes)
         env:
           VERSION: ${{ steps.v.outputs.version }}
-        run: |
-          set -e
-          wait_healthy() { for _ in $(seq 1 40); do [ "$(docker inspect --format '{{.State.Health.Status}}' "$1")" = healthy ] && return 0; sleep 2; done; docker logs "$1"; return 1; }
-          # 起一個容器：名稱 埠 預期的模式 [額外的 docker run 參數…]
-          start() {
-            name="$1"; port="$2"; shift 3
-            docker run -d --name "$name" --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-              -p "127.0.0.1:$port:8080" -v "$name:/data" "$@" "open-pets-app:$VERSION"
-          }
-          # 預設（不設 OPEN_PETS_MODE）＝ local；舊值 offline 仍視為 local；online、lan 需要 OPEN_PETS_ALLOWED_HOSTS
-          start t-default 18080 local
-          start t-alias   18082 local -e OPEN_PETS_MODE=offline
-          start t-on      18081 online -e OPEN_PETS_MODE=online -e OPEN_PETS_ALLOWED_HOSTS=example.test
-          start t-lan     18083 lan    -e OPEN_PETS_MODE=lan    -e OPEN_PETS_ALLOWED_HOSTS=192.0.2.10
-          for n in t-default t-alias t-on t-lan; do wait_healthy "$n"; done
-          # /api/v1/status 的 version 是後端程式內的版本字串，只確認服務名稱，不比對版本（避免兩邊漏改一處就讓發版失敗）
-          curl -fsS http://127.0.0.1:18080/api/v1/status | grep -q 'Open-PETs'
-          curl -fsS http://127.0.0.1:18080/runtime-config.js | grep -q '"mode": "local"'
-          curl -fsS http://127.0.0.1:18082/runtime-config.js | grep -q '"mode": "local"'
-          curl -fsS http://127.0.0.1:18081/runtime-config.js | grep -q '"mode": "online"'
-          curl -fsS http://127.0.0.1:18083/runtime-config.js | grep -q '"mode": "lan"'
-          # 不合法的模式值必須讓容器拒絕啟動（不可靜默退回預設）
-          rc=0; timeout 60 docker run --rm --read-only --cap-drop ALL -e OPEN_PETS_MODE=bogus "open-pets-app:$VERSION" >/dev/null 2>&1 || rc=$?
-          if [ "$rc" = 0 ] || [ "$rc" = 124 ]; then echo "OPEN_PETS_MODE=bogus 應該要啟動失敗（結束碼 $rc）"; exit 1; fi
-          docker rm -f t-default t-alias t-on t-lan >/dev/null
+        # 與 PR 的映像檔建置檢查（docker-build-check.yml）共用同一份腳本，見 docker/smoke_test.sh
+        run: bash docker/smoke_test.sh "open-pets-app:$VERSION"
 
       - name: Log in to GHCR
         if: github.ref_type == 'tag'
@@ -213,6 +190,12 @@ jobs:
             --certificate-identity-regexp '^https://github.com/$GITHUB_REPOSITORY/\.github/workflows/docker-image\.yml@refs/tags/v' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
           \`\`\`
+
+          **沒有安裝 cosign 也可以驗證（用 Docker 執行，需要連網）**
+          \`\`\`
+          docker run --rm gcr.io/projectsigstore/cosign:latest verify "$DIGEST" --certificate-identity-regexp '^https://github.com/$GITHUB_REPOSITORY/\.github/workflows/docker-image\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          \`\`\`
+          看到 \`The following checks were performed on each of these signatures\` 才算通過；出現 \`no matching signatures\` 請不要使用這個映像檔。
 
           **離線**：下載下方的 \`open-pets-app_$VERSION.tar.gz\`，核對 \`SHA256SUMS.txt\` 後 \`docker load -i open-pets-app_$VERSION.tar.gz\`（不需要先解壓縮）。
           tar.gz 的 SHA256：\`$tar_sha\`
