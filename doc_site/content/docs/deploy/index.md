@@ -81,7 +81,7 @@ docker compose version
 先建立一個**全新的**安裝資料夾，之後的 `docker-compose.yml`、`.env` 都放這裡：
 
 {{< callout type="warning" >}}
-**不要用已在使用的資料夾。** 舊版（兩容器）的線上版把 `C:\open-pets\.env`（鹽值與金鑰）放在 `C:\open-pets`；在同一資料夾放新的 `.env` 會**覆蓋掉舊的鹽值與金鑰**，之後的雜湊結果就對不上以前的資料。下面一律用新名稱 `open-pets-app`。
+**不要用已在使用的資料夾。** 舊版（兩容器）把 `C:\open-pets\.env`（鹽值與金鑰）放在 `C:\open-pets`；在同一資料夾放新的 `.env` 會**覆蓋掉舊的鹽值與金鑰**，之後的雜湊結果就對不上以前的資料。下面一律用新名稱 `open-pets-app`。
 {{< /callout >}}
 
 {{< tabs >}}
