@@ -294,7 +294,7 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 - 內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 沒設定時，`docker compose` 會直接報錯（`required variable OPEN_PETS_ALLOWED_HOSTS is missing a value`），不會啟動。
 - 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令，資料磁碟區不變。
 - `OPEN_PETS_MODE` 填了 `local`、`offline`、`lan` 以外的值，容器啟動時會報錯並結束（`docker logs` 看得到原因），不會悄悄退回預設。
-- **不提供線上（`online`）模式**：設成 `online` 會被拒絕，並提示改用 `lan` 或 `local`；舊資料夾的處理方式見 [9-6](#9-6-舊的線上online模式資料夾怎麼改)。
+- `OPEN_PETS_MODE` 設成 `online` 會被拒絕，並提示改用 `lan` 或 `local`；舊資料夾的處理方式見 [9-6](#9-6-舊版資料夾怎麼改)。
 - `local`、`lan` 兩個模式值與 `docker-compose.lan.yml`、小工具需 **2.0.0-rc3 以上**版本；更早的版本只認 `offline`、`online`。
 
 ### 用小工具切換，或手動切換
@@ -331,7 +331,7 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 
 預設只有這台電腦（`127.0.0.1`）連得進來（本地模式）。要讓**同一個內網**的其他電腦用瀏覽器使用，用「內網模式（lan）」（9-1 到 9-5）：主機多開一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，**不需要對外網路，也不用申請網域或 Let's Encrypt**。應用程式本身的 8080 只綁本機，其他電腦只能走 HTTPS。
 
-本系統**不提供**對網際網路開放的模式（線上模式不提供，見 [9-6](#9-6-舊的線上online模式資料夾怎麼改)）。
+本系統**不提供**對網際網路開放的模式（舊版資料夾的處理方式見 [9-6](#9-6-舊版資料夾怎麼改)）。
 
 ### 9-1. 先決定使用者輸入的網址
 
@@ -458,16 +458,16 @@ OPEN_PETS_ALLOWED_HOSTS=192.168.1.20
 docker compose up -d
 ```
 
-### 9-6. 舊的線上（online）模式資料夾怎麼改
+### 9-6. 舊版資料夾怎麼改
 
-線上模式（以對外網域直接對網際網路提供服務，前面自備反向代理）不提供，交付包不附 `docker-compose.online.yml`、`Caddyfile.example`、`nginx.conf.example`。
+新版交付包不含舊版的 `docker-compose.online.yml`、`Caddyfile.example`、`nginx.conf.example`。
 
-**舊的線上模式資料夾：**
+**舊版以 `online` 設定安裝的資料夾：**
 
 1. 在安裝資料夾執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（Linux：`./open-pets.sh mode lan --hosts 內網IP`），或只有這台電腦用的話執行 `mode local`。工具會改好 `.env`、下載需要的設定檔並重啟，**資料（帳號、處理紀錄、稽核紀錄、金鑰）不會不見**。
 2. 沒有用小工具的話：把 `.env` 的 `OPEN_PETS_MODE` 改成 `lan`、`COMPOSE_FILE` 改成 `docker-compose.yml:docker-compose.lan.yml`，並補上 `docker-compose.lan.yml` 與 `Caddyfile.lan`（見 [9-2](#9-2-取得設定檔並啟動)）。
 3. 新版映像檔若仍以 `OPEN_PETS_MODE=online` 啟動，會拒絕啟動並說明上面的做法，不會悄悄改變對網路的開放範圍。
-4. 小工具的 `update` 遇到舊的線上資料夾也會先請你切換模式，再更新。
+4. 小工具的 `update` 遇到這類舊版資料夾也會先請你切換模式，再更新。
 
 **要讓公司外面的人使用**：本專案不提供這種模式，也不提供對外網域的反向代理範例與支援。若仍要自行對外開放，請由資訊人員另行評估網域、憑證、HTTPS、防護與存取控制，並自行承擔對外開放的資安責任；應用程式本身的 8080 不要直接對外開放。
 
