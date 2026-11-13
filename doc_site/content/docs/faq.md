@@ -28,7 +28,7 @@ weight: 7
 | 工具說「8080 埠已經有別的程式在用，改用 8081」 | 不是錯誤。網址改用工具印出的新埠，例如 `http://localhost:8081`。手動安裝時，在 `.env` 加 `OPEN_PETS_PORT=8081` 再 `docker compose up -d`（`port is already allocated` 也是這個原因）。 |
 | 登入頁沒有帳號可用 | 還沒建立管理員。執行 `.\open-pets.ps1 create-admin`（手動安裝：`docker exec -it open-pets python /opt/openpets/openpets_server.py create-admin`），見[安裝教學第 7 節](../deploy/#7-啟動後建立管理員並確認)。 |
 | 忘記管理員密碼，或管理員被鎖住 | 在主機執行 `.\open-pets.ps1 reset-password`（手動安裝：`docker exec -it open-pets python /opt/openpets/openpets_server.py reset-password`），會同時解除鎖定。 |
-| 容器一直是 `starting`、`unhealthy`，或啟動後馬上結束 | 先看日誌：`.\open-pets.ps1 logs`（手動：`docker logs --tail 100 open-pets`）。常見原因：`OPEN_PETS_MODE` 填了 `local`、`offline`（等同 `local`）、`lan` 以外的值（**`online` 已移除**，容器會說明要改用 `lan` 或 `local`）；`local`、`lan` 要 **2.0.0-rc3 起**的映像檔才認得；內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 設錯。剛啟動約 40 秒內顯示 `starting` 是正常的。 |
+| 容器一直是 `starting`、`unhealthy`，或啟動後馬上結束 | 先看日誌：`.\open-pets.ps1 logs`（手動：`docker logs --tail 100 open-pets`）。常見原因：`OPEN_PETS_MODE` 填了 `local`、`offline`（等同 `local`）、`lan` 以外的值（**不支援 `online`**，容器會說明要改用 `lan` 或 `local`）；`local`、`lan` 要 **2.0.0-rc3 起**的映像檔才認得；內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 設錯。剛啟動約 40 秒內顯示 `starting` 是正常的。 |
 | `docker compose` 回報 `required variable ... is missing a value` | 內網模式沒設 `OPEN_PETS_ALLOWED_HOSTS`。用 `mode lan -Hosts 網址` 帶入，或在 `.env` 補上。 |
 | `Conflict. The container name ... is already in use` | 在安裝資料夾執行 `docker compose down`（資料在磁碟區，不會遺失），再 `docker compose up -d`。**不要加 `-v`**，那會連資料一起刪掉。 |
 | 換版本後資料不見了 | 資料在磁碟區 `open-pets-data`，換映像檔不會影響。確認 `docker-compose.yml` 的專案名稱沒被改過（`name:`），並用 `docker volume ls` 看磁碟區還在不在。 |
