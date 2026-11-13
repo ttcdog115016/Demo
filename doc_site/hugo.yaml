@@ -1,8 +1,8 @@
-# Open-PETs 線上版文件網站（Hugo + Hextra）
+# Open-PETs 使用手冊網站（Hugo + Hextra）
 # 本機預覽：cd doc_site; hugo server
 # 正式發佈：push 到 main 後由 .github/workflows/pages.yml 建置並發佈到 GitHub Pages
 baseURL: "https://ttcdog115016.github.io/Demo/"
-title: "Open-PETs 線上版文件"
+title: "Open-PETs 使用手冊"
 theme: hextra
 
 defaultContentLanguage: zh-tw
@@ -15,7 +15,7 @@ languages:
     label: 繁體中文
     locale: zh-TW
     weight: 1
-    title: "Open-PETs 線上版文件"
+    title: "Open-PETs 使用手冊"
 
 outputs:
   home: [html]
@@ -54,7 +54,7 @@ menu:
         icon: github
 
 params:
-  description: Open-PETs 資料隱私保護技術套件線上版：部署、操作、API 與命令列說明。
+  description: Open-PETs 資料隱私保護技術套件使用手冊：部署、操作、API 與命令列說明。
 
   navbar:
     displayTitle: true
