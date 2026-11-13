@@ -4,7 +4,7 @@
 
 它裝在一台電腦或主機上，使用者用瀏覽器操作。**所有運算都在這台主機上進行，資料不會傳到其他地方。**
 
-> 目前最新版本是預發版 **`2.0.0-rc4`**，到 [Releases](https://github.com/ttcdog115016/Demo/releases) 下載。正式版 `2.0.0` 尚未發佈。
+> 目前最新版本是預發版 **`2.0.0-rc5`**，到 [Releases](https://github.com/ttcdog115016/Demo/releases) 下載。正式版 `2.0.0` 尚未發佈。
 
 📖 **完整手冊（有圖、有排解）：https://ttcdog115016.github.io/Demo/**
 
@@ -19,7 +19,7 @@
 ```powershell
 New-Item -ItemType Directory -Force C:\open-pets-app | Out-Null
 cd C:\open-pets-app
-$v = '2.0.0-rc4'
+$v = '2.0.0-rc5'
 Invoke-WebRequest -UseBasicParsing "https://github.com/ttcdog115016/Demo/releases/download/v$v/open-pets.ps1" -OutFile open-pets.ps1
 Unblock-File .\open-pets.ps1
 ```
@@ -53,7 +53,7 @@ Unblock-File .\open-pets.ps1
 | 難度 | ★ | ★★ |
 | 切換指令 | `.\open-pets.ps1 mode local` | `.\open-pets.ps1 mode lan` |
 
-> 「線上（online）」模式已移除。原本用線上模式安裝的資料夾，請執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`），帳號與資料不會不見。
+> 「線上（online）」模式已在 `2.0.0-rc5` 移除。原本用線上模式安裝的資料夾，請執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`），帳號與資料不會不見。
 
 ### 內網：讓同事一起用
 
@@ -108,7 +108,7 @@ Unblock-File .\open-pets.ps1
 | 取得 | `ghcr.io/ttcdog115016/open-pets-app:<版本>` | [Releases](https://github.com/ttcdog115016/Demo/releases) 的 `open-pets-app_<版本>.tar.gz` | Releases 的 `open-pets-source_<版本>.zip` 或本 repo |
 | 使用 | 安裝工具會自動下載 | `docker load -i` 匯入後以工具或 compose 啟動 | 依 [`docker/REBUILD.md`](docker/REBUILD.md) 建置 |
 
-版本號不含開頭的 `v`（例如 `2.0.0-rc4`）。系統不提供 `latest`，每次安裝或更新都要指定明確版本。
+版本號不含開頭的 `v`（例如 `2.0.0-rc5`）。系統不提供 `latest`，每次安裝或更新都要指定明確版本。
 
 ### 驗證下載的東西沒被動過
 

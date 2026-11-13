@@ -8,7 +8,7 @@
 （devDependencies）不隨產品交付，不收錄。依 package-lock.json，同名同版本但安裝於不同位置者視為同一元件，
 只收錄一次。前端本身之授權見交付資料夾之 LICENSE。
 
-交付版本：2.0.0　　元件數：186
+交付版本：2.0.0　　元件數：188
 
 ==============================================================================
 元件索引
@@ -17,188 +17,190 @@
   2. @ant-design/cssinjs 2.1.2　MIT
   3. @ant-design/cssinjs-utils 2.1.2　MIT
   4. @ant-design/fast-color 3.0.1　MIT
-  5. @ant-design/icons 6.3.2　MIT
-  6. @ant-design/icons-svg 4.5.0　MIT（套件未附授權檔，授權全文取自上游原始碼庫）
+  5. @ant-design/icons 6.3.4　MIT
+  6. @ant-design/icons-svg 4.6.0　MIT（套件未附授權檔，授權全文取自上游原始碼庫）
   7. @ant-design/react-slick 2.0.0　MIT
   8. @babel/runtime 7.29.7　MIT
-  9. @emotion/hash 0.8.0　MIT
- 10. @emotion/unitless 0.7.5　MIT
- 11. @rc-component/async-validator 6.0.0　MIT
- 12. @rc-component/cascader 1.17.0　MIT
- 13. @rc-component/checkbox 2.0.0　MIT
- 14. @rc-component/collapse 1.2.0　MIT
- 15. @rc-component/color-picker 3.1.1　MIT
- 16. @rc-component/context 2.0.2　MIT
- 17. @rc-component/dialog 1.10.0　MIT
- 18. @rc-component/drawer 1.4.2　MIT
- 19. @rc-component/dropdown 1.0.2　MIT
- 20. @rc-component/form 1.8.5　MIT
- 21. @rc-component/image 1.9.0　MIT
- 22. @rc-component/input 1.3.1　MIT
- 23. @rc-component/input-number 1.6.2　MIT
- 24. @rc-component/mentions 1.10.0　MIT
- 25. @rc-component/menu 1.4.1　MIT
- 26. @rc-component/mini-decimal 1.1.4　MIT
- 27. @rc-component/motion 1.3.3　MIT
- 28. @rc-component/mutate-observer 2.0.1　MIT
- 29. @rc-component/notification 2.0.7　MIT
- 30. @rc-component/overflow 1.0.1　MIT
- 31. @rc-component/pagination 1.4.0　MIT
- 32. @rc-component/picker 1.11.0　MIT
- 33. @rc-component/portal 2.2.1　MIT
- 34. @rc-component/progress 1.0.2　MIT
- 35. @rc-component/qrcode 2.0.0　MIT
- 36. @rc-component/rate 1.0.1　MIT
- 37. @rc-component/resize-observer 1.1.2　MIT
- 38. @rc-component/segmented 1.3.0　MIT
- 39. @rc-component/select 1.8.2　MIT
- 40. @rc-component/slider 1.1.1　MIT
- 41. @rc-component/steps 1.2.2　MIT
- 42. @rc-component/switch 1.0.3　MIT
- 43. @rc-component/table 1.10.3　MIT
- 44. @rc-component/tabs 1.11.0　MIT
- 45. @rc-component/tooltip 1.4.0　MIT
- 46. @rc-component/tour 2.4.0　MIT
- 47. @rc-component/tree 1.3.2　MIT
- 48. @rc-component/tree-select 1.11.0　MIT
- 49. @rc-component/trigger 3.9.1　MIT
- 50. @rc-component/upload 1.1.1　MIT
- 51. @rc-component/util 1.11.1　MIT
- 52. @rc-component/virtual-list 1.2.0　MIT
- 53. @reduxjs/toolkit 2.12.0　MIT
- 54. @scarf/scarf 1.4.0　Apache-2.0
- 55. @standard-schema/spec 1.1.0　MIT
- 56. @standard-schema/utils 0.3.0　MIT
- 57. @tanstack/query-core 5.101.2　MIT
- 58. @tanstack/react-query 5.101.2　MIT
- 59. @types/d3-array 3.2.2　MIT
- 60. @types/d3-color 3.1.3　MIT
- 61. @types/d3-ease 3.0.2　MIT
- 62. @types/d3-interpolate 3.0.4　MIT
- 63. @types/d3-path 3.1.1　MIT
- 64. @types/d3-scale 4.0.9　MIT
- 65. @types/d3-shape 3.1.8　MIT
- 66. @types/d3-time 3.0.4　MIT
- 67. @types/d3-timer 3.0.2　MIT
- 68. @types/pako 2.0.4　MIT
- 69. @types/raf 3.4.3　MIT
- 70. @types/trusted-types 2.0.7　MIT
- 71. @types/use-sync-external-store 0.0.6　MIT
- 72. agent-base 6.0.2　MIT（套件未附授權檔，授權全文取自上游原始碼庫）
- 73. antd 6.5.0　MIT
- 74. asynckit 0.4.0　MIT
- 75. attr-accept 2.2.5　MIT
- 76. axios 1.20.0　MIT
- 77. base64-arraybuffer 1.0.2　MIT
- 78. call-bind-apply-helpers 1.0.2　MIT
- 79. canvg 3.0.11　MIT
- 80. clsx 2.1.1　MIT
- 81. combined-stream 1.0.8　MIT
- 82. compute-scroll-into-view 3.1.1　MIT
- 83. cookie 1.1.1　MIT
- 84. core-js 3.51.0　MIT
- 85. crypto-js 4.2.0　MIT
- 86. css-line-break 2.1.0　MIT
- 87. csstype 3.2.3　MIT
- 88. d3-array 3.2.4　ISC
- 89. d3-color 3.1.0　ISC
- 90. d3-ease 3.0.1　BSD-3-Clause
- 91. d3-format 3.1.2　ISC
- 92. d3-interpolate 3.0.1　ISC
- 93. d3-path 3.1.0　ISC
- 94. d3-scale 4.0.2　ISC
- 95. d3-shape 3.2.0　ISC
- 96. d3-time 3.1.0　ISC
- 97. d3-time-format 4.1.0　ISC
- 98. d3-timer 3.0.1　ISC
- 99. dayjs 1.11.21　MIT
-100. debug 4.4.3　MIT
-101. decimal.js-light 2.5.1　MIT
-102. delayed-stream 1.0.0　MIT
-103. dompurify 3.4.17　(MPL-2.0 OR Apache-2.0)（雙授權擇一適用，本專案以 Apache-2.0 使用）
-104. dunder-proto 1.0.1　MIT
-105. echarts 6.1.0　Apache-2.0
-106. echarts-for-react 3.0.6　MIT
-107. es-define-property 1.0.1　MIT
-108. es-errors 1.3.0　MIT
-109. es-object-atoms 1.1.2　MIT
-110. es-set-tostringtag 2.1.0　MIT
-111. es-toolkit 1.49.0　MIT
-112. eventemitter3 5.0.4　MIT
-113. fast-deep-equal 3.1.3　MIT
-114. fast-png 6.4.0　MIT
-115. fflate 0.8.3　MIT
-116. file-selector 2.1.2　MIT
-117. follow-redirects 1.16.2　MIT
-118. form-data 4.0.6　MIT
-119. function-bind 1.1.2　MIT
-120. get-intrinsic 1.3.0　MIT
-121. get-proto 1.0.1　MIT
-122. gopd 1.2.0　MIT
-123. has-symbols 1.1.0　MIT
-124. has-tostringtag 1.0.2　MIT
-125. hasown 2.0.4　MIT
-126. html-parse-stringify 4.0.1　MIT
-127. html2canvas 1.4.1　MIT
-128. html2pdf.js 0.14.0　MIT
-129. https-proxy-agent 5.0.1　MIT（套件未附授權檔，授權全文取自上游原始碼庫）
-130. i18next 26.3.6　MIT
-131. immer 11.1.11　MIT
-132. internmap 2.0.3　ISC
-133. iobuffer 5.4.0　MIT
-134. is-mobile 5.0.0　MIT（套件未附授權檔，授權全文取自上游原始碼庫）
-135. js-tokens 4.0.0　MIT
-136. json2mq 0.2.0　MIT
-137. jspdf 4.2.1　MIT
-138. loose-envify 1.4.0　MIT
-139. lucide-react 1.25.0　ISC
-140. math-intrinsics 1.1.0　MIT
-141. mime-db 1.52.0　MIT
-142. mime-types 2.1.35　MIT
-143. ms 2.1.3　MIT
-144. object-assign 4.1.1　MIT
-145. pako 2.2.0　(MIT AND Zlib)
-146. papaparse 5.5.4　MIT
-147. performance-now 2.1.0　MIT
-148. prop-types 15.8.1　MIT
-149. proxy-from-env 2.1.0　MIT
-150. raf 3.4.1　MIT
-151. react 19.2.7　MIT
-152. react-dom 19.2.7　MIT
-153. react-dropzone 15.0.0　MIT
-154. react-i18next 17.0.11　MIT
-155. react-is 16.13.1　MIT
-156. react-is 18.3.1　MIT
-157. react-redux 9.3.0　MIT
-158. react-router 7.18.2　MIT
-159. react-router-dom 7.18.2　MIT
-160. recharts 3.9.2　MIT
-161. redux 5.0.1　MIT
-162. redux-thunk 3.1.0　MIT
-163. regenerator-runtime 0.13.11　MIT
-164. reselect 5.2.0　MIT
-165. rgbcolor 1.0.1　MIT OR SEE LICENSE IN FEEL-FREE.md（套件宣告為 MIT，並附 FEEL-FREE.md 說明）
-166. scheduler 0.27.0　MIT
-167. scroll-into-view-if-needed 3.1.0　MIT
-168. set-cookie-parser 2.7.2　MIT
-169. size-sensor 1.0.3　ISC（套件及上游原始碼庫均未附授權檔，僅列授權種類）
-170. stackblur-canvas 2.7.0　MIT
-171. string-convert 0.2.1　MIT
-172. stylis 4.4.0　MIT
-173. svg-pathdata 6.0.3　MIT
-174. swagger-ui-dist 5.34.1　Apache-2.0
-175. text-segmentation 1.0.3　MIT
-176. throttle-debounce 5.0.2　MIT
-177. tiny-invariant 1.3.3　MIT
-178. tslib 2.3.0　0BSD
-179. tslib 2.8.1　0BSD
-180. use-sync-external-store 1.6.0　MIT
-181. utrie 1.0.2　MIT
-182. victory-vendor 37.3.6　MIT AND ISC（套件未附授權檔，授權全文取自上游原始碼庫；內含 d3 等第三方套件，其授權檔一併收錄於下方）
-183. xlsx 0.20.3　Apache-2.0（取自 SheetJS 官方 CDN，網址 cdn.sheetjs.com/xlsx-0.20.3）
-184. yaml 2.8.4　ISC
-185. zrender 6.1.0　BSD-3-Clause
-186. zustand 5.0.14　MIT
+  9. @babel/runtime 8.1.0　MIT
+ 10. @emotion/hash 0.8.0　MIT
+ 11. @emotion/unitless 0.7.5　MIT
+ 12. @rc-component/async-validator 6.0.0　MIT
+ 13. @rc-component/cascader 1.26.0　MIT
+ 14. @rc-component/checkbox 2.0.0　MIT
+ 15. @rc-component/collapse 1.3.0　MIT
+ 16. @rc-component/color-picker 3.1.1　MIT
+ 17. @rc-component/context 2.0.2　MIT
+ 18. @rc-component/dialog 1.10.0　MIT
+ 19. @rc-component/drawer 1.4.2　MIT
+ 20. @rc-component/dropdown 2.0.1　MIT
+ 21. @rc-component/form 1.8.6　MIT
+ 22. @rc-component/image 1.10.0　MIT
+ 23. @rc-component/input 1.4.1　MIT
+ 24. @rc-component/input-number 1.8.0　MIT
+ 25. @rc-component/listy 1.4.0　MIT
+ 26. @rc-component/mentions 1.14.1　MIT
+ 27. @rc-component/menu 1.6.2　MIT
+ 28. @rc-component/mini-decimal 1.1.4　MIT
+ 29. @rc-component/motion 1.3.3　MIT
+ 30. @rc-component/mutate-observer 2.0.1　MIT
+ 31. @rc-component/notification 2.1.1　MIT
+ 32. @rc-component/overflow 1.0.1　MIT
+ 33. @rc-component/pagination 1.7.0　MIT
+ 34. @rc-component/picker 1.17.0　MIT
+ 35. @rc-component/portal 2.2.1　MIT
+ 36. @rc-component/progress 1.1.0　MIT
+ 37. @rc-component/qrcode 2.0.0　MIT
+ 38. @rc-component/rate 1.0.1　MIT
+ 39. @rc-component/resize-observer 1.1.2　MIT
+ 40. @rc-component/segmented 1.4.0　MIT
+ 41. @rc-component/select 1.12.0　MIT
+ 42. @rc-component/slider 1.2.1　MIT
+ 43. @rc-component/steps 1.2.3　MIT
+ 44. @rc-component/switch 1.0.3　MIT
+ 45. @rc-component/table 1.12.0　MIT
+ 46. @rc-component/tabs 2.0.0　MIT
+ 47. @rc-component/tooltip 1.5.2　MIT
+ 48. @rc-component/tour 2.4.0　MIT
+ 49. @rc-component/tree 1.5.3　MIT
+ 50. @rc-component/tree-select 1.19.0　MIT
+ 51. @rc-component/trigger 3.10.1　MIT
+ 52. @rc-component/upload 1.1.1　MIT
+ 53. @rc-component/util 1.14.1　MIT
+ 54. @rc-component/virtual-list 1.6.0　MIT
+ 55. @reduxjs/toolkit 2.12.0　MIT
+ 56. @scarf/scarf 1.4.0　Apache-2.0
+ 57. @standard-schema/spec 1.1.0　MIT
+ 58. @standard-schema/utils 0.3.0　MIT
+ 59. @tanstack/query-core 5.107.1　MIT
+ 60. @tanstack/react-query 5.107.1　MIT
+ 61. @types/d3-array 3.2.2　MIT
+ 62. @types/d3-color 3.1.3　MIT
+ 63. @types/d3-ease 3.0.2　MIT
+ 64. @types/d3-interpolate 3.0.4　MIT
+ 65. @types/d3-path 3.1.1　MIT
+ 66. @types/d3-scale 4.0.9　MIT
+ 67. @types/d3-shape 3.1.8　MIT
+ 68. @types/d3-time 3.0.4　MIT
+ 69. @types/d3-timer 3.0.2　MIT
+ 70. @types/pako 2.0.4　MIT
+ 71. @types/raf 3.4.3　MIT
+ 72. @types/trusted-types 2.0.7　MIT
+ 73. @types/use-sync-external-store 0.0.6　MIT
+ 74. agent-base 6.0.2　MIT（套件未附授權檔，授權全文取自上游原始碼庫）
+ 75. antd 6.7.0　MIT
+ 76. asynckit 0.4.0　MIT
+ 77. attr-accept 2.2.5　MIT
+ 78. axios 1.21.1　MIT
+ 79. base64-arraybuffer 1.0.2　MIT
+ 80. call-bind-apply-helpers 1.0.2　MIT
+ 81. canvg 3.0.11　MIT
+ 82. clsx 2.1.1　MIT
+ 83. combined-stream 1.0.8　MIT
+ 84. compute-scroll-into-view 3.1.1　MIT
+ 85. cookie 1.1.1　MIT
+ 86. core-js 3.51.0　MIT
+ 87. crypto-js 4.2.0　MIT
+ 88. css-line-break 2.1.0　MIT
+ 89. csstype 3.2.3　MIT
+ 90. d3-array 3.2.4　ISC
+ 91. d3-color 3.1.0　ISC
+ 92. d3-ease 3.0.1　BSD-3-Clause
+ 93. d3-format 3.1.2　ISC
+ 94. d3-interpolate 3.0.1　ISC
+ 95. d3-path 3.1.0　ISC
+ 96. d3-scale 4.0.2　ISC
+ 97. d3-shape 3.2.0　ISC
+ 98. d3-time 3.1.0　ISC
+ 99. d3-time-format 4.1.0　ISC
+100. d3-timer 3.0.1　ISC
+101. dayjs 1.11.23　MIT
+102. debug 4.4.3　MIT
+103. decimal.js-light 2.5.1　MIT
+104. delayed-stream 1.0.0　MIT
+105. dompurify 3.4.17　(MPL-2.0 OR Apache-2.0)（雙授權擇一適用，本專案以 Apache-2.0 使用）
+106. dunder-proto 1.0.1　MIT
+107. echarts 6.1.0　Apache-2.0
+108. echarts-for-react 3.0.6　MIT
+109. es-define-property 1.0.1　MIT
+110. es-errors 1.3.0　MIT
+111. es-object-atoms 1.1.2　MIT
+112. es-set-tostringtag 2.1.0　MIT
+113. es-toolkit 1.49.0　MIT
+114. eventemitter3 5.0.4　MIT
+115. fast-deep-equal 3.1.3　MIT
+116. fast-png 6.4.0　MIT
+117. fflate 0.8.3　MIT
+118. file-selector 2.1.2　MIT
+119. follow-redirects 1.16.2　MIT
+120. form-data 4.0.6　MIT
+121. function-bind 1.1.2　MIT
+122. get-intrinsic 1.3.0　MIT
+123. get-proto 1.0.1　MIT
+124. gopd 1.2.0　MIT
+125. has-symbols 1.1.0　MIT
+126. has-tostringtag 1.0.2　MIT
+127. hasown 2.0.4　MIT
+128. html-parse-stringify 4.0.1　MIT
+129. html2canvas 1.4.1　MIT
+130. html2pdf.js 0.14.0　MIT
+131. https-proxy-agent 5.0.1　MIT（套件未附授權檔，授權全文取自上游原始碼庫）
+132. i18next 26.7.2　MIT
+133. immer 11.1.11　MIT
+134. internmap 2.0.3　ISC
+135. iobuffer 5.4.0　MIT
+136. is-mobile 5.0.0　MIT（套件未附授權檔，授權全文取自上游原始碼庫）
+137. js-tokens 4.0.0　MIT
+138. json2mq 0.2.0　MIT
+139. jspdf 4.2.1　MIT
+140. loose-envify 1.4.0　MIT
+141. lucide-react 1.70.0　ISC
+142. math-intrinsics 1.1.0　MIT
+143. mime-db 1.52.0　MIT
+144. mime-types 2.1.35　MIT
+145. ms 2.1.3　MIT
+146. object-assign 4.1.1　MIT
+147. pako 2.2.0　(MIT AND Zlib)
+148. papaparse 5.7.0　MIT
+149. performance-now 2.1.0　MIT
+150. prop-types 15.8.1　MIT
+151. proxy-from-env 2.1.0　MIT
+152. raf 3.4.1　MIT
+153. react 19.3.1　MIT
+154. react-dom 19.3.1　MIT
+155. react-dropzone 15.0.0　MIT
+156. react-i18next 17.1.13　MIT
+157. react-is 16.13.1　MIT
+158. react-is 19.3.1　MIT
+159. react-redux 9.3.0　MIT
+160. react-router 7.18.5　MIT
+161. react-router-dom 7.18.5　MIT
+162. recharts 3.10.1　MIT
+163. redux 5.0.1　MIT
+164. redux-thunk 3.1.0　MIT
+165. regenerator-runtime 0.13.11　MIT
+166. reselect 5.2.0　MIT
+167. rgbcolor 1.0.1　MIT OR SEE LICENSE IN FEEL-FREE.md（套件宣告為 MIT，並附 FEEL-FREE.md 說明）
+168. scheduler 0.28.0　MIT
+169. scroll-into-view-if-needed 3.1.0　MIT
+170. set-cookie-parser 2.7.3　MIT
+171. size-sensor 1.0.3　ISC（套件及上游原始碼庫均未附授權檔，僅列授權種類）
+172. stackblur-canvas 2.7.0　MIT
+173. string-convert 0.2.1　MIT
+174. stylis 4.4.0　MIT
+175. svg-pathdata 6.0.3　MIT
+176. swagger-ui-dist 5.34.1　Apache-2.0
+177. text-segmentation 1.0.3　MIT
+178. throttle-debounce 5.0.2　MIT
+179. tiny-invariant 1.3.3　MIT
+180. tslib 2.3.0　0BSD
+181. tslib 2.8.1　0BSD
+182. use-sync-external-store 1.6.0　MIT
+183. utrie 1.0.2　MIT
+184. victory-vendor 37.3.6　MIT AND ISC（套件未附授權檔，授權全文取自上游原始碼庫；內含 d3 等第三方套件，其授權檔一併收錄於下方）
+185. xlsx 0.20.3　Apache-2.0（取自 SheetJS 官方 CDN，網址 cdn.sheetjs.com/xlsx-0.20.3）
+186. yaml 2.9.1　ISC
+187. zrender 6.1.0　BSD-3-Clause
+188. zustand 5.1.0　MIT
 
 
 ==============================================================================
@@ -309,7 +311,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-5. @ant-design/icons 6.3.2
+5. @ant-design/icons 6.3.4
 ==============================================================================
 授權：MIT
 來源：https://github.com/ant-design/ant-design-icons/tree/master
@@ -340,7 +342,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-6. @ant-design/icons-svg 4.5.0
+6. @ant-design/icons-svg 4.6.0
 ==============================================================================
 授權：MIT（套件未附授權檔，授權全文取自上游原始碼庫）
 來源：https://github.com/ant-design/ant-design-icons/
@@ -432,7 +434,38 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-9. @emotion/hash 0.8.0
+9. @babel/runtime 8.1.0
+==============================================================================
+授權：MIT
+來源：https://babel.dev/docs/en/next/babel-runtime
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2014-present Sebastian McKenzie and other contributors
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+==============================================================================
+10. @emotion/hash 0.8.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/emotion-js/emotion/tree/master
@@ -462,7 +495,7 @@ SOFTWARE.
 
 
 ==============================================================================
-10. @emotion/unitless 0.7.5
+11. @emotion/unitless 0.7.5
 ==============================================================================
 授權：MIT
 來源：https://github.com/emotion-js/emotion/tree/master
@@ -492,7 +525,7 @@ SOFTWARE.
 
 
 ==============================================================================
-11. @rc-component/async-validator 6.0.0
+12. @rc-component/async-validator 6.0.0
 ==============================================================================
 授權：MIT
 來源：http://github.com/react-component/async-validator
@@ -510,10 +543,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-12. @rc-component/cascader 1.17.0
+13. @rc-component/cascader 1.26.0
 ==============================================================================
 授權：MIT
-來源：https://github.com/react-component/cascader
+來源：https://react-component.github.io/cascader
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -528,7 +584,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-13. @rc-component/checkbox 2.0.0
+14. @rc-component/checkbox 2.0.0
 ==============================================================================
 授權：MIT
 來源：https://react-component.github.io/checkbox
@@ -544,10 +600,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-14. @rc-component/collapse 1.2.0
+15. @rc-component/collapse 1.3.0
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/collapse
+來源：https://react-component.github.io/collapse
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -562,7 +641,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-15. @rc-component/color-picker 3.1.1
+16. @rc-component/color-picker 3.1.1
 ==============================================================================
 授權：MIT
 來源：http://github.com/react-component/color-picker
@@ -580,7 +659,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-16. @rc-component/context 2.0.2
+17. @rc-component/context 2.0.2
 ==============================================================================
 授權：MIT
 來源：http://github.com/react-component/context
@@ -598,7 +677,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-17. @rc-component/dialog 1.10.0
+18. @rc-component/dialog 1.10.0
 ==============================================================================
 授權：MIT
 來源：http://github.com/react-component/dialog
@@ -616,7 +695,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-18. @rc-component/drawer 1.4.2
+19. @rc-component/drawer 1.4.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/react-component/drawer
@@ -647,10 +726,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-19. @rc-component/dropdown 1.0.2
+20. @rc-component/dropdown 2.0.1
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/dropdown
+來源：https://react-component.github.io/dropdown
 
 --- LICENSE ---
 The MIT License (MIT)
@@ -676,10 +755,10 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-20. @rc-component/form 1.8.5
+21. @rc-component/form 1.8.6
 ==============================================================================
 授權：MIT
-來源：https://github.com/react-component/field-form
+來源：https://react-component.github.io/field-form
 
 --- LICENSE ---
 MIT License
@@ -706,10 +785,33 @@ SOFTWARE.
 
 
 ==============================================================================
-21. @rc-component/image 1.9.0
+22. @rc-component/image 1.10.0
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/image
+來源：https://react-component.github.io/image
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 MIT LICENSE
@@ -724,10 +826,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-22. @rc-component/input 1.3.1
+23. @rc-component/input 1.4.1
 ==============================================================================
 授權：MIT
-來源：https://github.com/react-component/input
+來源：https://react-component.github.io/input
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -742,10 +867,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-23. @rc-component/input-number 1.6.2
+24. @rc-component/input-number 1.8.0
 ==============================================================================
 授權：MIT
-來源：https://github.com/react-component/input-number
+來源：https://react-component.github.io/input-number
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -760,10 +908,62 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-24. @rc-component/mentions 1.10.0
+25. @rc-component/listy 1.4.0
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/mentions
+來源：https://github.com/react-component/listy
+
+--- LICENSE ---
+The MIT License (MIT)
+Copyright (c) 2015-present Alipay.com, https://www.alipay.com/
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS 
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF 
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY 
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, 
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE 
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+==============================================================================
+26. @rc-component/mentions 1.14.1
+==============================================================================
+授權：MIT
+來源：https://react-component.github.io/mentions
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -778,10 +978,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-25. @rc-component/menu 1.4.1
+27. @rc-component/menu 1.6.2
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/menu
+來源：https://react-component.github.io/menu
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -796,7 +1019,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-26. @rc-component/mini-decimal 1.1.4
+28. @rc-component/mini-decimal 1.1.4
 ==============================================================================
 授權：MIT
 來源：https://github.com/react-component/mini-decimal
@@ -826,7 +1049,7 @@ SOFTWARE.
 
 
 ==============================================================================
-27. @rc-component/motion 1.3.3
+29. @rc-component/motion 1.3.3
 ==============================================================================
 授權：MIT
 來源：https://react-component.github.io/motion
@@ -844,7 +1067,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-28. @rc-component/mutate-observer 2.0.1
+30. @rc-component/mutate-observer 2.0.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/react-component/mutate-observer
@@ -874,10 +1097,33 @@ SOFTWARE.
 
 
 ==============================================================================
-29. @rc-component/notification 2.0.7
+31. @rc-component/notification 2.1.1
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/notification
+來源：https://react-component.github.io/notification
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -892,7 +1138,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-30. @rc-component/overflow 1.0.1
+32. @rc-component/overflow 1.0.1
 ==============================================================================
 授權：MIT
 來源：https://react-component.github.io/overflow
@@ -910,10 +1156,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-31. @rc-component/pagination 1.4.0
+33. @rc-component/pagination 1.7.0
 ==============================================================================
 授權：MIT
 來源：https://react-component.github.io/pagination
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -928,10 +1197,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-32. @rc-component/picker 1.11.0
+34. @rc-component/picker 1.17.0
 ==============================================================================
 授權：MIT
 來源：https://react-component.github.io/picker
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -946,7 +1238,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-33. @rc-component/portal 2.2.1
+35. @rc-component/portal 2.2.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/react-component/portal
@@ -976,10 +1268,33 @@ SOFTWARE.
 
 
 ==============================================================================
-34. @rc-component/progress 1.0.2
+36. @rc-component/progress 1.1.0
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/progress
+來源：https://react-component.github.io/progress
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -994,7 +1309,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-35. @rc-component/qrcode 2.0.0
+37. @rc-component/qrcode 2.0.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/react-component/qrcode
@@ -1023,7 +1338,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-36. @rc-component/rate 1.0.1
+38. @rc-component/rate 1.0.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/react-component/rate
@@ -1041,7 +1356,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-37. @rc-component/resize-observer 1.1.2
+39. @rc-component/resize-observer 1.1.2
 ==============================================================================
 授權：MIT
 來源：https://react-component.github.io/resize-observer
@@ -1059,10 +1374,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-38. @rc-component/segmented 1.3.0
+40. @rc-component/segmented 1.4.0
 ==============================================================================
 授權：MIT
 來源：https://react-component.github.io/segmented
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -1077,10 +1415,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-39. @rc-component/select 1.8.2
+41. @rc-component/select 1.12.0
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/select
+來源：https://react-component.github.io/select
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -1095,7 +1456,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-40. @rc-component/slider 1.1.1
+42. @rc-component/slider 1.2.1
 ==============================================================================
 授權：MIT
 來源：https://react-component.github.io/slider
@@ -1124,10 +1485,33 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-41. @rc-component/steps 1.2.2
+43. @rc-component/steps 1.2.3
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/steps
+來源：https://react-component.github.io/steps
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -1142,7 +1526,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-42. @rc-component/switch 1.0.3
+44. @rc-component/switch 1.0.3
 ==============================================================================
 授權：MIT
 來源：http://github.com/react-component/switch
@@ -1160,7 +1544,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-43. @rc-component/table 1.10.3
+45. @rc-component/table 1.12.0
 ==============================================================================
 授權：MIT
 來源：https://react-component.github.io/table
@@ -1201,10 +1585,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-44. @rc-component/tabs 1.11.0
+46. @rc-component/tabs 2.0.0
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/tabs
+來源：https://react-component.github.io/tabs
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 The MIT License (MIT)
@@ -1219,10 +1626,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-45. @rc-component/tooltip 1.4.0
+47. @rc-component/tooltip 1.5.2
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/tooltip
+來源：https://react-component.github.io/tooltip
 
 --- LICENSE ---
 The MIT License (MIT)
@@ -1249,7 +1656,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-46. @rc-component/tour 2.4.0
+48. @rc-component/tour 2.4.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/react-component/tour
@@ -1279,10 +1686,33 @@ SOFTWARE.
 
 
 ==============================================================================
-47. @rc-component/tree 1.3.2
+49. @rc-component/tree 1.5.3
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/tree
+來源：https://react-component.github.io/tree
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 MIT LICENSE
@@ -1310,10 +1740,33 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-48. @rc-component/tree-select 1.11.0
+50. @rc-component/tree-select 1.19.0
 ==============================================================================
 授權：MIT
-來源：https://github.com/react-component/tree-select
+來源：https://react-component.github.io/tree-select
+
+--- LICENSE ---
+MIT License
+
+Copyright (c) 2019-present react-component
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 --- LICENSE.md ---
 MIT LICENSE
@@ -1341,10 +1794,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-49. @rc-component/trigger 3.9.1
+51. @rc-component/trigger 3.10.1
 ==============================================================================
 授權：MIT
-來源：https://github.com/react-component/trigger
+來源：https://react-component.github.io/trigger
 
 --- LICENSE ---
 The MIT License (MIT)
@@ -1370,7 +1823,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-50. @rc-component/upload 1.1.1
+52. @rc-component/upload 1.1.1
 ==============================================================================
 授權：MIT
 來源：http://github.com/react-component/upload
@@ -1400,10 +1853,10 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-51. @rc-component/util 1.11.1
+53. @rc-component/util 1.14.1
 ==============================================================================
 授權：MIT
-來源：http://github.com/react-component/util
+來源：https://react-component.github.io/util
 
 --- LICENSE ---
 The MIT License (MIT)
@@ -1431,10 +1884,10 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-52. @rc-component/virtual-list 1.2.0
+54. @rc-component/virtual-list 1.6.0
 ==============================================================================
 授權：MIT
-來源：https://github.com/react-component/virtual-list
+來源：https://react-component.github.io/virtual-list
 
 --- LICENSE ---
 The MIT License (MIT)
@@ -1461,7 +1914,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-53. @reduxjs/toolkit 2.12.0
+55. @reduxjs/toolkit 2.12.0
 ==============================================================================
 授權：MIT
 來源：https://redux-toolkit.js.org
@@ -1491,7 +1944,7 @@ SOFTWARE.
 
 
 ==============================================================================
-54. @scarf/scarf 1.4.0
+56. @scarf/scarf 1.4.0
 ==============================================================================
 授權：Apache-2.0
 來源：https://github.com/scarf-sh/scarf-js
@@ -1701,7 +2154,7 @@ Apache License
 
 
 ==============================================================================
-55. @standard-schema/spec 1.1.0
+57. @standard-schema/spec 1.1.0
 ==============================================================================
 授權：MIT
 來源：https://standardschema.dev
@@ -1731,7 +2184,7 @@ SOFTWARE.
 
 
 ==============================================================================
-56. @standard-schema/utils 0.3.0
+58. @standard-schema/utils 0.3.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/standard-schema/standard-schema
@@ -1761,7 +2214,7 @@ SOFTWARE.
 
 
 ==============================================================================
-57. @tanstack/query-core 5.101.2
+59. @tanstack/query-core 5.107.1
 ==============================================================================
 授權：MIT
 來源：https://tanstack.com/query
@@ -1791,7 +2244,7 @@ SOFTWARE.
 
 
 ==============================================================================
-58. @tanstack/react-query 5.101.2
+60. @tanstack/react-query 5.107.1
 ==============================================================================
 授權：MIT
 來源：https://tanstack.com/query
@@ -1821,7 +2274,7 @@ SOFTWARE.
 
 
 ==============================================================================
-59. @types/d3-array 3.2.2
+61. @types/d3-array 3.2.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-array
@@ -1851,7 +2304,7 @@ MIT License
 
 
 ==============================================================================
-60. @types/d3-color 3.1.3
+62. @types/d3-color 3.1.3
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-color
@@ -1881,7 +2334,7 @@ MIT License
 
 
 ==============================================================================
-61. @types/d3-ease 3.0.2
+63. @types/d3-ease 3.0.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-ease
@@ -1911,7 +2364,7 @@ MIT License
 
 
 ==============================================================================
-62. @types/d3-interpolate 3.0.4
+64. @types/d3-interpolate 3.0.4
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-interpolate
@@ -1941,7 +2394,7 @@ MIT License
 
 
 ==============================================================================
-63. @types/d3-path 3.1.1
+65. @types/d3-path 3.1.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-path
@@ -1971,7 +2424,7 @@ MIT License
 
 
 ==============================================================================
-64. @types/d3-scale 4.0.9
+66. @types/d3-scale 4.0.9
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-scale
@@ -2001,7 +2454,7 @@ MIT License
 
 
 ==============================================================================
-65. @types/d3-shape 3.1.8
+67. @types/d3-shape 3.1.8
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-shape
@@ -2031,7 +2484,7 @@ MIT License
 
 
 ==============================================================================
-66. @types/d3-time 3.0.4
+68. @types/d3-time 3.0.4
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-time
@@ -2061,7 +2514,7 @@ MIT License
 
 
 ==============================================================================
-67. @types/d3-timer 3.0.2
+69. @types/d3-timer 3.0.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-timer
@@ -2091,7 +2544,7 @@ MIT License
 
 
 ==============================================================================
-68. @types/pako 2.0.4
+70. @types/pako 2.0.4
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/pako
@@ -2121,7 +2574,7 @@ MIT License
 
 
 ==============================================================================
-69. @types/raf 3.4.3
+71. @types/raf 3.4.3
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/raf
@@ -2151,7 +2604,7 @@ MIT License
 
 
 ==============================================================================
-70. @types/trusted-types 2.0.7
+72. @types/trusted-types 2.0.7
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/trusted-types
@@ -2181,7 +2634,7 @@ MIT License
 
 
 ==============================================================================
-71. @types/use-sync-external-store 0.0.6
+73. @types/use-sync-external-store 0.0.6
 ==============================================================================
 授權：MIT
 來源：https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/use-sync-external-store
@@ -2211,7 +2664,7 @@ MIT License
 
 
 ==============================================================================
-72. agent-base 6.0.2
+74. agent-base 6.0.2
 ==============================================================================
 授權：MIT（套件未附授權檔，授權全文取自上游原始碼庫）
 來源：https://github.com/TooTallNate/node-agent-base
@@ -2242,7 +2695,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-73. antd 6.5.0
+75. antd 6.7.0
 ==============================================================================
 授權：MIT
 來源：https://ant.design
@@ -2273,7 +2726,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-74. asynckit 0.4.0
+76. asynckit 0.4.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/alexindigo/asynckit
@@ -2303,7 +2756,7 @@ SOFTWARE.
 
 
 ==============================================================================
-75. attr-accept 2.2.5
+77. attr-accept 2.2.5
 ==============================================================================
 授權：MIT
 來源：https://github.com/react-dropzone/attr-accept
@@ -2333,7 +2786,7 @@ SOFTWARE.
 
 
 ==============================================================================
-76. axios 1.20.0
+78. axios 1.21.1
 ==============================================================================
 授權：MIT
 來源：https://axios-http.com
@@ -2349,7 +2802,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-77. base64-arraybuffer 1.0.2
+79. base64-arraybuffer 1.0.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/niklasvh/base64-arraybuffer
@@ -2380,7 +2833,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-78. call-bind-apply-helpers 1.0.2
+80. call-bind-apply-helpers 1.0.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/ljharb/call-bind-apply-helpers
@@ -2410,7 +2863,7 @@ SOFTWARE.
 
 
 ==============================================================================
-79. canvg 3.0.11
+81. canvg 3.0.11
 ==============================================================================
 授權：MIT
 來源：https://github.com/canvg/canvg
@@ -2440,7 +2893,7 @@ SOFTWARE.
 
 
 ==============================================================================
-80. clsx 2.1.1
+82. clsx 2.1.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/lukeed/clsx
@@ -2458,7 +2911,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-81. combined-stream 1.0.8
+83. combined-stream 1.0.8
 ==============================================================================
 授權：MIT
 來源：https://github.com/felixge/node-combined-stream
@@ -2486,7 +2939,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-82. compute-scroll-into-view 3.1.1
+84. compute-scroll-into-view 3.1.1
 ==============================================================================
 授權：MIT
 來源：https://scroll-into-view.dev
@@ -2516,7 +2969,7 @@ SOFTWARE.
 
 
 ==============================================================================
-83. cookie 1.1.1
+85. cookie 1.1.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/jshttp/cookie
@@ -2548,7 +3001,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-84. core-js 3.51.0
+86. core-js 3.51.0
 ==============================================================================
 授權：MIT
 來源：https://core-js.io
@@ -2577,7 +3030,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-85. crypto-js 4.2.0
+87. crypto-js 4.2.0
 ==============================================================================
 授權：MIT
 來源：http://github.com/brix/crypto-js
@@ -2610,7 +3063,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-86. css-line-break 2.1.0
+88. css-line-break 2.1.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/niklasvh/css-line-break
@@ -2641,7 +3094,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-87. csstype 3.2.3
+89. csstype 3.2.3
 ==============================================================================
 授權：MIT
 來源：https://github.com/frenic/csstype
@@ -2669,7 +3122,7 @@ SOFTWARE.
 
 
 ==============================================================================
-88. d3-array 3.2.4
+90. d3-array 3.2.4
 ==============================================================================
 授權：ISC
 來源：https://d3js.org/d3-array/
@@ -2691,7 +3144,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-89. d3-color 3.1.0
+91. d3-color 3.1.0
 ==============================================================================
 授權：ISC
 來源：https://d3js.org/d3-color/
@@ -2713,7 +3166,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-90. d3-ease 3.0.1
+92. d3-ease 3.0.1
 ==============================================================================
 授權：BSD-3-Clause
 來源：https://d3js.org/d3-ease/
@@ -2750,7 +3203,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 ==============================================================================
-91. d3-format 3.1.2
+93. d3-format 3.1.2
 ==============================================================================
 授權：ISC
 來源：https://d3js.org/d3-format/
@@ -2772,7 +3225,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-92. d3-interpolate 3.0.1
+94. d3-interpolate 3.0.1
 ==============================================================================
 授權：ISC
 來源：https://d3js.org/d3-interpolate/
@@ -2794,7 +3247,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-93. d3-path 3.1.0
+95. d3-path 3.1.0
 ==============================================================================
 授權：ISC
 來源：https://d3js.org/d3-path/
@@ -2816,7 +3269,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-94. d3-scale 4.0.2
+96. d3-scale 4.0.2
 ==============================================================================
 授權：ISC
 來源：https://d3js.org/d3-scale/
@@ -2838,7 +3291,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-95. d3-shape 3.2.0
+97. d3-shape 3.2.0
 ==============================================================================
 授權：ISC
 來源：https://d3js.org/d3-shape/
@@ -2860,7 +3313,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-96. d3-time 3.1.0
+98. d3-time 3.1.0
 ==============================================================================
 授權：ISC
 來源：https://d3js.org/d3-time/
@@ -2882,7 +3335,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-97. d3-time-format 4.1.0
+99. d3-time-format 4.1.0
 ==============================================================================
 授權：ISC
 來源：https://d3js.org/d3-time-format/
@@ -2904,7 +3357,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-98. d3-timer 3.0.1
+100. d3-timer 3.0.1
 ==============================================================================
 授權：ISC
 來源：https://d3js.org/d3-timer/
@@ -2926,7 +3379,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-99. dayjs 1.11.21
+101. dayjs 1.11.23
 ==============================================================================
 授權：MIT
 來源：https://day.js.org
@@ -2956,7 +3409,7 @@ SOFTWARE.
 
 
 ==============================================================================
-100. debug 4.4.3
+102. debug 4.4.3
 ==============================================================================
 授權：MIT
 來源：https://github.com/debug-js/debug
@@ -2984,7 +3437,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-101. decimal.js-light 2.5.1
+103. decimal.js-light 2.5.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/MikeMcl/decimal.js-light
@@ -3015,7 +3468,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-102. delayed-stream 1.0.0
+104. delayed-stream 1.0.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/felixge/node-delayed-stream
@@ -3043,7 +3496,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-103. dompurify 3.4.17
+105. dompurify 3.4.17
 ==============================================================================
 授權：(MPL-2.0 OR Apache-2.0)（雙授權擇一適用，本專案以 Apache-2.0 使用）
 來源：https://github.com/cure53/DOMPurify
@@ -3628,7 +4081,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
 
 ==============================================================================
-104. dunder-proto 1.0.1
+106. dunder-proto 1.0.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/es-shims/dunder-proto
@@ -3658,7 +4111,7 @@ SOFTWARE.
 
 
 ==============================================================================
-105. echarts 6.1.0
+107. echarts 6.1.0
 ==============================================================================
 授權：Apache-2.0
 來源：https://echarts.apache.org
@@ -3895,7 +4348,7 @@ The Apache Software Foundation (https://www.apache.org/).
 
 
 ==============================================================================
-106. echarts-for-react 3.0.6
+108. echarts-for-react 3.0.6
 ==============================================================================
 授權：MIT
 來源：https://github.com/hustcc/echarts-for-react
@@ -3925,7 +4378,7 @@ SOFTWARE.
 
 
 ==============================================================================
-107. es-define-property 1.0.1
+109. es-define-property 1.0.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/ljharb/es-define-property
@@ -3955,7 +4408,7 @@ SOFTWARE.
 
 
 ==============================================================================
-108. es-errors 1.3.0
+110. es-errors 1.3.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/ljharb/es-errors
@@ -3985,7 +4438,7 @@ SOFTWARE.
 
 
 ==============================================================================
-109. es-object-atoms 1.1.2
+111. es-object-atoms 1.1.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/ljharb/es-object-atoms
@@ -4015,7 +4468,7 @@ SOFTWARE.
 
 
 ==============================================================================
-110. es-set-tostringtag 2.1.0
+112. es-set-tostringtag 2.1.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/es-shims/es-set-tostringtag
@@ -4045,7 +4498,7 @@ SOFTWARE.
 
 
 ==============================================================================
-111. es-toolkit 1.49.0
+113. es-toolkit 1.49.0
 ==============================================================================
 授權：MIT
 來源：https://es-toolkit.dev
@@ -4075,7 +4528,7 @@ SOFTWARE.
 
 
 ==============================================================================
-112. eventemitter3 5.0.4
+114. eventemitter3 5.0.4
 ==============================================================================
 授權：MIT
 來源：https://github.com/primus/eventemitter3
@@ -4105,7 +4558,7 @@ SOFTWARE.
 
 
 ==============================================================================
-113. fast-deep-equal 3.1.3
+115. fast-deep-equal 3.1.3
 ==============================================================================
 授權：MIT
 來源：https://github.com/epoberezkin/fast-deep-equal
@@ -4135,7 +4588,7 @@ SOFTWARE.
 
 
 ==============================================================================
-114. fast-png 6.4.0
+116. fast-png 6.4.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/image-js/fast-png
@@ -4165,7 +4618,7 @@ SOFTWARE.
 
 
 ==============================================================================
-115. fflate 0.8.3
+117. fflate 0.8.3
 ==============================================================================
 授權：MIT
 來源：https://101arrowz.github.io/fflate
@@ -4195,7 +4648,7 @@ SOFTWARE.
 
 
 ==============================================================================
-116. file-selector 2.1.2
+118. file-selector 2.1.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/react-dropzone/file-selector
@@ -4225,7 +4678,7 @@ SOFTWARE.
 
 
 ==============================================================================
-117. follow-redirects 1.16.2
+119. follow-redirects 1.16.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/follow-redirects/follow-redirects
@@ -4252,7 +4705,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-118. form-data 4.0.6
+120. form-data 4.0.6
 ==============================================================================
 授權：MIT
 來源：https://github.com/form-data/form-data
@@ -4280,7 +4733,7 @@ Copyright (c) 2012 Felix Geisendörfer (felix@debuggable.com) and contributors
 
 
 ==============================================================================
-119. function-bind 1.1.2
+121. function-bind 1.1.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/Raynos/function-bind
@@ -4308,7 +4761,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-120. get-intrinsic 1.3.0
+122. get-intrinsic 1.3.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/ljharb/get-intrinsic
@@ -4338,7 +4791,7 @@ SOFTWARE.
 
 
 ==============================================================================
-121. get-proto 1.0.1
+123. get-proto 1.0.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/ljharb/get-proto
@@ -4368,7 +4821,7 @@ SOFTWARE.
 
 
 ==============================================================================
-122. gopd 1.2.0
+124. gopd 1.2.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/ljharb/gopd
@@ -4398,7 +4851,7 @@ SOFTWARE.
 
 
 ==============================================================================
-123. has-symbols 1.1.0
+125. has-symbols 1.1.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/ljharb/has-symbols
@@ -4428,7 +4881,7 @@ SOFTWARE.
 
 
 ==============================================================================
-124. has-tostringtag 1.0.2
+126. has-tostringtag 1.0.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/inspect-js/has-tostringtag
@@ -4458,7 +4911,7 @@ SOFTWARE.
 
 
 ==============================================================================
-125. hasown 2.0.4
+127. hasown 2.0.4
 ==============================================================================
 授權：MIT
 來源：https://github.com/inspect-js/hasOwn
@@ -4488,7 +4941,7 @@ SOFTWARE.
 
 
 ==============================================================================
-126. html-parse-stringify 4.0.1
+128. html-parse-stringify 4.0.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/i18next/html-parse-stringify
@@ -4519,7 +4972,7 @@ SOFTWARE.
 
 
 ==============================================================================
-127. html2canvas 1.4.1
+129. html2canvas 1.4.1
 ==============================================================================
 授權：MIT
 來源：https://html2canvas.hertzen.com
@@ -4550,7 +5003,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-128. html2pdf.js 0.14.0
+130. html2pdf.js 0.14.0
 ==============================================================================
 授權：MIT
 來源：https://ekoopmans.github.io/html2pdf.js/
@@ -4580,7 +5033,7 @@ SOFTWARE.
 
 
 ==============================================================================
-129. https-proxy-agent 5.0.1
+131. https-proxy-agent 5.0.1
 ==============================================================================
 授權：MIT（套件未附授權檔，授權全文取自上游原始碼庫）
 來源：https://github.com/TooTallNate/node-https-proxy-agent
@@ -4611,7 +5064,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-130. i18next 26.3.6
+132. i18next 26.7.2
 ==============================================================================
 授權：MIT
 來源：https://www.i18next.com
@@ -4641,7 +5094,7 @@ SOFTWARE.
 
 
 ==============================================================================
-131. immer 11.1.11
+133. immer 11.1.11
 ==============================================================================
 授權：MIT
 來源：https://github.com/immerjs/immer
@@ -4671,7 +5124,7 @@ SOFTWARE.
 
 
 ==============================================================================
-132. internmap 2.0.3
+134. internmap 2.0.3
 ==============================================================================
 授權：ISC
 來源：https://github.com/mbostock/internmap/
@@ -4693,7 +5146,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-133. iobuffer 5.4.0
+135. iobuffer 5.4.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/image-js/iobuffer
@@ -4723,7 +5176,7 @@ SOFTWARE.
 
 
 ==============================================================================
-134. is-mobile 5.0.0
+136. is-mobile 5.0.0
 ==============================================================================
 授權：MIT（套件未附授權檔，授權全文取自上游原始碼庫）
 來源：https://github.com/juliangruber/is-mobile
@@ -4740,7 +5193,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-135. js-tokens 4.0.0
+137. js-tokens 4.0.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/lydell/js-tokens
@@ -4770,7 +5223,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-136. json2mq 0.2.0
+138. json2mq 0.2.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/akiran/json2mq
@@ -4800,7 +5253,7 @@ SOFTWARE.
 
 
 ==============================================================================
-137. jspdf 4.2.1
+139. jspdf 4.2.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/parallax/jsPDF
@@ -4831,7 +5284,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-138. loose-envify 1.4.0
+140. loose-envify 1.4.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/zertosh/loose-envify
@@ -4861,7 +5314,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-139. lucide-react 1.25.0
+141. lucide-react 1.70.0
 ==============================================================================
 授權：ISC
 來源：https://lucide.dev
@@ -4913,7 +5366,7 @@ SOFTWARE.
 
 
 ==============================================================================
-140. math-intrinsics 1.1.0
+142. math-intrinsics 1.1.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/es-shims/math-intrinsics
@@ -4943,7 +5396,7 @@ SOFTWARE.
 
 
 ==============================================================================
-141. mime-db 1.52.0
+143. mime-db 1.52.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/jshttp/mime-db
@@ -4975,7 +5428,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-142. mime-types 2.1.35
+144. mime-types 2.1.35
 ==============================================================================
 授權：MIT
 來源：https://github.com/jshttp/mime-types
@@ -5007,7 +5460,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-143. ms 2.1.3
+145. ms 2.1.3
 ==============================================================================
 授權：MIT
 來源：https://github.com/vercel/ms
@@ -5037,7 +5490,7 @@ SOFTWARE.
 
 
 ==============================================================================
-144. object-assign 4.1.1
+146. object-assign 4.1.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/sindresorhus/object-assign
@@ -5067,7 +5520,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-145. pako 2.2.0
+147. pako 2.2.0
 ==============================================================================
 授權：(MIT AND Zlib)
 來源：https://github.com/nodeca/pako
@@ -5097,7 +5550,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-146. papaparse 5.5.4
+148. papaparse 5.7.0
 ==============================================================================
 授權：MIT
 來源：https://www.papaparse.com/
@@ -5126,7 +5579,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-147. performance-now 2.1.0
+149. performance-now 2.1.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/braveg1rl/performance-now
@@ -5142,7 +5595,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-148. prop-types 15.8.1
+150. prop-types 15.8.1
 ==============================================================================
 授權：MIT
 來源：https://facebook.github.io/react/
@@ -5172,7 +5625,7 @@ SOFTWARE.
 
 
 ==============================================================================
-149. proxy-from-env 2.1.0
+151. proxy-from-env 2.1.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/Rob--W/proxy-from-env
@@ -5201,7 +5654,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-150. raf 3.4.1
+152. raf 3.4.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/chrisdickinson/raf
@@ -5217,7 +5670,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 ==============================================================================
-151. react 19.2.7
+153. react 19.3.1
 ==============================================================================
 授權：MIT
 來源：https://react.dev/
@@ -5247,7 +5700,7 @@ SOFTWARE.
 
 
 ==============================================================================
-152. react-dom 19.2.7
+154. react-dom 19.3.1
 ==============================================================================
 授權：MIT
 來源：https://react.dev/
@@ -5277,7 +5730,7 @@ SOFTWARE.
 
 
 ==============================================================================
-153. react-dropzone 15.0.0
+155. react-dropzone 15.0.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/react-dropzone/react-dropzone
@@ -5307,7 +5760,7 @@ SOFTWARE.
 
 
 ==============================================================================
-154. react-i18next 17.0.11
+156. react-i18next 17.1.13
 ==============================================================================
 授權：MIT
 來源：https://github.com/i18next/react-i18next
@@ -5337,7 +5790,7 @@ SOFTWARE.
 
 
 ==============================================================================
-155. react-is 16.13.1
+157. react-is 16.13.1
 ==============================================================================
 授權：MIT
 來源：https://reactjs.org/
@@ -5367,15 +5820,15 @@ SOFTWARE.
 
 
 ==============================================================================
-156. react-is 18.3.1
+158. react-is 19.3.1
 ==============================================================================
 授權：MIT
-來源：https://reactjs.org/
+來源：https://react.dev/
 
 --- LICENSE ---
 MIT License
 
-Copyright (c) Facebook, Inc. and its affiliates.
+Copyright (c) Meta Platforms, Inc. and affiliates.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -5397,7 +5850,7 @@ SOFTWARE.
 
 
 ==============================================================================
-157. react-redux 9.3.0
+159. react-redux 9.3.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/reduxjs/react-redux
@@ -5427,7 +5880,7 @@ SOFTWARE.
 
 
 ==============================================================================
-158. react-router 7.18.2
+160. react-router 7.18.5
 ==============================================================================
 授權：MIT
 來源：https://github.com/remix-run/react-router
@@ -5459,7 +5912,7 @@ SOFTWARE.
 
 
 ==============================================================================
-159. react-router-dom 7.18.2
+161. react-router-dom 7.18.5
 ==============================================================================
 授權：MIT
 來源：https://github.com/remix-run/react-router
@@ -5491,7 +5944,7 @@ SOFTWARE.
 
 
 ==============================================================================
-160. recharts 3.9.2
+162. recharts 3.10.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/recharts/recharts
@@ -5521,7 +5974,7 @@ SOFTWARE.
 
 
 ==============================================================================
-161. redux 5.0.1
+163. redux 5.0.1
 ==============================================================================
 授權：MIT
 來源：http://redux.js.org
@@ -5551,7 +6004,7 @@ SOFTWARE.
 
 
 ==============================================================================
-162. redux-thunk 3.1.0
+164. redux-thunk 3.1.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/reduxjs/redux-thunk
@@ -5581,7 +6034,7 @@ SOFTWARE.
 
 
 ==============================================================================
-163. regenerator-runtime 0.13.11
+165. regenerator-runtime 0.13.11
 ==============================================================================
 授權：MIT
 來源：https://github.com/facebook/regenerator/tree/main
@@ -5611,7 +6064,7 @@ SOFTWARE.
 
 
 ==============================================================================
-164. reselect 5.2.0
+166. reselect 5.2.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/reduxjs/reselect
@@ -5641,7 +6094,7 @@ SOFTWARE.
 
 
 ==============================================================================
-165. rgbcolor 1.0.1
+167. rgbcolor 1.0.1
 ==============================================================================
 授權：MIT OR SEE LICENSE IN FEEL-FREE.md（套件宣告為 MIT，並附 FEEL-FREE.md 說明）
 來源：https://github.com/yetzt/node-rgbcolor
@@ -5676,7 +6129,7 @@ Please either apply this, the MIT license, or the license in './FEEL-FREE.md'
 
 
 ==============================================================================
-166. scheduler 0.27.0
+168. scheduler 0.28.0
 ==============================================================================
 授權：MIT
 來源：https://react.dev/
@@ -5706,7 +6159,7 @@ SOFTWARE.
 
 
 ==============================================================================
-167. scroll-into-view-if-needed 3.1.0
+169. scroll-into-view-if-needed 3.1.0
 ==============================================================================
 授權：MIT
 來源：https://scroll-into-view.dev
@@ -5736,7 +6189,7 @@ SOFTWARE.
 
 
 ==============================================================================
-168. set-cookie-parser 2.7.2
+170. set-cookie-parser 2.7.3
 ==============================================================================
 授權：MIT
 來源：https://github.com/nfriedly/set-cookie-parser
@@ -5766,7 +6219,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-169. size-sensor 1.0.3
+171. size-sensor 1.0.3
 ==============================================================================
 授權：ISC（套件及上游原始碼庫均未附授權檔，僅列授權種類）
 來源：https://git.hust.cc/size-sensor
@@ -5775,7 +6228,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-170. stackblur-canvas 2.7.0
+172. stackblur-canvas 2.7.0
 ==============================================================================
 授權：MIT
 來源：http://www.quasimondo.com/StackBlurForCanvas/StackBlurDemo.html
@@ -5806,7 +6259,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-171. string-convert 0.2.1
+173. string-convert 0.2.1
 ==============================================================================
 授權：MIT
 來源：https://github.com/akiran/string-convert
@@ -5836,7 +6289,7 @@ SOFTWARE.
 
 
 ==============================================================================
-172. stylis 4.4.0
+174. stylis 4.4.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/thysultan/stylis.js
@@ -5866,7 +6319,7 @@ SOFTWARE.
 
 
 ==============================================================================
-173. svg-pathdata 6.0.3
+175. svg-pathdata 6.0.3
 ==============================================================================
 授權：MIT
 來源：https://github.com/nfroidure/svg-pathdata
@@ -5895,7 +6348,7 @@ THE SOFTWARE.
 
 
 ==============================================================================
-174. swagger-ui-dist 5.34.1
+176. swagger-ui-dist 5.34.1
 ==============================================================================
 授權：Apache-2.0
 來源：https://github.com/swagger-api/swagger-ui
@@ -6109,7 +6562,7 @@ Copyright 2020-2021 SmartBear Software Inc.
 
 
 ==============================================================================
-175. text-segmentation 1.0.3
+177. text-segmentation 1.0.3
 ==============================================================================
 授權：MIT
 來源：https://github.com/niklasvh/text-segmentation
@@ -6140,7 +6593,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-176. throttle-debounce 5.0.2
+178. throttle-debounce 5.0.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/niksy/throttle-debounce
@@ -6193,7 +6646,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-177. tiny-invariant 1.3.3
+179. tiny-invariant 1.3.3
 ==============================================================================
 授權：MIT
 來源：https://github.com/alexreardon/tiny-invariant
@@ -6223,7 +6676,7 @@ SOFTWARE.
 
 
 ==============================================================================
-178. tslib 2.3.0
+180. tslib 2.3.0
 ==============================================================================
 授權：0BSD
 來源：https://www.typescriptlang.org/
@@ -6244,7 +6697,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 
 ==============================================================================
-179. tslib 2.8.1
+181. tslib 2.8.1
 ==============================================================================
 授權：0BSD
 來源：https://www.typescriptlang.org/
@@ -6265,7 +6718,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 
 ==============================================================================
-180. use-sync-external-store 1.6.0
+182. use-sync-external-store 1.6.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/facebook/react
@@ -6295,7 +6748,7 @@ SOFTWARE.
 
 
 ==============================================================================
-181. utrie 1.0.2
+183. utrie 1.0.2
 ==============================================================================
 授權：MIT
 來源：https://github.com/niklasvh/utrie
@@ -6326,7 +6779,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
-182. victory-vendor 37.3.6
+184. victory-vendor 37.3.6
 ==============================================================================
 授權：MIT AND ISC（套件未附授權檔，授權全文取自上游原始碼庫；內含 d3 等第三方套件，其授權檔一併收錄於下方）
 來源：https://commerce.nearform.com/open-source/victory
@@ -6612,7 +7065,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-183. xlsx 0.20.3
+185. xlsx 0.20.3
 ==============================================================================
 授權：Apache-2.0（取自 SheetJS 官方 CDN，網址 cdn.sheetjs.com/xlsx-0.20.3）
 來源：https://sheetjs.com/
@@ -6822,7 +7275,7 @@ Apache License
 
 
 ==============================================================================
-184. yaml 2.8.4
+186. yaml 2.9.1
 ==============================================================================
 授權：ISC
 來源：https://eemeli.org/yaml/
@@ -6844,7 +7297,7 @@ THIS SOFTWARE.
 
 
 ==============================================================================
-185. zrender 6.1.0
+187. zrender 6.1.0
 ==============================================================================
 授權：BSD-3-Clause
 來源：https://github.com/ecomfe/zrender
@@ -6882,7 +7335,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 ==============================================================================
-186. zustand 5.0.14
+188. zustand 5.1.0
 ==============================================================================
 授權：MIT
 來源：https://github.com/pmndrs/zustand

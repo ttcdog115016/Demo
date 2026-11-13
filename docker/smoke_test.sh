@@ -3,7 +3,7 @@
 # Open-PETs 映像檔冒煙測試（發版流程 docker-image.yml 與 PR 的映像檔建置檢查 docker-build-check.yml 共用）
 #
 # 用法：bash docker/smoke_test.sh <映像檔名稱:標籤>
-#   例：bash docker/smoke_test.sh open-pets-app:2.0.0-rc4
+#   例：bash docker/smoke_test.sh open-pets-app:2.0.0-rc5
 #
 # 驗證：
 #   1. 三個容器都能以「唯讀根檔案系統、cap_drop ALL、no-new-privileges」啟動並轉為 healthy；

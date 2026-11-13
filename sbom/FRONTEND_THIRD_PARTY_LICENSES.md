@@ -2,7 +2,7 @@
 
 SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.json` 產生，僅含執行期相依）。
 各 npm 套件授權全文見 `FRONTEND_LICENSES_FULLTEXT.txt`（映像檔 `/licenses` 與交付包都附；原始碼內的檔名是 `3.2_附件一_開源元件授權全文_前端.txt`，內容相同，版面比照廠商《第三階段執行報告書》附件一）。
-共 186 筆（SBOM 共 187 個元件；同名同版本但安裝在不同位置的元件，授權只列一次）。
+共 188 筆（SBOM 共 191 個元件；同名同版本但安裝在不同位置的元件，授權只列一次）。
 
 ## 前端 npm 套件（執行期）
 
@@ -12,60 +12,62 @@ SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.js
 | @ant-design/cssinjs | 2.1.2 | MIT | https://github.com/ant-design/cssinjs |
 | @ant-design/cssinjs-utils | 2.1.2 | MIT | https://github.com/ant-design/cssinjs-util |
 | @ant-design/fast-color | 3.0.1 | MIT | https://github.com/ant-design/fast-color |
-| @ant-design/icons | 6.3.2 | MIT | https://github.com/ant-design/ant-design-icons/tree/master |
-| @ant-design/icons-svg | 4.5.0 | MIT | https://github.com/ant-design/ant-design-icons/ |
+| @ant-design/icons | 6.3.4 | MIT | https://github.com/ant-design/ant-design-icons/tree/master |
+| @ant-design/icons-svg | 4.6.0 | MIT | https://github.com/ant-design/ant-design-icons/ |
 | @ant-design/react-slick | 2.0.0 | MIT | https://react-slick.neostack.com |
 | @babel/runtime | 7.29.7 | MIT | https://babel.dev/docs/en/next/babel-runtime |
+| @babel/runtime | 8.1.0 | MIT | https://babel.dev/docs/en/next/babel-runtime |
 | @emotion/hash | 0.8.0 | MIT | https://github.com/emotion-js/emotion/tree/master |
 | @emotion/unitless | 0.7.5 | MIT | https://github.com/emotion-js/emotion/tree/master |
 | @rc-component/async-validator | 6.0.0 | MIT | http://github.com/react-component/async-validator |
-| @rc-component/cascader | 1.17.0 | MIT | https://github.com/react-component/cascader |
+| @rc-component/cascader | 1.26.0 | MIT | https://react-component.github.io/cascader |
 | @rc-component/checkbox | 2.0.0 | MIT | https://react-component.github.io/checkbox |
-| @rc-component/collapse | 1.2.0 | MIT | http://github.com/react-component/collapse |
+| @rc-component/collapse | 1.3.0 | MIT | https://react-component.github.io/collapse |
 | @rc-component/color-picker | 3.1.1 | MIT | http://github.com/react-component/color-picker |
 | @rc-component/context | 2.0.2 | MIT | http://github.com/react-component/context |
 | @rc-component/dialog | 1.10.0 | MIT | http://github.com/react-component/dialog |
 | @rc-component/drawer | 1.4.2 | MIT | https://github.com/react-component/drawer |
-| @rc-component/dropdown | 1.0.2 | MIT | http://github.com/react-component/dropdown |
-| @rc-component/form | 1.8.5 | MIT | https://github.com/react-component/field-form |
-| @rc-component/image | 1.9.0 | MIT | http://github.com/react-component/image |
-| @rc-component/input | 1.3.1 | MIT | https://github.com/react-component/input |
-| @rc-component/input-number | 1.6.2 | MIT | https://github.com/react-component/input-number |
-| @rc-component/mentions | 1.10.0 | MIT | http://github.com/react-component/mentions |
-| @rc-component/menu | 1.4.1 | MIT | http://github.com/react-component/menu |
+| @rc-component/dropdown | 2.0.1 | MIT | https://react-component.github.io/dropdown |
+| @rc-component/form | 1.8.6 | MIT | https://react-component.github.io/field-form |
+| @rc-component/image | 1.10.0 | MIT | https://react-component.github.io/image |
+| @rc-component/input | 1.4.1 | MIT | https://react-component.github.io/input |
+| @rc-component/input-number | 1.8.0 | MIT | https://react-component.github.io/input-number |
+| @rc-component/listy | 1.4.0 | MIT | https://github.com/react-component/listy |
+| @rc-component/mentions | 1.14.1 | MIT | https://react-component.github.io/mentions |
+| @rc-component/menu | 1.6.2 | MIT | https://react-component.github.io/menu |
 | @rc-component/mini-decimal | 1.1.4 | MIT | https://github.com/react-component/mini-decimal |
 | @rc-component/motion | 1.3.3 | MIT | https://react-component.github.io/motion |
 | @rc-component/mutate-observer | 2.0.1 | MIT | https://github.com/react-component/mutate-observer |
-| @rc-component/notification | 2.0.7 | MIT | http://github.com/react-component/notification |
+| @rc-component/notification | 2.1.1 | MIT | https://react-component.github.io/notification |
 | @rc-component/overflow | 1.0.1 | MIT | https://react-component.github.io/overflow |
-| @rc-component/pagination | 1.4.0 | MIT | https://react-component.github.io/pagination |
-| @rc-component/picker | 1.11.0 | MIT | https://react-component.github.io/picker |
+| @rc-component/pagination | 1.7.0 | MIT | https://react-component.github.io/pagination |
+| @rc-component/picker | 1.17.0 | MIT | https://react-component.github.io/picker |
 | @rc-component/portal | 2.2.1 | MIT | https://github.com/react-component/portal |
-| @rc-component/progress | 1.0.2 | MIT | http://github.com/react-component/progress |
+| @rc-component/progress | 1.1.0 | MIT | https://react-component.github.io/progress |
 | @rc-component/qrcode | 2.0.0 | MIT | https://github.com/react-component/qrcode |
 | @rc-component/rate | 1.0.1 | MIT | https://github.com/react-component/rate |
 | @rc-component/resize-observer | 1.1.2 | MIT | https://react-component.github.io/resize-observer |
-| @rc-component/segmented | 1.3.0 | MIT | https://react-component.github.io/segmented |
-| @rc-component/select | 1.8.2 | MIT | http://github.com/react-component/select |
-| @rc-component/slider | 1.1.1 | MIT | https://react-component.github.io/slider |
-| @rc-component/steps | 1.2.2 | MIT | http://github.com/react-component/steps |
+| @rc-component/segmented | 1.4.0 | MIT | https://react-component.github.io/segmented |
+| @rc-component/select | 1.12.0 | MIT | https://react-component.github.io/select |
+| @rc-component/slider | 1.2.1 | MIT | https://react-component.github.io/slider |
+| @rc-component/steps | 1.2.3 | MIT | https://react-component.github.io/steps |
 | @rc-component/switch | 1.0.3 | MIT | http://github.com/react-component/switch |
-| @rc-component/table | 1.10.3 | MIT | https://react-component.github.io/table |
-| @rc-component/tabs | 1.11.0 | MIT | http://github.com/react-component/tabs |
-| @rc-component/tooltip | 1.4.0 | MIT | http://github.com/react-component/tooltip |
+| @rc-component/table | 1.12.0 | MIT | https://react-component.github.io/table |
+| @rc-component/tabs | 2.0.0 | MIT | https://react-component.github.io/tabs |
+| @rc-component/tooltip | 1.5.2 | MIT | https://react-component.github.io/tooltip |
 | @rc-component/tour | 2.4.0 | MIT | https://github.com/react-component/tour |
-| @rc-component/tree | 1.3.2 | MIT | http://github.com/react-component/tree |
-| @rc-component/tree-select | 1.11.0 | MIT | https://github.com/react-component/tree-select |
-| @rc-component/trigger | 3.9.1 | MIT | https://github.com/react-component/trigger |
+| @rc-component/tree | 1.5.3 | MIT | https://react-component.github.io/tree |
+| @rc-component/tree-select | 1.19.0 | MIT | https://react-component.github.io/tree-select |
+| @rc-component/trigger | 3.10.1 | MIT | https://react-component.github.io/trigger |
 | @rc-component/upload | 1.1.1 | MIT | http://github.com/react-component/upload |
-| @rc-component/util | 1.11.1 | MIT | http://github.com/react-component/util |
-| @rc-component/virtual-list | 1.2.0 | MIT | https://github.com/react-component/virtual-list |
+| @rc-component/util | 1.14.1 | MIT | https://react-component.github.io/util |
+| @rc-component/virtual-list | 1.6.0 | MIT | https://react-component.github.io/virtual-list |
 | @reduxjs/toolkit | 2.12.0 | MIT | https://redux-toolkit.js.org |
 | @scarf/scarf | 1.4.0 | Apache-2.0 | https://github.com/scarf-sh/scarf-js |
 | @standard-schema/spec | 1.1.0 | MIT | https://standardschema.dev |
 | @standard-schema/utils | 0.3.0 | MIT | https://github.com/standard-schema/standard-schema |
-| @tanstack/query-core | 5.101.2 | MIT | https://tanstack.com/query |
-| @tanstack/react-query | 5.101.2 | MIT | https://tanstack.com/query |
+| @tanstack/query-core | 5.107.1 | MIT | https://tanstack.com/query |
+| @tanstack/react-query | 5.107.1 | MIT | https://tanstack.com/query |
 | @types/d3-array | 3.2.2 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-array |
 | @types/d3-color | 3.1.3 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-color |
 | @types/d3-ease | 3.0.2 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-ease |
@@ -80,10 +82,10 @@ SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.js
 | @types/trusted-types | 2.0.7 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/trusted-types |
 | @types/use-sync-external-store | 0.0.6 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/use-sync-external-store |
 | agent-base | 6.0.2 | MIT | https://github.com/TooTallNate/node-agent-base |
-| antd | 6.5.0 | MIT | https://ant.design |
+| antd | 6.7.0 | MIT | https://ant.design |
 | asynckit | 0.4.0 | MIT | https://github.com/alexindigo/asynckit |
 | attr-accept | 2.2.5 | MIT | https://github.com/react-dropzone/attr-accept |
-| axios | 1.20.0 | MIT | https://axios-http.com |
+| axios | 1.21.1 | MIT | https://axios-http.com |
 | base64-arraybuffer | 1.0.2 | MIT | https://github.com/niklasvh/base64-arraybuffer |
 | call-bind-apply-helpers | 1.0.2 | MIT | https://github.com/ljharb/call-bind-apply-helpers |
 | canvg | 3.0.11 | MIT | https://github.com/canvg/canvg |
@@ -106,7 +108,7 @@ SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.js
 | d3-time | 3.1.0 | ISC | https://d3js.org/d3-time/ |
 | d3-time-format | 4.1.0 | ISC | https://d3js.org/d3-time-format/ |
 | d3-timer | 3.0.1 | ISC | https://d3js.org/d3-timer/ |
-| dayjs | 1.11.21 | MIT | https://day.js.org |
+| dayjs | 1.11.23 | MIT | https://day.js.org |
 | debug | 4.4.3 | MIT | https://github.com/debug-js/debug |
 | decimal.js-light | 2.5.1 | MIT | https://github.com/MikeMcl/decimal.js-light |
 | delayed-stream | 1.0.0 | MIT | https://github.com/felixge/node-delayed-stream |
@@ -137,7 +139,7 @@ SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.js
 | html2canvas | 1.4.1 | MIT | https://html2canvas.hertzen.com |
 | html2pdf.js | 0.14.0 | MIT | https://ekoopmans.github.io/html2pdf.js/ |
 | https-proxy-agent | 5.0.1 | MIT | https://github.com/TooTallNate/node-https-proxy-agent |
-| i18next | 26.3.6 | MIT | https://www.i18next.com |
+| i18next | 26.7.2 | MIT | https://www.i18next.com |
 | immer | 11.1.11 | MIT | https://github.com/immerjs/immer |
 | internmap | 2.0.3 | ISC | https://github.com/mbostock/internmap/ |
 | iobuffer | 5.4.0 | MIT | https://github.com/image-js/iobuffer |
@@ -146,36 +148,36 @@ SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.js
 | json2mq | 0.2.0 | MIT | https://github.com/akiran/json2mq |
 | jspdf | 4.2.1 | MIT | https://github.com/parallax/jsPDF |
 | loose-envify | 1.4.0 | MIT | https://github.com/zertosh/loose-envify |
-| lucide-react | 1.25.0 | ISC | https://lucide.dev |
+| lucide-react | 1.70.0 | ISC | https://lucide.dev |
 | math-intrinsics | 1.1.0 | MIT | https://github.com/es-shims/math-intrinsics |
 | mime-db | 1.52.0 | MIT | https://github.com/jshttp/mime-db |
 | mime-types | 2.1.35 | MIT | https://github.com/jshttp/mime-types |
 | ms | 2.1.3 | MIT | https://github.com/vercel/ms |
 | object-assign | 4.1.1 | MIT | https://github.com/sindresorhus/object-assign |
 | pako | 2.2.0 | (MIT AND Zlib) | https://github.com/nodeca/pako |
-| papaparse | 5.5.4 | MIT | https://www.papaparse.com/ |
+| papaparse | 5.7.0 | MIT | https://www.papaparse.com/ |
 | performance-now | 2.1.0 | MIT | https://github.com/braveg1rl/performance-now |
 | prop-types | 15.8.1 | MIT | https://facebook.github.io/react/ |
 | proxy-from-env | 2.1.0 | MIT | https://github.com/Rob--W/proxy-from-env |
 | raf | 3.4.1 | MIT | https://github.com/chrisdickinson/raf |
-| react | 19.2.7 | MIT | https://react.dev/ |
-| react-dom | 19.2.7 | MIT | https://react.dev/ |
+| react | 19.3.1 | MIT | https://react.dev/ |
+| react-dom | 19.3.1 | MIT | https://react.dev/ |
 | react-dropzone | 15.0.0 | MIT | https://github.com/react-dropzone/react-dropzone |
-| react-i18next | 17.0.11 | MIT | https://github.com/i18next/react-i18next |
+| react-i18next | 17.1.13 | MIT | https://github.com/i18next/react-i18next |
 | react-is | 16.13.1 | MIT | https://reactjs.org/ |
-| react-is | 18.3.1 | MIT | https://reactjs.org/ |
+| react-is | 19.3.1 | MIT | https://react.dev/ |
 | react-redux | 9.3.0 | MIT | https://github.com/reduxjs/react-redux |
-| react-router | 7.18.2 | MIT | https://github.com/remix-run/react-router |
-| react-router-dom | 7.18.2 | MIT | https://github.com/remix-run/react-router |
-| recharts | 3.9.2 | MIT | https://github.com/recharts/recharts |
+| react-router | 7.18.5 | MIT | https://github.com/remix-run/react-router |
+| react-router-dom | 7.18.5 | MIT | https://github.com/remix-run/react-router |
+| recharts | 3.10.1 | MIT | https://github.com/recharts/recharts |
 | redux | 5.0.1 | MIT | http://redux.js.org |
 | redux-thunk | 3.1.0 | MIT | https://github.com/reduxjs/redux-thunk |
 | regenerator-runtime | 0.13.11 | MIT | https://github.com/facebook/regenerator/tree/main |
 | reselect | 5.2.0 | MIT | https://github.com/reduxjs/reselect |
 | rgbcolor | 1.0.1 | MIT OR SEE LICENSE IN FEEL-FREE.md | https://github.com/yetzt/node-rgbcolor |
-| scheduler | 0.27.0 | MIT | https://react.dev/ |
+| scheduler | 0.28.0 | MIT | https://react.dev/ |
 | scroll-into-view-if-needed | 3.1.0 | MIT | https://scroll-into-view.dev |
-| set-cookie-parser | 2.7.2 | MIT | https://github.com/nfriedly/set-cookie-parser |
+| set-cookie-parser | 2.7.3 | MIT | https://github.com/nfriedly/set-cookie-parser |
 | size-sensor | 1.0.3 | ISC | https://git.hust.cc/size-sensor |
 | stackblur-canvas | 2.7.0 | MIT | http://www.quasimondo.com/StackBlurForCanvas/StackBlurDemo.html |
 | string-convert | 0.2.1 | MIT | https://github.com/akiran/string-convert |
@@ -191,9 +193,9 @@ SBOM（CycloneDX 1.5）：前端 `frontend-sbom.cdx.json`（依 `package-lock.js
 | utrie | 1.0.2 | MIT | https://github.com/niklasvh/utrie |
 | victory-vendor | 37.3.6 | MIT AND ISC | https://commerce.nearform.com/open-source/victory |
 | xlsx | 0.20.3 | Apache-2.0 | https://sheetjs.com/ |
-| yaml | 2.8.4 | ISC | https://eemeli.org/yaml/ |
+| yaml | 2.9.1 | ISC | https://eemeli.org/yaml/ |
 | zrender | 6.1.0 | BSD-3-Clause | https://github.com/ecomfe/zrender |
-| zustand | 5.0.14 | MIT | https://github.com/pmndrs/zustand |
+| zustand | 5.1.0 | MIT | https://github.com/pmndrs/zustand |
 
 ## 授權注意事項
 

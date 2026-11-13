@@ -51,7 +51,7 @@ Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端�
 
 - 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可直接切換，資料磁碟區不變。
 - `OPEN_PETS_MODE` 填了 `local`、`offline`、`lan` 以外的值，容器會在啟動時報錯並結束，不會悄悄退回預設。
-- **線上（`online`）模式已移除**：設成 `online` 一樣會拒絕啟動，並提示改用 `lan` 或 `local`。原本用線上模式的資料夾，執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`）即可，資料不會不見；不想用內網 HTTPS 又要給其他電腦用的話，請改在前面自備反向代理，並由你自己承擔對外開放的安全責任（本專案不再提供範例與支援）。
+- **線上（`online`）模式已在 `2.0.0-rc5` 移除**：設成 `online` 一樣會拒絕啟動，並提示改用 `lan` 或 `local`。原本用線上模式的資料夾，執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`）即可，資料不會不見；不想用內網 HTTPS 又要給其他電腦用的話，請改在前面自備反向代理，並由你自己承擔對外開放的安全責任（本專案不再提供範例與支援）。
 - 內網沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 會直接報錯，不會啟動。
 - `local`、`lan` 與 `docker-compose.lan.yml`、小工具要 **2.0.0-rc3 起**的版本才有。
 
