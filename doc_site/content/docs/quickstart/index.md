@@ -154,10 +154,10 @@ powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup
 
 ```text
   [完成] 已匯出憑證：C:\open-pets-app\open-pets-ca.crt
-  [完成] 已產生給同事的說明：C:\open-pets-app\open-pets-colleague-guide.txt
+  [完成] 已產生使用者說明檔：C:\open-pets-app\open-pets-user-guide.txt
 ```
 
-**4. 將兩個檔案提供給使用者**（可透過隨身碟、內部檔案伺服器或 Email）：`open-pets-ca.crt` 與 `open-pets-colleague-guide.txt`。說明檔內已列出網址與步驟。
+**4. 將兩個檔案提供給使用者**（可透過隨身碟、內部檔案伺服器或 Email）：`open-pets-ca.crt` 與 `open-pets-user-guide.txt`。說明檔內已列出網址與步驟。
 
 **5. 各使用者端各執行一次「信任憑證」。** 原因：憑證由組織內部簽發，瀏覽器預設不認得，因此會顯示警告；信任後即不再顯示。步驟依說明檔進行，摘要如下：
 

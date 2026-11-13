@@ -1,12 +1,12 @@
 # Open-PETs 安裝說明（離線交付包／Docker）
 
-Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端網頁與後端服務在**同一個映像檔 `open-pets-app`、同一個容器、同一個埠（8080）**，不用另外裝 nginx、Python 或 Node.js。所有運算都在你的主機上進行，資料不會傳到其他地方。
+Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端網頁與後端服務在**同一個映像檔 `open-pets-app`、同一個容器、同一個埠（8080）**，無須另外安裝 nginx、Python 或 Node.js。所有運算都在主機上進行，資料不會傳到其他地方。
 
 完整圖文教學（含畫面說明與疑難排解）在網站：**https://ttcdog115016.github.io/Demo/docs/quickstart/**
 
-## 一、最快上手（用附的小工具）
+## 一、快速安裝（使用附帶的安裝工具）
 
-資料夾裡的 `open-pets.ps1`（Windows）與 `open-pets.sh`（Linux）用問答幫你安裝與切換模式，不用自己改設定檔。
+資料夾裡的 `open-pets.ps1`（Windows）與 `open-pets.sh`（Linux）以問答方式安裝與切換模式，無須自行修改設定檔。
 
 **準備：** 已安裝 Docker Desktop（Windows）或 Docker Engine（Linux），並且開著（Windows 左下角顯示綠色 Engine running）。
 
@@ -20,7 +20,7 @@ Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端�
 
 **Linux：** `./open-pets.sh setup`（第一次先 `chmod +x open-pets.sh`）。
 
-工具會問你要用哪種模式、要不要建立管理員，**照畫面回答**。之後常用指令：
+工具會詢問使用模式與是否建立管理員，**請依畫面提示回答**。之後常用指令：
 
 | 我想要 | 指令（Linux 把 `.\open-pets.ps1` 換成 `./open-pets.sh`） |
 |---|---|
@@ -30,7 +30,7 @@ Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端�
 | 建立管理員／忘記管理員密碼 | `.\open-pets.ps1 create-admin`、`.\open-pets.ps1 reset-password` |
 | 備份 | `.\open-pets.ps1 backup` |
 | 更新到新版 | `.\open-pets.ps1 update 新版本號` |
-| 給同事憑證與說明（內網） | `.\open-pets.ps1 export-ca` |
+| 產生憑證與使用者說明檔（內網） | `.\open-pets.ps1 export-ca` |
 | 看日誌、看全部指令 | `.\open-pets.ps1 logs`、`.\open-pets.ps1 help` |
 
 工具只寫同資料夾的 `.env`、需要時下載缺少的設定檔、呼叫 `docker compose`，**不會修改系統設定**。
@@ -46,33 +46,33 @@ Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端�
 | 網址 | `http://localhost:8080` | `https://內網IP或主機名稱` |
 | HTTPS | 不需要 | 內建 Caddy HTTPS（私有 CA，使用者電腦要信任根憑證） |
 | 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=內網IP,主機名稱` |
-| 啟動指令（不用小工具時） | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d` |
+| 啟動指令（不使用安裝工具時） | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d` |
 | 「系統維運日誌」分頁 | 隱藏 | 顯示（管理員） |
 
 - 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可直接切換，資料磁碟區不變。
 - `OPEN_PETS_MODE` 填了 `local`、`offline`、`lan` 以外的值，容器會在啟動時報錯並結束，不會悄悄退回預設。
-- **線上（`online`）模式已在 `2.0.0-rc5` 移除**：設成 `online` 一樣會拒絕啟動，並提示改用 `lan` 或 `local`。原本用線上模式的資料夾，執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`）即可，資料不會不見；不想用內網 HTTPS 又要給其他電腦用的話，請改在前面自備反向代理，並由你自己承擔對外開放的安全責任（本專案不再提供範例與支援）。
+- `OPEN_PETS_MODE` 設成 `online` 會拒絕啟動，並提示改用 `lan` 或 `local`。舊版以 `online` 設定安裝的資料夾，執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`）即可，資料不會遺失；若不使用內網 HTTPS 又需提供其他電腦使用，須於前端自行架設反向代理，並自行承擔對外開放的資安責任（本專案不提供範例與支援）。
 - 內網沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 會直接報錯，不會啟動。
-- `local`、`lan` 與 `docker-compose.lan.yml`、小工具要 **2.0.0-rc3 起**的版本才有。
+- `local`、`lan` 與 `docker-compose.lan.yml`、安裝工具需 **2.0.0-rc3 以上**版本。
 
 ### 內網模式要注意
 
 - `OPEN_PETS_ALLOWED_HOSTS` 要列出使用者會輸入的**每個**網址（逗號分隔、不加空格）。清單裡的**第一個 IP** 是沒送主機名稱的連線所用的預設憑證。
 - 主機防火牆要開 443（`OPEN_PETS_HTTPS_PORT` 可改）。工具會印出要執行的指令。
-- **每台使用者電腦要信任根憑證**：在主機執行 `.\open-pets.ps1 export-ca`，把 `open-pets-ca.crt` 與 `open-pets-colleague-guide.txt` 交給使用者照做。
-- **使用者的網址一定要打 `https://`**。只打 IP 會走 `http://`，畫面會一直轉圈後顯示「回應時間過長」。
-- **換了網路、IP 變了**：執行 `.\open-pets.ps1 mode lan -Hosts 新IP,舊IP`。根憑證不變，使用者不用重新信任。
+- **每台使用者電腦要信任根憑證**：在主機執行 `.\open-pets.ps1 export-ca`，將 `open-pets-ca.crt` 與 `open-pets-user-guide.txt` 提供給使用者依說明執行。
+- **使用者的網址必須使用 `https://`**。僅輸入 IP 會走 `http://`，頁面將持續載入，最後顯示「回應時間過長」。
+- **更換網路、IP 變動時**：執行 `.\open-pets.ps1 mode lan -Hosts 新IP,舊IP`。根憑證不變，使用者無須重新信任。
 - 根憑證的私鑰在 `caddy-data` 磁碟區，請當作機密並一起備份。
 - 離線環境要先帶 Caddy 映像檔：`docker pull caddy:2.11.9`、`docker save`，到主機 `docker load`。
 
-## 三、手動安裝（不用小工具）
+## 三、手動安裝（不使用安裝工具）
 
 ### 離線：用交付包
 
 1. **核對完整性**：`SHA256SUMS.txt` 的檢查碼要與另一條管道取得的一致。
    - PowerShell：`Get-FileHash .\open-pets-app_<版本>.tar.gz -Algorithm SHA256`
    - Linux：`sha256sum -c SHA256SUMS.txt`
-2. **匯入映像檔**：`docker load -i open-pets-app_<版本>.tar.gz`（不用先解壓縮）
+2. **匯入映像檔**：`docker load -i open-pets-app_<版本>.tar.gz`（無須先解壓縮）
 3. **設定版本**：把 `env.example` 複製成 `.env`（內容是 `OPEN_PETS_VERSION=<版本>`）。
 4. **啟動**：`docker compose up -d`
 5. **建立第一個管理員**（互動輸入，密碼不會留在指令歷史）：
@@ -94,7 +94,7 @@ Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端�
 
 ## 四、驗證映像檔來源
 
-映像檔由本專案的 GitHub Actions 建置並用 cosign 簽署。**不用安裝 cosign，用 Docker 執行**（要能連網；`<digest>` 見該版 Release 說明）：
+映像檔由本專案的 GitHub Actions 建置並用 cosign 簽署。**無須安裝 cosign，以 Docker 執行**（須能連網；`<digest>` 見該版 Release 說明）：
 
 ```powershell
 docker run --rm gcr.io/projectsigstore/cosign:latest verify "ghcr.io/ttcdog115016/open-pets-app@sha256:<digest>" --certificate-identity-regexp '^https://github.com/ttcdog115016/Demo/\.github/workflows/docker-image\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com
@@ -169,14 +169,14 @@ docker logs open-pets                                                           
 
 ## 十、疑難排解
 
-| 你看到 | 怎麼辦 |
+| 現象 | 處理方式 |
 |---|---|
 | 網頁打不開 | `.\open-pets.ps1 status` 看網址與狀態；`docker ps` 的 STATUS 應為 `healthy`；`docker logs open-pets` 看錯誤 |
 | 「已停用指令碼執行」 | `powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 指令` |
 | 登入頁沒有帳號可用 | 還沒建立管理員：`.\open-pets.ps1 create-admin` |
 | `port is already allocated` | 8080 被占用。在 `.env` 加 `OPEN_PETS_PORT=8081`（任一空的埠）再 `docker compose up -d`，網址改用該埠 |
-| 內網一直轉圈、`ERR_CONNECTION_TIMED_OUT` | 網址要打完整的 `https://IP`；再檢查防火牆 443、同一個網路（手機熱點常隔離裝置） |
-| 內網「您的連線不是私人連線」 | 使用者還沒信任根憑證，照 `open-pets-colleague-guide.txt` 做 |
+| 內網頁面持續載入、`ERR_CONNECTION_TIMED_OUT` | 網址須輸入完整的 `https://IP`；再檢查防火牆 443、同一個網路（手機熱點常隔離裝置） |
+| 內網「您的連線不是私人連線」 | 使用者尚未信任根憑證，依 `open-pets-user-guide.txt` 執行 |
 | 上傳大檔失敗 | 預設上限 1024 MB（`OPEN_PETS_MAX_UPLOAD_MB`），前端也限制 1024 MB，要改需一起改 |
 
 ## 十一、授權與原始碼

@@ -4,7 +4,7 @@
 
 它裝在一台電腦或主機上，使用者用瀏覽器操作。**所有運算都在這台主機上進行，資料不會傳到其他地方。**
 
-> 目前最新版本是預發版 **`2.0.0-rc5`**，到 [Releases](https://github.com/ttcdog115016/Demo/releases) 下載。正式版 `2.0.0` 尚未發佈。
+> 安裝所需的映像檔編號為 **`2.0.0-rc5`**，可至 [Releases](https://github.com/ttcdog115016/Demo/releases) 下載。
 
 📖 **完整手冊（有圖、有排解）：https://ttcdog115016.github.io/Demo/**
 
@@ -47,23 +47,23 @@ Unblock-File .\open-pets.ps1
 
 | | 本地（預設） | 內網 |
 |---|---|---|
-| 誰用 | 只有你自己 | 同一個辦公室、內網的同事 |
-| 網址 | `http://localhost:8080` | `https://你電腦的IP` |
-| 同事要做 | — | 每台電腦第一次要「信任憑證」 |
+| 適用對象 | 僅安裝者本人 | 同一個辦公室、內網的多位使用者 |
+| 網址 | `http://localhost:8080` | `https://主機的IP` |
+| 使用者端作業 | — | 每台電腦首次連線前須「信任憑證」 |
 | 難度 | ★ | ★★ |
 | 切換指令 | `.\open-pets.ps1 mode local` | `.\open-pets.ps1 mode lan` |
 
 > 「線上（online）」模式已在 `2.0.0-rc5` 移除。原本用線上模式安裝的資料夾，請執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`），帳號與資料不會不見。
 
-### 內網：讓同事一起用
+### 內網：多位使用者共用
 
-1. `.\open-pets.ps1 setup`，模式選 `2`，網址按 Enter 用偵測到的 IP（或輸入你的 IP）。
+1. `.\open-pets.ps1 setup`，模式選 `2`，網址按 Enter 用偵測到的 IP（或輸入指定的 IP）。
 2. 照工具印出的指令**開防火牆**（用系統管理員身分的 PowerShell）。
-3. `.\open-pets.ps1 export-ca`，把產生的 `open-pets-ca.crt` 和 `open-pets-colleague-guide.txt` 交給同事。
-4. 同事照說明檔「信任憑證」一次，再用瀏覽器開 **`https://你的IP`**。
+3. `.\open-pets.ps1 export-ca`，將產生的 `open-pets-ca.crt` 和 `open-pets-user-guide.txt` 提供給使用者。
+4. 使用者依說明檔「信任憑證」一次，再以瀏覽器開啟 **`https://主機IP`**。
 
-> ⚠️ **網址一定要打 `https://`。** 只打 IP 會走 `http://`，畫面會一直轉圈，最後顯示 `ERR_CONNECTION_TIMED_OUT`。
-> 換了網路、IP 變了：`.\open-pets.ps1 mode lan -Hosts 新IP,舊IP`，根憑證不變，同事不用重新信任。
+> ⚠️ **網址必須使用 `https://`。** 僅輸入 IP 會走 `http://`，頁面將持續載入，最後顯示 `ERR_CONNECTION_TIMED_OUT`。
+> 更換網路、IP 變動時：`.\open-pets.ps1 mode lan -Hosts 新IP,舊IP`，根憑證不變，使用者無須重新信任。
 
 ---
 
@@ -81,18 +81,18 @@ Unblock-File .\open-pets.ps1
 | 出問題時看原因 | `.\open-pets.ps1 logs` |
 | 看全部指令 | `.\open-pets.ps1 help` |
 
-一般使用者由管理員登入網頁後，在「系統設定 → 帳號與權限管理」建立，系統不開放自行註冊。登入後怎麼做去識別化，見[前端操作說明](https://ttcdog115016.github.io/Demo/docs/frontend/)。
+一般使用者由管理員登入網頁後，在「系統設定 → 帳號與權限管理」建立，系統不開放自行註冊。登入後的去識別化操作，見[前端操作說明](https://ttcdog115016.github.io/Demo/docs/frontend/)。
 
 ## 遇到問題
 
-| 你看到 | 怎麼辦 |
+| 現象 | 處理方式 |
 |---|---|
 | 「Docker 沒有在執行」 | 開啟 Docker Desktop，等綠色 Engine running 再重跑 |
 | 瀏覽器打不開網址 | `.\open-pets.ps1 status` 看正確網址（8080 被占用時工具會自動改埠） |
 | 登入頁沒有帳號可選 | `.\open-pets.ps1 create-admin` |
 | 登入失敗太多次被鎖住 | 等 15 分鐘，或請管理員重設密碼 |
-| 內網：「您的連線不是私人連線」 | 這台電腦還沒信任憑證，照 `open-pets-colleague-guide.txt` 做一次 |
-| 內網：一直轉圈 | 確認有打 `https://`；防火牆有沒有開；同事的電腦是否在同一個網路（手機熱點常隔離裝置） |
+| 內網：「您的連線不是私人連線」 | 這台電腦尚未信任憑證，依 `open-pets-user-guide.txt` 執行一次 |
+| 內網：頁面持續載入 | 確認網址以 `https://` 開頭；防火牆是否已開放；使用者的電腦是否在同一個網路（手機熱點常隔離裝置） |
 
 更多狀況見[常見問題](https://ttcdog115016.github.io/Demo/docs/faq/)。
 
@@ -112,7 +112,7 @@ Unblock-File .\open-pets.ps1
 
 ### 驗證下載的東西沒被動過
 
-- **映像檔來源（cosign 簽章）：** 不用安裝 cosign，用 Docker 執行。把 `<digest>` 換成該版 Release 說明裡的 digest：
+- **映像檔來源（cosign 簽章）：** 無須安裝 cosign，以 Docker 執行。將 `<digest>` 替換為該版 Release 說明中的 digest：
 
   ```powershell
   docker run --rm gcr.io/projectsigstore/cosign:latest verify "ghcr.io/ttcdog115016/open-pets-app@sha256:<digest>" --certificate-identity-regexp '^https://github.com/ttcdog115016/Demo/\.github/workflows/docker-image\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com

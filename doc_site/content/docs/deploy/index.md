@@ -400,7 +400,7 @@ Test-NetConnection 192.168.1.20 -Port 443
 
 憑證是 Caddy 的私有 CA 簽發的，使用者電腦要**信任這個 CA 的根憑證**，瀏覽器才不會顯示「您的連線不是私人連線」。每台使用者電腦做一次。
 
-**以安裝工具一次完成：** `.\open-pets.ps1 export-ca`（Linux：`./open-pets.sh export-ca`）會匯出 `open-pets-ca.crt`，並產生已填入網址與憑證指紋的使用者說明檔 `open-pets-colleague-guide.txt`。下列為手動做法。
+**以安裝工具一次完成：** `.\open-pets.ps1 export-ca`（Linux：`./open-pets.sh export-ca`）會匯出 `open-pets-ca.crt`，並產生已填入網址與憑證指紋的使用者說明檔 `open-pets-user-guide.txt`。下列為手動做法。
 
 1. 在主機匯出根憑證（僅含憑證，不含私鑰，可安全提供給使用者）：
 
