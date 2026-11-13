@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Open-PETs 安裝與模式切換小工具（Linux／macOS，bash）
+# Open-PETs 安裝與模式切換工具（Linux／macOS，bash）
 #
 # 最常用的三個指令（在這個檔案所在的資料夾執行）：
-#   ./open-pets.sh setup                  第一次安裝：用問答幫你選模式、填網址、啟動、建立管理員
-#   ./open-pets.sh mode local|lan  切換模式（本地／內網），資料不會不見
-#   ./open-pets.sh status                 看目前是什麼模式、有沒有在運作、要開哪個網址
+#   ./open-pets.sh setup                  首次安裝：以問答方式選擇模式、填入網址、啟動並建立管理員
+#   ./open-pets.sh mode local|lan  切換模式（本地／內網），資料不會遺失
+#   ./open-pets.sh status                 查看目前的模式、運作狀態與應開啟的網址
 #
 # 其他指令：start、stop、logs、create-admin、reset-password、export-ca、backup、update <版本>、help
 # 進階參數：--mode --hosts --version --port --https-port --container-name --project-name --image --yes（全部用預設值、不詢問）
@@ -195,7 +195,7 @@ confirm_files() { # confirm_files MODE VERSION
     [ "$mode" = lan ] && need="$need docker-compose.lan.yml Caddyfile.lan"
     for f in $need; do
         [ -f "$DIR/$f" ] && continue
-        [ -z "$ver" ] && stop_tool "資料夾裡缺少 $f，又不知道要下載哪一版。" '請加上 --version 2.0.0-rc5（換成你要的版本）再執行一次。'
+        [ -z "$ver" ] && stop_tool "資料夾裡缺少 $f，又不知道要下載哪一版。" '請加上 --version 2.0.0-rc5（替換為欲安裝的版本號）再執行一次。'
         note "下載 $f ..."
         local url="$RELEASE_BASE/v$ver/$f"
         if command -v curl > /dev/null 2>&1; then curl -fsSL -o "$DIR/$f" "$url" || { rm -f "$DIR/$f"; false; }
@@ -262,7 +262,7 @@ show_access() {
         lan)
             [ "$CFG_HTTPS" -gt 0 ] && [ "$CFG_HTTPS" -ne 443 ] && suffix=":$CFG_HTTPS"
             for h in $(printf '%s' "$CFG_HOSTS" | tr ',' ' '); do printf '%s  同一個內網的電腦在瀏覽器開：https://%s%s%s\n' "$C_G" "$h" "$suffix" "$C_0"; done
-            note '每台要使用的電腦第一次要先信任憑證，否則瀏覽器會顯示警告：執行 ./open-pets.sh export-ca，把產生的說明檔交給同事。' ;;
+            note '每台要使用的電腦第一次要先信任憑證，否則瀏覽器會顯示警告：執行 ./open-pets.sh export-ca，並將產生的使用者說明檔提供給使用者。' ;;
         online)
             warn '這個資料夾還是舊版的「線上模式」設定，線上模式已移除。請改用內網或本地（資料不會不見）：'
             say '    ./open-pets.sh mode lan --hosts <這台電腦的內網IP>'
@@ -270,8 +270,8 @@ show_access() {
     esac
 }
 firewall_hint() {
-    title '防火牆（讓同事連得進來）'
-    warn "同一個內網的電腦要連到這台電腦的 $1 埠，防火牆要開放。依你的系統擇一（需要 sudo）："
+    title '防火牆（供使用者連線）'
+    warn "同一個內網的電腦要連到這台電腦的 $1 埠，防火牆須開放。請依系統擇一（需要 sudo）："
     say "  sudo ufw allow $1/tcp"
     say "  sudo firewall-cmd --permanent --add-port=$1/tcp && sudo firewall-cmd --reload"
 }
@@ -297,9 +297,9 @@ cmd_setup() {
     local m="$OPT_MODE" choice ver hostlist='' problem app_port https_port=0 container existing alt free ips d
     if [ -z "$m" ]; then
         say ''
-        say '請選擇你要怎麼使用 Open-PETs：'
-        say '  1. 本地   只有我自己，在這一台電腦上用                         （最簡單）'
-        say '  2. 內網   同一個辦公室／內網的同事，用他們自己的電腦連進來      （需要信任憑證）'
+        say '請選擇 Open-PETs 的使用方式：'
+        say '  1. 本地   僅安裝者本人，在這一台電腦上使用                     （最簡單）'
+        say '  2. 內網   同一個辦公室／內網的使用者，以各自的電腦連線            （需要信任憑證）'
         choice="$(ask '輸入 1 或 2' '1')"
         case "$choice" in 1) m=local ;; 2) m=lan ;; *) m="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')" ;; esac
     fi
@@ -308,17 +308,17 @@ cmd_setup() {
 
     ver="$(default_version)"
     [ -z "$ver" ] && ver="$(ask '要安裝哪一版（到 GitHub 的 Releases 頁看，不含開頭的 v，例如 2.0.0-rc5）' '')"
-    [ -z "$ver" ] && stop_tool '需要版本號才能安裝。' '請加上 --version 2.0.0-rc5（換成你要的版本）再執行一次。'
+    [ -z "$ver" ] && stop_tool '需要版本號才能安裝。' '請加上 --version 2.0.0-rc5（替換為欲安裝的版本號）再執行一次。'
     resolve_image "$ver"
 
     if [ "$m" = lan ]; then
         ips="$(lan_ips)"
         say ''
-        say '同事要用哪個網址連進來？請填這台電腦在內網的 IP（或內網的主機名稱）。'
+        say '使用者以哪個網址連線？請填這台電腦在內網的 IP（或內網的主機名稱）。'
         if [ -n "$ips" ]; then
             say '這台電腦偵測到的內網 IP：'
             printf '%s\n' "$ips" | awk '{printf "    %s    （%s）\n", $1, $2}'
-            note '建議把這台電腦的 IP 固定下來（路由器的 DHCP 保留，或在系統設定固定 IP），否則 IP 變了同事就連不上。'
+            note '建議把這台電腦的 IP 固定下來（路由器的 DHCP 保留，或在系統設定固定 IP），否則 IP 變動時使用者將無法連線。'
         fi
         d="$OPT_HOSTS"; [ -z "$d" ] && d="$(printf '%s\n' "$ips" | head -n 1 | awk '{print $1}')"
         hostlist="$(normalize_hosts "$(ask '網址（多個請用逗號分隔，例如 192.168.1.20,pets-server）' "$d")")"
@@ -346,7 +346,7 @@ cmd_setup() {
     if [ "$m" = lan ]; then
         https_port="$OPT_HTTPS_PORT"
         if [ "$https_port" -le 0 ]; then if [ "$env_https" -gt 0 ]; then https_port="$env_https"; else https_port=443; fi; fi
-        if port_busy "$https_port" && [ "$https_port" -ne "$env_https" ]; then free="$(find_free_port 8443)"; warn "這台電腦的 $https_port 埠已經有別的程式在用，HTTPS 改用 $free（同事的網址要加上 :$free）。"; https_port="$free"; fi
+        if port_busy "$https_port" && [ "$https_port" -ne "$env_https" ]; then free="$(find_free_port 8443)"; warn "這台電腦的 $https_port 埠已經有別的程式在用，HTTPS 改用 $free（使用者的網址須加上 :$free）。"; https_port="$free"; fi
     fi
 
     title '請確認'
@@ -394,7 +394,7 @@ cmd_mode() {
         if [ -z "$hostlist" ]; then
             if [ "$new" = lan ]; then
                 ips="$(lan_ips)"; d="$(printf '%s\n' "$ips" | head -n 1 | awk '{print $1}')"
-                hostlist="$(ask '同事要用哪個網址連進來（內網 IP 或主機名稱，多個用逗號分隔）' "$d")"
+                hostlist="$(ask '使用者以哪個網址連線（內網 IP 或主機名稱，多個以逗號分隔）' "$d")"
             fi
         fi
         hostlist="$(normalize_hosts "$hostlist")"
@@ -406,9 +406,9 @@ cmd_mode() {
     printf '%s  資料（帳號、處理紀錄、稽核紀錄、金鑰）都在資料磁碟區裡，切換模式不會刪除。%s\n' "$C_G" "$C_0"
     [ "$current" = "$new" ] && note '目前已經是這個模式，會用現在的設定重新套用一次。'
     case "$new" in
-        local) note '切換後：只有這台電腦能開 http://localhost；同一個內網的同事會連不上。'
-            [ "$current" = lan ] && note '內網的 HTTPS 容器會停掉並移除；它保存的憑證資料會保留，之後切回內網沿用，同事不用重新信任。' ;;
-        lan) note '切換後：同事改用 https://<網址> 連進來；每台電腦第一次要信任憑證；這台電腦的防火牆要開放 HTTPS 埠。'
+        local) note '切換後：僅這台電腦能開啟 http://localhost；同一個內網的使用者將無法連線。'
+            [ "$current" = lan ] && note '內網的 HTTPS 容器會停掉並移除；它保存的憑證資料會保留，之後切回內網沿用，使用者無須重新信任。' ;;
+        lan) note '切換後：使用者改用 https://<網址> 連線；每台電腦首次連線須信任憑證；這台電腦的防火牆須開放 HTTPS 埠。'
             note '「系統設定」裡的「系統維運日誌」分頁會顯示給管理員。' ;;
     esac
     confirm_step '要切換嗎' || { printf '%s已取消，沒有做任何變更。%s\n' "$C_Y" "$C_0"; return 0; }
@@ -416,7 +416,7 @@ cmd_mode() {
     if [ "$new" = lan ]; then
         [ "$OPT_HTTPS_PORT" -gt 0 ] && CFG_HTTPS="$OPT_HTTPS_PORT"
         [ "$CFG_HTTPS" -le 0 ] && CFG_HTTPS=443
-        if [ "$current" != lan ] && port_busy "$CFG_HTTPS"; then free="$(find_free_port 8443)"; warn "這台電腦的 $CFG_HTTPS 埠已經有別的程式在用，HTTPS 改用 $free（同事的網址要加上 :$free）。"; CFG_HTTPS="$free"; fi
+        if [ "$current" != lan ] && port_busy "$CFG_HTTPS"; then free="$(find_free_port 8443)"; warn "這台電腦的 $CFG_HTTPS 埠已經有別的程式在用，HTTPS 改用 $free（使用者的網址須加上 :$free）。"; CFG_HTTPS="$free"; fi
     else CFG_HTTPS=0; fi
     CFG_MODE="$new"; CFG_HOSTS="$hostlist"
     apply_config || return 0
@@ -439,7 +439,7 @@ cmd_status() {
     health="$(docker inspect --format '{{.State.Health.Status}}' "$CFG_CONTAINER" 2> /dev/null)"
     say "  容器　　：$CFG_CONTAINER　$(printf '%s' "$line" | cut -d'|' -f2)　健康狀態：$health"
     actual="$(curl -fsS -m 5 "http://127.0.0.1:$CFG_PORT/runtime-config.js" 2> /dev/null | sed -nE 's/.*"mode": "([a-z]+)".*/\1/p')"
-    if [ -n "$actual" ]; then note "系統回報的模式：$actual"; else note '（暫時連不到本機的服務；剛啟動的話請稍等一下再查）'; fi
+    if [ -n "$actual" ]; then note "系統回報的模式：$actual"; else note '（暫時無法連線至本機的服務；若剛啟動，請稍候再查詢）'; fi
     show_access
     [ "$health" != healthy ] && note '狀態不是 healthy 的話，執行 ./open-pets.sh logs 看原因。'
     return 0
@@ -452,21 +452,21 @@ cmd_export_ca() {
     need_docker
     load_current
     [ "$CFG_MODE" = lan ] || stop_tool '只有「內網」模式才有憑證要匯出。' "目前是$(mode_label "$CFG_MODE")模式。要用內網請先執行 ./open-pets.sh mode lan"
-    local target="$DIR/open-pets-ca.crt" guide="$DIR/open-pets-colleague-guide.txt" fp suffix='' urls='' h
+    local target="$DIR/open-pets-ca.crt" guide="$DIR/open-pets-user-guide.txt" fp suffix='' urls='' h
     compose cp proxy:/data/caddy/pki/authorities/local/root.crt "$target" || stop_tool '匯出憑證失敗。' '確認系統已經啟動（./open-pets.sh status）。'
     fp="$(openssl x509 -in "$target" -noout -fingerprint -sha256 2> /dev/null | sed 's/.*=//; s/://g')"
     [ -z "$fp" ] && fp='（這台電腦沒有 openssl，無法計算指紋；請在能用的電腦上執行 openssl x509 -in open-pets-ca.crt -noout -fingerprint -sha256）'
     [ "$CFG_HTTPS" -gt 0 ] && [ "$CFG_HTTPS" -ne 443 ] && suffix=":$CFG_HTTPS"
     for h in $(printf '%s' "$CFG_HOSTS" | tr ',' ' '); do urls="${urls:+$urls、}https://$h$suffix"; done
     cat > "$guide" << EOF
-Open-PETs 使用說明（給同事）
+Open-PETs 使用說明（使用者）
 
 1. 用瀏覽器（Chrome 或 Edge）開啟：$urls
-2. 第一次連線，瀏覽器會顯示「您的連線不是私人連線」之類的警告，這是因為這台電腦還沒有信任公司內部的憑證。
-   請先照下面做一次「信任憑證」，之後就不會再出現警告。
+2. 第一次連線，瀏覽器會顯示「您的連線不是私人連線」之類的警告，這是因為這台電腦尚未信任公司內部的憑證。
+   請先依下列步驟執行一次「信任憑證」，之後不會再出現警告。
 
-信任憑證（每台電腦只要做一次）：
-  1. 把管理員給你的檔案 open-pets-ca.crt 存到這台電腦。
+信任憑證（每台電腦僅需執行一次）：
+  1. 將管理員提供的檔案 open-pets-ca.crt 存到這台電腦。
   2. Windows：用「系統管理員身分」開 PowerShell，在檔案所在的資料夾執行：
        certutil -addstore -f Root open-pets-ca.crt
      （或用滑鼠雙擊這個檔案 → 安裝憑證 → 本機電腦 → 選「將所有憑證放入以下的存放區」→「受信任的根憑證授權單位」）
@@ -474,16 +474,16 @@ Open-PETs 使用說明（給同事）
   3. 完全關閉瀏覽器再重新開啟。
   4. Firefox 使用者：設定 → 隱私權與安全性 → 憑證 → 檢視憑證 → 憑證機構 → 匯入 open-pets-ca.crt，勾選「信任這個 CA 來識別網站」。
 
-確認拿到的是正確的憑證（防止被人掉包）：憑證的 SHA-256 指紋應該是
+確認取得的是正確的憑證（以防檔案遭替換）：憑證的 SHA-256 指紋應為
   $fp
-（雙擊 open-pets-ca.crt → 詳細資料 → 指紋，兩個要一致；不一致就不要安裝，請回報管理員。）
+（雙擊 open-pets-ca.crt → 詳細資料 → 指紋，兩者須一致；不一致請勿安裝，並回報管理員。）
 
 登入帳號請向管理員索取。系統不開放自行註冊。
 EOF
     ok "已匯出憑證：$target"
-    ok "已產生給同事的說明：$guide"
+    ok "已產生使用者說明檔：$guide"
     say "  憑證 SHA-256 指紋：$fp"
-    warn '只把 open-pets-ca.crt 與說明檔交給同事。憑證的私鑰在這台電腦的資料磁碟區裡，請當作機密，不要外流。'
+    warn '僅將 open-pets-ca.crt 與使用者說明檔提供給使用者。憑證的私鑰存放於這台電腦的資料磁碟區，請列為機密，勿外流。'
 }
 cmd_backup() {
     need_docker
@@ -520,21 +520,21 @@ cmd_update() {
 cmd_help() {
     cat << 'EOF'
 
-Open-PETs 安裝與模式切換小工具
+Open-PETs 安裝與模式切換工具
 
   第一次安裝　　　　./open-pets.sh setup
-  切換模式　　　　　./open-pets.sh mode local    （本地：只有這台電腦用）
-　　　　　　　　　　./open-pets.sh mode lan      （內網：同一個辦公室的同事連進來，內建 HTTPS）
+  切換模式　　　　　./open-pets.sh mode local    （本地：僅這台電腦使用）
+　　　　　　　　　　./open-pets.sh mode lan      （內網：同一個辦公室的使用者連線，內建 HTTPS）
   看狀態與網址　　　./open-pets.sh status
   啟動／停止　　　　./open-pets.sh start      ./open-pets.sh stop
   看日誌（出問題時）./open-pets.sh logs
   建立管理員　　　　./open-pets.sh create-admin
   忘記管理員密碼　　./open-pets.sh reset-password
-  給同事的憑證與說明./open-pets.sh export-ca    （內網模式）
+  使用者憑證與說明檔./open-pets.sh export-ca    （內網模式）
   備份　　　　　　　./open-pets.sh backup
   更新版本　　　　　./open-pets.sh update 2.0.0-rc5
 
-  不想回答問題、全部用預設值：加上 --yes。進階參數見檔案開頭的說明。
+  全部採用預設值、不詢問：加上 --yes。進階參數見檔案開頭的說明。
 EOF
 }
 

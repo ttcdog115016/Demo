@@ -7,12 +7,12 @@ weight: 1
 
 它裝在一台電腦或主機上，使用者用瀏覽器操作。**所有運算都在這台主機上進行，資料不會傳到其他地方。**
 
-## 我要做什麼？
+## 內容導覽
 
 {{< cards >}}
-  {{< card link="quickstart" title="我要安裝" icon="play" subtitle="第一次安裝、不熟指令：選模式、用小工具安裝、隨時切換" >}}
-  {{< card link="frontend" title="我要使用" icon="cursor-click" subtitle="登入後怎麼做去識別化、管理帳號" >}}
-  {{< card link="faq" title="我遇到問題" icon="question-mark-circle" subtitle="連不上、登入失敗、上傳失敗等常見狀況" >}}
+  {{< card link="quickstart" title="安裝" icon="play" subtitle="初次安裝：選擇模式、以安裝工具安裝、隨時切換" >}}
+  {{< card link="frontend" title="使用" icon="cursor-click" subtitle="登入後的去識別化操作與帳號管理" >}}
+  {{< card link="faq" title="疑難排解" icon="question-mark-circle" subtitle="無法連線、登入失敗、上傳失敗等常見狀況" >}}
   {{< card link="deploy" title="資訊人員：完整參考" icon="server" subtitle="手動設定、更新、備份、驗證與授權" >}}
   {{< card link="api" title="系統整合：API" icon="code" subtitle="端點與呼叫範例" >}}
   {{< card link="cli" title="資訊人員：命令列" icon="terminal" subtitle="批次作業與帳號維護" >}}
@@ -20,12 +20,12 @@ weight: 1
 
 ## 兩種使用方式
 
-同一份軟體，依你的情況選一種，之後隨時可以切換，資料都會保留：
+同一份軟體可依使用情境選擇一種模式，之後可隨時切換，資料均會保留：
 
 | | 誰會用 | 網址 |
 | --- | --- | --- |
-| **本地**（預設） | 只有你自己，在這台電腦上 | `http://localhost:8080` |
-| **內網** | 同一個辦公室或內網的同事（內建 HTTPS） | `https://你電腦的IP` |
+| **本地**（預設） | 僅安裝者本人，在這台電腦上使用 | `http://localhost:8080` |
+| **內網** | 同一個辦公室或內網的多位使用者（內建 HTTPS） | `https://主機的IP` |
 
 不確定就先選「本地」。詳細說明見[新手快速上手](quickstart/)，技術細節見[安裝教學第 8 節](deploy/#8-兩種模式本地內網)。
 
