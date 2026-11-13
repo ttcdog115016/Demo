@@ -143,6 +143,10 @@ describe('Step4 管線取消／登出／逾時防護（★ 2026-11-02）', { tim
         expect(result.current.attackReportData).toEqual(attackReport);
         expect(result.current.datasetRowStatsData).not.toBeNull();
         expect(result.current.attackSimulationMetricsData).not.toBeNull();
+        // 第一輪要先完整結束（「運算中」已關閉＝執行中旗標已清除），否則下面的「重新運算」會被當成重複呼叫而略過。
+        // 結果資料一出現，這一輪還要再算檔案指紋、寫稽核紀錄才走到結尾，機器慢（如 CI）時可能尚未完成。
+        await settleUntil(() => !result.current.isPipelineCalculatingStatus);
+        await settle();
 
         phaseMocks.runRiskAssessmentPhase.mockRejectedValueOnce(new Error('風險評估失敗'));
         await act(async () => { void result.current.runFullPipeline(true); });
