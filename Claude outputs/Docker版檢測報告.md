@@ -568,6 +568,59 @@ HIGH 主要集中在 util-linux 系列（`bsdutils`、`libblkid1`、`libmount1`�
 - 需要管理員自己處理：啟用 Private vulnerability reporting；確認兩個 ruleset 的繞過名單含 Repository admin；到 ngrok 後台刪除舊 token（舊報告提醒）。
 - 供應商待辦（審查報告 11 項與 F9）不在本次範圍。
 
+## 二十、追加（115/11/13）：相依套件更新（Dependabot）處理與 v2.0.0-rc5 預發版
+
+### （一）Dependabot PR 處理
+| PR | 內容 | 處理 |
+|---|---|---|
+| #26 | `docker/login-action` 3→4 | CI 全綠，合併 |
+| #27 | 前端 npm 28 個小版本／修補版（含 `lucide-react` 1.25→1.70、`antd` 6.5→6.7、`react`／`react-dom` 19.3、`vite` 8.3、`@playwright/test` 1.65） | 在獨立工作目錄驗證：`tsc` 無錯、`vite build` 成功、vitest 93 檔 625 項全過；以該程式碼建置映像檔，`docker_modes` e2e 在本地、內網模式各 3/3 通過後合併。注意：Playwright 升到 1.65 後，本機跑 e2e 要先執行一次 `npx playwright install chromium`（CI 不跑 e2e，不受影響） |
+| #28 | 後端 Python 37 個套件 | 失敗，Dependabot 已自行關閉。根因：`scikit-learn` 升到 1.9.1 後，`diffprivlib 0.6.6` 匯入的 `sklearn.tree._tree.DOUBLE` 已被移除，載入即失敗。以 `scikit-learn 1.8.0` 搭配其餘升級項目重跑後端測試，820 項全過 |
+| #29 | `dependabot.yml` 新增 `scikit-learn` 次版本忽略規則，並以註解記錄原因 | 合併。待 `diffprivlib` 發佈相容版本後再移除這條規則。下一次每週檢查會用新規則重開 Python 套件 PR，屆時須確認 `backend-tests` 與 `build-and-smoke` 通過才合併 |
+
+### （二）v2.0.0-rc5 預發版
+rc5 是第一個不含線上（online）模式、並附前端授權全文與前端 SBOM 的版本。準備 PR（#31）內容：依 #27 合併後的 `package-lock.json` 重新產生前端 SBOM 與授權清單（元件由 187 增為 191）、文件與工具範例的版本改為 rc5、註明線上模式自 rc5 起移除；「local／lan 要 rc3 起才有」的門檻說法維持不變。
+
+| 項目 | 結果 |
+|---|---|
+| 發版流程手動試跑 | 在準備分支（`461c326`）以版本 `2.0.0-dryrun4` 試跑（run 43334171615）：建置、Trivy 掃描、冒煙測試（含三種模式與 online 必須被拒絕）、打包、上傳 artifact 皆成功；登入／推送 GHCR、cosign、建立 Release 皆跳過，沒有新增 Release、tag 或 GHCR 版本 |
+| 發版 | 標籤 `v2.0.0-rc5` 建立在 #31 合併後的 `bffb586`，發版流程（run 43336510211）成功 |
+| Release | 預發版；17 個檔案＋1 個簽章 bundle，檔名皆 ASCII；**新增** `FRONTEND_LICENSES_FULLTEXT.txt`、`frontend-sbom.cdx.json` 兩個檔案 |
+| 校驗碼 | `sha256sum -c SHA256SUMS.txt`：16 個檔案全部 OK |
+| 映像檔簽章 | 以 Docker 版 `cosign verify` 通過；簽署身分 `docker-image.yml@refs/tags/v2.0.0-rc5`、commit `bffb586`；映像檔 digest `sha256:d0535586…cfdb9c` |
+| `SHA256SUMS.txt` 簽章 | `cosign verify-blob` Verified OK |
+| GHCR | 未登入（空的 Docker 設定）可拉取 `ghcr.io/ttcdog115016/open-pets-app:2.0.0-rc5`，digest 與簽章的 digest 一致 |
+| 離線包 | `.tar.gz` 解開後 15 層與 GHCR 映像檔逐層相同，建置時間相同 |
+| 映像檔內授權檔 | `/licenses` 含 `LICENSE`、`THIRD_PARTY_NOTICES.txt`、`FRONTEND_THIRD_PARTY_LICENSES.md`、`FRONTEND_LICENSES_FULLTEXT.txt`、`frontend-sbom.cdx.json`；`THIRD_PARTY_NOTICES.txt` 中 `UNKNOWN` 為 0。（第十九節（五）所述「新增交付物下一次預發版才會進入 Release」至此已兌現） |
+| 工具 | 兩個工具的預設版本已換成 `2.0.0-rc5`（不含 `__DEFAULT_VERSION__`） |
+
+### （三）升級與模式實測（獨立專案 `e2e-up-rc5`，埠 18291、18292）
+| 項目 | 結果 |
+|---|---|
+| rc4 → rc5 升級 | 以 rc5 的小工具安裝 rc4（本地模式）並建立一個管理員，再 `update 2.0.0-rc5`：升級前自動備份，升級後容器健康、`.env` 版本為 rc5，同名帳號再建立回報 `ERR_USER_EXISTS`（資料保留） |
+| 舊 online 設定 | 把 `.env` 改成 `OPEN_PETS_MODE=online`：`status` 標示「線上（已移除）」並提示改用 `mode lan`／`mode local`；`update` 直接停止並說明資料不會刪除，不會硬升級 |
+| 切換內網模式 | `mode lan -Hosts 127.0.0.1 -HttpsPort 18292`：自動下載 `docker-compose.lan.yml`、`Caddyfile.lan`，HTTPS 回 200，`runtime-config.js` 回報 `lan`，代理與應用容器皆啟動 |
+| 清理與 Demo | 測試專案已以 `docker compose down -v` 移除；使用者的 `open-pets`、`open-pets-web` 全程 Up、未受影響 |
+
+### （四）rc5 映像檔重新掃描
+以與 CI 相同的 Trivy 0.76.2（固定 digest，`--image-src remote`）掃描 `ghcr.io/ttcdog115016/open-pets-app:2.0.0-rc5`（Debian 13.7）：
+
+| 類別 | 結果 |
+|---|---|
+| Python 套件、Node.js 套件 | 各 0 項弱點 |
+| 祕密（secret） | 0 項 |
+| Debian 作業系統套件 | 205 項：HIGH 47、MEDIUM 74、LOW 65、UNKNOWN 19；**沒有任何一項已有修補版**，與 rc4 完全相同，仍待 Debian 釋出修補版 |
+
+原始輸出：`trivy/rc5/trivy-rc5-ghcr.json`。
+
+### （五）未涵蓋與待辦
+- 本次沒有重跑 SonarQube、Dependency-Check、ZAP；#27 升級後的前端 npm 弱點未用這些工具重掃（沿用第十九節說明）。
+- rc5 的內網 HTTPS 只在同一台電腦以 `127.0.0.1` 驗證；從另一台電腦以內網 IP 連線未重做。互動問答的真人操作、防火牆規則的實際建立、Linux 版工具在真實 Linux 主機上的測試，仍沿用第十六節。
+- 下載的發版 artifact（試跑）因需登入無法逐檔檢視，以公開 Release 的實際檔案為準。
+- 後端 Python 套件的 Dependabot PR 待下次每週檢查重開後處理。
+- 管理員自己處理：啟用 Private vulnerability reporting；確認兩個 ruleset 的繞過名單含 Repository admin；到 ngrok 後台刪除舊 token。
+- 未發正式版 `v2.0.0`；rc1～rc5 保留。
+
 ## 附件：原始資料（`Docker版檢測原始資料/`）
 
 | 位置 | 內容 |
@@ -579,3 +632,4 @@ HIGH 主要集中在 util-linux 系列（`bsdutils`、`libblkid1`、`libmount1`�
 | `e2e/` | 瀏覽器流程各步驟截圖、Playwright 結果 JSON、下載的使用注意事項 |
 | `trivy/trivy-image-modes.json`、`zap/baseline-modes.*` | 第十節追加的最終映像檔掃描 |
 | `trivy/rc4/trivy-rc4-ghcr.json` | 第十九節：v2.0.0-rc4 映像檔重新掃描（Trivy 0.76.2） |
+| `trivy/rc5/trivy-rc5-ghcr.json` | 第二十節：v2.0.0-rc5 映像檔重新掃描（Trivy 0.76.2） |
