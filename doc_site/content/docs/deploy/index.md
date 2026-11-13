@@ -6,24 +6,22 @@ weight: 3
 適用版本：Open-PETs **2.0.0**（前端與後端在同一個 Docker 映像檔）｜環境：Windows 10／11＋Docker Desktop，附 Linux 指令
 
 {{< callout type="info" >}}
-**第一次安裝、不熟指令？請看[新手快速上手](../quickstart/)。** 那一頁用問答式小工具（`open-pets.ps1`／`open-pets.sh`）帶你安裝與切換模式。本頁是給資訊人員的**完整參考**：手動做法、進階設定、更新、備份、驗證與授權。
+**首次安裝或不熟悉指令操作者，請參閱[新手快速上手](../quickstart/)。** 該頁以問答式安裝工具（`open-pets.ps1`／`open-pets.sh`）完成安裝與模式切換。本頁為供資訊人員使用的**完整參考**：手動做法、進階設定、更新、備份、驗證與授權。
 {{< /callout >}}
 
 {{< callout type="warning" >}}
-**目前 GitHub Releases 只有預發版（最新是 `2.0.0-rc5`），正式版 `2.0.0` 尚未發佈。** 現在安裝請填 **`2.0.0-rc5`**，填 `2.0.0` 會拉不到映像檔。
+**安裝時須指定映像檔編號，現行編號為 `2.0.0-rc5`。** 填入 `2.0.0` 將無法取得映像檔。可用編號以 [GitHub Releases](https://github.com/ttcdog115016/Demo/releases) 所列為準。
 {{< /callout >}}
 
 ### 版本號怎麼填
 
-文中的 `<版本>` 要換成**實際存在的版本號**：到 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)，看你要裝的那一筆。
+文中的 `<版本>` 須替換為**實際存在的版本號**：請至 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)查閱欲安裝的項目。
 
-| Releases 頁上看到的 | 要填的版本號 |
+| Releases 頁所列項目 | 應填入的版本號 |
 | --- | --- |
-| 標題 `Open-PETs 2.0.0-rc5`（標籤 `v2.0.0-rc5`，有 Pre-release 標示） | `2.0.0-rc5`（**不含開頭的 v**） |
-| 日後正式版：標題 `Open-PETs 2.0.0`（標籤 `v2.0.0`） | `2.0.0` |
+| 標題 `Open-PETs 2.0.0-rc5`（標籤 `v2.0.0-rc5`） | `2.0.0-rc5`（**不含開頭的 v**） |
 
-- 每次安裝或更新都要寫明確版本，系統不提供 `latest`。
-- 帶 `-rc` 的是預發版，只用於試用與驗證；正式環境請等正式版。
+- 每次安裝或更新均須指定明確的版本號，系統不提供 `latest`。
 - 離線交付包的檔名也帶同一個版本，例如 `open-pets-app_2.0.0-rc5.tar.gz`。
 
 ## 1. 架構
@@ -44,7 +42,7 @@ weight: 3
 
 - 前端與後端在**同一個容器、同一個埠（8080）**，不需要另外裝 nginx、Python 或 Node.js。
 - 容器預設只綁本機（`127.0.0.1`）。要讓同一個內網的其他電腦連入，見[第 9 節](#9-開放給其他電腦內網)。
-- 第一次啟動會自動產生雜湊鹽值與簽章金鑰，存在磁碟區的 `/data/.secrets.env`，**不用自己準備金鑰**。
+- 第一次啟動會自動產生雜湊鹽值與簽章金鑰，存在磁碟區的 `/data/.secrets.env`，**無須自行準備金鑰**。
 
 ## 2. 選擇取得方式
 
@@ -104,7 +102,7 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 下面的指令都在終端機貼上執行，並要先 `cd` 進安裝資料夾。`OPEN_PETS_IMAGE=...` 這種 `名稱=值` 是寫在 `.env` **檔案裡**的內容，不是終端機指令，直接輸入會出現「無法辨識」。
 {{< /callout >}}
 
-1. 下載該版本的 `docker-compose.yml`（把版本換成你要的）：
+1. 下載該版本的 `docker-compose.yml`（將版本號替換為欲安裝的編號）：
 
     {{< tabs >}}
     {{< tab name="Windows（PowerShell）" >}}
@@ -162,10 +160,10 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 
 | 檔案 | 用途 |
 | --- | --- |
-| `open-pets-app_<版本>.tar.gz` | 映像檔（`docker load` 直接讀，不用先解壓縮） |
+| `open-pets-app_<版本>.tar.gz` | 映像檔（`docker load` 可直接讀取，無須先解壓縮） |
 | `docker-compose.yml`、`docker-compose.lan.yml` | 啟動設定：本地（預設）、內網（內建 HTTPS） |
-| `Caddyfile.lan` | 內網模式的 Caddy 設定（一般不用改） |
-| `open-pets.ps1`、`open-pets.sh` | 安裝與切換模式小工具（預設版本已換成該版） |
+| `Caddyfile.lan` | 內網模式的 Caddy 設定（一般無須修改） |
+| `open-pets.ps1`、`open-pets.sh` | 安裝與切換模式安裝工具（預設版本已換成該版） |
 | `env.example` | 設定範本，複製成 `.env` |
 | `SHA256SUMS.txt` | 完整性檢查碼；交付時請另用安全管道確認一份 |
 | `README_Docker.md`、`REBUILD.md` | 安裝說明、重新建置說明 |
@@ -226,7 +224,7 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
     docker buildx build -f docker/Dockerfile --build-arg OPEN_PETS_VERSION=<版本> -t open-pets-app:<版本> --load .
     ```
 
-3. 把 `docker/docker-compose.yml` 複製到安裝資料夾，建立 `.env`（一行，版本換成你建置時用的），再啟動：
+3. 把 `docker/docker-compose.yml` 複製到安裝資料夾，建立 `.env`（一行，版本號填入建置時使用的編號），再啟動：
 
     {{< tabs >}}
     {{< tab name="Windows（PowerShell）" >}}
@@ -265,7 +263,7 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 
     - 帳號建議用 Email。密碼至少 12 個字元，要有大寫、小寫、數字、符號。
     - 已經有帳號時，這個指令會拒絕執行。其他使用者由管理員登入網頁，在「系統設定 → 帳號與權限管理」建立，系統不開放自行註冊。
-    - 容器名稱以 `docker ps` 為準。用小工具安裝、而這台電腦已有同名容器時，名稱會是 `open-pets-app`。
+    - 容器名稱以 `docker ps` 為準。用安裝工具安裝、而這台電腦已有同名容器時，名稱會是 `open-pets-app`。
 
 3. 在這台電腦的瀏覽器開 **http://localhost:8080**，用剛建立的帳號登入。
 4. 上傳一份測試 CSV，完成一次 K-匿名化並下載結果。操作見[前端操作說明](../frontend/)。
@@ -278,7 +276,7 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 
 ## 8. 兩種模式：本地、內網
 
-同一個映像檔，用環境變數 `OPEN_PETS_MODE` 選模式。預設是**本地**，不用設定。
+同一個映像檔，以環境變數 `OPEN_PETS_MODE` 選擇模式。預設為**本地**，無須設定。
 
 | | 本地（預設） | 內網 |
 | --- | --- | --- |
@@ -295,13 +293,13 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 - 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令，資料磁碟區不變。
 - `OPEN_PETS_MODE` 填了 `local`、`offline`、`lan` 以外的值，容器啟動時會報錯並結束（`docker logs` 看得到原因），不會悄悄退回預設。
 - `OPEN_PETS_MODE` 設成 `online` 會被拒絕，並提示改用 `lan` 或 `local`；舊資料夾的處理方式見 [9-6](#9-6-舊版資料夾怎麼改)。
-- `local`、`lan` 兩個模式值與 `docker-compose.lan.yml`、小工具需 **2.0.0-rc3 以上**版本；更早的版本只認 `offline`、`online`。
+- `local`、`lan` 兩個模式值與 `docker-compose.lan.yml`、安裝工具需 **2.0.0-rc3 以上**版本；更早的版本只認 `offline`、`online`。
 
-### 用小工具切換，或手動切換
+### 用安裝工具切換，或手動切換
 
-**用小工具（建議）：** 在安裝資料夾執行 `.\open-pets.ps1 mode local` 或 `mode lan`（Linux 用 `./open-pets.sh`）。工具會改好 `.env` 與設定檔並重啟，資料不會不見。細節見[新手快速上手的第 5 步](../quickstart/#第-5-步切換模式)。
+**用安裝工具（建議）：** 在安裝資料夾執行 `.\open-pets.ps1 mode local` 或 `mode lan`（Linux 用 `./open-pets.sh`）。工具會改好 `.env` 與設定檔並重啟，資料不會不見。細節見[新手快速上手的第 5 步](../quickstart/#第-5-步切換模式)。
 
-**手動：** 工具其實只是在 `.env` 寫下下面幾行，之後單純 `docker compose up -d` 就會用對的設定檔，不必每次輸入一長串 `-f`：
+**手動：** 工具實際上僅在 `.env` 寫入下列各行，之後直接執行 `docker compose up -d` 即會套用正確的設定檔，無須每次輸入冗長的 `-f` 參數：
 
 | 模式 | `.env` 要有的行 |
 | --- | --- |
@@ -319,7 +317,7 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 | `OPEN_PETS_MODE` | 模式：`local`、`lan` | `local` |
 | `OPEN_PETS_PORT` | 應用程式在本機的埠 | 8080 |
 | `OPEN_PETS_CONTAINER_NAME` | 容器名稱（同一台電腦裝多份時用） | `open-pets` |
-| `OPEN_PETS_BIND` | 應用程式埠綁定的網卡位址；只在不用 HTTPS、直接以 HTTP 開放內網時才改（不建議） | `127.0.0.1`（只有本機） |
+| `OPEN_PETS_BIND` | 應用程式埠綁定的網卡位址；僅在不使用 HTTPS、直接以 HTTP 開放內網時才變更（不建議） | `127.0.0.1`（僅限本機） |
 | `OPEN_PETS_HTTPS_PORT`、`OPEN_PETS_HTTPS_BIND` | 內網模式 HTTPS 代理對內網開放的埠與網卡位址 | 443、`0.0.0.0` |
 | `OPEN_PETS_ALLOWED_HOSTS` | 允許的網址（內網 IP 或主機名稱），逗號分隔、**不加空格**，用來擋 DNS rebinding；內網模式的憑證也依這份清單簽發 | 本地模式不限制 |
 | `OPEN_PETS_MAX_UPLOAD_MB` | 單次上傳上限（MB） | 1024 |
@@ -329,7 +327,7 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 
 ## 9. 開放給其他電腦（內網）
 
-預設只有這台電腦（`127.0.0.1`）連得進來（本地模式）。要讓**同一個內網**的其他電腦用瀏覽器使用，用「內網模式（lan）」（9-1 到 9-5）：主機多開一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，**不需要對外網路，也不用申請網域或 Let's Encrypt**。應用程式本身的 8080 只綁本機，其他電腦只能走 HTTPS。
+預設僅這台電腦（`127.0.0.1`）可連入（本地模式）。如需讓**同一個內網**的其他電腦以瀏覽器使用，請採用「內網模式（lan）」（9-1 至 9-5）：主機另啟動一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，**無須對外網路，亦無須申請網域或 Let's Encrypt**。應用程式本身的 8080 僅綁定本機，其他電腦只能經由 HTTPS 連線。
 
 本系統**不提供**對網際網路開放的模式（舊版資料夾的處理方式見 [9-6](#9-6-舊版資料夾怎麼改)）。
 
@@ -347,7 +345,7 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 
     這份清單同時是應用程式的主機名稱檢查（漏列的網址會得到 400 `Invalid host header`）和憑證要簽發的名稱。
 - 清單裡有 IP 時，**第一個 IP 是「沒有送主機名稱」的連線所用的預設憑證**。用 IP 當網址時瀏覽器不會送主機名稱，所以主機有多個 IP 時，請把使用者實際會用的那個放最前面。
-- **換了網路、IP 變了**，要把新 IP 補進清單（舊的也可以留著）：`mode lan -Hosts 新IP,舊IP`，或改 `.env` 後 `docker compose up -d`。根憑證不會變，使用者不用重新信任。
+- **更換網路、IP 變動時**，須將新 IP 補入清單（舊 IP 可保留）：`mode lan -Hosts 新IP,舊IP`，或改 `.env` 後 `docker compose up -d`。根憑證不會改變，使用者無須重新信任。
 
 ### 9-2. 取得設定檔並啟動
 
@@ -356,7 +354,7 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 | 檔案 | 用途 |
 | --- | --- |
 | `docker-compose.lan.yml` | 內網模式：設定 `OPEN_PETS_MODE=lan`，多開 Caddy 容器終止 HTTPS |
-| `Caddyfile.lan` | Caddy 設定，由 compose 掛載，一般不用改 |
+| `Caddyfile.lan` | Caddy 設定，由 compose 掛載，一般無須修改 |
 
 {{< callout type="warning" >}}
 **離線環境要先帶 Caddy 映像檔。** `docker-compose.lan.yml` 用到 `caddy:2.11.9`。在有網路的電腦執行 `docker pull caddy:2.11.9` 與 `docker save caddy:2.11.9 -o caddy.tar`，把 `caddy.tar` 帶到主機後 `docker load -i caddy.tar`。
@@ -402,9 +400,9 @@ Test-NetConnection 192.168.1.20 -Port 443
 
 憑證是 Caddy 的私有 CA 簽發的，使用者電腦要**信任這個 CA 的根憑證**，瀏覽器才不會顯示「您的連線不是私人連線」。每台使用者電腦做一次。
 
-**用小工具一鍵完成：** `.\open-pets.ps1 export-ca`（Linux：`./open-pets.sh export-ca`）會匯出 `open-pets-ca.crt`，並產生已填好網址與憑證指紋的「給同事的說明」`open-pets-colleague-guide.txt`。下面是手動做法。
+**以安裝工具一次完成：** `.\open-pets.ps1 export-ca`（Linux：`./open-pets.sh export-ca`）會匯出 `open-pets-ca.crt`，並產生已填入網址與憑證指紋的使用者說明檔 `open-pets-colleague-guide.txt`。下列為手動做法。
 
-1. 在主機匯出根憑證（只有憑證，不含私鑰，可以放心傳給使用者）：
+1. 在主機匯出根憑證（僅含憑證，不含私鑰，可安全提供給使用者）：
 
     ```powershell
     docker compose -f docker-compose.yml -f docker-compose.lan.yml cp proxy:/data/caddy/pki/authorities/local/root.crt ./open-pets-ca.crt
@@ -432,7 +430,7 @@ Test-NetConnection 192.168.1.20 -Port 443
     {{< /tab >}}
     {{< /tabs >}}
 
-3. 使用者開啟 `https://192.168.1.20`，網址列應顯示鎖頭，出現登入頁。**網址要換成你自己的**：就是 [9-1](#9-1-先決定使用者輸入的網址) 填進 `OPEN_PETS_ALLOWED_HOSTS` 的其中一個（用小工具則是 `mode lan -Hosts` 帶的值）。**一定要打 `https://`**，只打 IP 會走 `http://`（80 埠沒有服務）而逾時；輸入清單裡沒有的網址，會得到 400 `Invalid host header` 或憑證名稱不符。
+3. 使用者開啟 `https://192.168.1.20`，網址列應顯示鎖頭，出現登入頁。**網址須替換為實際使用的網址**，即 [9-1](#9-1-先決定使用者輸入的網址) 填入 `OPEN_PETS_ALLOWED_HOSTS` 的其中一個（使用安裝工具時為 `mode lan -Hosts` 所帶的值）。**必須使用 `https://`**，僅輸入 IP 會走 `http://`（80 埠無服務）而逾時；輸入清單中沒有的網址，會得到 400 `Invalid host header` 或憑證名稱不符。
 
 {{< callout type="warning" >}}
 **根憑證的私鑰在主機的 `caddy-data` 磁碟區，請當作機密保管，也要一起備份。** 主機換新、重裝或 `caddy-data` 遺失後，Caddy 會產生新的根憑證，所有使用者電腦都得重新信任。**不要把根憑證放到網際網路上讓人下載安裝**，信任它的電腦會相信這個 CA 簽發的任何憑證。
@@ -440,9 +438,9 @@ Test-NetConnection 192.168.1.20 -Port 443
 
 ### 9-5. 憑證的更新
 
-Caddy 簽發的內網憑證預設有效期約 12 小時，容器運行中會自動續期，不用處理；根憑證有效期約 10 年。只要 `proxy` 容器一直在運行（`restart: unless-stopped` 已設定），使用者不會遇到憑證過期。
+Caddy 簽發的內網憑證預設有效期約 12 小時，容器運行中會自動續期，無須處理；根憑證有效期約 10 年。只要 `proxy` 容器持續運行（已設定 `restart: unless-stopped`），使用者不會遇到憑證過期。
 
-### 不用 HTTPS 的簡化做法（不建議）
+### 不使用 HTTPS 的簡化做法（不建議）
 
 只在可信任、隔離的內網做測試時才用。帳號密碼與資料會以明文在內網傳輸，瀏覽器在非 HTTPS 網址也會停用部分功能（例如設定檔頁的「複製 JSON」按鈕）。在 `.env` 設定（不使用 `docker-compose.lan.yml`，所以沒有 Caddy 容器）：
 
@@ -465,15 +463,15 @@ docker compose up -d
 **舊版以 `online` 設定安裝的資料夾：**
 
 1. 在安裝資料夾執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（Linux：`./open-pets.sh mode lan --hosts 內網IP`），或只有這台電腦用的話執行 `mode local`。工具會改好 `.env`、下載需要的設定檔並重啟，**資料（帳號、處理紀錄、稽核紀錄、金鑰）不會不見**。
-2. 沒有用小工具的話：把 `.env` 的 `OPEN_PETS_MODE` 改成 `lan`、`COMPOSE_FILE` 改成 `docker-compose.yml:docker-compose.lan.yml`，並補上 `docker-compose.lan.yml` 與 `Caddyfile.lan`（見 [9-2](#9-2-取得設定檔並啟動)）。
+2. 未使用安裝工具時：把 `.env` 的 `OPEN_PETS_MODE` 改成 `lan`、`COMPOSE_FILE` 改成 `docker-compose.yml:docker-compose.lan.yml`，並補上 `docker-compose.lan.yml` 與 `Caddyfile.lan`（見 [9-2](#9-2-取得設定檔並啟動)）。
 3. 新版映像檔若仍以 `OPEN_PETS_MODE=online` 啟動，會拒絕啟動並說明上面的做法，不會悄悄改變對網路的開放範圍。
-4. 小工具的 `update` 遇到這類舊版資料夾也會先請你切換模式，再更新。
+4. 安裝工具的 `update` 遇到這類舊版資料夾時，會先提示切換模式，再進行更新。
 
 **要讓公司外面的人使用**：本專案不提供這種模式，也不提供對外網域的反向代理範例與支援。若仍要自行對外開放，請由資訊人員另行評估網域、憑證、HTTPS、防護與存取控制，並自行承擔對外開放的資安責任；應用程式本身的 8080 不要直接對外開放。
 
 ## 10. 更新與退回
 
-資料與金鑰都在磁碟區 `open-pets-data`，換映像檔不會遺失。**用小工具最簡單：** `.\open-pets.ps1 update 新版本號`（更新前自動備份）。手動做法：
+資料與金鑰都在磁碟區 `open-pets-data`，換映像檔不會遺失。**使用安裝工具最為簡便：** `.\open-pets.ps1 update 新版本號`（更新前自動備份）。手動做法：
 
 {{< tabs >}}
 {{< tab name="方式一：GHCR" >}}
@@ -496,21 +494,21 @@ docker compose up -d
 {{< /tab >}}
 {{< /tabs >}}
 
-更新後確認 `docker ps` 為 `healthy`，並登入網頁看一下。
+更新後確認 `docker ps` 為 `healthy`，並登入網頁確認。
 
-**退回舊版：** 把 `OPEN_PETS_VERSION` 改回舊版，再 `docker compose up -d`（舊映像檔還在本機就不用重新取得）。
+**退回舊版：** 把 `OPEN_PETS_VERSION` 改回舊版，再 `docker compose up -d`（舊映像檔仍在本機時無須重新取得）。
 
 版本一律指定明確的版號，不使用 `latest`（交付包與 GHCR 都不提供），避免無意間升級。
 
 ## 11. 備份與還原
 
-需要備份的只有磁碟區 `open-pets-data`：帳號資料庫、處理紀錄、稽核紀錄與自動產生的金鑰。**用小工具最簡單：** `.\open-pets.ps1 backup`。手動做法如下。
+需要備份的只有磁碟區 `open-pets-data`：帳號資料庫、處理紀錄、稽核紀錄與自動產生的金鑰。**使用安裝工具最為簡便：** `.\open-pets.ps1 backup`。手動做法如下。
 
 {{< callout type="warning" >}}
 **金鑰與稽核紀錄是一組的，要一起備份，並當作機密保管。** 鹽值（`OPEN_PETS_DEFAULT_SALT`）遺失或變更後，新的雜湊結果就對不上以前的資料；簽章金鑰（`OPEN_PETS_SYSTEM_MASTER_KEY`）變更後，舊的稽核紀錄無法再驗證。內網模式另外要備份 `caddy-data`（根憑證的私鑰）。
 {{< /callout >}}
 
-下面用映像檔本身執行 `tar`（不用另外下載映像檔，離線環境也能用）。磁碟區的實際名稱以 `docker volume ls` 為準，用 compose 啟動時是 `open-pets_open-pets-data`。指令裡的映像檔 `open-pets-app:<版本>`，用方式一（GHCR）時請換成 `ghcr.io/ttcdog115016/open-pets-app:<版本>`。
+下面用映像檔本身執行 `tar`（無須另外下載映像檔，離線環境亦可使用）。磁碟區的實際名稱以 `docker volume ls` 為準，用 compose 啟動時是 `open-pets_open-pets-data`。指令裡的映像檔 `open-pets-app:<版本>`，用方式一（GHCR）時請換成 `ghcr.io/ttcdog115016/open-pets-app:<版本>`。
 
 **備份**（先停服務，避免資料庫寫到一半）：
 
@@ -570,7 +568,7 @@ docker compose up -d
 docker run --rm gcr.io/projectsigstore/cosign:latest verify "ghcr.io/ttcdog115016/open-pets-app@sha256:<digest>" --certificate-identity-regexp '^https://github.com/ttcdog115016/Demo/\.github/workflows/docker-image\.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-看到 `The following checks were performed on each of these signatures`，且輸出裡有 `"githubWorkflowRepository":"ttcdog115016/Demo"` 與你要的版本標籤，就通過。出現 `no matching signatures` 等錯誤，**不要使用**該映像檔。
+看到 `The following checks were performed on each of these signatures`，且輸出裡有 `"githubWorkflowRepository":"ttcdog115016/Demo"` 與欲使用的版本標籤，即驗證通過。出現 `no matching signatures` 等錯誤時，**請勿使用**該映像檔。
 
 **已安裝 [cosign](https://docs.sigstore.dev/cosign/system_config/installation/)**（Windows 可用 `winget install sigstore.cosign`）：
 
@@ -641,7 +639,7 @@ repo 的 `.github/workflows/` 有四個工作流程：
 | `pages.yml` | `doc_site/` 有修改並推送到 `main` | 建置並發佈本文件網站 |
 
 - 結果在 repo 的 **Actions** 分頁：綠色勾勾代表通過；紅色叉叉點進去可看失敗的步驟與訊息。
-- **發新版：** 在要發版的 commit 建立標籤並推送，例如 `v2.0.0`。版本含連字號（如 `2.0.0-rc5`）會被標為預發版。GHCR 映像檔、離線 tar.gz 與 Release 都由同一次建置產生，內容相同。**標籤一旦有對應的 Release 或映像檔，就不要刪除或改指別處，需要重發請改用新版本號。**
+- **發行新版本號：** 於要發行的 commit 建立標籤並推送，例如 `v2.0.0`。版本號含連字號者（如 `2.0.0-rc5`）於 Releases 以 Pre-release 標示。GHCR 映像檔、離線 tar.gz 與 Release 都由同一次建置產生，內容相同。**標籤一旦有對應的 Release 或映像檔，請勿刪除或改指向其他位置；需要重新發行時，請改用新的版本號。**
 - 只使用 GitHub 內建的 `GITHUB_TOKEN`，不需要另外設定密碼或金鑰。
 
 ### 分支與標籤保護

@@ -29,7 +29,7 @@ layout: hextra-home
   {{< hextra/feature-card
     title="新手快速上手"
     icon="server"
-    subtitle="不熟指令也能裝：選本地或內網，用問答式小工具安裝並隨時切換模式。"
+    subtitle="以問答式安裝工具完成安裝：選擇本地或內網，並可隨時切換模式。"
     link="docs/quickstart"
   >}}
   {{< hextra/feature-card
