@@ -10,7 +10,7 @@ weight: 3
 {{< /callout >}}
 
 {{< callout type="warning" >}}
-**目前 GitHub Releases 只有預發版（最新是 `2.0.0-rc4`），正式版 `2.0.0` 尚未發佈。** 現在安裝請填 **`2.0.0-rc4`**，填 `2.0.0` 會拉不到映像檔。
+**目前 GitHub Releases 只有預發版（最新是 `2.0.0-rc5`），正式版 `2.0.0` 尚未發佈。** 現在安裝請填 **`2.0.0-rc5`**，填 `2.0.0` 會拉不到映像檔。
 {{< /callout >}}
 
 ### 版本號怎麼填
@@ -19,12 +19,12 @@ weight: 3
 
 | Releases 頁上看到的 | 要填的版本號 |
 | --- | --- |
-| 標題 `Open-PETs 2.0.0-rc4`（標籤 `v2.0.0-rc4`，有 Pre-release 標示） | `2.0.0-rc4`（**不含開頭的 v**） |
+| 標題 `Open-PETs 2.0.0-rc5`（標籤 `v2.0.0-rc5`，有 Pre-release 標示） | `2.0.0-rc5`（**不含開頭的 v**） |
 | 日後正式版：標題 `Open-PETs 2.0.0`（標籤 `v2.0.0`） | `2.0.0` |
 
 - 每次安裝或更新都要寫明確版本，系統不提供 `latest`。
 - 帶 `-rc` 的是預發版，只用於試用與驗證；正式環境請等正式版。
-- 離線交付包的檔名也帶同一個版本，例如 `open-pets-app_2.0.0-rc4.tar.gz`。
+- 離線交付包的檔名也帶同一個版本，例如 `open-pets-app_2.0.0-rc5.tar.gz`。
 
 ## 1. 架構
 
@@ -109,13 +109,13 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
     {{< tabs >}}
     {{< tab name="Windows（PowerShell）" >}}
     ```powershell
-    $v = '2.0.0-rc4'
+    $v = '2.0.0-rc5'
     Invoke-WebRequest -UseBasicParsing "https://github.com/ttcdog115016/Demo/releases/download/v$v/docker-compose.yml" -OutFile docker-compose.yml
     ```
     {{< /tab >}}
     {{< tab name="Linux（bash）" >}}
     ```bash
-    v=2.0.0-rc4
+    v=2.0.0-rc5
     curl -fsSLO "https://github.com/ttcdog115016/Demo/releases/download/v$v/docker-compose.yml"
     ```
     {{< /tab >}}
@@ -294,7 +294,7 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 - 內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 沒設定時，`docker compose` 會直接報錯（`required variable OPEN_PETS_ALLOWED_HOSTS is missing a value`），不會啟動。
 - 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令，資料磁碟區不變。
 - `OPEN_PETS_MODE` 填了 `local`、`offline`、`lan` 以外的值，容器啟動時會報錯並結束（`docker logs` 看得到原因），不會悄悄退回預設。
-- **線上（`online`）模式已移除**：設成 `online` 一樣會被拒絕，並提示改用 `lan` 或 `local`；舊資料夾的處理方式見 [9-6](#9-6-線上online模式已移除舊設定怎麼改)。
+- **線上（`online`）模式已在 `2.0.0-rc5` 移除**：設成 `online` 一樣會被拒絕，並提示改用 `lan` 或 `local`；舊資料夾的處理方式見 [9-6](#9-6-線上online模式已移除舊設定怎麼改)。
 - `local`、`lan` 兩個模式值與 `docker-compose.lan.yml`、小工具要 **2.0.0-rc3 起**才有；`2.0.0-rc2` 以前只認 `offline`、`online`。
 
 ### 用小工具切換，或手動切換
@@ -641,7 +641,7 @@ repo 的 `.github/workflows/` 有四個工作流程：
 | `pages.yml` | `doc_site/` 有修改並推送到 `main` | 建置並發佈本文件網站 |
 
 - 結果在 repo 的 **Actions** 分頁：綠色勾勾代表通過；紅色叉叉點進去可看失敗的步驟與訊息。
-- **發新版：** 在要發版的 commit 建立標籤並推送，例如 `v2.0.0`。版本含連字號（如 `2.0.0-rc4`）會被標為預發版。GHCR 映像檔、離線 tar.gz 與 Release 都由同一次建置產生，內容相同。**標籤一旦有對應的 Release 或映像檔，就不要刪除或改指別處，需要重發請改用新版本號。**
+- **發新版：** 在要發版的 commit 建立標籤並推送，例如 `v2.0.0`。版本含連字號（如 `2.0.0-rc5`）會被標為預發版。GHCR 映像檔、離線 tar.gz 與 Release 都由同一次建置產生，內容相同。**標籤一旦有對應的 Release 或映像檔，就不要刪除或改指別處，需要重發請改用新版本號。**
 - 只使用 GitHub 內建的 `GITHUB_TOKEN`，不需要另外設定密碼或金鑰。
 
 ### 分支與標籤保護

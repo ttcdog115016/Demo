@@ -218,7 +218,7 @@ function Confirm-Files([string]$mode, [string]$ver) {
     foreach ($f in $need) {
         $path = Join-Path $Script:Dir $f
         if (Test-Path $path) { continue }
-        if (-not $ver) { Stop-Tool "資料夾裡缺少 $f，又不知道要下載哪一版。" @('請加上 -Version 2.0.0-rc4（換成你要的版本）再執行一次。') }
+        if (-not $ver) { Stop-Tool "資料夾裡缺少 $f，又不知道要下載哪一版。" @('請加上 -Version 2.0.0-rc5（換成你要的版本）再執行一次。') }
         $url = "$($Script:ReleaseBase)/v$ver/$f"
         Note "下載 $f ..."
         try { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $path -ErrorAction Stop }
@@ -356,8 +356,8 @@ function Cmd-Setup {
 
     # 2. 版本與映像檔
     $ver = Get-DefaultVersion
-    if (-not $ver) { $ver = Ask '要安裝哪一版（到 GitHub 的 Releases 頁看，不含開頭的 v，例如 2.0.0-rc4）' '' }
-    if (-not $ver) { Stop-Tool '需要版本號才能安裝。' @('請加上 -Version 2.0.0-rc4（換成你要的版本）再執行一次。') }
+    if (-not $ver) { $ver = Ask '要安裝哪一版（到 GitHub 的 Releases 頁看，不含開頭的 v，例如 2.0.0-rc5）' '' }
+    if (-not $ver) { Stop-Tool '需要版本號才能安裝。' @('請加上 -Version 2.0.0-rc5（換成你要的版本）再執行一次。') }
     $img = Resolve-Image $ver
 
     # 3. 網址
@@ -644,7 +644,7 @@ function Cmd-Update {
     if ($cfg.Mode -eq 'online') { Stop-RemovedOnline }   # 新版不含線上用的設定檔，先切換模式再更新
     $newVersion = $Arg1
     if (-not $newVersion) { $newVersion = $Version }
-    if (-not $newVersion) { Stop-Tool '請指定要更新到哪一版。' @('例如：.\open-pets.ps1 update 2.0.0-rc4（版本號到 GitHub 的 Releases 頁看，不含開頭的 v）') }
+    if (-not $newVersion) { Stop-Tool '請指定要更新到哪一版。' @('例如：.\open-pets.ps1 update 2.0.0-rc5（版本號到 GitHub 的 Releases 頁看，不含開頭的 v）') }
     Title "更新：$($cfg.Version) → $newVersion"
     Say '  資料不會不見；更新前會先自動備份。' 'Green'
     if (-not (Confirm-Step '要更新嗎')) { Say '已取消，沒有做任何變更。' 'Yellow'; return }
@@ -668,7 +668,7 @@ function Cmd-Help {
     Say '  忘記管理員密碼　　.\open-pets.ps1 reset-password' 'White'
     Say '  給同事的憑證與說明.\open-pets.ps1 export-ca    （內網模式）' 'White'
     Say '  備份　　　　　　　.\open-pets.ps1 backup' 'White'
-    Say '  更新版本　　　　　.\open-pets.ps1 update 2.0.0-rc4' 'White'
+    Say '  更新版本　　　　　.\open-pets.ps1 update 2.0.0-rc5' 'White'
     Say ''
     Say '  不想回答問題、全部用預設值：加上 -Yes。進階參數見檔案開頭的說明。' 'Gray'
 }
