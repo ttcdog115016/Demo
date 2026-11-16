@@ -59,6 +59,9 @@ doc_site/resources/
 
 # Docker 版實測輸出（docker/playwright.docker.config.ts）
 test-results-docker/
+# Playwright 本機執行產物（含錄下的操作內容，不進版控）
+test-results/
+playwright-report/
 
 # 後端併入 repo：.env.example 是範本，不是祕密
 !backend/.env.example

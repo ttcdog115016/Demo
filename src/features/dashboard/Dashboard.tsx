@@ -43,7 +43,7 @@ export const Dashboard: React.FC = () => {
     : backendHealthState.status === 'down'
       ? { status: 'error' as const, color: '#ff4d4f', text: translate('dashboard.system_down', '無法連線至後端，請稍後再試或聯絡管理員') }
       : { status: 'default' as const, color: undefined, text: translate('dashboard.system_checking', '檢查後端連線中…') };
-  // ★ 2026-10-29：歡迎詞只顯示使用者名稱（帳號為 Email 時取 @ 前面那段，例如 owner@test.com → owner）
+  // ★ 2026-10-29：歡迎詞只顯示使用者名稱（帳號為 Email 時取 @ 前面那段，例如 user@example.com → user）
   const welcomeNameString = userInfo.name.includes('@') ? userInfo.name.split('@')[0] : userInfo.name;
 
   // ★ 2026-10-07：Admin 發布之「重要」公告，以可關閉橫幅顯示於首頁（一般公告只在右上角鈴鐺）

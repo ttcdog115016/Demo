@@ -5,7 +5,7 @@
 
 /**
  * 執行期設定：由 index.html 先載入的 /runtime-config.js 設定 window.__OPEN_PETS_CONFIG__。
- *   - Docker 單一映像檔：後端依環境變數 OPEN_PETS_MODE（local／lan，舊值 offline 視為 local；線上 online 已移除）與 OPEN_PETS_SHOW_DEMO_ACCOUNTS 動態產生，
+ *   - Docker 單一映像檔：後端依環境變數 OPEN_PETS_MODE（local／lan，舊值 offline 視為 local；線上 online 已移除）動態產生，
  *     同一份映像檔、同一份前端建置，使用者啟動時選模式（見 docker/openpets_server.py）。
  *   - 其他部署（nginx 版 Demo 站、npm run dev、單機版 exe）：public/runtime-config.js 內容為空物件，
  *     退回下方的「建置旗標」，行為與加入執行期設定之前完全相同。
@@ -15,13 +15,11 @@ export interface RuntimeConfig
 	// local＝本地（一台電腦）；lan＝內網（同一個內網的多台電腦）；offline 是 local 的舊名稱，仍接受。
 	// 線上（online）模式已移除：容器設成 online 會拒絕啟動，前端不會再收到這個值。
 	mode?: 'local' | 'offline' | 'lan';
-	showDemoAccounts?: boolean;
 }
 
 export interface ResolvedFlags
 {
 	isOfflineMode: boolean;
-	showDemoAccounts: boolean;
 	showSystemLogTab: boolean;
 }
 
@@ -35,11 +33,7 @@ export const resolveFlags = (runtimeConfig: RuntimeConfig, buildTarget: string |
 	const isDesktopBuild = buildTarget === 'desktop';
 	// 本地（local／舊名 offline）隱藏多人使用才需要的畫面（例如系統維運日誌）；內網（lan）顯示
 	const isOfflineMode = runtimeConfig.mode ? (runtimeConfig.mode === 'local' || runtimeConfig.mode === 'offline') : isDesktopBuild;
-	// ★ 有執行期模式（容器版）時，Demo 帳號預設關閉，只有明確設定才顯示；沒有執行期設定時維持舊行為（非單機版建置顯示）
-	const showDemoAccounts = typeof runtimeConfig.showDemoAccounts === 'boolean'
-		? runtimeConfig.showDemoAccounts
-		: (runtimeConfig.mode ? false : !isDesktopBuild);
-	return { isOfflineMode, showDemoAccounts, showSystemLogTab: !isOfflineMode };
+	return { isOfflineMode, showSystemLogTab: !isOfflineMode };
 };
 
 const runtimeConfig: RuntimeConfig = (globalThis as unknown as { __OPEN_PETS_CONFIG__?: RuntimeConfig }).__OPEN_PETS_CONFIG__ ?? {};
@@ -47,13 +41,11 @@ const resolvedFlags = resolveFlags(runtimeConfig, import.meta.env.VITE_BUILD_TAR
 
 /**
  * ★ 2026-10-28：單機版執行檔（packaging/build_exe.ps1 以 `vite build --mode desktop` 建置，讀 .env.desktop）。
- *   單機版：不顯示 Demo 測試帳號（帳號由使用者第一次啟動時自建）。
- *   一般 Demo 建置（npm run build）不受影響。
+ *   單機版：帳號由使用者第一次啟動時自建。
  * ★ 2026-11-10：改為「離線模式」，可由執行期設定覆蓋（Docker 單一映像檔）。IS_DESKTOP_BUILD 為舊名稱，保留相容。
  */
 export const IS_OFFLINE_MODE = resolvedFlags.isOfflineMode;
 export const IS_DESKTOP_BUILD = IS_OFFLINE_MODE;
-export const SHOW_DEMO_ACCOUNTS = resolvedFlags.showDemoAccounts;
 
 /**
  * ★ 2026-10-29（TTC Wei 決定）：系統維運日誌分頁——資料存後端（api/systemApi.ts），內網模式（以及沒有執行期設定的 Demo 站）顯示；本地一台電腦一個人用，隱藏。

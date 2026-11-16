@@ -13,7 +13,6 @@
 
 模式：OPEN_PETS_MODE=local（本地，預設）或 lan（內網，同一個內網的多台電腦）；舊值 offline 仍接受，視為 local。
   線上（online）模式已移除：設成 online 會拒絕啟動並提示改用 lan 或 local（見 REMOVED_MODES）。
-  OPEN_PETS_SHOW_DEMO_ACCOUNTS=true 才顯示登入頁的 Demo 測試帳號。
   同一份映像檔、同一份前端，模式由 /runtime-config.js 在執行期告訴前端（見 resolve_runtime_config）。
 
 金鑰：OPEN_PETS_DEFAULT_SALT／OPEN_PETS_SYSTEM_MASTER_KEY／OPEN_PETS_JWT_SECRET 由環境變數提供；
@@ -81,8 +80,6 @@ REMOVED_MODES = {
               "同一個內網的多台電腦請改用 OPEN_PETS_MODE=lan（內建 HTTPS），只有一台電腦使用請改用 local。"
               "安裝資料夾裡有 open-pets.ps1／open-pets.sh 的話，執行 mode lan -Hosts <內網IP> 或 mode local 即可，資料不會遺失。",
 }
-TRUE_VALUES = ("1", "true", "yes", "on")
-FALSE_VALUES = ("", "0", "false", "no", "off")
 
 
 def resolve_runtime_config() -> dict:
@@ -90,7 +87,6 @@ def resolve_runtime_config() -> dict:
 
     OPEN_PETS_MODE             local（預設，本地：一台電腦）或 lan（內網：同一個內網的多台電腦）；舊值 offline 視為 local。
                                只有 lan 顯示系統維運日誌分頁。online 已移除，設定它會拒絕啟動（見 REMOVED_MODES）。
-    OPEN_PETS_SHOW_DEMO_ACCOUNTS  true 才在登入頁顯示 Demo 測試帳號；預設 false，只給我們自己的 Demo 站開。
     """
     mode = os.getenv("OPEN_PETS_MODE", "").strip().lower() or "local"
     mode = MODE_ALIASES.get(mode, mode)
@@ -98,10 +94,7 @@ def resolve_runtime_config() -> dict:
         raise SystemExit(f"[設定錯誤] OPEN_PETS_MODE={mode!r}：{REMOVED_MODES[mode]}")
     if mode not in VALID_MODES:
         raise SystemExit(f"[設定錯誤] OPEN_PETS_MODE={mode!r} 不合法，只接受 {'、'.join(VALID_MODES)}（舊值 offline 視為 local）。")
-    demo_raw = os.getenv("OPEN_PETS_SHOW_DEMO_ACCOUNTS", "").strip().lower()
-    if demo_raw not in TRUE_VALUES + FALSE_VALUES:
-        raise SystemExit(f"[設定錯誤] OPEN_PETS_SHOW_DEMO_ACCOUNTS={demo_raw!r} 不合法，只接受 true 或 false。")
-    return {"mode": mode, "showDemoAccounts": demo_raw in TRUE_VALUES}
+    return {"mode": mode}
 
 
 def allow_loopback_hosts() -> None:
@@ -136,7 +129,7 @@ def build_app():
     prepare_runtime_dirs()
     ensure_secrets()
     allow_loopback_hosts()
-    print(f"[啟動] 模式：{runtime_config['mode']}；Demo 帳號：{'顯示' if runtime_config['showDemoAccounts'] else '不顯示'}", flush=True)
+    print(f"[啟動] 模式：{runtime_config['mode']}", flush=True)
     # 須在載入後端前設定好環境變數；後端設定一律以環境變數優先
     import launcher
     from app.api.server import app

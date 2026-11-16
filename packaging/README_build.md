@@ -22,7 +22,7 @@
 
 ## 與 Docker 部署的差異
 - **後端原始碼不改**。`launcher.py` 在後端 app 上加：`/` 與其他非 `/api` 路徑回前端網頁；後端原本的 `GET /`（狀態 JSON）移到 `GET /api/v1/status`。`/api/*` 找不到仍回 404 JSON。
-- 前端單機版模式（`.env.desktop` → `VITE_BUILD_TARGET=desktop`，見 `src/config/featureFlags.ts`）：登入頁不顯示 Demo 測試帳號、API 錯誤不送 Google 表單。一般 `npm run build` 不受影響。
+- 前端單機版模式（`.env.desktop` → `VITE_BUILD_TARGET=desktop`，見 `src/config/featureFlags.ts`）：API 錯誤不送 Google 表單。一般 `npm run build` 不受影響。
 - 資料：`.env`、`data/`（users.db、system.db、audit.jsonl、logs/）與視窗的瀏覽器資料 `webview/` 都在 `%LOCALAPPDATA%\OpenPETs`，解除安裝不刪。環境變數 `OPEN_PETS_HOME` 可改位置；exe 旁已有 `.env`（舊版資料夾版）時沿用 exe 資料夾。
 - 下載（結果、設定檔、報告）走 WebView2 的下載，存到「下載」資料夾。
 - 安裝精靈為英文：Inno Setup 6 未內附繁體中文語系檔（`OpenPETs.iss` 會在有 `ChineseTraditional.isl` 時自動使用）。
