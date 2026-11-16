@@ -171,10 +171,10 @@ lan_ips() {
     fi
 }
 valid_mode() { case "$1" in local | lan) return 0 ;; *) return 1 ;; esac; }
-# 線上（online）模式已移除：舊的資料夾可能還留著 OPEN_PETS_MODE=online，標籤要看得懂，但不能再選、不能再套用
-mode_label() { case "$1" in local) printf '本地' ;; lan) printf '內網' ;; online) printf '線上（已移除）' ;; *) printf '%s' "$1" ;; esac; }
+# 線上（online）模式不支援：先前的資料夾可能還留著 OPEN_PETS_MODE=online，標籤要看得懂，但不能再選、不能再套用
+mode_label() { case "$1" in local) printf '本地' ;; lan) printf '內網' ;; online) printf '線上（不支援）' ;; *) printf '%s' "$1" ;; esac; }
 stop_removed_online() {
-    stop_tool '線上（online）模式已移除。' \
+    stop_tool '不支援線上（online）模式。' \
         '同一個內網的多台電腦用：./open-pets.sh mode lan --hosts <這台電腦的內網IP>' \
         '只有這台電腦用：./open-pets.sh mode local' \
         '資料（帳號、處理紀錄、稽核紀錄、金鑰）都在資料磁碟區裡，切換不會刪除。'
@@ -202,7 +202,7 @@ confirm_files() { # confirm_files MODE VERSION
         else wget -q -O "$DIR/$f" "$url" || { rm -f "$DIR/$f"; false; }; fi
         [ -f "$DIR/$f" ] || stop_tool "下載不到 $f（$url）。" \
             '確認這台電腦連得上網路，以及版本號有沒有打對（到 GitHub 的 Releases 頁看，不含開頭的 v）。' \
-            "注意：$f 是 2.0.0-rc2 之後的版本才有；rc2（含）以前沒有內網與模式切換的檔案。" \
+            "注意：$f 請確認版本號正確，且安裝資料夾使用的是完整的交付包。" \
             '沒有網路的話，請改用離線交付包（裡面已經有全部檔案），把檔案放在這個資料夾。'
     done
 }
@@ -264,7 +264,7 @@ show_access() {
             for h in $(printf '%s' "$CFG_HOSTS" | tr ',' ' '); do printf '%s  同一個內網的電腦在瀏覽器開：https://%s%s%s\n' "$C_G" "$h" "$suffix" "$C_0"; done
             note '每台要使用的電腦第一次要先信任憑證，否則瀏覽器會顯示警告：執行 ./open-pets.sh export-ca，並將產生的使用者說明檔提供給使用者。' ;;
         online)
-            warn '這個資料夾還是舊版的「線上模式」設定，線上模式已移除。請改用內網或本地（資料不會不見）：'
+            warn '這個資料夾的設定為「線上模式」，本系統不支援。請改用內網或本地（資料不會不見）：'
             say '    ./open-pets.sh mode lan --hosts <這台電腦的內網IP>'
             say '    ./open-pets.sh mode local' ;;
     esac
@@ -336,7 +336,7 @@ cmd_setup() {
     if [ -n "$existing" ] && is_own_container "$existing"; then own=1; fi
     if [ -n "$existing" ] && [ "$own" -eq 0 ]; then
         alt=open-pets-app; [ -n "$(container_line "$alt")" ] && alt="open-pets-app-$RANDOM"
-        warn "這台電腦上已經有一個叫「$container」的容器（狀態：$(printf '%s' "$existing" | cut -d'|' -f2)），不是這個資料夾安裝的（可能是舊版或別的安裝）。為了不動到它，新的會改叫「$alt」。"
+        warn "這台電腦上已經有一個叫「$container」的容器（狀態：$(printf '%s' "$existing" | cut -d'|' -f2)），不是這個資料夾安裝的（可能是先前的安裝或其他安裝）。為了不動到它，新的會改叫「$alt」。"
         container="$alt"
     fi
     if [ "$own" -eq 1 ]; then env_app="$(env_get OPEN_PETS_PORT)"; env_https="$(env_get OPEN_PETS_HTTPS_PORT)"; env_app="${env_app:-0}"; env_https="${env_https:-0}"; fi

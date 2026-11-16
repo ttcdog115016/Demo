@@ -90,15 +90,15 @@ if [ "$rc" = 0 ] || [ "$rc" = 124 ]; then
 fi
 echo "OK: OPEN_PETS_MODE=bogus 被拒絕（結束碼 $rc）"
 
-echo "== 已移除的 online 模式必須被拒絕，並提示改用 lan"
+echo "== 不支援的 online 模式必須被拒絕，並提示改用 lan"
 rc=0
 online_output="$(timeout 60 docker run --rm --read-only --cap-drop ALL -e OPEN_PETS_MODE=online -e OPEN_PETS_ALLOWED_HOSTS=example.test "$IMAGE" 2>&1)" || rc=$?
 if [ "$rc" = 0 ] || [ "$rc" = 124 ]; then
-  echo "FAIL: OPEN_PETS_MODE=online（已移除）應該要啟動失敗（結束碼 $rc）"
+  echo "FAIL: OPEN_PETS_MODE=online（不支援）應該要啟動失敗（結束碼 $rc）"
   exit 1
 fi
-if ! grep -q '已移除' <<<"$online_output" || ! grep -q 'lan' <<<"$online_output"; then
-  echo "FAIL: 拒絕訊息沒有說明 online 已移除、要改用 lan：$online_output"
+if ! grep -q '不支援' <<<"$online_output" || ! grep -q 'lan' <<<"$online_output"; then
+  echo "FAIL: 拒絕訊息沒有說明 online 不支援、要改用 lan：$online_output"
   exit 1
 fi
 echo "OK: OPEN_PETS_MODE=online 被拒絕，並提示改用 lan（結束碼 $rc）"
