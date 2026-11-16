@@ -374,7 +374,6 @@ docker compose up -d
 | HTTPS | 不需要（本機） | **內建 Caddy HTTPS**（私有 CA，使用者電腦要信任根憑證） |
 | 必填設定 | 無 | `.env` 的 `OPEN_PETS_ALLOWED_HOSTS=內網IP,主機名稱`（例如 `192.168.1.20,pets-server`） |
 | 「系統維運日誌」分頁（系統設定內） | 隱藏 | 顯示（管理員查看全站登入與 API 紀錄） |
-| 登入頁 Demo 測試帳號 | 不顯示 | 不顯示（`OPEN_PETS_SHOW_DEMO_ACCOUNTS=true` 僅限展示站） |
 | 章節 | 第 7 節 | [第 9 節](#9-開放給其他電腦內網) |
 
 - 內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 沒設定時，`docker compose` 會直接報錯（`required variable OPEN_PETS_ALLOWED_HOSTS is missing a value`），不會啟動。

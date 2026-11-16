@@ -21,7 +21,7 @@ COPY index.html tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.t
 COPY public ./public
 COPY src ./src
 
-# --mode desktop：交付版不顯示 Demo 測試帳號、API 錯誤不送出到外部表單（旗標見 src/config/featureFlags.ts）
+# --mode desktop：交付版 API 錯誤不送出到外部表單（旗標見 src/config/featureFlags.ts）
 # .env* 被 .gitignore 排除，故直接以環境變數指定
 ENV VITE_BUILD_TARGET=desktop
 RUN npx tsc -b && npx vite build --mode desktop --outDir /out --emptyOutDir

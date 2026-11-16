@@ -4,8 +4,7 @@
  * 模組功能 (Description): 使用者登入驗證頁面組件 (帳密登入，經後端會員系統 POST /api/v1/auth/login 驗證)
  * ★ 2026-10-27：串接後端會員系統（refresh token 存於 sessionStorage，關閉分頁即需重新登入）。
  * ★ 2026-10-29：移除沒有作用的「保持登入狀態」勾選框。
- * ★ 2026-10-28：依 TTC Wei 指示，登入頁畫面改回原樣（Demo 測試帳號提示；一鍵快速登入已移除），
- *   但帳密驗證仍經後端 POST /api/v1/auth/login——Demo 帳號須先在後端建立（見下方 DEMO_ACCOUNTS 註解）。
+ * ★ 2026-11-16：正式版移除 Demo 測試帳號提示與寫死的測試帳密；帳號一律由使用者在後端自行建立。
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之識別字)
  * ============================================================================
@@ -13,14 +12,13 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Form, Input, Button, ConfigProvider, theme, App as AntdApp, Alert } from 'antd';
+import { Card, Form, Input, Button, ConfigProvider, theme, App as AntdApp } from 'antd';
 import { Mail, Lock, LogIn } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
 import { memberLogin, toMemberApiError, isMemberServiceUnavailable } from '../../api/authApi';
-import { SHOW_DEMO_ACCOUNTS } from '../../config/featureFlags';
 
 import { scaleFontSize } from '../../utils/fontScale';
 /**
@@ -28,20 +26,6 @@ import { scaleFontSize } from '../../utils/fontScale';
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  */
 const PAGE_NAVIGATION_DELAY_MS = 500;
-
-/**
- * Demo 測試帳號（登入頁「點擊自動填入」提示用）。
- * ★ 2026-10-28：登入改由後端驗證，這兩個帳號必須先在後端建立，否則會顯示「帳號或密碼錯誤」：
- *   python -m app.cli.main create-user -u owner@test.com -p Owner@123456 -r user
- *   （同日後端加了密碼至少 12 字，owner 的 Demo 密碼由 password 改為 Owner@123456）
- *   python -m app.cli.main create-user -u admin@test.com -p Admin@123456 -r admin
- */
-const DEMO_ACCOUNTS = 
-{
-	'owner@test.com': { password: 'Owner@123456', label: 'Data Owner' },
-	'admin@test.com': { password: 'Admin@123456', label: 'Admin' },
-};
-
 
 /**
  * 登入表單欄位數值介面
@@ -69,7 +53,7 @@ interface LoginFormValues
  */
 export default function Login(): React.ReactElement 
 {
-	const { t: translate, i18n: i18nInstance } = useTranslation();
+	const { t: translate } = useTranslation();
 
 	const navigate = useNavigate();
 
@@ -160,19 +144,6 @@ export default function Login(): React.ReactElement
 		}
 	};
 
-	/**
-	 * 函數名稱: fillDemoAccount
-	 * 函數功能: 點擊 Demo 帳號提示區時，自動將選定之測試帳密填入 Form 表單中（不自動送出）。
-	 */
-	const fillDemoAccount = (targetAccountEmailKey: keyof typeof DEMO_ACCOUNTS): void => 
-	{
-		loginFormInstance.setFieldsValue(
-			{ email: targetAccountEmailKey, password: DEMO_ACCOUNTS[targetAccountEmailKey].password }
-		);
-	};
-
-	const isChineseLanguageEnabled = i18nInstance.language?.toLowerCase().startsWith('zh');
-
 	return (
 		<ConfigProvider 
 			theme={
@@ -225,31 +196,6 @@ export default function Login(): React.ReactElement
 							{translate('login.subtitle')}
 						</p>
 					</div>
-
-					{/* Demo 測試帳號提示區 (點擊可自動填入)；★ 2026-10-28 單機版不顯示 */}
-					{SHOW_DEMO_ACCOUNTS && (
-						<Alert
-							message={<span style={{ fontSize: scaleFontSize(13), fontWeight: 'bold' }}>{isChineseLanguageEnabled ? 'Demo 測試帳號 (點擊自動填入)' : 'Demo Account (Click to fill)'}</span>}
-							description={
-								<div style={{ fontSize: scaleFontSize(12), marginTop: 4 }}>
-									{(Object.keys(DEMO_ACCOUNTS) as (keyof typeof DEMO_ACCOUNTS)[]).map((demoEmailKey) => (
-										<div key={demoEmailKey} onClick={() => fillDemoAccount(demoEmailKey)} style={{ cursor: 'pointer', color: '#10b981' }}>
-											{DEMO_ACCOUNTS[demoEmailKey].label}: <b>{demoEmailKey}</b> / <b>{DEMO_ACCOUNTS[demoEmailKey].password}</b>
-										</div>
-									))}
-								</div>
-							}
-							type="success"
-							showIcon
-							style={
-								{ 
-									marginBottom: 24, 
-									backgroundColor: isDarkModeActive ? 'rgba(16, 185, 129, 0.1)' : '#d1fae5', 
-									borderColor: isDarkModeActive ? 'rgba(16, 185, 129, 0.3)' : '#a7f3d0' 
-								}
-							}
-						/>
-					)}
 
 					{/* 表單區塊 */}
 					<Form
@@ -313,7 +259,6 @@ export default function Login(): React.ReactElement
 							</Button>
 						</Form.Item>
 
-						{/* ★ 2026-10-28：移除「一鍵快速登入（測試用）」，改用上方 Demo 測試帳號點擊自動填入 */}
 					</Form>
 
 					{/* 底部提示 */}

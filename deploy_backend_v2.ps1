@@ -1,5 +1,5 @@
 ﻿# ============================================================================
-# 升級後端為期末版 open-pets 2.0.0，並建立登入頁的 Demo 測試帳號
+# 升級後端為期末版 open-pets 2.0.0
 # 用法：在 PowerShell 執行  powershell -ExecutionPolicy Bypass -File .\deploy_backend_v2.ps1
 # 步驟依交付套件「02_部署腳本\建置與啟動說明.md」：
 #   1. 建置映像檔 open-pets:2.0.0
@@ -7,7 +7,7 @@
 #      舊容器若有設定鹽值 OPEN_PETS_DEFAULT_SALT，沿用同一個值（換鹽值會讓雜湊結果與先前不同）
 #   3. 舊容器 open-pets（1.2.0）停止並改名為 open-pets-old，保留作為退回用，不刪除
 #   4. 以 2.0.0 啟動新容器 open-pets（埠 8000）
-#   5. 建立 Demo 帳號 owner@test.com（User，密碼 Owner@123456）、admin@test.com（Admin，密碼 Admin@123456）
+#   （帳號不由本腳本建立；第一位管理員請用 open-pets.ps1／open-pets.sh 的 create-admin 互動建立）
 # ============================================================================
 $ErrorActionPreference = 'Stop'
 
@@ -69,12 +69,6 @@ if ($LASTEXITCODE -ne 0) { throw '啟動失敗' }
 Start-Sleep -Seconds 6
 $root = curl.exe -s http://127.0.0.1:8000/
 Write-Host "   後端回應：$root"
-
-Write-Host '== 5. 建立 Demo 測試帳號（已存在會顯示「已經存在」，可忽略）'
-docker exec open-pets python -m app.cli.main create-user -u owner@test.com -p Owner@123456 -r user
-# ★ 2026-10-28：後端改為密碼至少 12 字，owner 的 Demo 密碼由 password 改為 Owner@123456；既有帳號一併重設
-docker exec open-pets python -c "from app.governance.auth import get_auth_manager as g; g().reset_password('owner@test.com', 'Owner@123456'); print('owner@test.com 密碼已設為 Owner@123456')"
-docker exec open-pets python -m app.cli.main create-user -u admin@test.com -p Admin@123456 -r admin
 
 Write-Host ''
 Write-Host '完成。回應中 version 應為 2.0.0。'

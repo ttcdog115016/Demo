@@ -29,8 +29,6 @@ services:
       # 模式：local（預設，本地：一台電腦）、lan（內網，見 docker-compose.lan.yml）
       # 舊值 offline 仍接受，視為 local；線上（online）模式已移除，設定它會拒絕啟動
       OPEN_PETS_MODE: ${OPEN_PETS_MODE:-local}
-      # 登入頁是否顯示 Demo 測試帳號；交付環境保持 false
-      OPEN_PETS_SHOW_DEMO_ACCOUNTS: ${OPEN_PETS_SHOW_DEMO_ACCOUNTS:-false}
     # 容器強化：根檔案系統唯讀、移除所有 Linux capabilities、禁止提權
     read_only: true
     cap_drop:

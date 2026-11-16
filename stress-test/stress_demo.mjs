@@ -21,8 +21,8 @@
  *   node stress-test/stress_demo.mjs --csv D:\data\demo.csv --rows 0        # 改用 Demo 要用的真實資料
  *   node stress-test/stress_demo.mjs --users kanon,kanon,dp,dp --stagger 3000 --no-baseline
  *   node stress-test/stress_demo.mjs --user someone@x.com --password '...'   # 換測試帳號
- * ★ 2026-10-30：處理端點須登入，預設以 Demo 帳號 owner@test.com 登入（可用 --user／--password
- *   或環境變數 STRESS_USER／STRESS_PASSWORD 指定），access token 每 10 分鐘重新取得一次。
+ * ★ 2026-10-30：處理端點須登入，須以 --user／--password
+ *   或環境變數 STRESS_USER／STRESS_PASSWORD 指定測試帳號登入（不再內建預設帳密），access token 每 10 分鐘重新取得一次。
  * 參數說明見 README.md 或 --help。
  */
 import http from 'node:http';
@@ -51,8 +51,8 @@ const DEFAULTS = {
     timeoutSec: 900,     // 單一請求逾時（與前端 DEFAULT_API_TIMEOUT_MS 15 分鐘一致）
     maxSec: 300,         // 判定 PASS 的單人完整流程上限秒數（Demo 現場可接受的等待時間）
     docker: true,        // 嘗試以 docker stats 監看後端容器 CPU／記憶體
-    user: process.env.STRESS_USER || 'owner@test.com',
-    password: process.env.STRESS_PASSWORD || 'Owner@123456',
+    user: process.env.STRESS_USER || '',
+    password: process.env.STRESS_PASSWORD || '',
     out: path.join(SCRIPT_DIR, 'results'),
 };
 
@@ -86,6 +86,7 @@ const parseArgs = (argv) => {
                 process.exit(2);
         }
     }
+    if (!opts.user || !opts.password) { console.error('必須指定測試帳號：--user／--password，或環境變數 STRESS_USER／STRESS_PASSWORD'); process.exit(2); }
     opts.userModes = opts.users.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
     const bad = opts.userModes.filter((m) => m !== 'kanon' && m !== 'dp');
     if (bad.length) { console.error(`--users 只接受 kanon / dp，收到：${bad.join(',')}`); process.exit(2); }

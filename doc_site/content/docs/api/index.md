@@ -42,7 +42,7 @@ Content-Type: application/json
   "refresh_token": "O7Wy…",
   "token_type": "bearer",
   "expires_in": 900,
-  "username": "owner@test.com",
+  "username": "user@example.com",
   "role": "user",
   "message": "登入成功。"
 }

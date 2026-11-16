@@ -228,13 +228,10 @@ Vite/React 預設模板殘留的展示頁樣式（`.counter`、`.hero`、`#next-
 
 ### `src/features/login/Login.tsx`
 
-**檔案用途**：登入頁面，提供帳密登入表單、Demo 測試帳號一鍵填入、快速免密登入。
+**檔案用途**：登入頁面，提供帳密登入表單，帳密經後端 `POST /api/v1/auth/login` 驗證（正式版不內建任何測試帳號）。
 
-- **內建 Demo 帳號**：`owner@test.com` / `password`（角色 `data_owner`）。
-- `handleLogin(formValuesObj)`：模擬 800ms 網路延遲後比對 Demo 帳號，成功則 `login()` 寫入 AuthStore 並導回首頁；失敗顯示錯誤訊息。
-- `handleQuickLogin()`：完全繞過帳密驗證，直接寫入固定的 `Data.Owner.A` 身份並導回首頁。
-- `fillDemoAccount(emailKey)`：自動填入表單欄位，不自動送出。
-- 另有「忘記密碼」「申請權限」連結。
+- `handleLogin(formValuesObj)`：向後端驗證帳密，成功則 `login()` 寫入 AuthStore 並導回首頁；失敗顯示錯誤訊息。
+- 帳號由系統管理員建立，登入頁僅提示「尚無帳號？請洽系統管理員建立」。
 
 ---
 
