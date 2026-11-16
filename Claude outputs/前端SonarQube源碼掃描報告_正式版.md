@@ -2,7 +2,7 @@
 
 > 依據 RFP 貳、四、(一)、2：以第三方工具進行源碼檢測，工具須支援最新版本之 OWASP Top 10，並於交付原始碼時附上源碼檢測報告
 > 本報告只涵蓋前端程式碼，結構與設定比照 115/11/03 之《前端SonarQube源碼掃描報告》，並新增「與 11/03 之差異」一節。
-> 原始輸出：`前端檢測原始資料_正式版/sonarqube/`、`前端檢測原始資料_正式版/npm-audit/`
+> 原始輸出：`前端檢測原始資料_正式版/sonarqube/`、`前端檢測原始資料_正式版/npm-audit/`、`前端檢測原始資料_正式版/zap/`
 
 ## 一、檢測資訊
 
@@ -16,6 +16,8 @@
 | 品質設定檔 | Sonar way core（該版本內建預設，涵蓋 TypeScript、JavaScript、CSS、HTML、密鑰偵測） |
 | 掃描範圍 | `src/` 與 `index.html`，**排除單元測試**（`__tests__/`、`*.test.ts(x)`），即實際打包的程式碼：121 個檔案、24,452 行程式碼 |
 | 相依套件檢測 | npm audit（npm 11.17.0，比對 GitHub Advisory Database），全部套件與僅執行期（`--omit=dev`）各一份 |
+| 弱點掃描工具 | OWASP ZAP 2.17.0（`zap-baseline.py` 被動式掃描，與 11/03 相同） |
+| 弱點掃描範圍 | 依 repo 根目錄 `Dockerfile`、`nginx.conf` 建置之 nginx 容器（以同一份原始碼建置），共探索 8 個網址。測試容器放在專用 Docker 網路、不對外開埠，`/api/` 轉送目標指向不可連線之位址（回 502），掃描不會觸及任何後端 |
 | 品質門檻 | Sonar way（內建），結果：**通過** |
 
 ## 二、OWASP Top 10 對應
@@ -49,7 +51,7 @@ SonarQube 的安全性規則依 CWE 與 OWASP Top 10 分類。結果依 **OWASP 
 - 安全熱點：0
 - 品質門檻：通過
 - 20 筆 Vulnerability 經逐筆人工判讀，**沒有屬實之安全性弱點**
-- **`Login.tsx` 沒有任何議題**；全部原始碼搜尋不到 Demo 測試帳號之帳號與密碼（見第七節）
+- **`Login.tsx` 沒有任何議題**；全部原始碼搜尋不到 Demo 測試帳號之帳號與密碼（見第八節）
 
 ## 四、安全性議題（20 筆）逐筆判讀
 
@@ -81,7 +83,21 @@ SonarQube 的安全性規則依 CWE 與 OWASP Top 10 分類。結果依 **OWASP 
 - 20 筆都屬開發與建置工具（`browserslist`、`undici`、`zod`〔高〕；`eslint`、`typescript-eslint` 系列、`@cyclonedx/cyclonedx-npm` 及其相依等〔中〕），不進入 `dist/` 與 Docker 映像檔。
 - 與 osv-scanner 對 `package-lock.json` 的結果一致（唯一的執行期套件命中 `xlsx` 0.20.3 為誤報：本專案從 `cdn.sheetjs.com` 安裝已修正版本，npm 公共登錄沒有該版本）。
 
-## 七、與 11/03 報告之差異（移除 Demo 測試帳號之影響）
+## 七、弱點掃描（OWASP ZAP）
+
+**結果**：PASS 63、WARN 5、FAIL 0（11/03 修補後複測為 PASS 58、WARN 10、FAIL 0）。沒有發現注入、敏感資料外洩、Cookie 設定缺陷，或中風險以上的可利用弱點。
+
+| 風險 | 警示 | 筆數 | 判讀 |
+|---|---|---|---|
+| 中 | CSP：`style-src` 含 `'unsafe-inline'`（10055） | 3 | **風險接受**，理由與 11/03 相同：antd 於執行時以 `<style>` 注入樣式；`script-src` 已限制為 `'self'`，不允許行內腳本 |
+| 低 | Unix 時間戳記揭露（10096） | 5 | 誤判：打包後 JS 內的數字常數，不是敏感資訊 |
+| 資訊 | 可疑註解（10027）、現代 Web 應用程式（10109）、可儲存與快取之內容（10049） | 2／3／3 | 屬預期行為，不需處置 |
+
+- 回應標頭確認具備：`Content-Security-Policy`、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy`、`Permissions-Policy`、`Cross-Origin-Opener-Policy`、`Cross-Origin-Resource-Policy`；`Server` 標頭不再揭露版本。
+- 與 11/03 修補後複測之保留項目完全一致，沒有新增警示。
+- `Strict-Transport-Security` 需由提供 HTTPS 之反向代理設定（見 `nginx.conf` 註解），本次測試容器為 HTTP。
+
+## 八、與 11/03 報告之差異（移除 Demo 測試帳號之影響）
 
 | 項目 | 11/03 | 本次 | 說明 |
 |---|---|---|---|
@@ -92,9 +108,10 @@ SonarQube 的安全性規則依 CWE 與 OWASP Top 10 分類。結果依 **OWASP 
 | `Login.tsx` 議題 | S6848 一筆（Demo 帳號區塊以非互動元素綁定點擊） | **0 筆** | Demo 區塊已整個移除；S6848 的第三筆改為 `CollapsibleCardHeader.tsx` |
 | 寫死之測試帳密 | 登入頁 Demo 區塊（`owner@test.com`、`admin@test.com` 及其密碼） | **無** | 另以 `git grep` 與 `dist/` 搜尋確認 |
 | 執行期相依弱點（npm audit） | 0 | 0 | — |
+| 弱點掃描（ZAP） | 修補後 PASS 58／WARN 10／FAIL 0 | PASS 63／WARN 5／FAIL 0 | 保留項目與 11/03 複測一致 |
 | 重複率／可維護性評等 | 6.7%／A | 6.5%／A | — |
 
-## 八、量測指標
+## 九、量測指標
 
 | 指標 | 數值 |
 |---|---|
@@ -107,7 +124,7 @@ SonarQube 的安全性規則依 CWE 與 OWASP Top 10 分類。結果依 **OWASP 
 | 可靠性評等 | D（受 2 筆 CRITICAL Bug 影響，即 S2871 排序） |
 | 安全性評等 | C（20 筆 Vulnerability 均為待人工確認之原安全熱點規則；判讀後沒有屬實者） |
 
-## 九、建議處置
+## 十、建議處置
 
 **（一）不須修補**：S2068、S2245、S6389 共 20 筆，判讀為誤判、非安全用途或刻意使用，不構成安全性缺陷。若要消除工具告警，可選擇性調整：S2245 改用 `crypto.randomUUID()`；S6389 改用 `\u` 跳脫寫法。
 
@@ -120,13 +137,13 @@ SonarQube 的安全性規則依 CWE 與 OWASP Top 10 分類。結果依 **OWASP 
 | 3 | S8786 正規式回溯（4 筆） | 將 `/^ +\| +$/g` 改為先 `trimStart`／`trimEnd` 再計算空白數 |
 | 4 | 其餘 Code Smell | 依寫法建議逐步調整 |
 
-## 十、結論
+## 十一、結論
 
 前端程式碼（121 個檔案、24,452 行）通過 SonarQube 品質門檻，沒有 BLOCKER 等級議題。
 
-20 筆安全性議題都屬於工具要求人工確認的原安全熱點規則，經逐筆判讀，**沒有屬實的安全性弱點**；隨產品交付之執行期相依套件經 npm audit 檢測為 0 筆弱點。移除 Demo 測試帳號後，登入頁沒有任何議題，原始碼中也不再有寫死之測試帳號與密碼。依 OWASP Top 10:2025 分類，有對應檢查的類別都通過，A10 例外狀況處理有 24 筆可靠性議題，列為後續改善項目。
+20 筆安全性議題都屬於工具要求人工確認的原安全熱點規則，經逐筆判讀，**沒有屬實的安全性弱點**；隨產品交付之執行期相依套件經 npm audit 檢測為 0 筆弱點。移除 Demo 測試帳號後，登入頁沒有任何議題，原始碼中也不再有寫死之測試帳號與密碼。OWASP ZAP 被動式掃描沒有 FAIL，5 筆警示皆為 11/03 已判讀之保留項目。依 OWASP Top 10:2025 分類，有對應檢查的類別都通過，A10 例外狀況處理有 24 筆可靠性議題，列為後續改善項目。
 
-**本次未涵蓋**：OWASP ZAP 弱點掃描（本次未重跑；11/03 對 nginx 容器之結果見《前端源碼檢測暨弱點掃描修補報告》，本次移除 Demo 帳號未更動 `nginx.conf` 與 HTTP 標頭設定）、後端 SonarQube／Greenbone（後端另有報告）。源碼有異動時，應重新掃描並更新本報告。
+**本次未涵蓋**：後端 SonarQube／Greenbone（後端另有報告）；ZAP 為被動式掃描，未做主動攻擊式掃描。源碼有異動時，應重新掃描並更新本報告。
 
 ---
 
@@ -138,3 +155,5 @@ SonarQube 的安全性規則依 CWE 與 OWASP Top 10 分類。結果依 **OWASP 
 - 品質設定檔：Sonar way core（預設）；`sonar.scm.disabled=true`
 
 相依套件：`npm audit --json` 與 `npm audit --omit=dev --json`。
+
+弱點掃描：`docker build` 前端映像檔後，放入專用 Docker 網路並以 `--add-host host.docker.internal:127.0.0.1` 啟動（使 `/api/` 不會連到真實後端），再執行 `zap-baseline.py -t http://<容器名稱>:8080 -r zap-baseline.html -J zap-baseline.json -I`。
