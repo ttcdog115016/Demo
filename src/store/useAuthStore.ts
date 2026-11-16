@@ -79,7 +79,7 @@ interface AuthState
 	 *   - userSessionData (User): 包含姓名、Email 及角色之使用者資料物件
 	 * 輸出參數 (Output): 無
 	 * 返回值 (Return): void
-	 * 呼叫關係 (Call Relations): 被 Login.tsx 頁面登入成功事件或快速登入被調用
+	 * 呼叫關係 (Call Relations): 被 Login.tsx 頁面登入成功事件調用
 	 * 
 	 * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素, c) 確保透過正規 Action 修改全域變數
 	 */
