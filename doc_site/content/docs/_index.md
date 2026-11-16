@@ -51,7 +51,10 @@ weight: 1
 | `/data/users.db` | 帳號資料庫 |
 | `/data/system.db` | 處理紀錄、系統設定、介面偏好 |
 | `/data/audit.jsonl` | 稽核紀錄，有簽章，可驗證是否被竄改 |
+| `/data/logs/` | 系統日誌（`open-pets.log`） |
+| `/data/tmp/` | 處理過程的暫存檔 |
 
+- `users.db`、`system.db` 旁出現的 `-shm`、`-wal` 檔是資料庫的運作檔，備份時請連同整個磁碟區一併保留。
 - 去識別化的結果、設定檔、檢測報告由使用者從瀏覽器下載，存在使用者自己的電腦。
 - 備份與還原：用 `.\open-pets.ps1 backup`，或見[安裝教學第 11 節](deploy/#11-備份與還原)。
 
