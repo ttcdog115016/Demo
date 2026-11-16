@@ -12,7 +12,7 @@
   verify-log 等     其餘後端 CLI 指令原樣轉交（create-user、verify-log、k-anonymity、dp、report…）
 
 模式：OPEN_PETS_MODE=local（本地，預設）或 lan（內網，同一個內網的多台電腦）；舊值 offline 仍接受，視為 local。
-  線上（online）模式已移除：設成 online 會拒絕啟動並提示改用 lan 或 local（見 REMOVED_MODES）。
+  不支援線上（online）模式：設成 online 會拒絕啟動並提示改用 lan 或 local（見 REMOVED_MODES）。
   同一份映像檔、同一份前端，模式由 /runtime-config.js 在執行期告訴前端（見 resolve_runtime_config）。
 
 金鑰：OPEN_PETS_DEFAULT_SALT／OPEN_PETS_SYSTEM_MASTER_KEY／OPEN_PETS_JWT_SECRET 由環境變數提供；
@@ -73,10 +73,10 @@ def ensure_secrets() -> None:
 
 
 VALID_MODES = ("local", "lan")
-MODE_ALIASES = {"offline": "local"}   # 2.0.0-rc2 以前的名稱，仍接受
-# 已移除的模式：不靜默退回其他模式（那會悄悄改變對網路的開放範圍），而是拒絕啟動並說明怎麼改
+MODE_ALIASES = {"offline": "local"}   # 原名稱，仍接受
+# 不支援的模式：不靜默退回其他模式（那會悄悄改變對網路的開放範圍），而是拒絕啟動並說明怎麼改
 REMOVED_MODES = {
-    "online": "線上（online）模式已移除，不再提供以對外網域直接對網際網路服務的模式。"
+    "online": "不支援線上（online）模式（本系統不提供以對外網域直接對網際網路服務的模式）。"
               "同一個內網的多台電腦請改用 OPEN_PETS_MODE=lan（內建 HTTPS），只有一台電腦使用請改用 local。"
               "安裝資料夾裡有 open-pets.ps1／open-pets.sh 的話，執行 mode lan -Hosts <內網IP> 或 mode local 即可，資料不會遺失。",
 }
@@ -86,7 +86,7 @@ def resolve_runtime_config() -> dict:
     """讀環境變數決定前端的執行期設定；值不合法就中止啟動，不靜默退回預設（避免設錯了卻以為生效）。
 
     OPEN_PETS_MODE             local（預設，本地：一台電腦）或 lan（內網：同一個內網的多台電腦）；舊值 offline 視為 local。
-                               只有 lan 顯示系統維運日誌分頁。online 已移除，設定它會拒絕啟動（見 REMOVED_MODES）。
+                               只有 lan 顯示系統維運日誌分頁。online 不支援，設定它會拒絕啟動（見 REMOVED_MODES）。
     """
     mode = os.getenv("OPEN_PETS_MODE", "").strip().lower() or "local"
     mode = MODE_ALIASES.get(mode, mode)
