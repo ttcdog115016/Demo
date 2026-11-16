@@ -70,7 +70,7 @@ docker compose version
 Open-PETs 提供安裝工具 `open-pets.ps1`，以問答方式完成安裝與模式切換，無須手動修改設定檔。
 
 {{< callout type="warning" >}}
-**請使用全新的資料夾**（下列範例使用 `C:\open-pets-app`）。若這台電腦先前已安裝舊版（資料夾為 `C:\open-pets`），請勿使用同一資料夾，以免覆蓋舊版的金鑰。
+**請使用全新的資料夾**（下列範例使用 `C:\open-pets-app`）。若這台電腦先前已安裝過（資料夾為 `C:\open-pets`），請勿使用同一資料夾，以免覆蓋先前的金鑰。
 {{< /callout >}}
 
 {{< tabs >}}
@@ -212,7 +212,7 @@ New-NetFirewallRule -DisplayName "Open-PETs HTTPS 443" -Direction Inbound -Proto
 | 本地 → 內網 | 其他使用者可透過 `https://內網IP` 連線 | 開放防火牆；執行 `export-ca` 並提供檔案給使用者；使用者端信任憑證 |
 | 內網 → 本地 | 其他使用者**立即無法連線**，僅這台電腦可使用 | 事先通知使用者。日後切回內網時沿用原憑證，使用者無須重新信任 |
 
-**舊版安裝的資料夾（`.env` 設有 `OPEN_PETS_MODE=online`）：** 工具會提示改用 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`），資料不會遺失；若直接以 `OPEN_PETS_MODE=online` 啟動新版映像檔，亦會被拒絕，並顯示修正方式。
+**先前以 `online` 設定安裝的資料夾（`.env` 設有 `OPEN_PETS_MODE=online`）：** 工具會提示改用 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`），資料不會遺失；若直接以 `OPEN_PETS_MODE=online` 啟動映像檔，亦會被拒絕，並顯示修正方式。
 
 **網址或 IP 變動時**（例如更換網路）：
 
@@ -258,7 +258,7 @@ New-NetFirewallRule -DisplayName "Open-PETs HTTPS 443" -Direction Inbound -Proto
 | （內網）更換網路後無法連線 | 主機 IP 已變動，設定仍指向舊 IP | 以 `ipconfig` 查詢新 IP，再執行上方「網址或 IP 變動時」的兩行指令 |
 | （內網）出現 `ERR_SSL_PROTOCOL_ERROR` 或憑證名稱不符 | 輸入的網址不在設定的清單內 | 執行 `.\open-pets.ps1 mode lan -Hosts 網址1,網址2`（列入所有會使用的網址），再執行 `export-ca` |
 | （內網）工具顯示「443 埠已被占用，HTTPS 改用 8443」 | 這台電腦的 443 埠已被其他程式使用 | 非錯誤。網址須加上埠號：`https://主機IP:8443`，防火牆亦須開放 8443 |
-| 工具顯示已有名為「open-pets」的容器 | 這台電腦先前已安裝舊版 | 非錯誤，工具會自動避開，不會變動舊的容器 |
+| 工具顯示已有名為「open-pets」的容器 | 這台電腦先前已安裝過 | 非錯誤，工具會自動避開，不會變動舊的容器 |
 
 其他問題請見[常見問題](../faq/)。需資訊人員協助時，請提供 `.\open-pets.ps1 logs` 的最後數行輸出。
 

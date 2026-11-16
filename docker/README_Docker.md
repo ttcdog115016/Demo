@@ -51,9 +51,8 @@ Open-PETs 是資料去識別化工具（K-匿名化與差分隱私）。前端�
 
 - 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可直接切換，資料磁碟區不變。
 - `OPEN_PETS_MODE` 填了 `local`、`offline`、`lan` 以外的值，容器會在啟動時報錯並結束，不會悄悄退回預設。
-- `OPEN_PETS_MODE` 設成 `online` 會拒絕啟動，並提示改用 `lan` 或 `local`。舊版以 `online` 設定安裝的資料夾，執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`）即可，資料不會遺失；若不使用內網 HTTPS 又需提供其他電腦使用，須於前端自行架設反向代理，並自行承擔對外開放的資安責任（本專案不提供範例與支援）。
+- `OPEN_PETS_MODE` 設成 `online` 會拒絕啟動，並提示改用 `lan` 或 `local`。以 `online` 設定安裝的資料夾，執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（或 `mode local`）即可，資料不會遺失；若不使用內網 HTTPS 又需提供其他電腦使用，須於前端自行架設反向代理，並自行承擔對外開放的資安責任（本專案不提供範例與支援）。
 - 內網沒設 `OPEN_PETS_ALLOWED_HOSTS` 時，`docker compose` 會直接報錯，不會啟動。
-- `local`、`lan` 與 `docker-compose.lan.yml`、安裝工具需 **2.0.0-rc3 以上**版本。
 
 ### 內網模式要注意
 
@@ -114,7 +113,7 @@ docker run --rm -v "${PWD}:/w" -w /w gcr.io/projectsigstore/cosign:latest verify
 
 資料與金鑰都在 `open-pets-data` 磁碟區，換映像檔不會遺失。**最簡單：** `.\open-pets.ps1 update 新版本號`（更新前自動備份）。
 
-手動：把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本；離線要先 `docker load -i` 新的 tar.gz，有網路則 `docker compose pull`；然後 `docker compose up -d`。**退回**：把版本改回舊的再 `docker compose up -d`。
+手動：把 `.env` 的 `OPEN_PETS_VERSION` 改成新的版本號；離線要先 `docker load -i` 新的 tar.gz，有網路則 `docker compose pull`；然後 `docker compose up -d`。**退回**：把版本號改回先前的再 `docker compose up -d`。
 
 ## 六、備份與還原
 
