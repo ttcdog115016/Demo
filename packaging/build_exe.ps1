@@ -27,7 +27,7 @@ function Fail($msg) { Write-Host "[失敗] $msg" -ForegroundColor Red; exit 1 }
 if (-not (Test-Path (Join-Path $BackendSrc 'app\api\server.py'))) { Fail "找不到後端原始碼：$BackendSrc（預設為 repo 的 backend\，可用 -BackendSrc 指定其他位置）" }
 
 # ---------------------------------------------------------------- 1. 前端
-Step '1/4 建置前端（單機版模式：不顯示 Demo 帳號、不送錯誤到 Google 表單）'
+Step '1/4 建置前端（單機版模式：不送錯誤到 Google 表單）'
 Push-Location $Root
 try {
     if (-not (Test-Path 'node_modules')) { npm ci; if ($LASTEXITCODE) { Fail 'npm ci 失敗' } }
