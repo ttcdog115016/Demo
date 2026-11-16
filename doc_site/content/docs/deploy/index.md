@@ -96,6 +96,8 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 {{< /tab >}}
 {{< /tabs >}}
 
+後續指令均在這個安裝資料夾內執行。
+
 ## 4. 方式一：容器映像檔（GHCR）
 
 {{< callout type="info" >}}
@@ -145,11 +147,12 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
     docker login ghcr.io -u <GitHub 帳號>
     ```
 
-4. 取得映像檔並啟動：
+4. 取得映像檔並啟動，並確認容器狀態：
 
     ```powershell
     docker compose pull
     docker compose up -d
+    docker compose ps
     ```
 
 接著做[第 7 節](#7-啟動後建立管理員並確認)。要驗證映像檔確實是官方建置的，見[第 12 節](#12-驗證映像檔來源)。
@@ -170,7 +173,21 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 | `open-pets-source_<版本>.zip` | 全部原始碼（前端與 `backend/`） |
 | `LICENSE`、`THIRD_PARTY_NOTICES.txt`、`FRONTEND_THIRD_PARTY_LICENSES.md`、`FRONTEND_LICENSES_FULLTEXT.txt`、`image-sbom.cdx.json`、`frontend-sbom.cdx.json` | 授權聲明與軟體物料清單（映像檔、前端各一份） |
 
-1. 把整個資料夾複製到主機，並在該資料夾開終端機。
+1. 把整個資料夾複製到主機，並在終端機切換到該資料夾（下列路徑依實際位置調整）：
+
+    {{< tabs >}}
+    {{< tab name="Windows（PowerShell）" >}}
+    ```powershell
+    cd C:\open-pets-app
+    ```
+    {{< /tab >}}
+    {{< tab name="Linux（bash）" >}}
+    ```bash
+    cd ~/open-pets-app
+    ```
+    {{< /tab >}}
+    {{< /tabs >}}
+
 2. 核對完整性（結果要與另一條管道取得的一致）：
 
     {{< tabs >}}
@@ -217,25 +234,79 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 
 適合想檢視程式碼、重新建置，或依授權替換第三方元件的人。完整步驟見交付包的 `REBUILD.md`，基本流程如下。
 
-1. 解開 `open-pets-source_<版本>.zip`（或 clone GitHub repo 的同一版本）。
-2. 在解開後的 `open-pets` 資料夾建置映像檔（需要 Docker `buildx` 與網路）：
+1. 取得原始碼，擇一進行（兩種方式都會進入 `open-pets` 資料夾；`$v` 為版本號）：
 
-    ```powershell
-    docker buildx build -f docker/Dockerfile --build-arg OPEN_PETS_VERSION=<版本> -t open-pets-app:<版本> --load .
-    ```
-
-3. 把 `docker/docker-compose.yml` 複製到安裝資料夾，建立 `.env`（一行，版本號填入建置時使用的編號），再啟動：
+    **方式 A：解開交付包內的 `open-pets-source_<版本>.zip`**
 
     {{< tabs >}}
     {{< tab name="Windows（PowerShell）" >}}
     ```powershell
-    "OPEN_PETS_VERSION=<版本>" | Set-Content -Encoding ascii .env
+    $v = '2.0.0-rc5'
+    Expand-Archive .\open-pets-source_$v.zip -DestinationPath .
+    cd .\open-pets
+    ```
+    {{< /tab >}}
+    {{< tab name="Linux（bash）" >}}
+    ```bash
+    v=2.0.0-rc5
+    unzip open-pets-source_$v.zip
+    cd open-pets
+    ```
+    {{< /tab >}}
+    {{< /tabs >}}
+
+    **方式 B：clone GitHub repo 的同一版本**
+
+    {{< tabs >}}
+    {{< tab name="Windows（PowerShell）" >}}
+    ```powershell
+    $v = '2.0.0-rc5'
+    git clone --branch v$v --depth 1 https://github.com/ttcdog115016/Demo.git open-pets
+    cd .\open-pets
+    ```
+    {{< /tab >}}
+    {{< tab name="Linux（bash）" >}}
+    ```bash
+    v=2.0.0-rc5
+    git clone --branch v$v --depth 1 https://github.com/ttcdog115016/Demo.git open-pets
+    cd open-pets
+    ```
+    {{< /tab >}}
+    {{< /tabs >}}
+
+2. 在 `open-pets` 資料夾建置映像檔（需要 Docker `buildx` 與網路）：
+
+    {{< tabs >}}
+    {{< tab name="Windows（PowerShell）" >}}
+    ```powershell
+    docker buildx build -f docker/Dockerfile --build-arg OPEN_PETS_VERSION=$v -t open-pets-app:$v --load .
+    ```
+    {{< /tab >}}
+    {{< tab name="Linux（bash）" >}}
+    ```bash
+    docker buildx build -f docker/Dockerfile --build-arg OPEN_PETS_VERSION=$v -t open-pets-app:$v --load .
+    ```
+    {{< /tab >}}
+    {{< /tabs >}}
+
+3. 建立安裝資料夾，把 `docker/docker-compose.yml` 複製進去，建立 `.env`（一行，版本號填入建置時使用的編號），再啟動：
+
+    {{< tabs >}}
+    {{< tab name="Windows（PowerShell）" >}}
+    ```powershell
+    New-Item -ItemType Directory -Force C:\open-pets-app | Out-Null
+    Copy-Item docker\docker-compose.yml C:\open-pets-app\
+    cd C:\open-pets-app
+    "OPEN_PETS_VERSION=$v" | Set-Content -Encoding ascii .env
     docker compose up -d
     ```
     {{< /tab >}}
     {{< tab name="Linux（bash）" >}}
     ```bash
-    echo "OPEN_PETS_VERSION=<版本>" > .env
+    mkdir -p ~/open-pets-app
+    cp docker/docker-compose.yml ~/open-pets-app/
+    cd ~/open-pets-app
+    echo "OPEN_PETS_VERSION=$v" > .env
     docker compose up -d
     ```
     {{< /tab >}}
@@ -271,8 +342,25 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API 使用說明](../api/)。
 
 {{< callout type="info" >}}
-**8080 埠被占用**（`port is already allocated`）：在 `.env` 加一行 `OPEN_PETS_PORT=8081`（任一空的埠），再 `docker compose up -d`，網址改用該埠。
+**8080 埠被占用**（`port is already allocated`）：把 `.env` 的 `OPEN_PETS_PORT` 改成任一空的埠（例如 8081）並重新啟動，網址改用該埠。指令如下：
 {{< /callout >}}
+
+{{< tabs >}}
+{{< tab name="Windows（PowerShell）" >}}
+```powershell
+(Get-Content .env) | Where-Object { $_ -notmatch '^(OPEN_PETS_PORT)=' } | Set-Content -Encoding ascii .env
+Add-Content -Encoding ascii .env @('OPEN_PETS_PORT=8081')
+docker compose up -d
+```
+{{< /tab >}}
+{{< tab name="Linux（bash）" >}}
+```bash
+sed -i '/^\(OPEN_PETS_PORT\)=/d' .env
+printf '%s\n' 'OPEN_PETS_PORT=8081' >> .env
+docker compose up -d
+```
+{{< /tab >}}
+{{< /tabs >}}
 
 ## 8. 兩種模式：本地、內網
 
@@ -306,7 +394,45 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 | 本地 | `OPEN_PETS_MODE=local`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml` |
 | 內網 | `OPEN_PETS_MODE=lan`<br>`OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml` |
 
-改完 `.env` 執行 `docker compose up -d --remove-orphans`（會把用不到的容器，例如從內網切回本地時的 HTTPS 容器，一併移除；資料不受影響）。
+以下指令會寫入上表的各行並套用（先移除同名的舊設定行；`.env` 以無 BOM 的 ASCII 儲存）。`docker compose up -d --remove-orphans` 會把用不到的容器（例如從內網切回本地時的 HTTPS 容器）一併移除，資料不受影響。
+
+**切換為本地：**
+
+{{< tabs >}}
+{{< tab name="Windows（PowerShell）" >}}
+```powershell
+(Get-Content .env) | Where-Object { $_ -notmatch '^(OPEN_PETS_MODE|COMPOSE_PATH_SEPARATOR|COMPOSE_FILE)=' } | Set-Content -Encoding ascii .env
+Add-Content -Encoding ascii .env @('OPEN_PETS_MODE=local','COMPOSE_PATH_SEPARATOR=:','COMPOSE_FILE=docker-compose.yml')
+docker compose up -d --remove-orphans
+```
+{{< /tab >}}
+{{< tab name="Linux（bash）" >}}
+```bash
+sed -i '/^\(OPEN_PETS_MODE\|COMPOSE_PATH_SEPARATOR\|COMPOSE_FILE\)=/d' .env
+printf '%s\n' 'OPEN_PETS_MODE=local' 'COMPOSE_PATH_SEPARATOR=:' 'COMPOSE_FILE=docker-compose.yml' >> .env
+docker compose up -d --remove-orphans
+```
+{{< /tab >}}
+{{< /tabs >}}
+
+**切換為內網**（先依 [9-2](#9-2-取得設定檔並啟動) 取得 `docker-compose.lan.yml` 與 `Caddyfile.lan`，網址依 [9-1](#9-1-先決定使用者輸入的網址) 填寫）：
+
+{{< tabs >}}
+{{< tab name="Windows（PowerShell）" >}}
+```powershell
+(Get-Content .env) | Where-Object { $_ -notmatch '^(OPEN_PETS_MODE|OPEN_PETS_ALLOWED_HOSTS|COMPOSE_PATH_SEPARATOR|COMPOSE_FILE)=' } | Set-Content -Encoding ascii .env
+Add-Content -Encoding ascii .env @('OPEN_PETS_MODE=lan','OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server','COMPOSE_PATH_SEPARATOR=:','COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml')
+docker compose up -d --remove-orphans
+```
+{{< /tab >}}
+{{< tab name="Linux（bash）" >}}
+```bash
+sed -i '/^\(OPEN_PETS_MODE\|OPEN_PETS_ALLOWED_HOSTS\|COMPOSE_PATH_SEPARATOR\|COMPOSE_FILE\)=/d' .env
+printf '%s\n' 'OPEN_PETS_MODE=lan' 'OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server' 'COMPOSE_PATH_SEPARATOR=:' 'COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml' >> .env
+docker compose up -d --remove-orphans
+```
+{{< /tab >}}
+{{< /tabs >}}
 
 `.env` 其他可設定的項目：
 
@@ -324,6 +450,61 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 | `OPEN_PETS_DEFAULT_SALT`、`OPEN_PETS_SYSTEM_MASTER_KEY`、`OPEN_PETS_JWT_SECRET` | 要把金鑰與資料分開保管時才填（各 64 字元隨機字串，環境變數優先於自動產生的） | 第一次啟動自動產生 |
 
 修改 `.env` 後執行 `docker compose up -d`，容器會用新設定重建。
+
+### 修改 `.env` 的指令
+
+`.env` 位於安裝資料夾，下列指令均在該資料夾執行。做法是先移除同名的舊設定行再寫入，重複執行不會產生重複行，並以無 BOM 的 ASCII 儲存（compose 才讀得到第一行）。以 `OPEN_PETS_PORT` 為例，其他變數請替換名稱與值。
+
+**設定一個變數：**
+
+{{< tabs >}}
+{{< tab name="Windows（PowerShell）" >}}
+```powershell
+(Get-Content .env) | Where-Object { $_ -notmatch '^(OPEN_PETS_PORT)=' } | Set-Content -Encoding ascii .env
+Add-Content -Encoding ascii .env @('OPEN_PETS_PORT=8081')
+```
+{{< /tab >}}
+{{< tab name="Linux（bash）" >}}
+```bash
+sed -i '/^\(OPEN_PETS_PORT\)=/d' .env
+printf '%s\n' 'OPEN_PETS_PORT=8081' >> .env
+```
+{{< /tab >}}
+{{< /tabs >}}
+
+**同時設定多個變數**（名稱以 `|` 分隔，列出要覆寫的全部變數）：
+
+{{< tabs >}}
+{{< tab name="Windows（PowerShell）" >}}
+```powershell
+(Get-Content .env) | Where-Object { $_ -notmatch '^(OPEN_PETS_MODE|OPEN_PETS_ALLOWED_HOSTS)=' } | Set-Content -Encoding ascii .env
+Add-Content -Encoding ascii .env @('OPEN_PETS_MODE=lan','OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server')
+```
+{{< /tab >}}
+{{< tab name="Linux（bash）" >}}
+```bash
+sed -i '/^\(OPEN_PETS_MODE\|OPEN_PETS_ALLOWED_HOSTS\)=/d' .env
+printf '%s\n' 'OPEN_PETS_MODE=lan' 'OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server' >> .env
+```
+{{< /tab >}}
+{{< /tabs >}}
+
+**查看目前內容：**
+
+{{< tabs >}}
+{{< tab name="Windows（PowerShell）" >}}
+```powershell
+Get-Content .env
+```
+{{< /tab >}}
+{{< tab name="Linux（bash）" >}}
+```bash
+cat .env
+```
+{{< /tab >}}
+{{< /tabs >}}
+
+設定完成後執行 `docker compose up -d` 套用。
 
 ## 9. 開放給其他電腦（內網）
 
@@ -343,7 +524,22 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
     OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server
     ```
 
-    這份清單同時是應用程式的主機名稱檢查（漏列的網址會得到 400 `Invalid host header`）和憑證要簽發的名稱。
+    這份清單同時是應用程式的主機名稱檢查（漏列的網址會得到 400 `Invalid host header`）和憑證要簽發的名稱。以指令寫入（先移除舊的同名行；其他變數的寫法見[修改 `.env` 的指令](#修改-env-的指令)）：
+
+    {{< tabs >}}
+    {{< tab name="Windows（PowerShell）" >}}
+    ```powershell
+    (Get-Content .env) | Where-Object { $_ -notmatch '^(OPEN_PETS_ALLOWED_HOSTS)=' } | Set-Content -Encoding ascii .env
+    Add-Content -Encoding ascii .env @('OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server')
+    ```
+    {{< /tab >}}
+    {{< tab name="Linux（bash）" >}}
+    ```bash
+    sed -i '/^\(OPEN_PETS_ALLOWED_HOSTS\)=/d' .env
+    printf '%s\n' 'OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server' >> .env
+    ```
+    {{< /tab >}}
+    {{< /tabs >}}
 - 清單裡有 IP 時，**第一個 IP 是「沒有送主機名稱」的連線所用的預設憑證**。用 IP 當網址時瀏覽器不會送主機名稱，所以主機有多個 IP 時，請把使用者實際會用的那個放最前面。
 - **更換網路、IP 變動時**，須將新 IP 補入清單（舊 IP 可保留）：`mode lan -Hosts 新IP,舊IP`，或改 `.env` 後 `docker compose up -d`。根憑證不會改變，使用者無須重新信任。
 
@@ -355,6 +551,25 @@ API 互動文件（Swagger）在 **http://localhost:8080/docs**，用法見 [API
 | --- | --- |
 | `docker-compose.lan.yml` | 內網模式：設定 `OPEN_PETS_MODE=lan`，多開 Caddy 容器終止 HTTPS |
 | `Caddyfile.lan` | Caddy 設定，由 compose 掛載，一般無須修改 |
+
+在安裝資料夾下載這兩個檔案（`$v` 為版本號，與方式一相同；離線交付包內已含，直接複製到安裝資料夾即可）：
+
+{{< tabs >}}
+{{< tab name="Windows（PowerShell）" >}}
+```powershell
+$v = '2.0.0-rc5'
+Invoke-WebRequest -UseBasicParsing "https://github.com/ttcdog115016/Demo/releases/download/v$v/docker-compose.lan.yml" -OutFile docker-compose.lan.yml
+Invoke-WebRequest -UseBasicParsing "https://github.com/ttcdog115016/Demo/releases/download/v$v/Caddyfile.lan" -OutFile Caddyfile.lan
+```
+{{< /tab >}}
+{{< tab name="Linux（bash）" >}}
+```bash
+v=2.0.0-rc5
+curl -fsSLO "https://github.com/ttcdog115016/Demo/releases/download/v$v/docker-compose.lan.yml"
+curl -fsSLO "https://github.com/ttcdog115016/Demo/releases/download/v$v/Caddyfile.lan"
+```
+{{< /tab >}}
+{{< /tabs >}}
 
 {{< callout type="warning" >}}
 **離線環境要先帶 Caddy 映像檔。** `docker-compose.lan.yml` 用到 `caddy:2.11.9`。在有網路的電腦執行 `docker pull caddy:2.11.9` 與 `docker save caddy:2.11.9 -o caddy.tar`，把 `caddy.tar` 帶到主機後 `docker load -i caddy.tar`。
@@ -388,7 +603,26 @@ sudo ufw allow 443/tcp   # 以 ufw 為例；其他防火牆請用對應的指令
 {{< /tab >}}
 {{< /tabs >}}
 
-主機的 443 已被占用時，在 `.env` 加 `OPEN_PETS_HTTPS_PORT=8443`（防火牆也開 8443），使用者的網址要加上埠：`https://192.168.1.20:8443`。
+主機的 443 已被占用時，把 `.env` 的 `OPEN_PETS_HTTPS_PORT` 改成 8443、防火牆也開放 8443，使用者的網址要加上埠：`https://192.168.1.20:8443`。指令如下（防火牆指令需以系統管理員身分執行）：
+
+{{< tabs >}}
+{{< tab name="Windows（PowerShell）" >}}
+```powershell
+(Get-Content .env) | Where-Object { $_ -notmatch '^(OPEN_PETS_HTTPS_PORT)=' } | Set-Content -Encoding ascii .env
+Add-Content -Encoding ascii .env @('OPEN_PETS_HTTPS_PORT=8443')
+docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d
+New-NetFirewallRule -DisplayName "Open-PETs HTTPS 8443" -Direction Inbound -Protocol TCP -LocalPort 8443 -Action Allow
+```
+{{< /tab >}}
+{{< tab name="Linux（bash）" >}}
+```bash
+sed -i '/^\(OPEN_PETS_HTTPS_PORT\)=/d' .env
+printf '%s\n' 'OPEN_PETS_HTTPS_PORT=8443' >> .env
+docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d
+sudo ufw allow 8443/tcp
+```
+{{< /tab >}}
+{{< /tabs >}}
 
 **測試連得通不通**（在使用者電腦執行，要顯示 `TcpTestSucceeded : True`）：
 
@@ -450,11 +684,26 @@ OPEN_PETS_BIND=0.0.0.0
 OPEN_PETS_ALLOWED_HOSTS=192.168.1.20
 ```
 
-防火牆開放 8080，使用者開 `http://192.168.1.20:8080`，再執行：
+以指令寫入（同時移除 `COMPOSE_FILE` 等設定，避免疊加 `docker-compose.lan.yml`），開放防火牆 8080 並啟動，使用者再開 `http://192.168.1.20:8080`（防火牆指令需以系統管理員身分執行）：
 
+{{< tabs >}}
+{{< tab name="Windows（PowerShell）" >}}
 ```powershell
+(Get-Content .env) | Where-Object { $_ -notmatch '^(OPEN_PETS_MODE|OPEN_PETS_BIND|OPEN_PETS_ALLOWED_HOSTS|COMPOSE_PATH_SEPARATOR|COMPOSE_FILE)=' } | Set-Content -Encoding ascii .env
+Add-Content -Encoding ascii .env @('OPEN_PETS_MODE=lan','OPEN_PETS_BIND=0.0.0.0','OPEN_PETS_ALLOWED_HOSTS=192.168.1.20')
+New-NetFirewallRule -DisplayName "Open-PETs HTTP 8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
 docker compose up -d
 ```
+{{< /tab >}}
+{{< tab name="Linux（bash）" >}}
+```bash
+sed -i '/^\(OPEN_PETS_MODE\|OPEN_PETS_BIND\|OPEN_PETS_ALLOWED_HOSTS\|COMPOSE_PATH_SEPARATOR\|COMPOSE_FILE\)=/d' .env
+printf '%s\n' 'OPEN_PETS_MODE=lan' 'OPEN_PETS_BIND=0.0.0.0' 'OPEN_PETS_ALLOWED_HOSTS=192.168.1.20' >> .env
+sudo ufw allow 8080/tcp
+docker compose up -d
+```
+{{< /tab >}}
+{{< /tabs >}}
 
 ### 9-6. 舊版資料夾怎麼改
 
@@ -463,7 +712,7 @@ docker compose up -d
 **舊版以 `online` 設定安裝的資料夾：**
 
 1. 在安裝資料夾執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（Linux：`./open-pets.sh mode lan --hosts 內網IP`），或只有這台電腦用的話執行 `mode local`。工具會改好 `.env`、下載需要的設定檔並重啟，**資料（帳號、處理紀錄、稽核紀錄、金鑰）不會不見**。
-2. 未使用安裝工具時：把 `.env` 的 `OPEN_PETS_MODE` 改成 `lan`、`COMPOSE_FILE` 改成 `docker-compose.yml:docker-compose.lan.yml`，並補上 `docker-compose.lan.yml` 與 `Caddyfile.lan`（見 [9-2](#9-2-取得設定檔並啟動)）。
+2. 未使用安裝工具時：把 `.env` 的 `OPEN_PETS_MODE` 改成 `lan`、`COMPOSE_FILE` 改成 `docker-compose.yml:docker-compose.lan.yml`，並補上 `docker-compose.lan.yml` 與 `Caddyfile.lan`。依序進行：先依 [9-2](#9-2-取得設定檔並啟動) 下載兩個檔案，再執行 [8 的「切換為內網」](#用安裝工具切換或手動切換)指令。
 3. 新版映像檔若仍以 `OPEN_PETS_MODE=online` 啟動，會拒絕啟動並說明上面的做法，不會悄悄改變對網路的開放範圍。
 4. 安裝工具的 `update` 遇到這類舊版資料夾時，會先提示切換模式，再進行更新。
 
@@ -473,30 +722,62 @@ docker compose up -d
 
 資料與金鑰都在磁碟區 `open-pets-data`，換映像檔不會遺失。**使用安裝工具最為簡便：** `.\open-pets.ps1 update 新版本號`（更新前自動備份）。手動做法：
 
+**1. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新的版本號**（三種方式相同；`<新版本>` 請替換為實際編號）：
+
+{{< tabs >}}
+{{< tab name="Windows（PowerShell）" >}}
+```powershell
+$v = '<新版本>'
+(Get-Content .env) | Where-Object { $_ -notmatch '^OPEN_PETS_VERSION=' } | Set-Content -Encoding ascii .env
+Add-Content -Encoding ascii .env "OPEN_PETS_VERSION=$v"
+```
+{{< /tab >}}
+{{< tab name="Linux（bash）" >}}
+```bash
+v='<新版本>'
+sed -i '/^OPEN_PETS_VERSION=/d' .env
+echo "OPEN_PETS_VERSION=$v" >> .env
+```
+{{< /tab >}}
+{{< /tabs >}}
+
+**2. 依取得方式更新映像檔並重建容器：**
+
 {{< tabs >}}
 {{< tab name="方式一：GHCR" >}}
-1. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本。
-2. 取得並重建容器：
-
-    ```powershell
-    docker compose pull
-    docker compose up -d
-    ```
+```powershell
+docker compose pull
+docker compose up -d
+```
 {{< /tab >}}
 {{< tab name="方式二：離線" >}}
-1. 核對新版 `open-pets-app_<新版本>.tar.gz` 的 SHA256，再 `docker load -i open-pets-app_<新版本>.tar.gz`。
-2. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本。
-3. `docker compose up -d`。
+核對新的 `open-pets-app_<新版本>.tar.gz` 的 SHA256（Windows 用 `Get-FileHash`，Linux 用 `sha256sum -c`），再載入映像檔並啟動：
+
+```powershell
+Get-FileHash .\open-pets-app_$v.tar.gz -Algorithm SHA256
+docker load -i open-pets-app_$v.tar.gz
+docker compose up -d
+```
+
+```bash
+sha256sum -c SHA256SUMS.txt
+docker load -i open-pets-app_$v.tar.gz
+docker compose up -d
+```
 {{< /tab >}}
 {{< tab name="方式三：原始碼" >}}
-1. 取得新版原始碼，依[第 6 節](#6-方式三原始碼)重新建置。
-2. 把 `.env` 的 `OPEN_PETS_VERSION` 改成新版本，`docker compose up -d`。
+取得新版原始碼並重建（步驟見[第 6 節](#6-方式三原始碼)），再回到安裝資料夾啟動：
+
+```powershell
+cd C:\open-pets-app
+docker compose up -d
+```
 {{< /tab >}}
 {{< /tabs >}}
 
 更新後確認 `docker ps` 為 `healthy`，並登入網頁確認。
 
-**退回舊版：** 把 `OPEN_PETS_VERSION` 改回舊版，再 `docker compose up -d`（舊映像檔仍在本機時無須重新取得）。
+**退回舊版：** 把 `OPEN_PETS_VERSION` 改回舊的版本號（指令同上，將 `$v` 設為舊編號），再執行 `docker compose up -d`（舊映像檔仍在本機時無須重新取得）。
 
 版本一律指定明確的版號，不使用 `latest`（交付包與 GHCR 都不提供），避免無意間升級。
 

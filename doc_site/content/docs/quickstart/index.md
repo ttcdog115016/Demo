@@ -48,6 +48,19 @@ flowchart TD
 2. 安裝完成後**重新開機**，再開啟 Docker Desktop。
 3. 等待視窗左下角顯示綠色的 **Engine running**（剛開機時可能需要一至兩分鐘）。
 
+也可用 Windows 內建的 winget 安裝（取代步驟 1），完成後同樣需要重新開機：
+
+```powershell
+winget install -e --id Docker.DockerDesktop
+```
+
+Docker Desktop 就緒後，可用下列指令確認：
+
+```powershell
+docker version
+docker compose version
+```
+
 {{< callout type="warning" >}}
 公司電腦若不允許自行安裝軟體，請先由資訊人員安裝。Docker Desktop 對個人與小型單位免費，規模較大的組織需購買授權，**請先向資訊人員確認**。
 {{< /callout >}}
@@ -92,7 +105,13 @@ chmod +x open-pets.sh
 powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup
 ```
 
-**無網路環境：** 使用「離線交付包」，將整個資料夾複製至主機，於該資料夾開啟 PowerShell（在空白處按住 Shift 並按右鍵，選擇「在此處開啟 PowerShell 視窗」）。資料夾內已含安裝工具與映像檔，無須下載，可直接進行第 4 步。
+**無網路環境：** 使用「離線交付包」，將整個資料夾複製至主機，於該資料夾開啟 PowerShell（在空白處按住 Shift 並按右鍵，選擇「在此處開啟 PowerShell 視窗」）。資料夾內已含安裝工具與映像檔，無須下載。也可在任一終端機切換到該資料夾（路徑依實際位置調整）：
+
+```powershell
+cd C:\open-pets-app
+```
+
+接著直接進行第 4 步。
 
 ## 第 4 步：安裝
 
@@ -142,7 +161,11 @@ powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup
 | 網址（使用者以哪個網址連線） | 工具會列出偵測到的 IP，**按 Enter 即採用第一個**，或輸入指定的位址（例如 `192.168.1.20`）。若另有主機名稱，以逗號接在後面：`192.168.1.20,pets-server` |
 | 要開始安裝嗎、建立管理員 | 同「本地」 |
 
-**2. 開放防火牆。** 工具結束時會列出一行 `New-NetFirewallRule ...`。請以系統管理員身分另開 PowerShell（於開始功能表搜尋 PowerShell → 按右鍵 → 以系統管理員身分執行），貼上並執行該行指令。
+**2. 開放防火牆。** 工具結束時會列出一行 `New-NetFirewallRule ...`。請以系統管理員身分另開 PowerShell（於開始功能表搜尋 PowerShell → 按右鍵 → 以系統管理員身分執行），貼上並執行該行指令。指令內容如下（443 埠；若工具改用其他埠，例如 8443，以工具列出的指令為準）：
+
+```powershell
+New-NetFirewallRule -DisplayName "Open-PETs HTTPS 443" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
+```
 
 **3. 產生憑證與使用者說明檔。**
 
