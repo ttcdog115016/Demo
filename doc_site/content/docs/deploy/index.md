@@ -79,7 +79,7 @@ docker compose version
 先建立一個**全新的**安裝資料夾，之後的 `docker-compose.yml`、`.env` 都放這裡：
 
 {{< callout type="warning" >}}
-**不要用已在使用的資料夾。** 舊版（兩容器）把 `C:\open-pets\.env`（鹽值與金鑰）放在 `C:\open-pets`；在同一資料夾放新的 `.env` 會**覆蓋掉舊的鹽值與金鑰**，之後的雜湊結果就對不上以前的資料。下面一律用新名稱 `open-pets-app`。
+**不要用已在使用的資料夾。** 先前的安裝（兩容器架構）把 `C:\open-pets\.env`（鹽值與金鑰）放在 `C:\open-pets`；在同一資料夾放新的 `.env` 會**覆蓋掉舊的鹽值與金鑰**，之後的雜湊結果就對不上以前的資料。下面一律用新名稱 `open-pets-app`。
 {{< /callout >}}
 
 {{< tabs >}}
@@ -368,7 +368,7 @@ docker compose up -d
 
 | | 本地（預設） | 內網 |
 | --- | --- | --- |
-| `OPEN_PETS_MODE` | `local`（舊值 `offline` 仍接受，視為 `local`） | `lan` |
+| `OPEN_PETS_MODE` | `local`（`offline` 亦接受，視為 `local`） | `lan` |
 | 適用 | 一台電腦、無網路環境 | **同一個內網**的多台電腦，用內網 IP 或主機名稱連線 |
 | 啟動指令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d` |
 | HTTPS | 不需要（本機） | **內建 Caddy HTTPS**（私有 CA，使用者電腦要信任根憑證） |
@@ -379,8 +379,7 @@ docker compose up -d
 - 內網模式的 `OPEN_PETS_ALLOWED_HOSTS` 沒設定時，`docker compose` 會直接報錯（`required variable OPEN_PETS_ALLOWED_HOSTS is missing a value`），不會啟動。
 - 兩種模式的資料、帳號、稽核紀錄與金鑰格式相同，可以直接切換：停止容器，改用另一個啟動指令，資料磁碟區不變。
 - `OPEN_PETS_MODE` 填了 `local`、`offline`、`lan` 以外的值，容器啟動時會報錯並結束（`docker logs` 看得到原因），不會悄悄退回預設。
-- `OPEN_PETS_MODE` 設成 `online` 會被拒絕，並提示改用 `lan` 或 `local`；舊資料夾的處理方式見 [9-6](#9-6-舊版資料夾怎麼改)。
-- `local`、`lan` 兩個模式值與 `docker-compose.lan.yml`、安裝工具需 **2.0.0-rc3 以上**版本；更早的版本只認 `offline`、`online`。
+- `OPEN_PETS_MODE` 設成 `online` 會被拒絕，並提示改用 `lan` 或 `local`；先前安裝的資料夾的處理方式見 [9-6](#9-6-沿用先前安裝的資料夾)。
 
 ### 用安裝工具切換，或手動切換
 
@@ -509,7 +508,7 @@ cat .env
 
 預設僅這台電腦（`127.0.0.1`）可連入（本地模式）。如需讓**同一個內網**的其他電腦以瀏覽器使用，請採用「內網模式（lan）」（9-1 至 9-5）：主機另啟動一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，**無須對外網路，亦無須申請網域或 Let's Encrypt**。應用程式本身的 8080 僅綁定本機，其他電腦只能經由 HTTPS 連線。
 
-本系統**不提供**對網際網路開放的模式（舊版資料夾的處理方式見 [9-6](#9-6-舊版資料夾怎麼改)）。
+本系統**不提供**對網際網路開放的模式（先前安裝的資料夾的處理方式見 [9-6](#9-6-沿用先前安裝的資料夾)）。
 
 ### 9-1. 先決定使用者輸入的網址
 
@@ -544,7 +543,7 @@ cat .env
 
 ### 9-2. 取得設定檔並啟動
 
-從該版本的 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)（離線交付包裡也有）取得這兩個檔案，放在安裝資料夾（和 `docker-compose.yml` 同一處）。**`2.0.0-rc2` 以前的版本沒有它們，也不認得模式值 `lan`**，請用 rc3 起的版本。
+從該版本的 [Releases 頁](https://github.com/ttcdog115016/Demo/releases)（離線交付包裡也有）取得這兩個檔案，放在安裝資料夾（和 `docker-compose.yml` 同一處）。
 
 | 檔案 | 用途 |
 | --- | --- |
@@ -704,16 +703,14 @@ docker compose up -d
 {{< /tab >}}
 {{< /tabs >}}
 
-### 9-6. 舊版資料夾怎麼改
+### 9-6. 沿用先前安裝的資料夾
 
-新版交付包不含舊版的 `docker-compose.online.yml`、`Caddyfile.example`、`nginx.conf.example`。
-
-**舊版以 `online` 設定安裝的資料夾：**
+**以 `online` 設定安裝的資料夾：**
 
 1. 在安裝資料夾執行 `.\open-pets.ps1 mode lan -Hosts 內網IP`（Linux：`./open-pets.sh mode lan --hosts 內網IP`），或只有這台電腦用的話執行 `mode local`。工具會改好 `.env`、下載需要的設定檔並重啟，**資料（帳號、處理紀錄、稽核紀錄、金鑰）不會不見**。
 2. 未使用安裝工具時：把 `.env` 的 `OPEN_PETS_MODE` 改成 `lan`、`COMPOSE_FILE` 改成 `docker-compose.yml:docker-compose.lan.yml`，並補上 `docker-compose.lan.yml` 與 `Caddyfile.lan`。依序進行：先依 [9-2](#9-2-取得設定檔並啟動) 下載兩個檔案，再執行 [8 的「切換為內網」](#用安裝工具切換或手動切換)指令。
-3. 新版映像檔若仍以 `OPEN_PETS_MODE=online` 啟動，會拒絕啟動並說明上面的做法，不會悄悄改變對網路的開放範圍。
-4. 安裝工具的 `update` 遇到這類舊版資料夾時，會先提示切換模式，再進行更新。
+3. 映像檔若仍以 `OPEN_PETS_MODE=online` 啟動，會拒絕啟動並說明上面的做法，不會悄悄改變對網路的開放範圍。
+4. 安裝工具的 `update` 遇到這類資料夾時，會先提示切換模式，再進行更新。
 
 **要讓公司外面的人使用**：本專案不提供這種模式，也不提供對外網域的反向代理範例與支援。若仍要自行對外開放，請由資訊人員另行評估網域、憑證、HTTPS、防護與存取控制，並自行承擔對外開放的資安責任；應用程式本身的 8080 不要直接對外開放。
 
@@ -776,7 +773,7 @@ docker compose up -d
 
 更新後確認 `docker ps` 為 `healthy`，並登入網頁確認。
 
-**退回舊版：** 把 `OPEN_PETS_VERSION` 改回舊的版本號（指令同上，將 `$v` 設為舊編號），再執行 `docker compose up -d`（舊映像檔仍在本機時無須重新取得）。
+**退回先前的版本號：** 把 `OPEN_PETS_VERSION` 改回先前的版本號（指令同上，將 `$v` 設為先前的編號），再執行 `docker compose up -d`（先前的映像檔仍在本機時無須重新取得）。
 
 版本一律指定明確的版號，不使用 `latest`（交付包與 GHCR 都不提供），避免無意間升級。
 
