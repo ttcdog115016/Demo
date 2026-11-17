@@ -4,7 +4,7 @@ layout: hextra-home
 ---
 
 {{< hextra/hero-badge >}}
-  <span>v2.0.0-rc5・單一映像檔・本地／內網</span>
+  <span>v2.0.0-rc5・單一映像檔・本機／內網</span>
 {{< /hextra/hero-badge >}}
 
 <div class="hx:mt-6 hx:mb-6">
@@ -29,7 +29,7 @@ layout: hextra-home
   {{< hextra/feature-card
     title="新手快速上手"
     icon="server"
-    subtitle="以問答式安裝工具完成安裝：選擇本地或內網，並可隨時切換模式。"
+    subtitle="以問答式安裝工具完成安裝：選擇本機或內網，並可隨時切換模式。"
     link="docs/quickstart"
   >}}
   {{< hextra/feature-card

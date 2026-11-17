@@ -32,7 +32,7 @@ weight: 7
 | `docker compose` 回報 `required variable ... is missing a value` | 內網模式沒設 `OPEN_PETS_ALLOWED_HOSTS`。用 `mode lan -Hosts 網址` 帶入，或依[安裝教學 9-1](../deploy/#9-1-先決定使用者輸入的網址) 的指令在 `.env` 補上。 |
 | `Conflict. The container name ... is already in use` | 在安裝資料夾執行 `docker compose down`（資料在磁碟區，不會遺失），再 `docker compose up -d`。**不要加 `-v`**，那會連資料一起刪掉。 |
 | 換版本後資料不見了 | 資料在磁碟區 `open-pets-data`，換映像檔不會影響。確認 `docker-compose.yml` 的專案名稱沒被改過（`name:`），並用 `docker volume ls` 看磁碟區還在不在。 |
-| 想退回上一個模式 | 切換可逆，資料不會遺失：`.\open-pets.ps1 mode 上一個模式`（local／lan）。從內網切回本地再切回來，憑證沿用，使用者無須重新信任。 |
+| 想退回上一個模式 | 切換可逆，資料不會遺失：`.\open-pets.ps1 mode 上一個模式`（local／lan）。從內網切回本機再切回來，憑證沿用，使用者無須重新信任。 |
 
 ### 內網連線（使用者無法連線）
 
@@ -45,7 +45,7 @@ weight: 7
 | 400 Invalid host header | 同上：使用者輸入的網址未列於 `OPEN_PETS_ALLOWED_HOSTS`，補上後重新套用，指令見[安裝教學 9-1](../deploy/#9-1-先決定使用者輸入的網址)，完整說明見[安裝教學第 9 節](../deploy/#9-開放給其他電腦內網)。 |
 | **更換網路**（例如由手機熱點換到貴單位網路）後，原本可連線的網址無法連線 | 這台電腦的 IP 已變動，設定與憑證仍指向舊 IP。以 `ipconfig` 查詢新 IP，執行 `.\open-pets.ps1 mode lan -Hosts 新IP,舊IP`。根憑證不會改變，使用者無須重新信任；再執行 `export-ca`，使說明檔更新為新網址。 |
 | 工具顯示「443 埠已經有別的程式在用，HTTPS 改用 8443」 | 非錯誤。使用者的網址須加上埠號：`https://主機IP:8443`，防火牆亦須開放 8443。 |
-| 切換模式後使用者無法連線 | 切換至「本地」後僅這台電腦可使用。以 `status` 查看目前模式；切回內網後須開放防火牆並執行 `export-ca`，見[新手快速上手](../quickstart/)。 |
+| 切換模式後使用者無法連線 | 切換至「本機」後僅這台電腦可使用。以 `status` 查看目前模式；切回內網後須開放防火牆並執行 `export-ca`，見[新手快速上手](../quickstart/)。 |
 | 主機重裝或換新後，所有使用者又出現憑證警告 | `caddy-data` 磁碟區（含根憑證的私鑰）沒有保留，Caddy 產生了新的根憑證。還原 `caddy-data` 的備份，或重新 `export-ca` 並讓使用者重新信任。 |
 
 ### 上傳與內網的 HTTPS 代理

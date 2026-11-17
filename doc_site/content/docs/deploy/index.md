@@ -164,7 +164,7 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 | 檔案 | 用途 |
 | --- | --- |
 | `open-pets-app_<版本>.tar.gz` | 映像檔（`docker load` 可直接讀取，無須先解壓縮） |
-| `docker-compose.yml`、`docker-compose.lan.yml` | 啟動設定：本地（預設）、內網（內建 HTTPS） |
+| `docker-compose.yml`、`docker-compose.lan.yml` | 啟動設定：本機（預設）、內網（內建 HTTPS） |
 | `Caddyfile.lan` | 內網模式的 Caddy 設定（一般無須修改） |
 | `open-pets.ps1`、`open-pets.sh` | 安裝與切換模式安裝工具（預設版本已換成該版） |
 | `env.example` | 設定範本，複製成 `.env` |
@@ -362,11 +362,11 @@ docker compose up -d
 {{< /tab >}}
 {{< /tabs >}}
 
-## 8. 兩種模式：本地、內網
+## 8. 兩種模式：本機、內網
 
-同一個映像檔，以環境變數 `OPEN_PETS_MODE` 選擇模式。預設為**本地**，無須設定。
+同一個映像檔，以環境變數 `OPEN_PETS_MODE` 選擇模式。預設為**本機**，無須設定。
 
-| | 本地（預設） | 內網 |
+| | 本機（預設） | 內網 |
 | --- | --- | --- |
 | `OPEN_PETS_MODE` | `local`（`offline` 亦接受，視為 `local`） | `lan` |
 | 適用 | 一台電腦、無網路環境 | **同一個內網**的多台電腦，用內網 IP 或主機名稱連線 |
@@ -389,12 +389,12 @@ docker compose up -d
 
 | 模式 | `.env` 要有的行 |
 | --- | --- |
-| 本地 | `OPEN_PETS_MODE=local`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml` |
+| 本機 | `OPEN_PETS_MODE=local`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml` |
 | 內網 | `OPEN_PETS_MODE=lan`<br>`OPEN_PETS_ALLOWED_HOSTS=192.168.1.20,pets-server`<br>`COMPOSE_PATH_SEPARATOR=:`<br>`COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml` |
 
-以下指令會寫入上表的各行並套用（先移除同名的舊設定行；`.env` 以無 BOM 的 ASCII 儲存）。`docker compose up -d --remove-orphans` 會把用不到的容器（例如從內網切回本地時的 HTTPS 容器）一併移除，資料不受影響。
+以下指令會寫入上表的各行並套用（先移除同名的舊設定行；`.env` 以無 BOM 的 ASCII 儲存）。`docker compose up -d --remove-orphans` 會把用不到的容器（例如從內網切回本機時的 HTTPS 容器）一併移除，資料不受影響。
 
-**切換為本地：**
+**切換為本機：**
 
 {{< tabs >}}
 {{< tab name="Windows（PowerShell）" >}}
@@ -443,7 +443,7 @@ docker compose up -d --remove-orphans
 | `OPEN_PETS_CONTAINER_NAME` | 容器名稱（同一台電腦裝多份時用） | `open-pets` |
 | `OPEN_PETS_BIND` | 應用程式埠綁定的網卡位址；僅在不使用 HTTPS、直接以 HTTP 開放內網時才變更（不建議） | `127.0.0.1`（僅限本機） |
 | `OPEN_PETS_HTTPS_PORT`、`OPEN_PETS_HTTPS_BIND` | 內網模式 HTTPS 代理對內網開放的埠與網卡位址 | 443、`0.0.0.0` |
-| `OPEN_PETS_ALLOWED_HOSTS` | 允許的網址（內網 IP 或主機名稱），逗號分隔、**不加空格**，用來擋 DNS rebinding；內網模式的憑證也依這份清單簽發 | 本地模式不限制 |
+| `OPEN_PETS_ALLOWED_HOSTS` | 允許的網址（內網 IP 或主機名稱），逗號分隔、**不加空格**，用來擋 DNS rebinding；內網模式的憑證也依這份清單簽發 | 本機模式不限制 |
 | `OPEN_PETS_MAX_UPLOAD_MB` | 單次上傳上限（MB） | 1024 |
 | `OPEN_PETS_DEFAULT_SALT`、`OPEN_PETS_SYSTEM_MASTER_KEY`、`OPEN_PETS_JWT_SECRET` | 要把金鑰與資料分開保管時才填（各 64 字元隨機字串，環境變數優先於自動產生的） | 第一次啟動自動產生 |
 
@@ -506,7 +506,7 @@ cat .env
 
 ## 9. 開放給其他電腦（內網）
 
-預設僅這台電腦（`127.0.0.1`）可連入（本地模式）。如需讓**同一個內網**的其他電腦以瀏覽器使用，請採用「內網模式（lan）」（9-1 至 9-5）：主機另啟動一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，**無須對外網路，亦無須申請網域或 Let's Encrypt**。應用程式本身的 8080 僅綁定本機，其他電腦只能經由 HTTPS 連線。
+預設僅這台電腦（`127.0.0.1`）可連入（本機模式）。如需讓**同一個內網**的其他電腦以瀏覽器使用，請採用「內網模式（lan）」（9-1 至 9-5）：主機另啟動一個 Caddy 容器終止 HTTPS，憑證由 Caddy 內建的私有 CA 簽發，**無須對外網路，亦無須申請網域或 Let's Encrypt**。應用程式本身的 8080 僅綁定本機，其他電腦只能經由 HTTPS 連線。
 
 本系統**不提供**對網際網路開放的模式（先前安裝的資料夾的處理方式見 [9-6](#9-6-沿用先前安裝的資料夾)）。
 
@@ -911,7 +911,7 @@ repo 的 `.github/workflows/` 有四個工作流程：
 | 工作流程 | 觸發 | 內容 |
 | --- | --- | --- |
 | `ci.yml` | 推送到 `main`、`master`，或發 Pull Request 到 `main`、`master` | 前端 `npm ci`、型別檢查與打包、`vitest`；後端 `uv sync --locked`、`pytest` |
-| `docker-image.yml` | 推送 `v*` 標籤（手動執行只做建置與打包，不發佈） | 建置映像檔 → Trivy 弱點掃描（有可修補的高風險就失敗）→ 冒煙測試（腳本是 `docker/smoke_test.sh`：本地、`offline` 舊名稱、內網，並確認不合法的模式值與 `online` 會被拒絕）→ 推送 GHCR → cosign 簽章 → 產生離線交付包 → 建立 Release |
+| `docker-image.yml` | 推送 `v*` 標籤（手動執行只做建置與打包，不發佈） | 建置映像檔 → Trivy 弱點掃描（有可修補的高風險就失敗）→ 冒煙測試（腳本是 `docker/smoke_test.sh`：本機、`offline` 舊名稱、內網，並確認不合法的模式值與 `online` 會被拒絕）→ 推送 GHCR → cosign 簽章 → 產生離線交付包 → 建立 Release |
 | `docker-build-check.yml` | 發 Pull Request，且修改了 `docker/`、`backend/`、`src/`、`public/`、`package*.json` 等與映像檔有關的檔案 | 建置映像檔 → 同一份冒煙測試（不推送、不簽章、不建立 Release）。讓 Dockerfile 與 Dependabot 的基底映像檔升級在合併前就被測到；不是 ruleset 的必過檢查 |
 | `pages.yml` | `doc_site/` 有修改並推送到 `main` | 建置並發佈本文件網站 |
 
