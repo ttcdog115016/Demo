@@ -1,6 +1,6 @@
 /**
  * 檔案名稱 (File): featureFlags.ts
- * 模組功能 (Description): 暫時關閉、程式保留的畫面功能開關；本地／內網模式的畫面差異。
+ * 模組功能 (Description): 暫時關閉、程式保留的畫面功能開關；本機／內網模式的畫面差異。
  */
 
 /**
@@ -12,7 +12,7 @@
  */
 export interface RuntimeConfig
 {
-	// local＝本地（一台電腦）；lan＝內網（同一個內網的多台電腦）；offline 是 local 的舊名稱，仍接受。
+	// local＝本機（一台電腦）；lan＝內網（同一個內網的多台電腦）；offline 是 local 的舊名稱，仍接受。
 	// 線上（online）模式已移除：容器設成 online 會拒絕啟動，前端不會再收到這個值。
 	mode?: 'local' | 'offline' | 'lan';
 }
@@ -31,7 +31,7 @@ export interface ResolvedFlags
 export const resolveFlags = (runtimeConfig: RuntimeConfig, buildTarget: string | undefined): ResolvedFlags =>
 {
 	const isDesktopBuild = buildTarget === 'desktop';
-	// 本地（local／舊名 offline）隱藏多人使用才需要的畫面（例如系統維運日誌）；內網（lan）顯示
+	// 本機（local／舊名 offline）隱藏多人使用才需要的畫面（例如系統維運日誌）；內網（lan）顯示
 	const isOfflineMode = runtimeConfig.mode ? (runtimeConfig.mode === 'local' || runtimeConfig.mode === 'offline') : isDesktopBuild;
 	return { isOfflineMode, showSystemLogTab: !isOfflineMode };
 };
@@ -48,7 +48,7 @@ export const IS_OFFLINE_MODE = resolvedFlags.isOfflineMode;
 export const IS_DESKTOP_BUILD = IS_OFFLINE_MODE;
 
 /**
- * ★ 2026-10-29（TTC Wei 決定）：系統維運日誌分頁——資料存後端（api/systemApi.ts），內網模式（以及沒有執行期設定的 Demo 站）顯示；本地一台電腦一個人用，隱藏。
+ * ★ 2026-10-29（TTC Wei 決定）：系統維運日誌分頁——資料存後端（api/systemApi.ts），內網模式（以及沒有執行期設定的 Demo 站）顯示；本機一台電腦一個人用，隱藏。
  *   維運日誌在兩個版本都照常記錄（系統管理大廳的登入／API 統計由它計算）。
  *   全站維護模式、系統公告同日刪除。
  */
