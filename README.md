@@ -12,7 +12,7 @@
 
 ## 三步驟安裝（Windows）
 
-**1. 安裝 Docker Desktop** 並開啟，等左下角顯示綠色的 **Engine running**：https://www.docker.com/products/docker-desktop/（公司電腦請先向資訊人員確認授權）
+**1. 安裝 Docker Desktop** 並開啟，等左下角顯示綠色的 **Engine running**：https://www.docker.com/products/docker-desktop/（電腦請先向資訊人員確認授權）
 
 **2. 下載安裝工具。** 開啟 PowerShell，一行一行貼上：
 
