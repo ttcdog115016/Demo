@@ -23,10 +23,10 @@ services:
       OPEN_PETS_DEFAULT_SALT: ${OPEN_PETS_DEFAULT_SALT:-}
       OPEN_PETS_SYSTEM_MASTER_KEY: ${OPEN_PETS_SYSTEM_MASTER_KEY:-}
       OPEN_PETS_JWT_SECRET: ${OPEN_PETS_JWT_SECRET:-}
-      # 內網模式（lan）必填：使用者會輸入的網址（內網 IP 或主機名稱，逗號分隔），防 DNS rebinding；本地模式留空＝不限制
+      # 內網模式（lan）必填：使用者會輸入的網址（內網 IP 或主機名稱，逗號分隔），防 DNS rebinding；本機模式留空＝不限制
       OPEN_PETS_ALLOWED_HOSTS: ${OPEN_PETS_ALLOWED_HOSTS:-}
       OPEN_PETS_MAX_UPLOAD_MB: ${OPEN_PETS_MAX_UPLOAD_MB:-1024}
-      # 模式：local（預設，本地：一台電腦）、lan（內網，見 docker-compose.lan.yml）
+      # 模式：local（預設，本機：一台電腦）、lan（內網，見 docker-compose.lan.yml）
       # offline 亦接受，視為 local；不支援線上（online）模式，設定它會拒絕啟動
       OPEN_PETS_MODE: ${OPEN_PETS_MODE:-local}
     # 容器強化：根檔案系統唯讀、移除所有 Linux capabilities、禁止提權

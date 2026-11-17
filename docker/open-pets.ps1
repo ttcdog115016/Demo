@@ -3,7 +3,7 @@ Open-PETs 安裝與模式切換工具（Windows PowerShell 5.1 以上）
 
 最常用的三個指令（在這個檔案所在的資料夾開啟 PowerShell 執行）：
   .\open-pets.ps1 setup                  首次安裝：以問答方式選擇模式、填入網址、啟動並建立管理員
-  .\open-pets.ps1 mode local|lan  切換模式（本地／內網），資料不會遺失
+  .\open-pets.ps1 mode local|lan  切換模式（本機／內網），資料不會遺失
   .\open-pets.ps1 status                 查看目前的模式、運作狀態與應開啟的網址
 
 其他指令：start、stop、logs、create-admin、reset-password、export-ca、backup、update <版本>、help
@@ -188,7 +188,7 @@ function Get-LanIPs {
 function Test-Mode([string]$m) { return @('local', 'lan') -contains $m }
 # 線上（online）模式不支援：先前的資料夾可能還留著 OPEN_PETS_MODE=online，標籤要看得懂，但不能再選、不能再套用
 function Get-ModeLabel([string]$m) {
-    switch ($m) { 'local' { return '本地' } 'lan' { return '內網' } 'online' { return '線上（不支援）' } default { return $m } }
+    switch ($m) { 'local' { return '本機' } 'lan' { return '內網' } 'online' { return '線上（不支援）' } default { return $m } }
 }
 function Stop-RemovedOnline {
     Stop-Tool '不支援線上（online）模式。' @(
@@ -315,7 +315,7 @@ function Show-AccessInfo($cfg) {
             Note '每台要使用的電腦第一次要先信任憑證，否則瀏覽器會顯示警告：執行 .\open-pets.ps1 export-ca，並將產生的使用者說明檔提供給使用者。'
         }
         'online' {
-            Warn '這個資料夾的設定為「線上模式」，本系統不支援。請改用內網或本地（資料不會不見）：'
+            Warn '這個資料夾的設定為「線上模式」，本系統不支援。請改用內網或本機（資料不會不見）：'
             Say '    .\open-pets.ps1 mode lan -Hosts <這台電腦的內網IP>' 'Yellow'
             Say '    .\open-pets.ps1 mode local' 'Yellow'
         }
@@ -346,13 +346,13 @@ function Cmd-Setup {
     if (-not $m) {
         Say ''
         Say '請選擇 Open-PETs 的使用方式：' 'White'
-        Say '  1. 本地   僅安裝者本人，在這一台電腦上使用                     （最簡單）' 'White'
+        Say '  1. 本機   僅安裝者本人，在這一台電腦上使用                     （最簡單）' 'White'
         Say '  2. 內網   同一個辦公室／內網的使用者，以各自的電腦連線            （需要信任憑證）' 'White'
         $choice = Ask '輸入 1 或 2' '1'
         switch ($choice) { '1' { $m = 'local' } '2' { $m = 'lan' } default { $m = $choice.ToLower() } }
     }
     if ($m -eq 'online') { Stop-RemovedOnline }
-    if (-not (Test-Mode $m)) { Stop-Tool "不認得的模式：$m" @('模式只有兩種：local（本地）、lan（內網）。') }
+    if (-not (Test-Mode $m)) { Stop-Tool "不認得的模式：$m" @('模式只有兩種：local（本機）、lan（內網）。') }
 
     # 2. 版本與映像檔
     $ver = Get-DefaultVersion
@@ -461,10 +461,10 @@ function Cmd-Mode {
     if (-not $envMap.Contains('OPEN_PETS_VERSION')) { Stop-Tool '這個資料夾還沒有安裝過（找不到 .env）。' @('請先執行 .\open-pets.ps1 setup。') }
     $newMode = $Arg1
     if (-not $newMode) { $newMode = $Mode }
-    if (-not $newMode) { Stop-Tool '請指定要切換到哪個模式。' @('例如：.\open-pets.ps1 mode lan （local＝本地、lan＝內網）') }
+    if (-not $newMode) { Stop-Tool '請指定要切換到哪個模式。' @('例如：.\open-pets.ps1 mode lan （local＝本機、lan＝內網）') }
     $newMode = $newMode.ToLower()
     if ($newMode -eq 'online') { Stop-RemovedOnline }
-    if (-not (Test-Mode $newMode)) { Stop-Tool "不認得的模式：$newMode" @('模式只有兩種：local（本地）、lan（內網）。') }
+    if (-not (Test-Mode $newMode)) { Stop-Tool "不認得的模式：$newMode" @('模式只有兩種：local（本機）、lan（內網）。') }
     $current = 'local'
     if ($envMap.Contains('OPEN_PETS_MODE')) { $current = $envMap['OPEN_PETS_MODE'] }
     if ($current -eq 'offline') { $current = 'local' }
@@ -659,7 +659,7 @@ function Cmd-Help {
     Say 'Open-PETs 安裝與模式切換工具' 'Cyan'
     Say ''
     Say '  第一次安裝　　　　.\open-pets.ps1 setup' 'White'
-    Say '  切換模式　　　　　.\open-pets.ps1 mode local    （本地：僅這台電腦使用）' 'White'
+    Say '  切換模式　　　　　.\open-pets.ps1 mode local    （本機：僅這台電腦使用）' 'White'
     Say '　　　　　　　　　　.\open-pets.ps1 mode lan      （內網：同一個辦公室的使用者連線，內建 HTTPS）' 'White'
     Say '  看狀態與網址　　　.\open-pets.ps1 status' 'White'
     Say '  啟動／停止　　　　.\open-pets.ps1 start      .\open-pets.ps1 stop' 'White'
