@@ -247,7 +247,7 @@ export const resolveReleaseDecision = (input: {
     if (input.utilityLevel === null) {
         return { headline: '依本次評估可提供', adviceText: '依本次評估，再識別風險低於設定門檻。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
     }
-    return { headline: '依本次評估可提供', adviceText: '依本次評估，風險低於設定門檻，資料大致完整。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
+    return { headline: '依本次評估可提供', adviceText: '依本次評估，再識別風險低於設定門檻，資料大致完整。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
 };
 
 /** 從處理後資料找一個範例值（略過空白與抑制符號「*」），給「去識別化」（blurred）的欄位顯示「例：30-39」 */
