@@ -22,7 +22,7 @@ import { RISK_ATTACK_DEFAULT_PARAMS, type HighCardinalitySensitiveInfo } from '.
 import { buildComplianceReportSnapshot } from '../../utils/complianceReport';
 import { computeKAnonymityFidelityInWorker, type KAnonymityFidelityResult } from '../../utils/kAnonymityFidelity';
 import { buildKAnonymityConfig, buildDifferentialPrivacyConfig, wrapBackendConfigDocument, type DpStoreField, type KAnonymityPipelineSettings, type DifferentialPrivacyConfigInput } from '../../utils/pipelineConfig';
-import { isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
+import { isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, resolveApiTimeoutMs, type ApiRequestOptions, type KAnonymityQualityReport, type DpQualityReport, type AttackReport, type CapReport } from '../../api/apiService';
 import { describePipelineError } from './backendErrorCatalog';
 import { markBackendLikelyBusy, clearBackendBusy, isGatewayTimeoutStatus } from '../../utils/backendBusyCooldown';
 import { beginComputation } from '../../utils/computationActivity';
@@ -420,6 +420,8 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
             const pipelineRequestOptions: ApiRequestOptions = {
                 signal: pipelineAbortController.signal,
                 clientRunId: pipelineClientRunIdRef.current,
+                // ★ 2026-11-17：逾時隨資料量放大（500 萬列約 650 MB，固定 15 分鐘在記憶體吃緊的機器上不夠）
+                timeoutMs: resolveApiTimeoutMs(dataFile.size),
                 onUploadProgress: (loadedBytes, totalBytes) => {
                     const toMegabytesText = (byteCount: number) => (byteCount / 1024 / 1024).toFixed(1);
                     if (!totalBytes) { setUploadProgressText(`已上傳 ${toMegabytesText(loadedBytes)} MB`); return; }
@@ -778,10 +780,10 @@ export const usePipelineRunner = ({ actualProcessedColumnsList, getCalculatedRol
                     setPipelineFailedMessage(translate('step4.msg.canceled_detail', '已取消運算。可調整設定後按「重新運算」再執行一次。'));
                     return;
                 }
-                // 逾時：請求超過 DEFAULT_API_TIMEOUT_MS 仍未完成
+                // 逾時：請求超過 pipelineRequestOptions.timeoutMs（依資料量放大，見 resolveApiTimeoutMs）仍未完成
                 if (isApiRequestTimeout(error)) {
-                    const timeoutMinutesNumber = Math.round(DEFAULT_API_TIMEOUT_MS / 60000);
-                    const timeoutMessageText = translate('step4.msg.timeout_detail', '後端超過 {{minutes}} 分鐘沒有回應，已停止等待。可能是資料量太大、後端服務異常，或透過 cloudflared 等通道連線時被中斷；建議改用 localhost 開啟或縮小資料量後重新運算。', { minutes: timeoutMinutesNumber });
+                    const timeoutMinutesNumber = Math.round((pipelineRequestOptions.timeoutMs ?? DEFAULT_API_TIMEOUT_MS) / 60000);
+                    const timeoutMessageText = translate('step4.msg.timeout_detail', '後端超過 {{minutes}} 分鐘沒有回應，已停止等待。可能是資料量太大、容器（Docker）可用記憶體不足、後端服務異常，或透過 cloudflared 等通道連線時被中斷；建議調高 Docker 記憶體（500 萬列建議 16 GB 以上）、改用命令列（CLI）執行，或縮小資料量後重新運算。', { minutes: timeoutMinutesNumber });
                     appendStepLog(`請求逾時（${timeoutMinutesNumber} 分鐘）`);
                     messageApi.error(translate('step4.msg.timeout', '後端回應逾時'));
                     setPipelineFailedMessage(timeoutMessageText);

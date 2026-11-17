@@ -72,3 +72,15 @@ python scenarios/check_access_control.py
 ## 執行時間參考
 
 500 萬筆之執行時間見實務應用情境測試報告；權限控管檢查約 20 秒。
+
+## 500 萬筆資料的資源需求與逾時
+
+- **記憶體**：500 萬筆（單檔約 610~690 MB）載入、切分、自產 syn 並跑隨機森林，Docker 可用記憶體建議 **16 GB 以上**。
+  Docker Desktop（WSL2）預設只取主機 RAM 的一半（16 GB 主機僅約 8 GB），不足時會大量換頁，三攻擊可慢數倍甚至被 OOM 終止。
+  以 `docker info --format "{{.MemTotal}}"` 查目前可用量；調高方式為建立 `%USERPROFILE%\.wslconfig`
+  （`[wsl2]` 下 `memory=12GB`、`swap=16GB`），執行 `wsl --shutdown` 後重開 Docker Desktop。
+- **命令列（CLI）無逾時上限**：本資料夾的 `run_scenarios.py` 與 `指令集` 逐步指令都不設逾時，500 萬筆建議以此執行，一次一個情境
+  （`--scenario <情境>`）。
+- **網頁介面（Step4）**：每個請求有前端逾時，預設至少 15 分鐘，並隨上傳資料量放大（每 MB 3 秒、上限 2 小時，500 萬筆約 32 分鐘）；
+  K-匿名／DP 的三攻擊與 CAP 會依候選敏感欄位逐輪各送一次請求，各輪的逾時分開計算。
+  建置前端時可用環境變數 `VITE_API_TIMEOUT_MINUTES`（正數，分鐘）直接指定。逾時後後端通常仍在計算，請等它算完再重送。
