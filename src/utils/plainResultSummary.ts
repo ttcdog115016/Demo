@@ -238,16 +238,16 @@ export const resolveReleaseDecision = (input: {
         return { headline: '不建議提供', adviceText: `風險評估未通過：被認出、被對上或被猜出敏感資料的風險達到門檻，因此不提供下載。${strengthenAdvice}`, tone: 'error' };
     }
     if (input.utilityLevel === 3) {
-        return { headline: '依本次評估可提供，但資料可能不好用', adviceText: `依本次評估，再識別風險已低於設定門檻，但刪除、遮蔽或雜訊較多。${relaxAdvice}`, tone: 'warning' };
+        return { headline: '依本次評估可提供，但資料可能不好用', adviceText: `依本次評估，再識別風險低於設定門檻，但刪除、遮蔽或雜訊較多。${relaxAdvice}`, tone: 'warning' };
     }
     if (input.utilityLevel === 2) {
-        return { headline: '依本次評估可提供', adviceText: '依本次評估，再識別風險已低於設定門檻。部分資料已刪除、遮蔽或加入雜訊，分析時請留意。可下載處理後的資料與報告。', tone: 'success' };
+        return { headline: '依本次評估可提供', adviceText: '依本次評估，再識別風險低於設定門檻。部分資料已刪除、遮蔽或加入雜訊，分析時請留意。可下載處理後的資料與報告。', tone: 'success' };
     }
     // ★ 2026-10-14：差分隱私不判定可用性（utilityLevel 為 null），結論只講保護程度
     if (input.utilityLevel === null) {
-        return { headline: '依本次評估可提供', adviceText: '依本次評估，再識別風險已低於設定門檻。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
+        return { headline: '依本次評估可提供', adviceText: '依本次評估，再識別風險低於設定門檻。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
     }
-    return { headline: '依本次評估可提供', adviceText: '依本次評估，再識別風險已低於設定門檻，資料也大致完整。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
+    return { headline: '依本次評估可提供', adviceText: '依本次評估，風險低於設定門檻，資料大致完整。可下載處理後的資料與報告，報告可作為去識別化處理的紀錄。', tone: 'success' };
 };
 
 /** 從處理後資料找一個範例值（略過空白與抑制符號「*」），給「去識別化」（blurred）的欄位顯示「例：30-39」 */
