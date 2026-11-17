@@ -233,3 +233,32 @@ def test_risk_k_anonymity_still_reports_a_missing_identifier_column(risk_k_input
     df.to_csv(data, index=False, encoding="utf-8")
     result = runner.invoke(cli, ["risk-k-anonymity", "-i", data, "-c", cfg])
     assert result.exit_code != 0
+
+
+# ── 4 推斷性攻擊：分批評分與整批評分結果相同（大資料不 OOM） ────────────────────
+
+def test_inference_chunked_accuracy_equals_the_whole_batch_score():
+    """分批預測只限制暫存陣列大小：準確率與 clf.score 逐位元相同，含批次邊界不整除的情況。"""
+    from sklearn.ensemble import RandomForestClassifier
+
+    from app.engines.risk.attacks.inference import _accuracy_in_chunks
+
+    rng = np.random.default_rng(1)
+    X = pd.DataFrame(rng.normal(size=(1000, 3)), columns=["a", "b", "c"])
+    y = pd.Series(rng.choice(["甲", "乙", "丙"], 1000))
+    clf = RandomForestClassifier(n_estimators=10, max_depth=5, random_state=0).fit(X, y)
+
+    expected = clf.score(X, y)
+    for chunk in (1, 7, 333, 1000, 5000):
+        assert _accuracy_in_chunks(clf, X, y, chunk_rows=chunk) == expected
+
+
+def test_inference_chunked_accuracy_of_empty_input_is_zero():
+    from sklearn.ensemble import RandomForestClassifier
+
+    from app.engines.risk.attacks.inference import _accuracy_in_chunks
+
+    clf = RandomForestClassifier(n_estimators=2, random_state=0).fit(
+        pd.DataFrame({"a": [0.0, 1.0]}), pd.Series(["x", "y"])
+    )
+    assert _accuracy_in_chunks(clf, pd.DataFrame({"a": []}), pd.Series([], dtype=str)) == 0.0

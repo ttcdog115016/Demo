@@ -14,6 +14,35 @@ from app.core.cancellation import check_cancelled
 
 from .base import AttackStrategy, as_labels, fit_shared_label_encoders
 
+# 評分時每批預測的列數。RandomForest.predict 對整批資料預測時，每個執行緒都要配置
+# 「列數 × 類別數」的機率陣列；500 萬列、16 執行緒時，這一步從約 6.5 GiB 衝破 11 GiB 而 OOM
+# （實測）。分批後暫存陣列大小只與批次有關、與總列數無關，結果與整批預測完全相同。
+_SCORE_CHUNK_ROWS = 200_000
+
+
+def _accuracy_in_chunks(
+    clf: RandomForestClassifier,
+    X: pd.DataFrame,
+    y: pd.Series,
+    chunk_rows: int = _SCORE_CHUNK_ROWS,
+) -> float:
+    """等同 clf.score(X, y)（準確率＝預測與真實值完全相等的比例），但分批預測以限制峰值記憶體。
+
+    準確率是「命中筆數 ÷ 總筆數」，分批累加命中筆數的結果與整批計算逐位元相同；
+    每批之間檢查取消旗標，讓大資料的評分也能中途取消。
+    """
+    total = len(y)
+    if total == 0:
+        return 0.0
+    y_values = np.asarray(y)
+    hits = 0
+    for start in range(0, total, chunk_rows):
+        stop = min(start + chunk_rows, total)
+        predicted = clf.predict(X.iloc[start:stop])
+        hits += int((predicted == y_values[start:stop]).sum())
+        check_cancelled()
+    return hits / total
+
 
 class InferenceAttack(AttackStrategy):
     """推斷性攻擊模擬（無狀態）。"""
@@ -77,11 +106,11 @@ class InferenceAttack(AttackStrategy):
         clf.fit(X_train, y_train)
         check_cancelled()
 
-        # 主要攻擊成功率
-        s_ori = clf.score(X_ori, y_ori)
+        # 主要攻擊成功率（分批評分，見 _accuracy_in_chunks）
+        s_ori = _accuracy_in_chunks(clf, X_ori, y_ori)
 
         # 控制攻擊成功率
-        s_ctrl = clf.score(X_ctrl, y_ctrl)
+        s_ctrl = _accuracy_in_chunks(clf, X_ctrl, y_ctrl)
 
         # 基準攻擊：天真預測模型（規格 §3(1)iii）——
         # 敏感欄類別型→永遠輸出 syn 欄位眾數；數值型→永遠輸出 syn 欄位中位數。
