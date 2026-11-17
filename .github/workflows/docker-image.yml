@@ -174,7 +174,7 @@ jobs:
 
           單一 Docker 映像檔（前端＋後端）。同一個版本的 GHCR 映像檔與離線 tar 是同一次建置，內容相同。
 
-          **最快上手（建議）**：下載下方的 \`open-pets.ps1\`（Windows）或 \`open-pets.sh\`（Linux），執行 \`.\open-pets.ps1 setup\`（Linux：\`./open-pets.sh setup\`），用問答選擇本地或內網模式並完成安裝；之後用 \`mode local|lan\` 隨時切換。圖文教學見文件網站的「新手快速上手」。
+          **最快上手（建議）**：下載下方的 \`open-pets.ps1\`（Windows）或 \`open-pets.sh\`（Linux），執行 \`.\open-pets.ps1 setup\`（Linux：\`./open-pets.sh setup\`），用問答選擇本機或內網模式並完成安裝；之後用 \`mode local|lan\` 隨時切換。圖文教學見文件網站的「新手快速上手」。
 
           **有網路（GHCR）**
           \`\`\`
