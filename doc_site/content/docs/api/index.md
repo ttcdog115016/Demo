@@ -48,7 +48,7 @@ Content-Type: application/json
 }
 ```
 
-**2. 之後的每個請求，都在標頭帶上 access_token：**
+**2. 登入成功後，後續每個請求皆須於標頭（Header）帶入存取權杖（access_token）：**
 
 ```http
 Authorization: Bearer <access_token>
