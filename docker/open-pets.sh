@@ -3,7 +3,7 @@
 #
 # 最常用的三個指令（在這個檔案所在的資料夾執行）：
 #   ./open-pets.sh setup                  首次安裝：以問答方式選擇模式、填入網址、啟動並建立管理員
-#   ./open-pets.sh mode local|lan  切換模式（本地／內網），資料不會遺失
+#   ./open-pets.sh mode local|lan  切換模式（本機／內網），資料不會遺失
 #   ./open-pets.sh status                 查看目前的模式、運作狀態與應開啟的網址
 #
 # 其他指令：start、stop、logs、create-admin、reset-password、export-ca、backup、update <版本>、help
@@ -172,7 +172,7 @@ lan_ips() {
 }
 valid_mode() { case "$1" in local | lan) return 0 ;; *) return 1 ;; esac; }
 # 線上（online）模式不支援：先前的資料夾可能還留著 OPEN_PETS_MODE=online，標籤要看得懂，但不能再選、不能再套用
-mode_label() { case "$1" in local) printf '本地' ;; lan) printf '內網' ;; online) printf '線上（不支援）' ;; *) printf '%s' "$1" ;; esac; }
+mode_label() { case "$1" in local) printf '本機' ;; lan) printf '內網' ;; online) printf '線上（不支援）' ;; *) printf '%s' "$1" ;; esac; }
 stop_removed_online() {
     stop_tool '不支援線上（online）模式。' \
         '同一個內網的多台電腦用：./open-pets.sh mode lan --hosts <這台電腦的內網IP>' \
@@ -264,7 +264,7 @@ show_access() {
             for h in $(printf '%s' "$CFG_HOSTS" | tr ',' ' '); do printf '%s  同一個內網的電腦在瀏覽器開：https://%s%s%s\n' "$C_G" "$h" "$suffix" "$C_0"; done
             note '每台要使用的電腦第一次要先信任憑證，否則瀏覽器會顯示警告：執行 ./open-pets.sh export-ca，並將產生的使用者說明檔提供給使用者。' ;;
         online)
-            warn '這個資料夾的設定為「線上模式」，本系統不支援。請改用內網或本地（資料不會不見）：'
+            warn '這個資料夾的設定為「線上模式」，本系統不支援。請改用內網或本機（資料不會不見）：'
             say '    ./open-pets.sh mode lan --hosts <這台電腦的內網IP>'
             say '    ./open-pets.sh mode local' ;;
     esac
@@ -298,13 +298,13 @@ cmd_setup() {
     if [ -z "$m" ]; then
         say ''
         say '請選擇 Open-PETs 的使用方式：'
-        say '  1. 本地   僅安裝者本人，在這一台電腦上使用                     （最簡單）'
+        say '  1. 本機   僅安裝者本人，在這一台電腦上使用                     （最簡單）'
         say '  2. 內網   同一個辦公室／內網的使用者，以各自的電腦連線            （需要信任憑證）'
         choice="$(ask '輸入 1 或 2' '1')"
         case "$choice" in 1) m=local ;; 2) m=lan ;; *) m="$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')" ;; esac
     fi
     [ "$m" = online ] && stop_removed_online
-    valid_mode "$m" || stop_tool "不認得的模式：$m" '模式只有兩種：local（本地）、lan（內網）。'
+    valid_mode "$m" || stop_tool "不認得的模式：$m" '模式只有兩種：local（本機）、lan（內網）。'
 
     ver="$(default_version)"
     [ -z "$ver" ] && ver="$(ask '要安裝哪一版（到 GitHub 的 Releases 頁看，不含開頭的 v，例如 2.0.0-rc5）' '')"
@@ -384,10 +384,10 @@ cmd_mode() {
     need_docker
     load_current
     local current="$CFG_MODE" new="${ARG1:-$OPT_MODE}" hostlist='' problem ips d free
-    [ -z "$new" ] && stop_tool '請指定要切換到哪個模式。' '例如：./open-pets.sh mode lan （local＝本地、lan＝內網）'
+    [ -z "$new" ] && stop_tool '請指定要切換到哪個模式。' '例如：./open-pets.sh mode lan （local＝本機、lan＝內網）'
     new="$(printf '%s' "$new" | tr '[:upper:]' '[:lower:]')"
     [ "$new" = online ] && stop_removed_online
-    valid_mode "$new" || stop_tool "不認得的模式：$new" '模式只有兩種：local（本地）、lan（內網）。'
+    valid_mode "$new" || stop_tool "不認得的模式：$new" '模式只有兩種：local（本機）、lan（內網）。'
 
     if [ "$new" != local ]; then
         hostlist="$OPT_HOSTS"; [ -z "$hostlist" ] && hostlist="$CFG_HOSTS"
@@ -523,7 +523,7 @@ cmd_help() {
 Open-PETs 安裝與模式切換工具
 
   第一次安裝　　　　./open-pets.sh setup
-  切換模式　　　　　./open-pets.sh mode local    （本地：僅這台電腦使用）
+  切換模式　　　　　./open-pets.sh mode local    （本機：僅這台電腦使用）
 　　　　　　　　　　./open-pets.sh mode lan      （內網：同一個辦公室的使用者連線，內建 HTTPS）
   看狀態與網址　　　./open-pets.sh status
   啟動／停止　　　　./open-pets.sh start      ./open-pets.sh stop
