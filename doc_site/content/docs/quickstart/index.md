@@ -39,12 +39,12 @@ flowchart TD
 {{< callout type="info" >}}
 **無法確定時建議選擇「本地」。** 之後可用一行指令改為內網，帳號與資料均會保留。
 
-如需提供公司外部人員使用，涉及網域、憑證與對外開放的資安責任，請洽資訊人員另行評估。
+如需提供貴單位外部人員使用，涉及網域、憑證與對外開放之資安責任，請洽貴單位資訊人員另行評估。
 {{< /callout >}}
 
 ## 第 2 步：安裝 Docker Desktop
 
-1. 至 https://www.docker.com/products/docker-desktop/ 下載並安裝（安裝程式詢問是否使用 WSL 2 時，選擇「是」）。
+1. 至 https://www.docker.com/products/docker-desktop/ 下載並安裝（安裝程式詢問是否使用 WSL 2 時，請選擇「是」）。
 2. 安裝完成後**重新開機**，再開啟 Docker Desktop。
 3. 等待視窗左下角顯示綠色的 **Engine running**（剛開機時可能需要一至兩分鐘）。
 
@@ -62,7 +62,7 @@ docker compose version
 ```
 
 {{< callout type="warning" >}}
-電腦若不允許自行安裝軟體，請先由資訊人員安裝。Docker Desktop 對個人與小型單位免費，規模較大的組織需購買授權，**請先向資訊人員確認**。
+您的電腦若不允許自行安裝軟體，請先由貴單位資訊人員安裝。Docker Desktop 對個人與小型單位免費，規模較大的組織則需購買授權，**建議先洽貴單位資訊人員確認**。
 {{< /callout >}}
 
 ## 第 3 步：下載安裝工具
@@ -151,7 +151,7 @@ cd C:\open-pets-app
 
 **開始前請確認：**
 - 這台電腦須**持續開機**，並與其他使用者位於**同一個內網**。
-- 這台電腦的 **IP 宜固定**（請資訊人員於路由器設定「DHCP 保留」）。IP 變動時，其他使用者將無法連線。
+- 這台電腦的 **IP 宜固定**（請貴單位資訊人員於路由器設定「DHCP 保留」）。IP 變動時，其他使用者將無法連線。
 
 **1. 安裝。** 執行 `.\open-pets.ps1 setup`：
 
@@ -192,7 +192,7 @@ New-NetFirewallRule -DisplayName "Open-PETs HTTPS 443" -Direction Inbound -Proto
 {{< callout type="warning" >}}
 - **網址必須以 `https://` 開頭。** 僅輸入 IP 時，瀏覽器會改用未開放的 `http://`，頁面將持續載入，最後顯示「回應時間過長」。
 - **網址須替換為實際使用的網址**，即第 4 步「網址」提問所填入的內容。若不確定，可於安裝資料夾執行 `.\open-pets.ps1 status` 查詢。
-- 使用者端沒有系統管理員權限時，請資訊人員以群組原則將 `open-pets-ca.crt` 一次佈署至所有電腦。
+- 使用者端沒有系統管理員權限時，請貴單位資訊人員以群組原則將 `open-pets-ca.crt` 一次佈署至所有電腦。
 - 安裝憑證前，建議核對說明檔中的 SHA-256 指紋（雙擊 `open-pets-ca.crt` →「詳細資料」→「指紋」），一致才安裝，以防檔案遭替換。
 {{< /callout >}}
 
