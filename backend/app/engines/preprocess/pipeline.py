@@ -47,14 +47,16 @@ class Preprocessor:
         self._validator = validator
         self._plan = plan
 
-    def run(self, df: pd.DataFrame) -> pd.DataFrame:
+    def run(self, df: pd.DataFrame, *, inplace: bool = False) -> pd.DataFrame:
         # ── Step 0：前置驗證（fail fast）──────────────────────────────────
         # 放在最前面 → 欄名對不上直接擋，不會出現前幾列已經改過資料才失敗的情況。
         self._validator.validate(df, self.config)
 
         # ── Step 1：由上往下逐步套用 ────────────────────────────────────────
         logger.info("前處理開始，共 %d 個步驟，資料 %d 列", len(self._plan), len(df))
-        df_out = df.copy()
+        # 各動作是原地改欄位（df[col] = ...），預設先複製以保護呼叫端的 df；
+        # inplace=True 由用完就丟輸入資料的呼叫端使用，省掉整份複製（見 run_preprocess）。
+        df_out = df if inplace else df.copy()
         for step in self._plan:
             check_cancelled()  # ★ TTC 2026-10-31
             # 前處理不產報告，一旦中途失敗，只從錯誤訊息看不出前面已經跑過哪幾步。

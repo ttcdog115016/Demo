@@ -23,6 +23,27 @@ def one(column: str, action: str, **params) -> dict:
     return {"column": column, "actions": [{"action": action, "params": params}]}
 
 
+# ── 0 inplace：省掉整份複製（大資料的峰值記憶體） ───────────────────────────
+
+def test_default_leaves_the_callers_dataframe_untouched():
+    """預設（inplace=False）先複製，呼叫端的 df 不會被改動。"""
+    df = pd.DataFrame({"地址": ["  台北市  "]})
+    out = run_preprocess(df, make_config(one("地址", "trim", mode="edges")))
+    assert out is not df
+    assert df["地址"][0] == "  台北市  "
+    assert out["地址"][0] == "台北市"
+
+
+def test_inplace_modifies_and_returns_the_same_dataframe():
+    """inplace=True 不複製：回傳的就是傳入的物件，且結果與預設一致。"""
+    config = make_config(one("地址", "trim", mode="edges"))
+    expected = run_preprocess(pd.DataFrame({"地址": ["  台北市  ", None]}), config)
+    df = pd.DataFrame({"地址": ["  台北市  ", None]})
+    out = run_preprocess(df, config, inplace=True)
+    assert out is df
+    pd.testing.assert_frame_equal(out, expected)
+
+
 # ── 1 字串去空白 trim ──────────────────────────────────────────────────────
 
 def test_trim_edges_keeps_inner_spaces():

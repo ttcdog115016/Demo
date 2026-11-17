@@ -39,13 +39,19 @@ from .types import BuildContext, PlannedAction
 from .validation import PreprocessValidator
 
 
-def run_preprocess(df: pd.DataFrame, config: PreprocessConfig) -> pd.DataFrame:
+def run_preprocess(
+    df: pd.DataFrame, config: PreprocessConfig, *, inplace: bool = False
+) -> pd.DataFrame:
     """前處理主流程（門面）：由 PreprocessorFactory 組裝並注入工人，再執行。
 
     逐欄逐項的動作與參數一律由設定檔提供，不另開呼叫端覆蓋參數
     （與 K-匿名、差分隱私同原則）。
+
+    inplace：預設 False，處理前先複製一份，呼叫端手上的 df 不會被改動。呼叫端用完輸入
+    資料就丟（CLI、API 端點皆是）時可傳 True，省掉整份複製——大資料時這份複製是前處理
+    峰值記憶體的主要來源之一。傳 True 後輸入的 df 已被改動，不可再當原始資料使用。
     """
-    return PreprocessorFactory.create(config).run(df)
+    return PreprocessorFactory.create(config).run(df, inplace=inplace)
 
 
 __all__ = [
