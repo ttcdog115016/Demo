@@ -1,5 +1,5 @@
 /**
- * 本地／內網模式的旗標合併：執行期設定（Docker 單一映像檔）優先，沒有就退回建置旗標（exe、nginx 版 Demo 站）。
+ * 本機／內網模式的旗標合併：執行期設定（Docker 單一映像檔）優先，沒有就退回建置旗標（exe、nginx 版 Demo 站）。
  * 線上（online）模式已移除：容器設成 online 會在啟動時被拒絕（docker/openpets_server.py），前端不會收到這個值。
  */
 import { describe, it, expect } from 'vitest';
