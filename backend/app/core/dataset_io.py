@@ -378,9 +378,45 @@ def export_result(
     :return: 儲存的絕對路徑
     """
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(dataframe_to_bytes(df, fmt))
+    if fmt.kind in ("json", "jsonl", "excel"):
+        with open(path, "wb") as f:
+            f.write(dataframe_to_bytes(df, fmt))
+    else:
+        _write_csv_file(df, path)
     return os.path.abspath(path)
+
+
+# CSV 寫檔的緩衝大小。500 萬列的結果檔約 1.3 GB，緩衝太小會變成數十萬次小寫入
+# （實測透過 Docker Desktop 掛載的資料夾，匯出由 20 秒拖到 300 秒）；16 MiB 夠大，
+# 又不佔多少記憶體。
+_CSV_WRITE_BUFFER = 16 * 1024 * 1024
+
+
+def _write_csv_file(df: pd.DataFrame, path: str) -> None:
+    """把 DataFrame 以 UTF-8 CSV 串流寫到 `path`，內容與 `dataframe_to_csv_bytes` 逐位元組相同。
+
+    不走「StringIO 收全部 → getvalue() → encode()」：那條路徑在大資料時會同時留著
+    整份 CSV 的字串、字串複本與 bytes 三份（含中文的字串每字元 2 位元組），500 萬列實測
+    讓匯出成為整個 K-匿名處理的記憶體峰值（容器 9.58 GiB，改串流後 3.85 GiB）。
+    先寫到同資料夾的暫存檔、完成後再換名：中途失敗不會留下寫到一半的結果檔，
+    也不會弄壞原本就在該路徑的舊檔（與先前「序列化成功才開檔」的行為一致）。
+    """
+    check_cancelled()  # 同 dataframe_to_bytes：大檔序列化前最後一次可取消
+    df = _integral_floats_as_int(df)
+    tmp_path = f"{path}.part"
+    try:
+        # newline=""：不讓檔案層改換行字元，換行完全由 to_csv 決定（與寫入 StringIO 時相同）
+        with open(
+            tmp_path, "w", encoding="utf-8", newline="", buffering=_CSV_WRITE_BUFFER
+        ) as f:
+            df.to_csv(f, index=False)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ── 記憶體 I/O 工具（供 API 層使用，後端不寫磁碟）──────────────────────────

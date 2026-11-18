@@ -240,6 +240,79 @@ def test_export_result(temp_dir, sample_df):
     assert len(df_reloaded.columns) == 10
 
 
+# ── CSV 匯出改為串流寫檔（降低大資料的記憶體峰值）：內容必須與舊作法逐位元組相同 ──
+
+
+def _tricky_df():
+    """含中文、空值、可轉整數的浮點欄、逗號／引號／換行的儲存格。"""
+    return pd.DataFrame(
+        {
+            "姓名": ["王小明", "李, 小華", '含"引號"', "換\n行", None],
+            "逾期天數": [30.0, None, 60.0, 0.0, 7.0],
+            "血糖": [1.5, None, 2.0, 3.25, 0.0],
+            "備註": ["", "*", "台北市", "😀", "x"],
+        }
+    )
+
+
+@pytest.mark.parametrize("kind", ["csv", "sqlite"])
+def test_export_csv_bytes_identical_to_in_memory_serialization(temp_dir, kind):
+    """串流寫出的檔案，與先前「整份序列化成 bytes 再寫檔」的內容逐位元組相同
+    （sqlite 輸入的結果一律走 CSV）。"""
+    df = _tricky_df()
+    fmt = DatasetFormat(kind=kind)
+    path = os.path.join(temp_dir, f"stream_{kind}.csv")
+    out = export_result(df, path, fmt)
+    with open(out, "rb") as f:
+        assert f.read() == dataframe_to_bytes(df, fmt)
+
+
+def test_export_csv_overwrites_existing_file_and_leaves_no_temp_file(temp_dir):
+    path = os.path.join(temp_dir, "overwrite.csv")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("舊內容\n")
+    out = export_result(pd.DataFrame({"a": [1, 2]}), path)
+    assert os.path.abspath(path) == out
+    with open(path, encoding="utf-8") as f:
+        assert f.read().splitlines() == ["a", "1", "2"]
+    assert not os.path.exists(path + ".part")
+
+
+def test_export_csv_failure_keeps_old_file_and_cleans_temp_file(temp_dir, monkeypatch):
+    """寫到一半失敗：原本在該路徑的舊檔不被弄壞，暫存檔也不殘留。"""
+    path = os.path.join(temp_dir, "keep_old.csv")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("舊內容\n")
+
+    def boom(self, buf, *args, **kwargs):
+        buf.write("a\n1\n")  # 先寫了一部分
+        raise OSError("disk full")
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", boom)
+    with pytest.raises(OSError, match="disk full"):
+        export_result(pd.DataFrame({"a": [1]}), path)
+    with open(path, encoding="utf-8") as f:
+        assert f.read() == "舊內容\n"
+    assert not os.path.exists(path + ".part")
+
+
+@pytest.mark.parametrize("kind", ["json", "jsonl", "excel"])
+def test_export_non_csv_formats_still_use_serialized_bytes(temp_dir, kind):
+    """非 CSV 格式維持原作法（整份序列化後寫檔），內容不變。"""
+    df = pd.DataFrame({"姓名": ["王小明", "李小華"], "逾期天數": [30.0, None]})
+    fmt = DatasetFormat(kind=kind, json_orient="records", json_lines=kind == "jsonl")
+    out = export_result(df, os.path.join(temp_dir, f"o{fmt.output_extension}"), fmt)
+    with open(out, "rb") as f:
+        written = f.read()
+    if kind == "excel":
+        # xlsx 內含建立時間，兩次序列化的 bytes 不會逐位元組相同，改比對讀回的資料
+        back, _ = load_dataframe_with_format(written, "o.xlsx")
+        expected, _ = load_dataframe_with_format(dataframe_to_bytes(df, fmt), "o.xlsx")
+        pd.testing.assert_frame_equal(back, expected)
+    else:
+        assert written == dataframe_to_bytes(df, fmt)
+
+
 @pytest.mark.parametrize("kind", ["csv", "json", "jsonl", "excel"])
 def test_export_writes_integer_column_with_nulls_without_decimal(kind):
     """整數欄有空值時讀入會變浮點數；輸出須寫回整數（30 不寫成 30.0），空值照留空。"""

@@ -59,11 +59,14 @@ def test_default_leaves_the_callers_dataframe_untouched(sample_df, sample_config
 
 
 def test_inplace_hashes_identifier_columns_in_the_callers_dataframe(sample_df, sample_config, salt):
-    original_names = list(sample_df["姓名"])
-    out, _ = run_k_anonymity(sample_df, sample_config, k=2, suppression_limit_percent=100,
+    # sample_df 是整個測試工作階段共用的 fixture，原地處理會改動它，必須先複製，
+    # 否則後面用到 sample_df 的測試（如 test_risk_subset）會讀到被雜湊過的姓名而失敗。
+    df = sample_df.copy()
+    original_names = list(df["姓名"])
+    out, _ = run_k_anonymity(df, sample_config, k=2, suppression_limit_percent=100,
                              limit_exceeded_action="allow_with_warning", salt_key=salt,
                              inplace=True)
-    assert list(sample_df["姓名"]) != original_names  # 原地處理：呼叫端的資料已被改動
+    assert list(df["姓名"]) != original_names  # 原地處理：呼叫端的資料已被改動
     assert all(len(v) == 64 for v in out["姓名"])
 
 
