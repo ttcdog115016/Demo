@@ -283,6 +283,7 @@ def cli_k_anonymity(
             salt_key=salt_key,
             suppression_method=d.suppression_method,
             cell_fill=d.cell_fill,
+            inplace=True,  # 輸入資料之後不再使用：原地處理，省掉整份複製（大資料的峰值記憶體）
         )
         report.applied_defaults = applied_defaults + report.applied_defaults
 

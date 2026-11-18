@@ -139,7 +139,9 @@ class Anonymizer:
         counts = wildcard_group_sizes(d[k_qi_cols])
         return int((counts < k).sum()) / len(base_df)
 
-    def run(self, df: pd.DataFrame) -> tuple[pd.DataFrame, QualityReport]:
+    def run(
+        self, df: pd.DataFrame, *, inplace: bool = False
+    ) -> tuple[pd.DataFrame, QualityReport]:
         config = self.config
         k = self.k
         l = self.l  # noqa: E741
@@ -156,7 +158,11 @@ class Anonymizer:
         # 加不加鹽會寫進品質報告，讀報告的人看得到本次是哪一種。
         salted = bool((salt_key or "").strip())
 
-        df_out = df.copy()
+        # 預設先複製，呼叫端的 df 不會被改動。inplace=True 由「用完輸入就丟」的呼叫端使用
+        # （CLI、API 的 K-匿名處理），省掉整份複製——大資料時這份複製占峰值記憶體相當大一塊。
+        # 原地處理時，後面仍讀 df 的只有 t-closeness 的全體分佈（敏感欄）：該欄只有在未被
+        # 遮蔽／雜湊／清空時才會被檢測，而泛化與抑制都不動敏感欄，所以讀到的仍是原始值。
+        df_out = df if inplace else df.copy()
         n_original = len(df)
 
         # 泛化層級一律取自設定檔（逐欄設定歸設定檔；呼叫端無覆蓋參數）
