@@ -96,7 +96,7 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
 {{< /tab >}}
 {{< /tabs >}}
 
-後續指令均在這個安裝資料夾內執行。
+後續指令均在這個安裝資料夾內執行。**路徑請改成您電腦上實際的資料夾：** `C:\open-pets-app`、`~/open-pets-app` 僅為範例，請換成您實際要使用的路徑，後續指令中的路徑也請一併換成同一個。
 
 ## 4. 方式一：容器映像檔（GHCR）
 
@@ -289,7 +289,7 @@ mkdir -p ~/open-pets-app && cd ~/open-pets-app
     {{< /tab >}}
     {{< /tabs >}}
 
-3. 建立安裝資料夾，把 `docker/docker-compose.yml` 複製進去，建立 `.env`（一行，版本號填入建置時使用的編號），再啟動：
+3. 建立安裝資料夾，把 `docker/docker-compose.yml` 複製進去，建立 `.env`（一行，版本號填入建置時使用的編號），再啟動（資料夾路徑請改成您電腦上實際的位置）：
 
     {{< tabs >}}
     {{< tab name="Windows（PowerShell）" >}}
@@ -762,7 +762,7 @@ docker compose up -d
 ```
 {{< /tab >}}
 {{< tab name="方式三：原始碼" >}}
-取得新版原始碼並重建（步驟見[第 6 節](#6-方式三原始碼)），再回到安裝資料夾啟動：
+取得新版原始碼並重建（步驟見[第 6 節](#6-方式三原始碼)），再回到安裝資料夾（路徑依實際位置調整）啟動：
 
 ```powershell
 cd C:\open-pets-app

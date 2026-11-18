@@ -24,6 +24,8 @@ Invoke-WebRequest -UseBasicParsing "https://github.com/ttcdog115016/Demo/release
 Unblock-File .\open-pets.ps1
 ```
 
+> **路徑請改成您電腦上實際的資料夾：** `C:\open-pets-app` 僅為範例，請換成您實際要存放安裝工具的資料夾路徑（資料夾不存在時會自動建立，需有寫入權限）；後續指令中的 `C:\open-pets-app` 也請一併換成同一個路徑。
+
 **3. 安裝。** 執行下面這行，**照畫面回答問題**（第一次要下載映像檔，需要幾分鐘）：
 
 ```powershell

@@ -70,7 +70,7 @@ docker compose version
 Open-PETs 提供安裝工具 `open-pets.ps1`，以問答方式完成安裝與模式切換，無須手動修改設定檔。
 
 {{< callout type="warning" >}}
-**請使用全新的資料夾**（下列範例使用 `C:\open-pets-app`）。若這台電腦先前已安裝過（資料夾為 `C:\open-pets`），請勿使用同一資料夾，以免覆蓋先前的金鑰。
+**請使用全新的資料夾**（下列範例使用 `C:\open-pets-app`，請換成您電腦上實際的資料夾路徑）。若這台電腦先前已安裝過（資料夾為 `C:\open-pets`），請勿使用同一資料夾，以免覆蓋先前的金鑰。
 {{< /callout >}}
 
 {{< tabs >}}
@@ -85,6 +85,8 @@ Invoke-WebRequest -UseBasicParsing "https://github.com/ttcdog115016/Demo/release
 Unblock-File .\open-pets.ps1
 ```
 
+**路徑請改成您電腦上實際的資料夾：** `C:\open-pets-app` 僅為範例，請換成您實際要存放安裝工具的資料夾路徑（資料夾不存在時會自動建立，需有寫入權限）；後續指令中的 `C:\open-pets-app` 也請一併換成同一個路徑。
+
 **預期結果：** 沒有錯誤訊息，資料夾內出現 `open-pets.ps1`（輸入 `dir` 可確認）。
 {{< /tab >}}
 {{< tab name="Linux（bash）" >}}
@@ -95,7 +97,7 @@ curl -fsSLO "https://github.com/ttcdog115016/Demo/releases/download/v$v/open-pet
 chmod +x open-pets.sh
 ```
 
-後續指令中的 `.\open-pets.ps1` 請改為 `./open-pets.sh`，`-Hosts` 等參數改為 `--hosts`。
+`~/open-pets-app` 同樣僅為範例，請換成您電腦上實際的資料夾路徑。後續指令中的 `.\open-pets.ps1` 請改為 `./open-pets.sh`，`-Hosts` 等參數改為 `--hosts`。
 {{< /tab >}}
 {{< /tabs >}}
 
@@ -111,7 +113,7 @@ powershell -ExecutionPolicy Bypass -File .\open-pets.ps1 setup
 cd C:\open-pets-app
 ```
 
-接著直接進行第 4 步。
+（路徑請依資料夾實際位置調整。）接著直接進行第 4 步。
 
 ## 第 4 步：安裝
 
