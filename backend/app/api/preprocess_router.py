@@ -114,7 +114,8 @@ async def api_preprocess(
         # 欄位名稱是否存在、參數是否合法皆由引擎在動到資料之前驗證，
         # 不合法會拋帶錯誤碼的 PetsError，由 app.api.errors 的處理器統一轉成回應。
         def compute():
-            df_out = run_preprocess(df, pp_config)
+            # 輸入資料之後不再使用（只用 data.origin／name／fmt）：原地處理，省掉整份複製
+            df_out = run_preprocess(df, pp_config, inplace=True)
             # 沿用輸入格式序列化為 bytes，不落地磁碟
             return dataframe_to_bytes(df_out, dataset_format)
 

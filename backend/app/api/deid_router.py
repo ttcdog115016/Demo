@@ -109,6 +109,7 @@ async def api_k_anonymity(
                 salt_key=effective_salt,
                 suppression_method=d.suppression_method,
                 cell_fill=d.cell_fill,
+                inplace=True,  # 輸入資料之後不再使用：原地處理，省掉整份複製
             )
             # 沿用輸入格式序列化為 bytes，不落地磁碟
             return dataframe_to_bytes(df_out, dataset_format), report

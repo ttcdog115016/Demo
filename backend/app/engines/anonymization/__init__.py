@@ -38,8 +38,12 @@ def run_k_anonymity(
     suppression_method: str = "row_suppression",
     cell_fill: str = "star",
     k_qi_subset: list[str] | None = None,
+    inplace: bool = False,
 ) -> tuple[pd.DataFrame, QualityReport]:
     """K-匿名化主流程（門面）：由 AnonymizerFactory 組裝並注入工人，再執行。
+
+    inplace：預設 False，處理前先複製，呼叫端的 df 不會被改動。用完輸入資料就丟的呼叫端
+    （CLI、API）可傳 True 省掉整份複製；傳 True 後輸入的 df 已被改動，不可再當原始資料用。
 
     泛化層級（規格 2.1(2)）一律由設定檔提供（config.qi_generalization_levels），
     不另開呼叫端覆蓋參數——逐欄設定歸設定檔、參數只放全域值。
@@ -58,7 +62,7 @@ def run_k_anonymity(
         suppression_method=suppression_method,
         cell_fill=cell_fill,
         k_qi_subset=k_qi_subset,
-    ).run(df)
+    ).run(df, inplace=inplace)
 
 
 __all__ = [

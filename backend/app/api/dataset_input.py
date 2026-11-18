@@ -8,6 +8,7 @@ API 的上傳是 multipart 的檔案欄位、連線字串是文字欄位，兩�
 服務包在容器內時須寫容器內的路徑，且路徑基準為容器的工作目錄。
 """
 import os
+from collections.abc import Collection
 from dataclasses import dataclass
 
 import pandas as pd
@@ -88,6 +89,7 @@ async def resolve_dataset(
     file_field: str,
     source_field: str,
     table_field: str,
+    columns: Collection[str] | None = None,
 ) -> ResolvedDataset:
     """取得一份資料集：上傳的檔案內容，或伺服器本機的資料來源，二擇一。
 
@@ -98,6 +100,8 @@ async def resolve_dataset(
     :param source: 資料來源連線字串（如 sqlite:////data/x.db）
     :param table: source 指向 SQLite 時的資料表名稱
     :param input_format: 設定檔宣告的輸入格式，未宣告則由副檔名或前綴判定
+    :param columns: 只讀這些欄位（目前只有 CSV 生效，見 dataset_io.load_dataset_with_format）；
+        未給＝整份讀入。供只用到少數欄位的呼叫端（如三攻擊）省下大資料的記憶體
     :return: 資料、輸入格式、稽核用來源標示與下載用檔名
     """
     if file is not None and source:
@@ -117,7 +121,7 @@ async def resolve_dataset(
         content = await file.read()
         # 大檔解析可能要數十秒（還可能依編碼重讀），丟執行緒池以免卡住事件迴圈
         df, fmt = await run_in_threadpool(
-            load_dataframe_with_format, content, file.filename, input_format
+            load_dataframe_with_format, content, file.filename, input_format, columns=columns
         )
         return ResolvedDataset(df=df, fmt=fmt, origin=file.filename, name=file.filename)
 
@@ -131,7 +135,9 @@ async def resolve_dataset(
             f"{source_field} 為 SQLite 連線字串時，必須一併提供 {table_field}（資料表名稱）。",
         )
 
-    df, fmt = await run_in_threadpool(load_dataset_with_format, source, input_format, table)
+    df, fmt = await run_in_threadpool(
+        load_dataset_with_format, source, input_format, table, columns=columns
+    )
     origin = f"{source}#{table}" if table else source
     return ResolvedDataset(
         df=df,

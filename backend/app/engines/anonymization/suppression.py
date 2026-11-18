@@ -69,7 +69,12 @@ class RowSuppressor(Suppressor):
     """
 
     def suppress(self, df_out, violation_mask, qi_cols, suppressed_count, n_original, k):
-        df_out = df_out[~violation_mask].copy()
+        # ★ 2026-11-18：500 萬列實測，這一步是 K-匿名處理的記憶體峰值（10.3 GiB）。
+        #   1. 沒有違規列時一列都不刪，直接沿用原資料；原本仍會整份複製一次。
+        #   2. 有違規列時，布林篩選本身就會產生新的資料（不與原資料共用），
+        #      後面不必再 .copy() 第二份。
+        if bool(violation_mask.any()):
+            df_out = df_out[~violation_mask]
         rate_percent = 100 * suppressed_count / n_original if n_original > 0 else 0.0
         suppression_desc = (
             f"列抑制率 {rate_percent:.1f}%（共抑制 {suppressed_count} / {n_original} 列）"

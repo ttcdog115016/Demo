@@ -31,6 +31,7 @@ from app.engines.risk import (
     subgroup_notes,
     subgroup_notes_before_after,
 )
+from app.engines.risk.columns import drop_omitted_identifiers, required_attack_columns
 from app.engines.risk.types import AttackReport, CapReport
 from app.governance.audit import get_audit_logger
 from app.governance.report import generate_pdf_bytes
@@ -100,6 +101,8 @@ async def api_risk_k_anonymity(
         s_cols = rc.sensitive_columns()
         link_a, link_b = rc.linkability_pair()
 
+        # 只讀三攻擊用得到的欄位（大資料省記憶體，見 engines/risk/columns.py）；
+        # 讀檔時省掉的 identifier 欄位也要從 K-匿名設定中去掉，兩者須成對
         data = await resolve_dataset(
             file=original,
             source=source,
@@ -108,8 +111,10 @@ async def api_risk_k_anonymity(
             file_field="original",
             source_field="source",
             table_field="table",
+            columns=required_attack_columns(rc, kanon_cfg),
         )
         df_ori = data.df
+        kanon_cfg = drop_omitted_identifiers(kanon_cfg, df_ori)
 
         # K-匿名旋鈕邊界層預設 resolve（同 /k-anonymity），並記錄以供報告透明告知
         # 與 /k-anonymity 共用同一份決議（見 app.core.defaults）
@@ -229,6 +234,8 @@ async def api_risk_dp(
             "default_delta": dp_cfg.default_delta,
         }
 
+        # 只讀三攻擊用得到的欄位（大資料省記憶體，見 engines/risk/columns.py）；
+        # DP 的 column_budgets 欄位全部保留（預算會算進報告的 ε）
         data = await resolve_dataset(
             file=original,
             source=source,
@@ -237,6 +244,7 @@ async def api_risk_dp(
             file_field="original",
             source_field="source",
             table_field="table",
+            columns=required_attack_columns(rc, dp_cfg),
         )
         df_ori = data.df
 

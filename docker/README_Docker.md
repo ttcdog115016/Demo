@@ -177,7 +177,7 @@ docker logs open-pets                                                           
 | 內網頁面持續載入、`ERR_CONNECTION_TIMED_OUT` | 網址須輸入完整的 `https://IP`；再檢查防火牆 443、同一個網路（手機熱點常隔離裝置） |
 | 內網「您的連線不是私人連線」 | 使用者尚未信任根憑證，依 `open-pets-user-guide.txt` 執行 |
 | 上傳大檔失敗 | 預設上限 1024 MB（`OPEN_PETS_MAX_UPLOAD_MB`），前端也限制 1024 MB，要改需一起改 |
-| 數百萬列資料在 Step4（尤其三攻擊）顯示「後端回應逾時」 | 先看 Docker 可用記憶體：`docker info --format "{{.MemTotal}}"`。500 萬列（約 650 MB）建議 16 GB 以上（實測：Docker 12.5 GB 環境下，200 萬列前處理峰值約 3.6 GiB、三攻擊約 4.4 GiB，500 萬列前處理就 OOM；建議此環境不超過約 300 萬列，詳見 `scenarios/README.md`）；Docker Desktop（WSL2）預設只拿主機一半，記憶體不足會大量換頁、慢數倍。調高方式：建立 `%USERPROFILE%\.wslconfig`（例如 `[wsl2]` 下 `memory=12GB`、`swap=16GB`），執行 `wsl --shutdown` 後重開 Docker Desktop。前端逾時會隨資料量放大（每 MB 3 秒，至少 15 分鐘、至多 2 小時），建置前端時可用 `VITE_API_TIMEOUT_MINUTES` 直接指定（內網模式 Caddy 的 `response_header_timeout` 已設為 2 小時，與前端上限一致；舊版兩容器 Demo 的 nginx 也需有 `proxy_read_timeout`，否則預設 60 秒就回 504）。數百萬列建議改用命令列（見 `scenarios/README.md`），沒有逾時上限 |
+| 數百萬列資料在 Step4（尤其三攻擊）顯示「後端回應逾時」 | 先看 Docker 可用記憶體：`docker info --format "{{.MemTotal}}"`。500 萬列（約 650 MB）建議 16 GB 以上（實測：優化後在 Docker 12.5 GB 環境下，500 萬列整套後端步驟皆實測可完成，記憶體峰值最高的是 K-匿名處理約 10.3 GiB，其餘約 4.9~6.7 GiB，故建議 Docker 至少 12 GB，詳見 `scenarios/README.md`）；Docker Desktop（WSL2）預設只拿主機一半，記憶體不足會大量換頁、慢數倍。調高方式：建立 `%USERPROFILE%\.wslconfig`（例如 `[wsl2]` 下 `memory=12GB`、`swap=16GB`），執行 `wsl --shutdown` 後重開 Docker Desktop。前端逾時會隨資料量放大（每 MB 3 秒，至少 15 分鐘、至多 2 小時），建置前端時可用 `VITE_API_TIMEOUT_MINUTES` 直接指定（內網模式 Caddy 的 `response_header_timeout` 已設為 2 小時，與前端上限一致；舊版兩容器 Demo 的 nginx 也需有 `proxy_read_timeout`，否則預設 60 秒就回 504）。數百萬列建議改用命令列（見 `scenarios/README.md`），沒有逾時上限 |
 
 ## 十一、授權與原始碼
 

@@ -2,7 +2,7 @@ import io
 import os
 import re
 import pandas as pd
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import quote
@@ -144,13 +144,19 @@ _LEADING_ZERO = r"^\s*[+-]?0\d"
 
 
 def _keep_leading_zero_columns(
-    df: pd.DataFrame, source: str | io.BytesIO, encoding: str
+    df: pd.DataFrame,
+    source: str | io.BytesIO,
+    encoding: str,
+    file_positions: list[int] | None = None,
 ) -> pd.DataFrame:
     """被讀成數字、但原文有 0 開頭值的欄位，換回原文字。
 
     CSV 不帶型別，pandas 看到全是數字就轉成數值，09007 會變成 9007（縣市、村里、
     郵遞區號等代碼皆然），輸出即與原始資料不同。比照 R readr 的判斷：整欄只要有一格
     0 開頭，整欄當文字。只重讀數值欄來比對，其餘欄位與數值結果維持 pandas 原本的判斷。
+
+    file_positions：只讀了部分欄位時（見 _read_csv 的 columns），df 第 i 欄在檔案中的
+    原位置；沒裁欄則為 None（df 欄位位置即檔案位置）。
     """
     positions = [
         i
@@ -162,8 +168,9 @@ def _keep_leading_zero_columns(
     if isinstance(source, io.BytesIO):
         source.seek(0)
     # 以欄位位置對應，避免重複欄名被 pandas 改名後對不上
+    read_positions = [file_positions[i] for i in positions] if file_positions else positions
     text = pd.read_csv(
-        source, encoding=encoding, usecols=positions, dtype=str, low_memory=False
+        source, encoding=encoding, usecols=read_positions, dtype=str, low_memory=False
     )
     for pos, col in zip(positions, text.columns):
         # 只比對相異值：代碼欄重複值多（500 萬筆村里代碼僅 7,748 種），逐格比對徒增耗時
@@ -173,16 +180,41 @@ def _keep_leading_zero_columns(
     return df
 
 
-def _read_csv(source: str | io.BytesIO) -> pd.DataFrame:
-    """支援 UTF-8、BOM-UTF-8 與 Big5 自動降級。"""
+OMITTED_COLUMNS_ATTR = "omitted_columns"
+
+
+def _read_csv(
+    source: str | io.BytesIO, columns: Collection[str] | None = None
+) -> pd.DataFrame:
+    """支援 UTF-8、BOM-UTF-8 與 Big5 自動降級。
+
+    columns：只讀這些欄位（大資料時省下沒用到的欄位所佔的記憶體）。檔案表頭裡沒有的名稱
+    直接略過、不報錯——欄位對不對仍由後續的驗證負責，錯誤訊息與全讀時一致。沒有可省的
+    欄位（要的就是全部，或一個都對不上）時照舊全讀。讀的時候被省掉的表頭欄位記在
+    df.attrs[OMITTED_COLUMNS_ATTR]，呼叫端可據以分辨「檔案裡有、但刻意沒讀」與「檔案裡根本沒有」。
+    """
     for encoding in ("utf-8", "utf-8-sig", "big5"):
         try:
             if isinstance(source, io.BytesIO):
                 source.seek(0)
+            usecols: list[int] | None = None
+            omitted: tuple[str, ...] = ()
+            if columns is not None:
+                header = list(pd.read_csv(source, encoding=encoding, nrows=0).columns)
+                wanted = set(columns)
+                kept = [i for i, name in enumerate(header) if name in wanted]
+                if kept and len(kept) < len(header):
+                    usecols = kept
+                    omitted = tuple(name for name in header if name not in wanted)
+                if isinstance(source, io.BytesIO):
+                    source.seek(0)
             # low_memory=False：整欄讀完才決定型別。預設會分批各自判斷，同一欄可能一批
             # 是數字、另一批是文字（例如夾了一格 *），同值被當成兩種而分到不同組。
-            df = pd.read_csv(source, encoding=encoding, low_memory=False)
-            return _keep_leading_zero_columns(df, source, encoding)
+            df = pd.read_csv(source, encoding=encoding, usecols=usecols, low_memory=False)
+            df = _keep_leading_zero_columns(df, source, encoding, usecols)
+            if omitted:
+                df.attrs[OMITTED_COLUMNS_ATTR] = omitted
+            return df
         except UnicodeDecodeError as exc:
             if encoding == "big5":
                 raise _unreadable(
@@ -279,7 +311,11 @@ def _read_sqlite(url: str, table_name: str | None) -> pd.DataFrame:
 
 
 def load_dataset_with_format(
-    path_or_conn: str, input_format: str | None = None, table_name: str | None = None
+    path_or_conn: str,
+    input_format: str | None = None,
+    table_name: str | None = None,
+    *,
+    columns: Collection[str] | None = None,
 ) -> tuple[pd.DataFrame, DatasetFormat]:
     """
     載入多格式資料集，並一併回報輸入格式（供結果資料沿用同一種格式輸出）。
@@ -287,6 +323,7 @@ def load_dataset_with_format(
     :param path_or_conn: 檔案路徑，或者 SQLite 連線字串 (例如 'sqlite:///mydb.db')
     :param input_format: 檔案格式 ('csv', 'json', 'jsonl', 'excel', 'sqlite')，未指定則依副檔名判定
     :param table_name: 當讀取資料庫時，需指定的資料表名稱
+    :param columns: 只讀這些欄位（見 _read_csv）；目前只有 CSV 生效，其他格式仍整份讀入
     :return: (pandas DataFrame, 輸入格式)
     """
     if input_format:
@@ -302,7 +339,7 @@ def load_dataset_with_format(
     _require_file(path_or_conn)
 
     if kind == "csv":
-        return _read_csv(path_or_conn), DatasetFormat(kind="csv")
+        return _read_csv(path_or_conn, columns), DatasetFormat(kind="csv")
 
     if kind in ("json", "jsonl"):
         with open(path_or_conn, "rb") as f:
@@ -315,10 +352,14 @@ def load_dataset_with_format(
 
 
 def load_dataset(
-    path_or_conn: str, input_format: str | None = None, table_name: str | None = None
+    path_or_conn: str,
+    input_format: str | None = None,
+    table_name: str | None = None,
+    *,
+    columns: Collection[str] | None = None,
 ) -> pd.DataFrame:
     """只取資料本身，供不需要沿用輸入格式的呼叫端（如再識別風險評估）使用。"""
-    df, _ = load_dataset_with_format(path_or_conn, input_format, table_name)
+    df, _ = load_dataset_with_format(path_or_conn, input_format, table_name, columns=columns)
     return df
 
 
@@ -337,16 +378,56 @@ def export_result(
     :return: 儲存的絕對路徑
     """
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(dataframe_to_bytes(df, fmt))
+    if fmt.kind in ("json", "jsonl", "excel"):
+        with open(path, "wb") as f:
+            f.write(dataframe_to_bytes(df, fmt))
+    else:
+        _write_csv_file(df, path)
     return os.path.abspath(path)
+
+
+# CSV 寫檔的緩衝大小。500 萬列的結果檔約 1.3 GB，緩衝太小會變成數十萬次小寫入
+# （實測透過 Docker Desktop 掛載的資料夾，匯出由 20 秒拖到 300 秒）；16 MiB 夠大，
+# 又不佔多少記憶體。
+_CSV_WRITE_BUFFER = 16 * 1024 * 1024
+
+
+def _write_csv_file(df: pd.DataFrame, path: str) -> None:
+    """把 DataFrame 以 UTF-8 CSV 串流寫到 `path`，內容與 `dataframe_to_csv_bytes` 逐位元組相同。
+
+    不走「StringIO 收全部 → getvalue() → encode()」：那條路徑在大資料時會同時留著
+    整份 CSV 的字串、字串複本與 bytes 三份（含中文的字串每字元 2 位元組），500 萬列實測
+    讓匯出成為整個 K-匿名處理的記憶體峰值（容器 9.58 GiB，改串流後 3.85 GiB）。
+    先寫到同資料夾的暫存檔、完成後再換名：中途失敗不會留下寫到一半的結果檔，
+    也不會弄壞原本就在該路徑的舊檔（與先前「序列化成功才開檔」的行為一致）。
+    """
+    check_cancelled()  # 同 dataframe_to_bytes：大檔序列化前最後一次可取消
+    df = _integral_floats_as_int(df)
+    tmp_path = f"{path}.part"
+    try:
+        # newline=""：不讓檔案層改換行字元，換行完全由 to_csv 決定（與寫入 StringIO 時相同）
+        with open(
+            tmp_path, "w", encoding="utf-8", newline="", buffering=_CSV_WRITE_BUFFER
+        ) as f:
+            df.to_csv(f, index=False)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ── 記憶體 I/O 工具（供 API 層使用，後端不寫磁碟）──────────────────────────
 
 
 def load_dataframe_with_format(
-    content: bytes, filename: str, input_format: str | None = None
+    content: bytes,
+    filename: str,
+    input_format: str | None = None,
+    *,
+    columns: Collection[str] | None = None,
 ) -> tuple[pd.DataFrame, DatasetFormat]:
     """
     從 UploadFile 的 bytes 讀取 DataFrame，並一併回報輸入格式（供結果資料沿用同一種
@@ -354,6 +435,7 @@ def load_dataframe_with_format(
 
     :param input_format: 明講的輸入格式；未給則依副檔名判定。上傳的檔案不見得帶副檔名，
         此時副檔名判定無從下手，由呼叫端以此參數指定。給了就以它為準，不再看副檔名。
+    :param columns: 只讀這些欄位（見 _read_csv）；目前只有 CSV 生效，其他格式仍整份讀入
     """
     kind = (
         _kind_from_declared(input_format, _FILE_KINDS)
@@ -363,7 +445,7 @@ def load_dataframe_with_format(
     buf = io.BytesIO(content)
 
     if kind == "csv":
-        return _read_csv(buf), DatasetFormat(kind="csv")
+        return _read_csv(buf, columns), DatasetFormat(kind="csv")
 
     if kind in ("json", "jsonl"):
         df, orient, lines = _read_json(buf, content[:64])

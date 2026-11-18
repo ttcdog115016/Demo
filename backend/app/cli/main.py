@@ -48,6 +48,7 @@ from app.engines.risk import (
     empty_subgroup_attack_report,
     empty_subgroup_cap_report,
 )
+from app.engines.risk.columns import drop_omitted_identifiers, required_attack_columns
 from app.engines.risk.types import AttackReport, CapReport
 from app.governance.auth import get_auth_manager
 from app.governance.audit import get_audit_logger
@@ -212,7 +213,8 @@ def cli_preprocess(
         )
 
         typer.echo("正在執行資料前處理...", err=True)
-        df_out = run_preprocess(df, config)
+        # 輸入資料之後不再使用：原地處理，省掉整份複製（大資料的峰值記憶體）
+        df_out = run_preprocess(df, config, inplace=True)
 
         _check_output_extension(output_path, dataset_format)
         out_abs = export_result(df_out, output_path, dataset_format)
@@ -281,6 +283,7 @@ def cli_k_anonymity(
             salt_key=salt_key,
             suppression_method=d.suppression_method,
             cell_fill=d.cell_fill,
+            inplace=True,  # 輸入資料之後不再使用：原地處理，省掉整份複製（大資料的峰值記憶體）
         )
         report.applied_defaults = applied_defaults + report.applied_defaults
 
@@ -389,7 +392,15 @@ def cli_risk_k_anonymity(
         s_cols = rc.sensitive_columns()
         link_a, link_b = rc.linkability_pair()
         _note_format_override(dataset_path, rc.input_format)
-        df_ori = load_dataset(dataset_path, rc.input_format, table_name)
+        # 只讀三攻擊用得到的欄位（大資料省記憶體，見 engines/risk/columns.py）；
+        # 讀檔時省掉的 identifier 欄位也要從 K-匿名設定中去掉，兩者須成對
+        df_ori = load_dataset(
+            dataset_path,
+            rc.input_format,
+            table_name,
+            columns=required_attack_columns(rc, kanon_cfg),
+        )
+        kanon_cfg = drop_omitted_identifiers(kanon_cfg, df_ori)
 
         # K-匿名旋鈕邊界層預設 resolve（同 k-anonymity 指令），記錄以供報告透明告知
         # 與 k-anonymity 指令共用同一份決議（見 app.core.defaults）
@@ -485,7 +496,13 @@ def cli_risk_dp(
             "default_delta": dp_cfg.default_delta,
         }
         _note_format_override(dataset_path, rc.input_format)
-        df_ori = load_dataset(dataset_path, rc.input_format, table_name)
+        # 只讀三攻擊用得到的欄位（大資料省記憶體）；DP 的 column_budgets 欄位全部保留
+        df_ori = load_dataset(
+            dataset_path,
+            rc.input_format,
+            table_name,
+            columns=required_attack_columns(rc, dp_cfg),
+        )
 
         # 子群體前篩（處理前篩原始）：條件欄位不存在於此 fail fast
         conditions = rc.subgroup_conditions()
