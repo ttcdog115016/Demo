@@ -22,9 +22,11 @@
 	header Strict-Transport-Security "max-age=31536000"
 
 	# Host 標頭原樣轉送；大檔案的處理時間可能很長，逾時設長一點
+	# ★ 2026-11-17：與前端單一請求的逾時上限（src/api/apiService.ts 的 MAX_SCALED_API_TIMEOUT_MS，2 小時）對齊；
+	#   原本 15 分鐘會在 500 萬列的三攻擊跑完前切斷連線
 	reverse_proxy open-pets:8080 {
 		transport http {
-			response_header_timeout 15m
+			response_header_timeout 2h
 		}
 	}
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import axios, { AxiosError, CanceledError } from 'axios';
-import { runRiskCap, runKAnonymity, runDifferentialPrivacy, isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS } from '../../api/apiService';
+import { runRiskCap, runKAnonymity, runDifferentialPrivacy, isApiRequestCanceled, isApiRequestTimeout, DEFAULT_API_TIMEOUT_MS, MAX_SCALED_API_TIMEOUT_MS, resolveApiTimeoutMs } from '../../api/apiService';
 import { describePipelineError } from '../../features/step4_result/backendErrorCatalog';
 
 describe('API 請求逾時／取消', () => {
@@ -35,6 +35,42 @@ describe('API 請求逾時／取消', () => {
         const emptyFile = new File(['a'], 'a.csv');
         await runRiskCap(emptyFile, emptyFile, emptyFile);
         expect((postSpy.mock.calls[0][2] as { timeout?: number }).timeout).toBe(DEFAULT_API_TIMEOUT_MS);
+    });
+
+    it('呼叫端指定 timeoutMs（依資料量放大）時以它為準', async () => {
+        const postSpy = vi.spyOn(axios, 'post').mockResolvedValue({ data: {} });
+        const emptyFile = new File(['a'], 'a.csv');
+        await runRiskCap(emptyFile, emptyFile, emptyFile, { timeoutMs: 40 * 60 * 1000 });
+        expect((postSpy.mock.calls[0][2] as { timeout?: number }).timeout).toBe(40 * 60 * 1000);
+    });
+
+    describe('resolveApiTimeoutMs（★ 2026-11-17：逾時隨資料量放大）', () => {
+        const MEGABYTE = 1024 * 1024;
+        afterEach(() => { vi.unstubAllEnvs(); });
+
+        it('小檔、沒有檔案大小：維持預設 15 分鐘', () => {
+            expect(resolveApiTimeoutMs(undefined)).toBe(DEFAULT_API_TIMEOUT_MS);
+            expect(resolveApiTimeoutMs(0)).toBe(DEFAULT_API_TIMEOUT_MS);
+            expect(resolveApiTimeoutMs(100 * MEGABYTE)).toBe(DEFAULT_API_TIMEOUT_MS);
+        });
+
+        it('大檔：每 MB 多給 3 秒（650 MB ≈ 32.5 分鐘，約 500 萬列）', () => {
+            expect(resolveApiTimeoutMs(650 * MEGABYTE)).toBe(650 * 3 * 1000);
+            expect(resolveApiTimeoutMs(650 * MEGABYTE)).toBeGreaterThan(DEFAULT_API_TIMEOUT_MS);
+        });
+
+        it('放大後以 2 小時為上限', () => {
+            expect(resolveApiTimeoutMs(100_000 * MEGABYTE)).toBe(MAX_SCALED_API_TIMEOUT_MS);
+        });
+
+        it('VITE_API_TIMEOUT_MINUTES 為正數時直接採用；不是正數時忽略', () => {
+            vi.stubEnv('VITE_API_TIMEOUT_MINUTES', '90');
+            expect(resolveApiTimeoutMs(1 * MEGABYTE)).toBe(90 * 60 * 1000);
+            vi.stubEnv('VITE_API_TIMEOUT_MINUTES', '0');
+            expect(resolveApiTimeoutMs(1 * MEGABYTE)).toBe(DEFAULT_API_TIMEOUT_MS);
+            vi.stubEnv('VITE_API_TIMEOUT_MINUTES', 'abc');
+            expect(resolveApiTimeoutMs(1 * MEGABYTE)).toBe(DEFAULT_API_TIMEOUT_MS);
+        });
     });
 
     it('辨識取消與逾時', () => {

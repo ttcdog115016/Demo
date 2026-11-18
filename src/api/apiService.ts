@@ -24,6 +24,32 @@ export const parseContentDispositionFilename = (dispositionText: string): string
 /** 單一請求預設逾時：15 分鐘（100 萬筆在本機後端約 20 秒內完成，留足餘裕給較慢的環境與風險評估） */
 export const DEFAULT_API_TIMEOUT_MS = 15 * 60 * 1000;
 
+/** 依資料量放大逾時時，每 MB 多給的等待秒數。
+ *  ★ 2026-11-17：500 萬列（約 650 MB）在交付套件實測（16 核心、容器記憶體 16 GB 以上）單一三攻擊請求 220~400 秒；
+ *    Docker 只分到 8 GB 時會大量換頁，慢數倍而超過固定 15 分鐘，網頁 Step4 顯示「後端回應逾時」。 */
+const TIMEOUT_SECONDS_PER_MEGABYTE = 3;
+/** 放大後的逾時上限（2 小時）：避免後端真的卡死時前端無止境等待 */
+export const MAX_SCALED_API_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
+/** 部署端以 VITE_API_TIMEOUT_MINUTES（正數、分鐘）直接指定逾時；未設或不是正數時回傳 null */
+const readTimeoutOverrideMs = (): number | null => {
+  const overrideMinutes = Number(import.meta.env?.VITE_API_TIMEOUT_MINUTES);
+  return Number.isFinite(overrideMinutes) && overrideMinutes > 0 ? overrideMinutes * 60 * 1000 : null;
+};
+
+/**
+ * 單一請求的逾時毫秒數：以上傳資料檔的大小估算。
+ * - 部署端有指定 VITE_API_TIMEOUT_MINUTES 時以它為準（不受上限限制）
+ * - 否則 = max(15 分鐘, 檔案 MB × 3 秒)，並以 2 小時為上限；沒有檔案大小時維持 15 分鐘
+ */
+export const resolveApiTimeoutMs = (dataFileSizeBytes?: number | null): number => {
+  const overrideMs = readTimeoutOverrideMs();
+  if (overrideMs !== null) return overrideMs;
+  if (!dataFileSizeBytes || dataFileSizeBytes <= 0) return DEFAULT_API_TIMEOUT_MS;
+  const scaledMs = Math.ceil(dataFileSizeBytes / (1024 * 1024)) * TIMEOUT_SECONDS_PER_MEGABYTE * 1000;
+  return Math.min(Math.max(DEFAULT_API_TIMEOUT_MS, scaledMs), MAX_SCALED_API_TIMEOUT_MS);
+};
+
 export interface ApiRequestOptions {
   signal?: AbortSignal;
   /** ★ 2026-10-31：這一輪運算的識別碼（X-Client-Run-Id），按「取消運算」時用來通知後端停止 */
