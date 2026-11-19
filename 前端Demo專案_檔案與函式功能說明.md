@@ -64,7 +64,7 @@
   - index → `RoleBasedRedirect`（依角色分流到 dashboard 或 admin）
   - 子群組一（`RBACGuard allowedRoles=['data_owner']`，越權導回 `/admin`）：
     - `dashboard` → `Dashboard`
-    - `workspace` → `MainLayout`（去識別化精靈四步驟：Step1~Step4）
+    - `workspace` → `MainLayout`（去識別化四步驟流程：Step1~Step4）
     - `audit` → `AuditLogHub`
   - 子群組二（`RBACGuard allowedRoles=['admin']`，越權導回 `/workspace?step=1`）：
     - `admin` → `AdminDashboard`
@@ -82,7 +82,7 @@
 
 **常數**
 - `DEFAULT_SESSION_TIMEOUT_MINUTES = 1800`：預設 session 閒置逾時分鐘數（備援值）。
-- `MIN_STEP_INDEX=0` / `MAX_STEP_INDEX=3`：去識別化精靈的合法步驟範圍。
+- `MIN_STEP_INDEX=0` / `MAX_STEP_INDEX=3`：去識別化流程的合法步驟範圍。
 - `SIDER_WIDTH_LEVEL_PX_MAP`：依字體大小級距對應側邊欄展開寬度 (200~280px)。
 - `FONT_SIZE_LEVEL_PX_MAP`：字體級距對應基準字級 (12~28px)。
 
@@ -180,7 +180,7 @@ Vite/React 預設模板殘留的展示頁樣式（`.counter`、`.hero`、`#next-
 
 ### `src/store/usePrivacyStore.ts`
 
-**用途摘要**：整合式「主 Master 隱私 Store」，涵蓋身分認證、系統安全政策、去識別化精靈全部資料與參數、審計紀錄，使用 `persist` 中介層存到 **sessionStorage**（鍵名 `privacy-app-storage`）。與 `useAuthStore`、`useWorkspaceStore`、`useAuditStore`、`useUIStore` 有大量欄位重疊，疑似整合前的舊版全域 store 或規劃中要取代其他四支 store 的新版，實際使用情形需對照各功能元件的實際 import 才能確認。
+**用途摘要**：整合式「主 Master 隱私 Store」，涵蓋身分認證、系統安全政策、去識別化流程全部資料與參數、審計紀錄，使用 `persist` 中介層存到 **sessionStorage**（鍵名 `privacy-app-storage`）。與 `useAuthStore`、`useWorkspaceStore`、`useAuditStore`、`useUIStore` 有大量欄位重疊，疑似整合前的舊版全域 store 或規劃中要取代其他四支 store 的新版，實際使用情形需對照各功能元件的實際 import 才能確認。
 
 **關鍵 Actions**：
 - `addAuditLog`：**依 `certificateId` 去重**（與 `useAuditStore` 不同）。
@@ -205,7 +205,7 @@ Vite/React 預設模板殘留的展示頁樣式（`.counter`、`.hero`、`#next-
 
 ### `src/store/useWorkspaceStore.ts`
 
-**用途摘要**：去識別化「工作區」專用 Zustand store，管理精靈四步驟的檔案、預處理規則、欄位分類、K-匿名/DP 詳細參數與 Step4 風險快照，是 `MainLayout` 底下各步驟元件實際操作的核心資料來源。**未使用 persist**（工作進度僅存在記憶體）。
+**用途摘要**：去識別化「工作區」專用 Zustand store，管理四步驟流程的檔案、預處理規則、欄位分類、K-匿名/DP 詳細參數與 Step4 風險快照，是 `MainLayout` 底下各步驟元件實際操作的核心資料來源。**未使用 persist**（工作進度僅存在記憶體）。
 
 **關鍵函式：`createInitialDPFields(datasetColumnsListArray)`**（模組內部函式）
 - 依欄位名稱關鍵字（中英文）自動猜測型態（Numeric/Categorical/Text/Unknown）。
@@ -327,7 +327,7 @@ Vite/React 預設模板殘留的展示頁樣式（`.counter`、`.hero`、`#next-
 
 ### `src/features/workspace/MainLayout.tsx`
 
-**檔案用途**：去識別化精靈主版面配置，負責頂部 Steps 導航條、中央動態分頁內容切換、底部上一步/下一步按鈕。
+**檔案用途**：去識別化流程主版面配置，負責頂部 Steps 導航條、中央動態分頁內容切換、底部上一步/下一步按鈕。
 
 - `handleStepClick(targetStep)`：向前跨步時呼叫 `validateProgression` 驗證，失敗則顯示警告並把網址列導回目前合法步驟；向後回退不受限制。
 - `handleNextStep()`/`handlePreviousStep()`：前進需驗證，後退呼叫 store 的 `prevStep()` 不需驗證。
@@ -338,7 +338,7 @@ Vite/React 預設模板殘留的展示頁樣式（`.counter`、`.hero`、`#next-
 
 ### `src/features/workspace/validateProgression.ts`
 
-**檔案用途**：純函式，集中管理精靈四步驟「向前跳轉」的前置條件驗證邏輯。
+**檔案用途**：純函式，集中管理四步驟流程「向前跳轉」的前置條件驗證邏輯。
 
 **`validateProgression(target, current, workspaceStateSnapshot, translate): string | null`**
 - 基礎跨步防呆：一次最多只能向前跳 1 步。

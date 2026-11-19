@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 檔案名稱 (File): useWorkspaceStore.ts
- * 模組功能 (Description): 全域去識別化工作區狀態數據庫 (Zustand Workspace Store，提供精靈步驟切換、資料集解析、K-Anonymity 與 DP 進階參數管理)
+ * 模組功能 (Description): 全域去識別化工作區狀態數據庫 (Zustand Workspace Store，提供步驟切換、資料集解析、K-Anonymity 與 DP 進階參數管理)
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之縮寫) 以及變數撰寫參考 a) ~ h)
  * ============================================================================
@@ -179,7 +179,7 @@ interface WorkspaceState
 {
     // 基礎設定與檔案資料 (符合規範 g)
     dataFile: File | null;                                                   // 儲存原始實體檔案物件 (發送 API 用)
-    currentStep: number;                                                     // 當前精靈步驟索引 (0 ~ 3)
+    currentStep: number;                                                     // 當前步驟索引 (0 ~ 3)
     privacyMode: 'k-anonymity' | 'differential-privacy' | null;               // 脫敏保護模式
     columns: string[];                                                       // 數據集欄位名稱陣列
     previewData: Record<string, unknown>[];                                  // 前端預覽數據紀錄陣列

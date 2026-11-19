@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 檔案名稱 (File): MainLayout.tsx
- * 模組功能 (Description): 去識別化精靈工作區主版面配置組件 (提供 Steps 導航步驟條、前進/後退步驟驗證門閥控管與動態分頁元件切換)
+ * 模組功能 (Description): 去識別化工作區主版面配置組件 (提供 Steps 導航步驟條、前進/後退步驟驗證門閥控管與動態分頁元件切換)
  * 專案名稱 (Project): Privacy Protection Toolkit
  * 規範對照: 符合開發規範 a) ~ e) 識別字命名原則 (消滅魔術數字、單字元變數與含義不明之識別字) 以及變數撰寫參考 a) ~ h)
  * ============================================================================
@@ -30,7 +30,7 @@ import { confirmIfBackendBusy } from './backendBusyConfirm';
  * ============================================================================
  * 規範對照: 符合規範 e) 避免使用不易理解之數字 (Magic Number)
  * * 詳細說明:
- * 定義精靈 (Wizard) 各個步驟對應之索引值，避免在程式邏輯中寫死 0, 1, 2, 3，提升可讀性與擴充性。
+ * 定義分步流程 (Wizard) 各個步驟對應之索引值，避免在程式邏輯中寫死 0, 1, 2, 3，提升可讀性與擴充性。
  */
 const STEP_INDEX_UPLOAD = 0;
 const STEP_INDEX_MAPPING = 1;
@@ -42,11 +42,11 @@ const STEP_VALIDATION_NOTIFICATION_AUTO_CLOSE_SECONDS = 8;
 
 /**
  * 函數名稱: MainLayout
- * 函數功能: 渲染步驟導航精靈主版面，包含 Steps 標題進度條、內部對應分頁組件渲染，以及下一步/上一步按鈕之狀態驗證與門閥控管。
+ * 函數功能: 渲染步驟導航主版面，包含 Steps 標題進度條、內部對應分頁組件渲染，以及下一步/上一步按鈕之狀態驗證與門閥控管。
  * * 輸入參數 (Input): 無 (React 無參數 Functional Component)
  * 輸出參數 (Output): 無
  * 返回值 (Return): 
- * - React.ReactElement: 主精靈版面配置 UI 視圖 JSX 結構
+ * - React.ReactElement: 主版面配置 UI 視圖 JSX 結構
  * 呼叫關係 (Call Relations): 
  * - 被 AppRouter 主路由載入渲染 (路徑: /workspace)
  * - 訂閱與更新 useWorkspaceStore 中的 currentStep, nextStep, prevStep 全域狀態
@@ -386,7 +386,7 @@ export default function MainLayout(): React.ReactElement
             <Card className="v-card-style" style={{ marginBottom: '24px', borderRadius: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     
-                    {/* 左側：精靈進度條 */}
+                    {/* 左側：步驟進度條 */}
                     <div style={{ flex: 1, paddingRight: '24px' }}>
                         <Steps 
                             current={currentStepIndexValue} 

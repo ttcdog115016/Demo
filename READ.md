@@ -15,7 +15,7 @@ Privacy App 是一個專為企業 Data Owner 與系統管理員 (Admin) 設計�
 * **👮‍♂️ 嚴格的狀態與路由防護 (Gateway Guard & RBAC)**：
   * **RBAC 存取控制**：嚴格區分 Admin (系統管理) 與 Data Owner (業務操作) 視圖，程式碼完全解耦。
   * **路由越權防護**：絕對守門員機制，自動攔截惡意修改網址或跳躍步驟的行為，強制遣返未完成設定的頁面。
-* **🌗 企業級 UI/UX**：支援深/淺色主題無縫切換、i18n 多國語系，並具備專業的資料視覺化圖表。
+* **🌗 企業級 UI/UX**：支援深/淺色主題切換、i18n 多國語系，並具備專業的資料視覺化圖表。
 
 ## 🛠️ 技術棧 (Tech Stack)
 
@@ -29,7 +29,7 @@ Privacy App 是一個專為企業 Data Owner 與系統管理員 (Admin) 設計�
 
 ## 📂 專案架構 (Project Structure)
 
-本專案嚴格遵循 **Feature-Sliced Design (FSD)**，將關注點高度分離，並保持核心路由檔的極致輕量：
+本專案嚴格遵循 **Feature-Sliced Design (FSD)**，將關注點高度分離，並保持核心路由檔保持輕量：
 
 ~~~text
 src/
@@ -84,7 +84,7 @@ npm run preview
   - 將現有的「前端時間戳逾時機制」交接給真實的 JWT 驗證。
   - 實作 Axios 全域攔截器 (Interceptor)，當捕獲到 `401 Unauthorized` (Token 過期或被強制踢出) 或 `403 Forbidden` 時，統一觸發 Zustand 清空狀態並導回登入頁，實現伺服器級別的資安防護。
 - [ ] **Zustand 狀態非同步化 (Async State Management)**：
-  - 將 `usePrivacyStore` 中直接讀寫 `localStorage` 的同步邏輯，全面重構為呼叫後端 API 的非同步函式 (Async Actions)，由外包後端資料庫做為唯一的 Single Source of Truth。
+  - 將 `usePrivacyStore` 中直接讀寫 `localStorage` 的同步邏輯，重構為呼叫後端 API 的非同步函式 (Async Actions)，由外包後端資料庫做為唯一的 Single Source of Truth。
 - [ ] **長時間非同步任務管線與 UX 優化 (Long-polling & Task UI)**：
   - 針對 Step 4 (預覽與匯出) 耗時極長的大數據去識別化運算，實作真實的 Task ID 任務輪詢 (Polling) 或 WebSocket 監聽。
   - 完善進度條 (Progress Bar) 與骨架屏 (Skeleton Loading) 等 UI 回饋，確保在長時間等待中提供優良的使用者體驗。
@@ -94,7 +94,7 @@ npm run preview
 1. 請確保每次提交前通過 TypeScript 編譯檢查 (`tsc --noEmit`)。
 2. 遵守 React Fast Refresh 原則，單一 `.tsx` 檔案僅 export React Components，純函式與常數請拆分至獨立 `.ts` 檔。
 3. 開發新功能請遵循 Feature-sliced 架構，將相關的 UI、邏輯封裝在同一個資料夾內。
-4. 新增 Ant Design 元件時，請盡量使用 `theme.useToken()` 動態獲取顏色，以確保 Dark Mode 的完美兼容。
+4. 新增 Ant Design 元件時，請盡量使用 `theme.useToken()` 動態獲取顏色，以確保 Dark Mode 的相容。
 
 ---
 *Built with ❤️ by Privacy Engineering Team*

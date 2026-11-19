@@ -99,7 +99,7 @@ const DEFAULT_MISSING_VALUE_RULE: MissingValueRule = { strategy: 'none' };
  * 返回值 (Return): 
  *   - React.ReactElement: 步驟二 UI 視圖 JSX 結構
  * 呼叫關係 (Call Relations): 
- *   - 被主流程 Step 精靈組件載入渲染
+ *   - 被主流程步驟組件載入渲染
  *   - 訂閱用 useAuthStore 判斷 Data Owner 編輯權限，用 useWorkspaceStore 讀寫全域預處理規則
  * 
  * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素
