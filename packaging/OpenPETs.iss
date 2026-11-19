@@ -2,7 +2,7 @@
 ; 由 build_exe.ps1 呼叫：ISCC /DAppVersion=<版本> /DSourceDir=<dist\OpenPETs> /DOutputDir=<dist> OpenPETs.iss
 ; 只裝給目前使用者（%LOCALAPPDATA%\Programs\OpenPETs），不需要系統管理員權限。
 ; 資料（.env、帳號、稽核紀錄）由程式寫到 %LOCALAPPDATA%\OpenPETs，解除安裝不刪，避免鹽值與帳號遺失。
-; 重新安裝或升級時，若偵測到既有資料，安裝精靈會詢問是否「還原初始設定」（預設是）：
+; 重新安裝或升級時，若偵測到既有資料，安裝程式會詢問是否「還原初始設定」（預設是）：
 ;   還原＝把整個資料夾改名備份為 OpenPETs.backup-<時間戳記>，再建立全新的資料夾，
 ;   下次開啟會重新產生 .env（鹽值與金鑰）並顯示「建立系統管理員」畫面。不勾選則沿用原本的資料。
 ; 靜默安裝（/SILENT、/VERYSILENT）沒有指定時一律沿用原本的資料；要還原請加 /RESETDATA=1（明確不還原：/RESETDATA=0）。
