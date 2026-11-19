@@ -19,6 +19,7 @@ from app.core.dataset_io import (
     DatasetFormat,
     content_disposition_attachment,
     dataframe_to_bytes,
+    dataframe_to_csv_bytes,
     declared_format_conflict,
     export_result,
     load_dataframe_from_bytes,
@@ -253,6 +254,40 @@ def _tricky_df():
             "備註": ["", "*", "台北市", "😀", "x"],
         }
     )
+
+
+def _legacy_csv_bytes(df):
+    """舊作法（StringIO → getvalue → encode）：新作法的輸出必須與它逐位元組相同。"""
+    buf = io.StringIO()
+    df.to_csv(buf, index=False, encoding="utf-8")
+    return buf.getvalue().encode("utf-8")
+
+
+@pytest.mark.parametrize(
+    "df",
+    [
+        _tricky_df(),
+        pd.DataFrame({"a": [1, 2, 3], "b": [0.5, None, 2.0]}),
+        pd.DataFrame({"時間": pd.to_datetime(["2026-11-19 08:00:00", None]), "v": ["中文", "x"]}),
+        pd.DataFrame({"a": [], "b": []}),  # 空表：只有標題列
+        pd.DataFrame({"姓名": ["王小明", "李小華"] * 20_000, "n": range(40_000)}),  # 較大且含中文
+    ],
+    ids=["tricky", "numeric-null", "datetime", "empty", "large-cjk"],
+)
+def test_dataframe_to_csv_bytes_identical_to_legacy_serialization(df):
+    """API 路徑的 CSV 序列化改為直接寫進 BytesIO（少掉整份字串與其複本），輸出須與舊作法
+    逐位元組相同；dataframe_to_bytes 預設格式也走同一條。"""
+    out = dataframe_to_csv_bytes(df)
+    assert isinstance(out, bytes)
+    assert out == _legacy_csv_bytes(df)
+    assert dataframe_to_bytes(df) == _legacy_csv_bytes(_integral_floats(df))
+
+
+def _integral_floats(df):
+    """dataframe_to_bytes 會先把「全為整數的浮點欄」改以整數寫出，比對舊作法時須同樣處理。"""
+    from app.core.dataset_io import _integral_floats_as_int
+
+    return _integral_floats_as_int(df)
 
 
 @pytest.mark.parametrize("kind", ["csv", "sqlite"])

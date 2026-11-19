@@ -519,10 +519,15 @@ def dataframe_to_bytes(df: pd.DataFrame, fmt: DatasetFormat = CSV_FORMAT) -> byt
 def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
     """
     將 DataFrame 序列化為 UTF-8 CSV bytes，供 StreamingResponse 使用。
+
+    直接寫進 BytesIO，不經「StringIO 收全部 → getvalue() → encode()」：那條路徑在大資料時
+    會同時留著整份 CSV 的字串、字串複本與 bytes 三份（含中文的字串每字元 2 位元組），
+    500 萬列時佔去數 GB 的記憶體峰值。BytesIO 只存一份 UTF-8 位元組，getvalue() 在緩衝區
+    之後不再被寫入時與其共用記憶體，不會再多複製一份。輸出內容與舊作法逐位元組相同。
     """
-    buf = io.StringIO()
+    buf = io.BytesIO()
     df.to_csv(buf, index=False, encoding="utf-8")
-    return buf.getvalue().encode("utf-8")
+    return buf.getvalue()
 
 
 # 回應主體的分塊大小：夠大以壓低每塊的固定成本，又不致一次佔用過多記憶體
