@@ -31,7 +31,7 @@ import RiskAssessmentSettingsPanel from './RiskAssessmentSettingsPanel';
  * 返回值 (Return): 
  *   - React.ReactElement: 步驟三 UI 視圖 JSX 結構
  * 呼叫關係 (Call Relations): 
- *   - 被主流程 Step 精靈組件載入渲染
+ *   - 被主流程步驟組件載入渲染
  *   - 訂閱與讀取 useWorkspaceStore 中的 privacyMode, isStepValid, stepErrorMessage 等全域狀態
  * 
  * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素

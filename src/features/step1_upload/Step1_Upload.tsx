@@ -153,7 +153,7 @@ const toUtf8CsvBlob = async (csvFile: File, detectedEncodingLabel: string): Prom
  * 返回值 (Return): 
  *   - React.ReactElement: 步驟一 UI 視圖 JSX 結構
  * 呼叫關係 (Call Relations): 
- *   - 被主流程 Step 精靈組件載入渲染
+ *   - 被主流程步驟組件載入渲染
  *   - 訂閱與更新 useWorkspaceStore 中的 columns, previewData, privacyMode 等全域狀態
  * 
  * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素

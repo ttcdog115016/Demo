@@ -722,7 +722,7 @@ const translationResourcesDictionary = {
 					jsd: "分佈散度 (JSD)",
 					corr: "特徵相關性 (Corr)",
 					alert_title: "實用性分析結果",
-					alert_desc: "分佈圖顯示，後的資料依然完美維持了原有的鐘型/長尾趨勢。JSD 值為 {{jsd}}，代表特徵偏差極小，適用於商業智慧 (BI) 與模型訓練。",
+					alert_desc: "分佈圖顯示，後的資料仍維持原有的鐘型/長尾趨勢。JSD 值為 {{jsd}}，代表特徵偏差極小，適用於商業智慧 (BI) 與模型訓練。",
 					total_Epsilon:"總消耗隱私預算 (Epsilon)",
 					total_cols_tooltip_k: "只計入實際會被遮蔽或泛化的欄位：識別符需選擇遮蔽策略（非「不處理」）；準識別符需設定完整的泛化參數（如區間、進位單位或分類樹對照表）。敏感與非敏感欄位不會被 K-匿名改動，因此不計入。",
 					total_cols_tooltip_dp: "只計入已啟用差分隱私（實際會被加噪）的欄位。",

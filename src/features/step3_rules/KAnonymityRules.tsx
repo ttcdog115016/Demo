@@ -101,7 +101,7 @@ interface TooltipParams
  * 返回值 (Return): 
  *   - React.ReactElement: K-匿名規則設定 UI 視圖 JSX 結構
  * 呼叫關係 (Call Relations): 
- *   - 被 Step 3 導覽精靈組件載入渲染
+ *   - 被 Step 3 步驟導覽組件載入渲染
  *   - 訂閱與更新 useWorkspaceStore 中的 kValue, lValue, tValue, maxSuppression 等全域狀態
  * 
  * 規範對照: 符合規範 b) 函數開頭註記完整 5 大要素
