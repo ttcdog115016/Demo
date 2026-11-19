@@ -88,6 +88,24 @@ function Format-Health($ok, $fails) {
     if ($ok) { return "healthy" } else { return "FAIL x$fails" }
 }
 
+# ---- single instance ----
+# Two watchdogs (e.g. the scheduled task plus a window opened by hand) would double every health check and
+# every restart, and defeat the hourly cap. A named mutex lets the second one exit right away.
+# -DryRun uses its own name, so tests never collide with (or block) the real watchdog.
+$mutexName = if ($DryRun) { "Global\OpenPETS-watchdog-DryRun" } else { "Global\OpenPETS-watchdog" }
+$instanceMutex = $null
+$createdNew = $false
+try {
+    $instanceMutex = New-Object System.Threading.Mutex($true, $mutexName, [ref]$createdNew)
+}
+catch [System.UnauthorizedAccessException] {
+    $createdNew = $false   # the mutex exists and belongs to a process we may not open: still "already running"
+}
+if (-not $createdNew) {
+    Write-Log "another watchdog is already running (mutex $mutexName); exiting."
+    exit 0
+}
+
 $lastUrl = ""
 if (Test-Path $UrlFile) { $lastUrl = (Get-Content $UrlFile -TotalCount 1) }
 $lastRestart = Get-Date "2000-01-01"
