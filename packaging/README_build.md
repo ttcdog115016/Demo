@@ -24,6 +24,7 @@
 - **後端原始碼不改**。`launcher.py` 在後端 app 上加：`/` 與其他非 `/api` 路徑回前端網頁；後端原本的 `GET /`（狀態 JSON）移到 `GET /api/v1/status`。`/api/*` 找不到仍回 404 JSON。
 - 前端單機版模式（`.env.desktop` → `VITE_BUILD_TARGET=desktop`，見 `src/config/featureFlags.ts`）：API 錯誤不送 Google 表單。一般 `npm run build` 不受影響。
 - 資料：`.env`、`data/`（users.db、system.db、audit.jsonl、logs/）與視窗的瀏覽器資料 `webview/` 都在 `%LOCALAPPDATA%\OpenPETs`，解除安裝不刪。環境變數 `OPEN_PETS_HOME` 可改位置；exe 旁已有 `.env`（舊版資料夾版）時沿用 exe 資料夾。
+- 重新安裝／升級時若偵測到既有資料（`.env` 或 `data\`），安裝程式會多一頁「還原初始設定」（預設勾選）：勾選＝整個資料夾改名備份為 `OpenPETs.backup-<日期時間>`（同一層、不刪除）再建立全新的資料夾，下次開啟重新產生 `.env` 並顯示「建立系統管理員」；不勾選＝沿用原資料。靜默安裝沒指定時沿用原資料，加 `/RESETDATA=1` 才還原（`/RESETDATA=0` 明確不還原）。備份改名失敗（程式還在執行或檔案被占用）時不還原、沿用原資料。測試用：`/DataDir=<資料夾>` 改資料夾位置；建置時 `/DAppIdValue=...`、`/DTestMode=1` 使用獨立 AppId 且不建立捷徑。
 - 下載（結果、設定檔、報告）走 WebView2 的下載，存到「下載」資料夾。
-- 安裝精靈為英文：Inno Setup 6 未內附繁體中文語系檔（`OpenPETs.iss` 會在有 `ChineseTraditional.isl` 時自動使用）。
+- 安裝畫面為英文：Inno Setup 6 未內附繁體中文語系檔（`OpenPETs.iss` 會在有 `ChineseTraditional.isl` 時自動使用）。
 - 不支援後端「伺服器端 SQLite 資料來源」（前端本來就沒接）。
