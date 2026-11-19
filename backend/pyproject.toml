@@ -8,7 +8,7 @@ requires-python = ">=3.12"
 dependencies = [
     # === 核心 (Core) ===
     # 網頁框架與非同步
-    "fastapi==0.162.2",
+    "fastapi==0.163.1",
     "uvicorn==0.54.0",
     "starlette==1.10.0",  # ★ TTC 2026-11-02：資安掃描 2-3（form 上限遭忽略 DoS）
     
@@ -17,7 +17,7 @@ dependencies = [
     # ★ 2026-11-17：pandas 3 的字串欄位（str）有 pyarrow 才以緊湊的欄式格式存放；沒裝時每格都是獨立的
     #   Python 字串物件，500 萬列的字串資料集（車牌、證號、時間）會吃掉十幾 GB 記憶體。
     "pyarrow==26.0.1",
-    "numpy==2.5.4",
+    "numpy==2.5.5",
     "scikit-learn==1.8.0",
     "scipy==1.18.1",
     
@@ -35,7 +35,7 @@ dependencies = [
     "sqlalchemy==2.1.8",
     
     # CLI 工具
-    "typer==0.28.0",
+    "typer==0.29.1",
     "click==8.5.1",
     "rich==15.0.0",
     
@@ -53,8 +53,8 @@ dependencies = [
 [dependency-groups]
 # === 開發用 (Development) ===
 dev = [
-    "ruff==0.17.4",
-    "pylint==4.1.3",
+    "ruff==0.17.5",
+    "pylint==4.1.4",
     "isort==8.0.1",
 ]
 
