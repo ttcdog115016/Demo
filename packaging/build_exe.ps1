@@ -107,4 +107,4 @@ Write-Host "完成。" -ForegroundColor Green
 Write-Host "  安裝程式：$setup"
 Write-Host "  安裝內容：$AppDir"
 Write-Host '  測試：執行安裝程式，從開始功能表開啟 Open-PETs；第一次會在 App 視窗內建立管理員帳號。'
-Write-Host '  資料（.env、帳號、稽核紀錄）在 %LOCALAPPDATA%\OpenPETs，解除安裝不會刪除。'
+Write-Host '  資料（.env、帳號、稽核紀錄）在 %LOCALAPPDATA%\OpenPETs，解除安裝不會刪除；重新安裝時安裝精靈會詢問是否還原初始設定（備份後重建）。'
