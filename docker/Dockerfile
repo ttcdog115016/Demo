@@ -7,7 +7,7 @@
 # 一鍵建置、輸出離線交付包：docker\build_image.ps1；推 tag 時由 .github/workflows/docker-image.yml 自動建置
 #
 # 後端原始碼（backend/）不為了容器版而修改：前端靜態檔、SPA 路由、安全標頭由 docker/openpets_server.py
-# （沿用 packaging/launcher.py，與單機版 exe 同一份程式）掛到後端的 FastAPI app 上。
+# （docker/launcher.py 提供前端、API 文件與安全標頭的掛載函式）掛到後端的 FastAPI app 上。
 # ============================================================================
 
 # ---------- 第一階段：建置前端 ----------
@@ -97,7 +97,7 @@ COPY --from=notices /licenses /licenses
 COPY LICENSE sbom/FRONTEND_THIRD_PARTY_LICENSES.md sbom/frontend-sbom.cdx.json /licenses/
 # 前端 npm 套件的授權全文（原檔名含中文，映像檔內改用英文檔名，方便各種系統取出）
 COPY sbom/3.2_*.txt /licenses/FRONTEND_LICENSES_FULLTEXT.txt
-COPY packaging/launcher.py /opt/openpets/launcher.py
+COPY docker/launcher.py /opt/openpets/launcher.py
 COPY docker/openpets_server.py /opt/openpets/openpets_server.py
 
 # 帳號資料庫、稽核日誌、系統日誌、上傳暫存都在 /data（部署時掛載外部磁碟區）；

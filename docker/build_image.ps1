@@ -33,7 +33,7 @@ Step "1/3 匯出原始碼並建置映像檔 $Image"
 # 原始碼（前端＋backend/，供依 REBUILD.md 重新建置、替換第三方元件）。只放建置與說明所需的路徑，不含內部報告與工具。
 # 映像檔也從這份匯出的內容建置（而不是直接用工作資料夾），這樣 Windows 本機、GitHub Actions 與使用者解壓縮後自行重建，
 # 三者的輸入完全相同（Windows 工作資料夾的文字檔常被轉成 CRLF，會讓建出的映像檔位元組不同）。
-$dirty = git -C $Root status --porcelain -- backend src public docker packaging sbom e2e index.html package.json package-lock.json
+$dirty = git -C $Root status --porcelain -- backend src public docker sbom e2e index.html package.json package-lock.json
 if ($dirty) { Write-Host '[警告] 有尚未 commit 的變更；原始碼壓縮檔與映像檔只含已 commit 的內容，請先 commit 再建置。' -ForegroundColor Yellow }
 $Work = Join-Path ([System.IO.Path]::GetTempPath()) "open-pets-build-$PID"
 if (Test-Path $Work) { Remove-Item $Work -Recurse -Force }
@@ -41,7 +41,7 @@ New-Item -ItemType Directory -Force $Work | Out-Null
 $SourceZip = Join-Path $Work "open-pets-source_$Version.zip"
 # core.autocrlf=false：固定輸出 repo 內的 LF，與 GitHub Actions 產出的壓縮檔一致
 git -c core.autocrlf=false -C $Root archive --format=zip --prefix=open-pets/ -o $SourceZip HEAD -- `
-    backend src public e2e docker packaging sbom scripts api-docs index.html package.json package-lock.json `
+    backend src public e2e docker sbom scripts index.html package.json package-lock.json `
     tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts eslint.config.js playwright.config.ts LICENSE README.md
 if ($LASTEXITCODE) { Fail 'git archive 失敗' }
 Expand-Archive -Path $SourceZip -DestinationPath (Join-Path $Work 'src') -Force

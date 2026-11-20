@@ -26,49 +26,22 @@ dist-ssr
 .vercel
 .env*
 
-# 本機工具設定與待刪除暫存區
+# 本機工具設定
 .claude/
+
+# 本機專用資料夾：2026-11-20 起不再追蹤（交付前清理）。舊工作資料夾若還留有這些內容，不會被誤提交（repo 為公開）
+Claude outputs/
 _to_delete/
+packaging/
+stress-test/
 
-# 單機版打包產出
-packaging/build/
-packaging/dist/
-
-# ngrok 設定含個人 authtoken，不可進版控（★ 2026-11-02 資安掃描 2-1）；範本見 ngrok.example.yml
+# 展示環境（Cloudflare／ngrok）的本機設定與祕密，不可進版控（★ 2026-11-02 資安掃描 2-1）
 ngrok.yml
-
-# 本機產出物與暫存，不進版控（★ 2026-11-02）
-packaging/__pycache__/
 _claude_tmp/
-stress-test/data/
 current_url.txt
 watchdog.log
 push_url_secret.txt
-Claude outputs/*.tgz
-Claude outputs/*.pptx
-Claude outputs/*.png
-Claude outputs/*.csv
-Claude outputs/*.pdf
 Demo 展示環境建置與維運手冊*.pdf
-Claude outputs/*.json
-
-# Claude outputs 內只存在本機的檢測原始資料、交付稿、會議紀錄與手冊副本（repo 為公開，不提交）。
-# 逐項列出而非忽略整個資料夾：同資料夾已追蹤的報告（Docker版檢測報告.md 等）不受影響。
-Claude outputs/*會議紀錄*.docx
-Claude outputs/Docker版檢測原始資料/
-Claude outputs/INSTALL_VERIFY_METHOD_2_3.md
-Claude outputs/前端SonarQube源碼掃描報告.md
-Claude outputs/前端檢測原始資料/
-Claude outputs/前端源碼掃描暨弱點掃描報告.md
-Claude outputs/前端源碼檢測暨弱點掃描修補報告.md
-Claude outputs/單機版原始碼檢測報告.md
-Claude outputs/單機版檢測原始資料/
-Claude outputs/期中報告_隱私套件待填內容.md
-Claude outputs/源碼檢測原始資料_115-11-18/
-Claude outputs/源碼檢測原始資料_115-11-20/
-Claude outputs/線上版手冊/
-Claude outputs/資安檢測交付_v2.0.2/
-Claude outputs/資料隱私保護技術套件_教學手冊.docx
 
 # 文件網站（Hugo）建置產物
 doc_site/public/

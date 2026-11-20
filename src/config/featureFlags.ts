@@ -40,7 +40,7 @@ const runtimeConfig: RuntimeConfig = (globalThis as unknown as { __OPEN_PETS_CON
 const resolvedFlags = resolveFlags(runtimeConfig, import.meta.env.VITE_BUILD_TARGET);
 
 /**
- * ★ 2026-10-28：單機版執行檔（packaging/build_exe.ps1 以 `vite build --mode desktop` 建置，讀 .env.desktop）。
+ * ★ 2026-10-28：單機版執行檔（以 `vite build --mode desktop` 建置，讀 .env.desktop；打包腳本已於 2026-11-20 移除）。
  *   單機版：帳號由使用者第一次啟動時自建。
  * ★ 2026-11-10：改為「離線模式」，可由執行期設定覆蓋（Docker 單一映像檔）。IS_DESKTOP_BUILD 為舊名稱，保留相容。
  */

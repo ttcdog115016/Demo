@@ -131,7 +131,7 @@ jobs:
           docker rm "$cid" >/dev/null
           # 原始碼（前端＋backend/），供依 REBUILD.md 重新建置、替換第三方元件
           git archive --format=zip --prefix=open-pets/ -o "$out/open-pets-source_$VERSION.zip" HEAD -- \
-            backend src public e2e docker packaging sbom scripts api-docs index.html package.json package-lock.json \
+            backend src public e2e docker sbom scripts index.html package.json package-lock.json \
             tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts eslint.config.js playwright.config.ts LICENSE README.md
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache -v "$PWD/$out:/out" \
             "$TRIVY_IMAGE" image -q --format cyclonedx -o /out/image-sbom.cdx.json "open-pets-app:$VERSION"

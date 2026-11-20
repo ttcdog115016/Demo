@@ -69,7 +69,7 @@ def home_dir() -> Path:
         return Path(override)
     exe_dir = install_dir()
     if (exe_dir / ".env").exists() or not is_frozen():
-        return exe_dir  # 舊版資料夾版（.env 在 exe 旁）沿用；開發時用 packaging/
+        return exe_dir  # 舊版資料夾版（.env 在 exe 旁）沿用；開發時用本檔所在資料夾
     local_app_data = os.getenv("LOCALAPPDATA")
     return (Path(local_app_data) if local_app_data else Path.home()) / "OpenPETs"
 
