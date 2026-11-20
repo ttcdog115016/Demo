@@ -3,7 +3,7 @@
 服務（映像檔預設指令）：
   uvicorn openpets_server:build_app --factory --host 0.0.0.0 --port 8080
   後端 /api/* 照舊；其餘路徑回前端網頁（React Router 用 index.html）；後端原本的 GET / 狀態 JSON 移到 /api/v1/status。
-  與單機版 exe 共用 packaging/launcher.py 的 attach_frontend／attach_api_docs／SecurityHeadersMiddleware，
+  使用 docker/launcher.py 的 attach_frontend／attach_api_docs／SecurityHeadersMiddleware，
   不改動後端原始碼。
 
 管理指令（docker exec -it open-pets python /opt/openpets/openpets_server.py <指令>）：
